@@ -67,6 +67,7 @@ struct SourceListView: View {
 /// search said of it is its help on a Mac and its preview on a long press.
 struct SourcePillView: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var size
     let pill: SourcePill
 
     var body: some View {
@@ -88,38 +89,56 @@ struct SourcePillView: View {
         }
     }
 
-    private var label: some View {
-        HStack(spacing: RecordPillStyle.spacing) {
-            if let index = pill.index {
-                Text(index, format: .number)
-                    .monospacedDigit()
-                    .fontWeight(ChatType.strong)
-                    .ink(.quiet, on: .pill)
-            } else {
-                Image(systemName: "globe").ink(.faint, on: .pill)
+    /// On one line; at the accessibility text sizes the title stands under
+    /// the site, on up to two lines, since one line there holds neither.
+    @ViewBuilder private var label: some View {
+        if size.isAccessibilitySize, let title = pill.title {
+            VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                HStack(spacing: RecordPillStyle.spacing) {
+                    site
+                    mark
+                }
+                Text(title).ink(.label, on: .pill).lineLimit(2)
             }
-            Text(pill.host)
-                .ink(.quiet, on: .pill)
-                .lineLimit(1)
-                .layoutPriority(1)
-            if let title = pill.title {
-                Text(title)
-                    .ink(.label, on: .pill)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            .pill(in: .rect(cornerRadius: ChatRadius.card))
+        } else {
+            HStack(spacing: RecordPillStyle.spacing) {
+                site
+                if let title = pill.title {
+                    Text(title)
+                        .ink(.label, on: .pill)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                mark
             }
-            Image(systemName: ExternalMark.symbol)
-                .imageScale(.small)
-                .ink(.faint, on: .pill)
+            // The wrap lays a pill out at its ideal width: a long title
+            // truncates inside a phone's column instead of running past it.
+            .frame(maxWidth: ChatSize.pillMax, alignment: .leading)
+            .pill(in: .capsule)
         }
-        .font(ChatType.note)
-        .padding(.horizontal, ChatSpace.pillSide)
-        .padding(.vertical, ChatSpace.pillEdge)
-        // The wrap lays a pill out at its ideal width: a long title truncates
-        // inside a phone's column instead of running past it.
-        .frame(maxWidth: ChatSize.pillMax, alignment: .leading)
-        .background(ChatColours.pillStyle, in: .capsule)
-        .contentShape(.capsule)
+    }
+
+    /// The page's number among the sources, or a globe, then its site.
+    @ViewBuilder private var site: some View {
+        if let index = pill.index {
+            Text(index, format: .number)
+                .monospacedDigit()
+                .fontWeight(ChatType.strong)
+                .ink(.quiet, on: .pill)
+        } else {
+            Image(systemName: "globe").ink(.faint, on: .pill)
+        }
+        Text(pill.host)
+            .ink(.quiet, on: .pill)
+            .lineLimit(1)
+            .layoutPriority(1)
+    }
+
+    private var mark: some View {
+        Image(systemName: ExternalMark.symbol)
+            .imageScale(.small)
+            .ink(.faint, on: .pill)
     }
 
     private var preview: some View {
@@ -136,5 +155,17 @@ struct SourcePillView: View {
 
     private var spoken: String {
         [pill.index.map(String.init), pill.host, pill.title, ExternalMark.words].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+extension View {
+    /// A pill's inset, type, fill and room to touch, in `shape`.
+    fileprivate func pill(in shape: some Shape) -> some View {
+        font(ChatType.note)
+            .padding(.horizontal, ChatSpace.pillSide)
+            .padding(.vertical, ChatSpace.pillEdge)
+            .background(ChatColours.pillStyle, in: shape)
+            // A pill is lower than a finger: it is touched in a whole target.
+            .touchTarget()
     }
 }

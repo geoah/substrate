@@ -25,7 +25,7 @@ struct QuestionCardView: View {
                 ProgressView().controlSize(.small)
             }
             ForEach(card.questions) { question in
-                VStack(alignment: .leading, spacing: ChatSpace.lines) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(question.prompt).font(ChatType.detail)
                     ForEach(question.options) { option in
                         let chosen = card.pending ? picked[question.id, default: []].contains(option.value) : option.chosen
@@ -47,7 +47,9 @@ struct QuestionCardView: View {
                                 }
                                 Spacer(minLength: 0)
                             }
-                            .padding(.vertical, ChatSpace.mark)
+                            // An option is a whole target, and the next
+                            // one starts where it ends.
+                            .frame(minHeight: ChatSize.target)
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -66,7 +68,7 @@ struct QuestionCardView: View {
                         Spacer(minLength: 0)
                     }
                     .ink(.accent, on: .card)
-                    .padding(.vertical, ChatSpace.mark)
+                    .frame(minHeight: ChatSize.target)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -77,7 +79,7 @@ struct QuestionCardView: View {
                 CardFailureView(failure: failure)
             }
             if card.pending {
-                HStack {
+                ButtonRow {
                     Button {
                         host.send(.answer(question: id, picks: picked.mapValues { Array($0).sorted() }))
                     } label: {
@@ -85,9 +87,11 @@ struct QuestionCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .prominentTint()
+                    .touchTarget()
                     .disabled(card.busy != nil || !card.questions.allSatisfy { !(picked[$0.id]?.isEmpty ?? true) })
                     Button(card.dismiss) { host.send(.dismissQuestions(id)) }
                         .buttonStyle(.bordered)
+                        .touchTarget()
                         .disabled(card.busy != nil)
                 }
             }
@@ -150,7 +154,7 @@ struct SuggestionCardView: View {
                 ConsoleLink(title: "Open in the Console", destination: console)
                     .font(ChatType.noteStrong)
             } else {
-                HStack {
+                ButtonRow {
                     Button {
                         host.send(.decide(suggestion: id, accept: true))
                     } label: {
@@ -158,8 +162,10 @@ struct SuggestionCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(card.destructive ? .destructiveFill : .accentFill)
+                    .touchTarget()
                     Button(card.dismiss) { host.send(.decide(suggestion: id, accept: false)) }
                         .buttonStyle(.bordered)
+                        .touchTarget()
                 }
                 .disabled(card.busy != nil)
             }
@@ -189,12 +195,12 @@ struct ApprovalCardView: View {
             if card.loading {
                 ProgressView().controlSize(.small)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: ChatSpace.mark) {
-                    Text(card.asks)
-                    Text(card.tool).monospaced()
-                }
-                .font(ChatType.note)
-                .ink(.quiet, on: .card)
+                // One sentence, so the tool's whole name wraps with it and
+                // is never cut.
+                Text("\(Text(card.asks)) \(Text(card.tool).monospaced())")
+                    .font(ChatType.note)
+                    .ink(.quiet, on: .card)
+                    .textSelection(.enabled)
             }
             if !card.arguments.isEmpty {
                 VStack(alignment: .leading, spacing: ChatSpace.items) {
@@ -222,7 +228,7 @@ struct ApprovalCardView: View {
                 CardFailureView(failure: failure)
             }
             if card.pending {
-                HStack {
+                ButtonRow {
                     Button {
                         host.send(.decideApproval(id, approve: true))
                     } label: {
@@ -230,12 +236,14 @@ struct ApprovalCardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .prominentTint()
+                    .touchTarget()
                     Button {
                         host.send(.decideApproval(id, approve: false))
                     } label: {
                         if card.busy == "decline" { ProgressView().controlSize(.small) } else { Text(card.decline) }
                     }
                     .buttonStyle(.bordered)
+                    .touchTarget()
                 }
                 .disabled(card.busy != nil)
             }
@@ -318,6 +326,7 @@ struct ResolvedCardView: View {
                 Button(ResolvedCardView.showMessage, systemImage: "arrow.down.message") { showMessage(message) }
                     .font(ChatType.note)
                     .buttonStyle(.borderless)
+                    .touchTarget()
             }
             if let at = resolution.at {
                 VStack(alignment: .leading, spacing: ChatSpace.pair) {
@@ -361,22 +370,25 @@ struct AnsweringNoteView: View {
     let back: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
-            Image(systemName: "square.and.pencil")
-                .imageScale(.small)
-                .ink(.quiet, on: .field)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: ChatSpace.pair) {
-                Text(note.title).font(ChatType.label)
-                if let prompt = note.prompt {
-                    Text(verbatim: prompt).font(ChatType.caption).ink(.quiet, on: .field).lineLimit(2)
+        SplitRow(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
+                Image(systemName: "square.and.pencil")
+                    .imageScale(.small)
+                    .ink(.quiet, on: .field)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(note.title).font(ChatType.label)
+                    if let prompt = note.prompt {
+                        Text(verbatim: prompt).font(ChatType.caption).ink(.quiet, on: .field).lineLimit(2)
+                    }
                 }
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: ChatSpace.beside)
+        } trailing: {
             Button(note.back, action: back)
                 .font(ChatType.label)
                 .buttonStyle(.borderless)
+                .touchTarget()
                 .accessibilityHint("Puts the questions back in the chat")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -391,17 +403,24 @@ struct ChangeHeaderView: View {
     @Scaled(.markColumn) private var column
 
     var body: some View {
-        HStack(alignment: .center, spacing: ChatSpace.words) {
-            Image(systemName: symbol)
-                .frame(width: column)
-            Text(heading.verb)
-                .fixedSize()
-            if let record = heading.record {
-                RecordPill(record, title: heading.recordTitle)
-            } else {
-                Text(heading.words).lineLimit(1)
+        SplitRow {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: ChatSpace.words) {
+                    mark
+                    Text(heading.verb).fixedSize()
+                    subject
+                }
+                // The verb over what it is done to, where one line cannot
+                // hold both.
+                HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
+                    mark
+                    VStack(alignment: .leading, spacing: ChatSpace.mark) {
+                        Text(heading.verb)
+                        subject
+                    }
+                }
             }
-            Spacer(minLength: ChatSpace.beside)
+        } trailing: {
             if let badge = heading.badge, let label = heading.badgeLabel {
                 let applied = badge == .applied
                 Label(label, systemImage: applied ? "checkmark" : "xmark")
@@ -409,10 +428,24 @@ struct ChangeHeaderView: View {
                     .ink(applied ? .tone(.positive) : .tone(.quiet), on: .badge)
                     .padding(.horizontal, ChatSpace.pillSide).padding(.vertical, ChatSpace.pillEdge)
                     .background(ChatColours.badgeStyle(applied ? .positive : .quiet), in: .capsule)
-                    .fixedSize()
             }
         }
         .font(ChatType.heading)
+    }
+
+    private var mark: some View {
+        Image(systemName: symbol)
+            .growing(to: .markColumn)
+            .frame(width: column)
+    }
+
+    /// The record as its pill, or the words that say what changes.
+    @ViewBuilder private var subject: some View {
+        if let record = heading.record {
+            RecordPill(record, title: heading.recordTitle)
+        } else {
+            Text(heading.words).lineLimit(2)
+        }
     }
 
     private var symbol: String {

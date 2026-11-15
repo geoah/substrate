@@ -434,7 +434,7 @@ struct ReasoningView: View {
                 }
                 .font(ChatType.detail)
                 .ink(.quiet, on: .page)
-                .contentShape(.rect)
+                .touchTarget()
             }
             .buttonStyle(.plain)
             .accessibilityValue(expanded ? "Shown" : "Hidden")
@@ -515,6 +515,7 @@ struct ToolCallRow: View {
             } label: {
                 HStack(spacing: ChatSpace.beside) {
                     status
+                        .growing(to: .markColumn)
                         .frame(width: column)
                     VStack(alignment: .leading, spacing: ChatSpace.pair) {
                         Text(summary)
@@ -533,7 +534,7 @@ struct ToolCallRow: View {
                         .ink(.faint, on: .page)
                         .rotationEffect(.degrees(open ? 90 : 0))
                 }
-                .contentShape(.rect)
+                .touchTarget()
             }
             .buttonStyle(.plain)
             .accessibilityHint(open ? "Hides the details" : "Shows the details")
@@ -546,6 +547,7 @@ struct ToolCallRow: View {
                         Button(link.label, systemImage: "bubble.left.and.bubble.right") { openThread(link.thread) }
                             .font(ChatType.note)
                             .buttonStyle(.borderless)
+                            .touchTarget()
                     }
                     DisclosureGroup("Details", isExpanded: $raw) {
                         VStack(alignment: .leading, spacing: ChatSpace.lines) {
@@ -644,6 +646,7 @@ private struct RecordChipsView: View {
                 if chips.records.count > shown.count {
                     Button(more) { ChatMotion.animate(.fold) { all = true } }
                         .buttonStyle(.borderless)
+                        .touchTarget()
                         .accessibilityHint("Shows the rest")
                 } else {
                     Text(more).ink(.quiet, on: .page)
@@ -670,7 +673,8 @@ private struct SummaryLine: View {
                     Label(turn.label, systemImage: "rectangle.compress.vertical")
                         .font(ChatType.caption)
                         .ink(.quiet, on: .page)
-                        .fixedSize()
+                        .multilineTextAlignment(.center)
+                        .touchTarget()
                 }
                 .buttonStyle(.plain)
                 .disabled(turn.content.isEmpty)
@@ -693,6 +697,7 @@ private struct OutcomeRow: View {
         HStack(spacing: ChatSpace.beside) {
             Image(systemName: line.done ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .ink(line.done ? .mark(.positive) : .mark(.quiet), on: .page)
+                .growing(to: .markColumn)
                 .frame(width: column)
             Text(line.text)
                 .font(ChatType.detail)

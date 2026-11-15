@@ -155,13 +155,12 @@ private struct PasswordDoor: View {
 struct NoChatAccessView: View {
     @Environment(ChatHost.self) private var host
     @State private var changingAccess = false
-    @Scaled(.appMark) private var mark
 
     var body: some View {
         VStack(spacing: ChatSpace.margin) {
             Image("AppMark")
                 .resizable()
-                .frame(width: mark, height: mark)
+                .frame(width: ChatSize.appMark, height: ChatSize.appMark)
                 .accessibilityHidden(true)
             Text("Substrate Chat can't talk to your assistants")
                 .font(ChatType.title)

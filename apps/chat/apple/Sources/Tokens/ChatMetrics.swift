@@ -1,6 +1,10 @@
 import SubstrateKit
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 // Every size the chat's views are drawn with, in one place: the space
 // between things, the sizes that are fixed, the corners and the lines. A
 // view names what a number is for and never the number, and each name here
@@ -73,32 +77,55 @@ enum ChatSpace {
 }
 
 /// A size that is fixed at the usual text size and grows with the text:
-/// read through `@Scaled`, never as a number.
+/// read through `@Scaled`, never as a number. What bounds words grows as
+/// far as the words do. What bounds a mark or a control stops at `most`,
+/// since a mark three times its size takes the room the words need, and
+/// the mark is held to the same size (`growing(to:)`).
 struct ChatSize: Sendable {
     let points: CGFloat
     /// The text style it grows with.
     let style: Font.TextStyle
+    /// The largest text size it grows to; nil is every size.
+    var most: DynamicTypeSize?
 
     /// The column a row's leading mark stands in: a tool's status, a
     /// card's symbol, a failure's.
-    static let markColumn = ChatSize(points: 20, style: .subheadline)
+    static let markColumn = ChatSize(points: 20, style: .subheadline, most: .accessibility2)
     /// A dot: unread, working, answering.
-    static let dot = ChatSize(points: 8, style: .body)
+    static let dot = ChatSize(points: 8, style: .body, most: .accessibility1)
     /// The composer's row: its field's least height and its round buttons.
-    static let control = ChatSize(points: 46, style: .body)
+    static let control = ChatSize(points: 46, style: .body, most: .xxxLarge)
     /// The window on the model's thinking: about three of its lines.
     static let thinkingWindow = ChatSize(points: 58, style: .footnote)
     /// The bar above a block of code.
-    static let codeBar = ChatSize(points: 30, style: .caption)
+    static let codeBar = ChatSize(points: 30, style: .caption, most: .accessibility2)
     /// The microphone's meter, as tall as its loudest bar.
-    static let meter = ChatSize(points: 24, style: .body)
-    /// A mark of the row under a reply, whose target is wider.
-    static let actionMark = ChatSize(points: 16, style: .subheadline)
-    /// The app's mark over a screen of its own.
-    static let appMark = ChatSize(points: 72, style: .title2)
+    static let meter = ChatSize(points: 24, style: .body, most: .xxxLarge)
+    /// A mark of the row under a reply and of the line over the field.
+    static let actionMark = ChatSize(points: 16, style: .subheadline, most: .accessibility2)
+
+    /// The size at a text size.
+    func points(at size: DynamicTypeSize) -> CGFloat {
+        #if canImport(UIKit)
+        let held = most.map { min(size, $0) } ?? size
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(held))
+        return UIFontMetrics(forTextStyle: Self.styles[style] ?? .body).scaledValue(for: points, compatibleWith: traits)
+        #else
+        // A Mac has one text size.
+        return points
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private static let styles: [Font.TextStyle: UIFont.TextStyle] = [
+        .body: .body, .subheadline: .subheadline, .footnote: .footnote, .caption: .caption1, .title2: .title2,
+    ]
+    #endif
 
     // MARK: Not scaled
 
+    /// The app's mark over a screen of its own.
+    static let appMark: CGFloat = 72
     /// The least a control may be to touch (`DesignTokens.touchTarget`).
     static let target = DesignTokens.touchTarget
     /// The width a transcript keeps however wide its window: a readable
@@ -130,13 +157,23 @@ struct ChatSize: Sendable {
 /// A `ChatSize` at the text's size.
 @propertyWrapper
 struct Scaled: DynamicProperty {
-    @ScaledMetric private var value: CGFloat
+    @Environment(\.dynamicTypeSize) private var size
+    private let token: ChatSize
 
     init(_ size: ChatSize) {
-        _value = ScaledMetric(wrappedValue: size.points, relativeTo: size.style)
+        token = size
     }
 
-    var wrappedValue: CGFloat { value }
+    var wrappedValue: CGFloat { token.points(at: size) }
+}
+
+extension View {
+    /// What this view draws (a mark, a control's symbol) grows with the
+    /// text as far as `size` does, and no further: it stays inside the
+    /// room `@Scaled` gives it.
+    @ViewBuilder func growing(to size: ChatSize) -> some View {
+        if let most = size.most { dynamicTypeSize(...most) } else { self }
+    }
 }
 
 /// A corner, by what it is the corner of.

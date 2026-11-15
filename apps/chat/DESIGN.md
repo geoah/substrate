@@ -885,7 +885,10 @@ and none, is plain text.
 
 **A table is laid out for the room it has** (`TableLayout`, ChatKit's rule
 over the widths the view measures; `TableGrid`, the layout that draws
-it). Each column's natural width is its widest cell on one line:
+it). Its room is the window's, not the reading measure: its place among
+the reply's blocks and what it may reach past that on both sides
+([Feel and access](#feel-and-access)). Each column's natural width is its
+widest cell on one line:
 
 - where the columns fit, they are drawn at those widths, the table a card
   as wide as its columns;
@@ -966,8 +969,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   list's end makes that page's rows and none above them.
 - A row takes its new place with motion when the order changes (a reply
   settled, a pin, an archive), and with none under Reduce Motion.
-- While the first read is out and the folder held nothing, eight rows of
-  grey bars stand in for the chats, shimmering unless the device asks for
+- While the first read is out and the folder held nothing, eight rows
+  stand in for the chats: a row's own lines in a row's own type with bars
+  for words, so each is as tall as the chat that takes its place at any
+  text size, with a light passing over them unless the device asks for
   less motion.
 - The selected row draws every word in the system's primary style and
   keeps no colour of its own: the system makes that white on the
@@ -1371,9 +1376,13 @@ bubble is a tinted fill. The transcript softens under the composer with
 ### New chat
 
 - The agent: its name and description as the header, and its pill as the
-  picker in the composer, 32 points high in the 46-point field and close to
-  its type, the chevron inside; default from Settings, else the last chatted with, else the
-  first offered.
+  picker in the composer, centred on the field's first line and close to
+  its type, the chevron inside (over the field at the accessibility text
+  sizes); default from Settings, else the last chatted with, else the
+  first offered. An agent's pill is the record pill's capsule (the kit's
+  `RecordPillStyle`: its word from its ends and from its top and bottom,
+  a mark from its word, its type's size), so every pill in the app is one
+  shape; its fill is the agent's colour and it has no kind's tile.
 - Up to three openers by what the agent can do, as plain chips.
 
 ### Composer
@@ -1529,31 +1538,103 @@ may do and for how long; the app never sees the password.
 
 ### Feel and access
 
+**One place for the feel.** No view holds a size, a font, a colour or an
+animation of its own: each names what the thing is for, and the number is
+a token's, in `apple/Sources/Tokens`. Changing how the app feels is an
+edit there, never a walk through the views.
+
+| Token | What it names | Its values |
+| ----- | ------------- | ---------- |
+| `ChatSpace` | the space between two things, by what they are to each other: a turn and the next, the blocks of a reply, a label over its value, a mark and its word, a card's content from its edge | steps of the kit's `DesignTokens.Spacing`, which are whole numbers of one `unit` (2 points): the whole app is made roomier or tighter there |
+| `ChatSize` | a size that is fixed at the usual text size: the column a row's mark stands in, a dot, the composer's row, the window on the model's thinking | read through `@Scaled`, so each grows with the text; the reading measure, a pill's widest and a Mac's windows are plain points |
+| `ChatRadius`, `ChatLine` | a corner and a line, by what they are of | the kit's `Radius`, and a bubble's own; a hairline, a rule, a rail |
+| `ChatType` | what a run of text is: a card's title, a row's detail, a note, a label, a caption, code | Dynamic Type styles, over the kit's text roles where a kit screen shares one |
+| `ChatColours` | an ink (what words and marks are drawn in), a surface (what they stand on) and the fills | light and dark sRGB values, below |
+| `ChatMotion` | what kind of motion a change is | below |
+
+`SourceRules` (the app's tests) reads the views' source and fails on a
+literal size, radius, line width, opacity, font, weight, colour or
+duration in `Sources/App`, `Views` or `Markdown`. The few lines that hold
+a number for another reason (a wait of the scroll view's own rule, a
+failure's palette, which is ChatKit's) are allowed by name, each with why,
+and an allowance no line uses fails.
+
+**Motion.** Everything that moves goes through `ChatMotion`. A view says
+what kind of motion a change is and never an animation:
+
+| Kind | What moves |
+| ---- | ---------- |
+| `place` | a row of the list taking its new place, the transcript going to its end, one screen for another |
+| `fold` | a tool's row, the model's thinking, a failure's details, the rest of a run of pills, opening and shutting |
+| `status` | Send for Stop, a line over the field coming and going, the field growing |
+| `arrive` | the Undo, Jump to Latest, a strip over the composer |
+| `level` | the microphone's meter |
+| `pulse`, `sweep`, `beat` | a dot while something works, the light over words that wait, the three dots before a reply |
+
+With Reduce Motion on nothing slides, scales, pulses or sweeps: a change
+is made at once, what would have arrived appears, and what repeats is
+never started. A reply's words are revealed at a steady rate through the
+same policy, and all at once without it. `ChatMotion.stilled`
+(`-SUBSTRATE_CHAT_STILL YES` at launch) holds a build still whatever the
+device says, for a test and for a picture.
+
+**Text size.** Every word is a Dynamic Type style. A size that bounds
+words grows as far as they do; one that bounds a mark or a control (a
+status mark's column, the composer's round buttons, the bar over a code
+block) grows to a named size and stops, with its mark held to the same,
+since a mark three times its size takes the room the words need. Where a
+line cannot hold what it held, the layout takes a taller form and never
+clips: a chat's date goes under its title and its marks under its
+preview, a card's buttons stack, a change's badge and a note's button go
+under their words, the assistant's picker stands over the field, the row
+under a reply wraps, a page's title goes under its site in its pill, and
+a table is a card for each row.
+
+**Touch.** Every control is touched in at least 44 points
+(`DesignTokens.touchTarget`). Where it is drawn smaller (a mark in a low
+bar, a pill, a disclosure, a bordered button of the system's 34), its
+shape for touches is a whole target about its centre (the kit's
+`touchTarget()`), so it keeps its size and its place. An option of a
+question is a whole target in the layout itself.
+
+**Reading width.** On an iPad and a Mac the transcript keeps a readable
+measure, 680 points (`ChatSize.measure`), centred however wide the window,
+and the composer's bar is as wide as its words. A table and a block of
+code are not read as lines, so they may use the room the window has: one
+that needs more than the measure reaches past it on both sides, as far as
+it needs and no further than the window, before it scrolls or wraps. A
+block inside a card, a list or a quote keeps to what holds it. The list's
+column is its own.
+
 - Haptics on send, on Stop, on a copy, on a reply settling on screen, on a
   failure appearing; and a light one for a reply that settles while its
   person is elsewhere in the app (another chat, the list, Settings), which
   is felt and not said.
-- Springs for the send/stop morph and the growing field; rows move to the top
-  animated.
 - The live turn carries `.updatesFrequently`; a settled reply is announced
   once, and felt, where its chat is on screen (the list's `answered`
-  signal, acted on once per raise by `PresentationModel.onSignal`); Reduce Motion stills the shimmer and the pulse; code scales with
-  Dynamic Type; every control has a label; light and dark.
-- **Colour.** Every colour the chat's own views choose has a name in
-  `ChatColours` (`apple/Sources/Views/ChatColours.swift`), over the kit's
-  `DesignTokens` for what another app would share: quiet words
-  (`quietText`, where the system's secondary label is 3.4:1 on white), a
-  tone as words (`toneText`: red, orange and green are not text colours on
-  a white page), the accent as words and as a fill, an agent's colour as
-  its pill's tint and as the ink of its name. `ChatColours.pairs` lists
-  the pairings of words and fill the list, the transcript and the cards
-  draw from those names, and `ColourContrast` in the app's tests holds
-  every one, and every hue an agent's id can hash to, to WCAG's 4.5:1 (3:1
-  for large text) in light and in dark. A prominent button of the chat's
-  own is filled with the accent as a fill. Still the system's: a Markdown
-  block quote, the composer's notes and its key callout, the navigation
-  bar's subtitle (the secondary label), and a prominent button in the
-  kit's screens (white on the accent's text tone).
+  signal, acted on once per raise by `PresentationModel.onSignal`); every
+  control has a label; light and dark.
+- **Colour.** A view draws words with `ink(_:on:)`: the ink (`label`,
+  `quiet`, `accent`, a tone as words, a tone as a mark, white on a fill)
+  and the surface they stand on (the page, the list, a form's row, the
+  composer's field, a card, a box in one, a bubble, code, a table, a pill,
+  a badge, a fill made for white words). The surface draws nothing: it is
+  what `ChatColours.named` lists, every ink the views draw on every
+  surface they draw it on, and `SourceRules` holds that list to the source
+  both ways, so no ink is put on a fill it was not checked against.
+  `ColourContrast` then holds each pairing, on every fill its surface has
+  (a card of each tone, a pill over each of them), and every hue an
+  agent's id can hash to, to WCAG's 4.5:1 for words and 3:1 for a mark, in
+  light and in dark. The values are the kit's where another app would
+  share them (`quietText`, where the system's secondary label is 3.4:1 on
+  white; `toneText`; `toneMark`, a status mark seen at 3:1 where the
+  system's green is 2.2:1; `toneFill` and `Color.accentFill`, fills white
+  reads on) and the chat's own otherwise (the accent, an agent's colour as
+  its pill's tint and as the ink of its name, the code's). A failure's
+  colours are ChatKit's `FailurePalette`, held by `FailureTests`. Still
+  the system's: the navigation bar's subtitle (the secondary label on the
+  bar's glass), a text field's placeholder, and a list's swipe actions'
+  white marks, on fills the app chooses for them.
 
 ## Read state
 
@@ -2506,6 +2587,19 @@ no outcome depends on how long they took.
   meet 4.5:1. `apple/Tests/GalleryTests.swift` draws each place over
   `FailureFixtures` at an iPhone's and an iPad's size, in light and in
   dark, for `mise run apps:gallery`.
+- The views' rules, read from their source (`apple/Tests/SourceRulesTests.swift`,
+  over the files of `Sources/App`, `Views` and `Markdown`, which the test
+  bundle carries as text since a test hosted in the sandboxed app reads
+  nothing else): no literal size, radius, line width, opacity, font,
+  weight, colour or duration outside the tokens, with the allowances
+  named and argued and each one used; no animation, transition, symbol
+  effect or read of Reduce Motion outside `ChatMotion`; every
+  `ink(_:on:)` a view writes is a pairing `ChatColours.named` lists, and
+  every pairing listed is one a view writes. The rules are run on lines
+  they must catch and lines they must leave. The policy itself: no kind
+  moves under Reduce Motion, a change is still made, a loop is not
+  started. `ColourContrast` holds every listed pairing on every fill of
+  its surface to 4.5:1 (3:1 for a mark).
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.
@@ -2522,7 +2616,9 @@ no outcome depends on how long they took.
   two to a picture; a block with long lines scrolled and wrapped; and the
   tables as a grid and as cards (a Mac has no Dynamic Type, so the cards
   there are the layout at the usual letters; the largest size is a
-  simulator's to show). The tests run inside the app, which
+  simulator's to show); and the tables and the long lines of code once
+  more at a Mac window's width, where they reach past the reading
+  measure. The tests run inside the app, which
   the Mac sandboxes, so each picture is attached to the test's result and
   taken from there.
 
