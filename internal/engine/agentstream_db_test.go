@@ -426,7 +426,7 @@ func TestWhatACallStreamedIsKeptWhenItFails(t *testing.T) {
 	fake.script("chat", fakeTurn{pieces: []string{"Three paragraphs ", "in, the provider ", "never sent"}, dropAfter: 2})
 	log := newEventLog()
 	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "go on"}, log.emit)
-	if cause, _ := failureOf(t, err); cause != substrate.CauseProviderUnavailable {
+	if cause, _ := runFailureOf(t, err); cause != substrate.CauseProviderUnavailable {
 		t.Fatalf("a dropped call carries %q, want provider_unavailable: %v", cause, err)
 	}
 	thread := log.snapshot()[0].Thread
