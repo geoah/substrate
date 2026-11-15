@@ -363,6 +363,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                     guard reach.wheel == turn else { return }
                     reach.touched = false
                     move(follow.rested(distance: reach.measure.distance))
+                    // Left past the end, which nothing else puts right
+                    // until the content moves.
+                    hold()
                 }
             }
         }
