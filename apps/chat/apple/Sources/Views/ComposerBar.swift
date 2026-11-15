@@ -38,6 +38,8 @@ struct ComposerBar: View {
     @State private var stopped = 0
     @Scaled(.control) private var control
     @Environment(\.dynamicTypeSize) private var size
+    /// How tall the lines over the field are, where they may scroll.
+    @State private var tall: CGFloat?
 
     private var composer: ComposerPresentation { screen.composer }
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -45,46 +47,31 @@ struct ComposerBar: View {
     var body: some View {
         let _ = Meter.shared.count(.body, "Composer")
         VStack(spacing: ChatSpace.items) {
-            if let keyless = composer.keyless {
-                KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
-            }
-            if let note = composer.answering {
-                AnsweringNoteView(note: note) { host.send(.showOptions, to: key) }
-                    .arrives()
-            }
-            if let status = composer.status {
-                ComposerStatusLine(status: status)
-                    .arrives()
-                // What Stop does to the messages that wait to be read.
-                if let queued = composer.queued {
-                    Text(queued)
-                        .font(ChatType.caption)
-                        .ink(.quiet, on: .field)
-                        // Whole at any text size: it says what Stop does,
-                        // and the field gives up lines before it does.
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, ChatSpace.edge)
-                        .arrives()
+            if !size.isAccessibilitySize {
+                notes
+            } else if noted {
+                // At the accessibility text sizes the lines can need more
+                // room than the keyboard leaves. They are as tall as their
+                // words and no taller, and scroll where they are given
+                // less, after the field has given up its lines to one: the
+                // field and its buttons keep their place over the
+                // keyboard. By the text size and not by what fits: the bar
+                // is asked its height before it is told its room.
+                ScrollView {
+                    VStack(spacing: ChatSpace.items) { notes }
+                        .onGeometryChange(for: CGFloat.self) {
+                            $0.size.height
+                        } action: {
+                            tall = $0
+                        }
                 }
-            } else if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
-                // While a reply is on its way the line above says so: "wait
-                // for the answer" would say it twice.
-                Text(reason)
-                    .font(ChatType.caption)
-                    .ink(.quiet, on: .field)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, ChatSpace.edge)
-                    .arrives()
-            }
-            if let problem = dictation.problem {
-                Text(problem)
-                    .font(ChatType.caption)
-                    .ink(.tone(.critical), on: .field)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, ChatSpace.edge)
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicatorsFlash(onAppear: true)
+                .frame(maxHeight: tall)
+                // Given their room before the field is: it has one line
+                // at the least, and what is typed scrolls in it.
+                .layoutPriority(1)
+                .arrives()
             }
             GlassEffectContainer(spacing: ChatSpace.inset) {
                 VStack(alignment: .trailing, spacing: ChatSpace.apart) {
@@ -170,6 +157,56 @@ struct ComposerBar: View {
                 focused = true
             }
         }
+    }
+
+    // MARK: The lines over the field
+
+    /// The reason the field is blocked, where it is said: while a reply is
+    /// on its way the status line says so, and "wait for the answer" would
+    /// say it twice.
+    private var reason: String? {
+        guard composer.status == nil, let reason = composer.blocked, !empty || composer.blockedWhenEmpty else { return nil }
+        return reason
+    }
+
+    /// Whether anything stands over the field.
+    private var noted: Bool {
+        composer.keyless != nil || composer.answering != nil || composer.status != nil || reason != nil || dictation.problem != nil
+    }
+
+    /// What stands over the field, each line whole at any text size. The
+    /// question under the answering note's title is left out at the
+    /// accessibility sizes: the title, the way back and the field come
+    /// first there, and the question stands in its card above.
+    @ViewBuilder private var notes: some View {
+        if let keyless = composer.keyless {
+            KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
+        }
+        if let note = composer.answering {
+            AnsweringNoteView(note: note, asking: !size.isAccessibilitySize) { host.send(.showOptions, to: key) }
+                .arrives()
+        }
+        if let status = composer.status {
+            ComposerStatusLine(status: status)
+                .arrives()
+            // What Stop does to the messages that wait to be read.
+            if let queued = composer.queued {
+                line(Text(queued).ink(.quiet, on: .field)).arrives()
+            }
+        } else if let reason {
+            line(Text(reason).ink(.quiet, on: .field)).arrives()
+        }
+        if let problem = dictation.problem {
+            line(Text(problem).ink(.tone(.critical), on: .field))
+        }
+    }
+
+    private func line(_ words: Text) -> some View {
+        words
+            .font(ChatType.caption)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ChatSpace.edge)
     }
 
     // MARK: The field

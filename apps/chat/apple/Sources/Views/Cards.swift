@@ -367,6 +367,10 @@ struct QueuedMark: View {
 /// person's own words: which question, and the way back to its options.
 struct AnsweringNoteView: View {
     let note: AnsweringNote
+    /// Whether the question is drawn under the title: the composer leaves
+    /// it out at the accessibility text sizes, where the title, the way
+    /// back and the field come first.
+    var asking = true
     let back: () -> Void
 
     var body: some View {
@@ -376,14 +380,11 @@ struct AnsweringNoteView: View {
                     .imageScale(.small)
                     .ink(.quiet, on: .field)
                     .accessibilityHidden(true)
-                // The title is whole at any text size. The question under
-                // it gives up a line, and then itself, where the keyboard
-                // and the text size leave no room: the title, the way
-                // back and the field come first.
-                ViewThatFits(in: .vertical) {
-                    words(lines: 2)
-                    words(lines: 1)
-                    words(lines: 0)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(note.title).font(ChatType.label).fixedSize(horizontal: false, vertical: true)
+                    if asking, let prompt = note.prompt {
+                        Text(verbatim: prompt).font(ChatType.caption).ink(.quiet, on: .field).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel([note.title, note.prompt].compactMap { $0 }.joined(separator: ", "))
@@ -397,16 +398,6 @@ struct AnsweringNoteView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, ChatSpace.edge)
-    }
-
-    /// The title over as many lines of the question as `lines`.
-    private func words(lines: Int) -> some View {
-        VStack(alignment: .leading, spacing: ChatSpace.pair) {
-            Text(note.title).font(ChatType.label).fixedSize(horizontal: false, vertical: true)
-            if lines > 0, let prompt = note.prompt {
-                Text(verbatim: prompt).font(ChatType.caption).ink(.quiet, on: .field).lineLimit(lines).fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 
