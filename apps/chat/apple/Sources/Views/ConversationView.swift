@@ -41,14 +41,15 @@ struct ConversationView: View {
         let _ = Meter.shared.count(.body, "Transcript")
         return TranscriptScroll(
             opens: screen.opens, anchor: opening(screen), seeks: screen.seeks, sends: screen.sends, visit: screen.visit, above: screen.above,
+            last: screen.approvals.last ?? TranscriptPiece.lastRow(of: screen.turns, failures: screen.failures.turns),
+            count: screen.turns.count,
             first: { TranscriptPiece.firstRow(among: $0, of: screen.turns) },
             looked: { atBottom = $0 },
             released: { host.send(.followEnded(key: key, by: $0)) }
         ) {
-            LazyVStack(alignment: .leading, spacing: ChatSpace.turns) {
+            TranscriptStack {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
             }
-            .scrollTargetLayout()
             .transcriptMargins()
             .environment(\.recordTitles, screen.titles)
             .environment(\.openThread, OpenThreadAction(host: host, scene: scene))
@@ -217,6 +218,15 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// them, which the transcript is kept at where it does not follow its
     /// end.
     var above: RowsAbove?
+    /// The transcript's last row, by the id the scroll view knows it by:
+    /// what the end is asked for by while that row is not on screen
+    /// (`go(to:)`). Less than the room for the transcript stands under it
+    /// (what a chat is doing, never a row of its own height). Nil where
+    /// there is none, and the end is then a place.
+    var last: String?
+    /// How many turns the transcript holds: few are laid out whole
+    /// (`whole`).
+    var count = 0
     /// The first, in the transcript's order, of the rows named: the rows on
     /// screen come in no order this view knows.
     var first: ([String]) -> String? = { $0.first }
@@ -249,9 +259,27 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     @State private var reach = TranscriptReach()
     @State private var before = RowsBefore()
     @State private var places = RowPlaces()
+    /// Counts the times the scroll view was made anew to stand at its end
+    /// (`startOver`).
+    @State private var starts = 0
+    /// The rows are laid out whole, in a stack that is not lazy: said when
+    /// the scroll view is made with its first rows and kept while it
+    /// lives, since a stack that changed its kind would make every row
+    /// anew under its reader. Nil until there are rows.
+    ///
+    /// A lazy stack guesses the height of the rows it has not laid out
+    /// from the ones it has. With a few rows of very unlike heights (a
+    /// line of the person's over a reply ten screens tall, which every
+    /// long reply is at the largest text sizes) the guess is off by
+    /// screens, the scroll view's own anchor stands it at the end of the
+    /// guess, past the rows, and no row is laid out there to take the
+    /// guess back: an empty screen. A transcript of a few turns costs
+    /// little to lay out whole, and then nothing is guessed.
+    @State private var whole: Bool?
 
     init(
         opens: TranscriptOpening, anchor: String? = nil, seeks: Bool = false, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
+        last: String? = nil, count: Int = 0,
         first: @escaping ([String]) -> String? = { $0.first },
         looked: @escaping (Bool) -> Void = { _ in },
         released: @escaping (TranscriptFollow.Release) -> Void = { _ in },
@@ -264,6 +292,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         self.sends = sends
         self.visit = visit
         self.above = above
+        self.last = last
+        self.count = count
         self.first = first
         self.looked = looked
         self.released = released
@@ -272,9 +302,19 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         _follow = State(initialValue: TranscriptFollow(opening: opens))
     }
 
+    /// A transcript of this many turns or fewer is laid out whole.
+    static var few: Int { 12 }
+    /// And one of up to this many where it was found with no row on screen.
+    static var fewAtMost: Int { 60 }
+
+    /// Whether the rows are laid out whole: as was said when the scroll
+    /// view was made, and until then by how many there are.
+    private var laysOutWhole: Bool { whole ?? (count <= Self.few) }
+
     var body: some View {
         let _ = before.drawn(above: above, seen: seen, places: places)
         ScrollViewReader { reader in
+            let _ = reach.reader = reader
             scroll
                 // A chat with more than its reader had seen opens at the
                 // first of it, and does not follow its end until they come
@@ -295,6 +335,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                     place(reader)
                 }
                 .onChange(of: above) { _, above in keep(reader, at: above) }
+                .onChange(of: last != nil, initial: true) { _, rows in
+                    if rows, whole == nil { whole = count <= Self.few }
+                }
                 .onChange(of: atEnd && follow.following, initial: true) { _, at in looked(at) }
         }
     }
@@ -338,11 +381,18 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     }
 
     private var scroll: some View {
-        ScrollView { rows.environment(\.rowPlaces, places) }
+        ScrollView { rows.environment(\.rowPlaces, places).environment(\.transcriptWhole, laysOutWhole) }
+            // Made anew when its first rows arrive, and when it is found
+            // with none on screen (`startOver`): a scroll view that is
+            // made with its rows stands at its own end by the anchor
+            // below, where one that is sent there afterwards goes by a
+            // height the lazy stack has guessed.
+            .id(TranscriptStart(rows: last != nil, again: starts, whole: laysOutWhole))
             .scrollPosition($position)
             // A chat opens at its end, and a short one lies from the top: it
-            // has nothing to follow until it outgrows the screen.
-            .defaultScrollAnchor(opens == .end ? .bottom : .top, for: .initialOffset)
+            // has nothing to follow until it outgrows the screen. One made
+            // anew while it follows its end stands at it too.
+            .defaultScrollAnchor(opens == .end || follow.following ? .bottom : .top, for: .initialOffset)
             .defaultScrollAnchor(.top, for: .alignment)
             .onScrollPhaseChange { _, phase in
                 switch phase {
@@ -406,6 +456,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 // piece of text: whether the end is near is said apart
                 // from it, in either order.
                 if rows != seen { seen = rows }
+                // No row on screen, it may be: a transcript that follows
+                // its end is then not at it, whatever the scroll view says
+                // of its place.
+                if rows.isEmpty { hold() }
             }
             .onChange(of: sends) { _, _ in take(follow.sent()) }
             .onChange(of: front) { _, front in
@@ -518,12 +572,82 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// composer gaining or losing a line), the scroll view there goes past
     /// its end by the inset, and the transcript is a blank screen. A Mac's
     /// scroll view takes a place by another measure and its edge exactly.
+    ///
+    /// And only for the last of the way. `end` is worked out from the
+    /// content's height, which a lazy stack guesses for the rows it has
+    /// not laid out: a guess too tall puts the place past the rows there
+    /// are, the stack lays none out there and so takes nothing back, and
+    /// the scroll view says it is at its end over a blank screen. So while
+    /// the end of the transcript's last row is further than the room from
+    /// where it would stand, or the row is not laid out, the end is asked
+    /// for by that row. Nearer, the place finishes the move, and not while
+    /// it is more than the room away: the row's end is at most that far
+    /// from the content's, so a place further off is a guess the stack has
+    /// yet to take back, and what the scroll view says next asks again.
+    /// With no row on screen nothing is asked for here: the rows have yet
+    /// to say where they stand, or none is laid out (`startOver`).
+    ///
+    /// Which rows are on screen is the rows' own word (`RowPlaces`). The
+    /// scroll view's list of them (`seen`) is told once a frame, and where
+    /// it was told twice in one it has stayed empty over rows that were
+    /// drawn.
     private func go(to end: Double) {
         #if os(macOS)
         position.scrollTo(edge: .bottom)
         #else
-        position.scrollTo(y: end)
+        let room = reach.measure.room
+        if let last, !places.ends(last, near: room) {
+            guard places.shows(in: room), let reader = reach.reader else { return }
+            // Let go of first: a position still bound to a place is put
+            // back there at the next change.
+            position = ScrollPosition(idType: String.self)
+            reader.scrollTo(last, anchor: .bottom)
+        } else if last == nil || abs(end - reach.measure.top) <= room {
+            position.scrollTo(y: end)
+        }
         #endif
+    }
+
+    /// There are rows, more than the room holds, and none is on screen:
+    /// the scroll view stands past them. A row asked for by its id is put
+    /// by the stack's guess too where the rows before it are not laid out,
+    /// and a stack that stands past its rows lays none out and keeps its
+    /// guess, so neither a place nor a row asked for again moves it. An
+    /// iPhone's and an iPad's fault: a Mac's scroll view is sent to its
+    /// edge, and its rows do not say where they stand.
+    private var lost: Bool {
+        #if os(iOS)
+        laidOut && last != nil && reach.measure.content > reach.measure.room && !places.shows(in: reach.measure.room)
+        #else
+        false
+        #endif
+    }
+
+    /// A transcript that follows its end and has no row on screen is made
+    /// anew, which stands it at its end by the scroll view's own anchor;
+    /// laid out whole where it is not too long for that, since the anchor
+    /// goes by the stack's guess too and has been seen to stand a lazy
+    /// one past its rows time after time. After a moment, since a row
+    /// says where it stands a little after it has moved; and a few times
+    /// at most, counted until it is found with a row on screen.
+    private func startOver() {
+        guard !reach.starting, reach.started < 3 else { return }
+        reach.starting = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            reach.starting = false
+            guard follow.following, !reach.touched else { return }
+            guard lost else {
+                reach.started = 0
+                return
+            }
+            reach.started += 1
+            // Let go of first: the scroll view made anew would be put at
+            // the place this one was last sent to.
+            position = ScrollPosition(idType: String.self)
+            if count <= Self.fewAtMost { whole = true }
+            starts += 1
+        }
     }
 
     /// Holds a transcript that follows its end to it, wherever the scroll
@@ -534,7 +658,12 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// so a move lost to a change under way is made good: a few times for
     /// one reason, never in a loop.
     private func hold() {
-        guard follow.following, !reach.touched, !reach.inMotion, let end = reach.measure.away else {
+        guard follow.following, !reach.touched, !reach.inMotion else {
+            reach.asked = 0
+            return
+        }
+        if lost { startOver() }
+        guard let end = reach.measure.away else {
             reach.asked = 0
             return
         }
@@ -613,6 +742,34 @@ struct WheelWatcher: NSViewRepresentable {
 }
 #endif
 
+/// What a transcript's scroll view is made anew for: its first rows, and
+/// each time it was found past them.
+struct TranscriptStart: Hashable {
+    var rows: Bool
+    var again: Int
+    var whole: Bool
+}
+
+extension EnvironmentValues {
+    /// The transcript's rows are laid out whole (`TranscriptScroll.whole`).
+    @Entry var transcriptWhole = false
+}
+
+/// The stack a transcript's rows lie in: lazy, or whole where its scroll
+/// view says so.
+struct TranscriptStack<Rows: View>: View {
+    @Environment(\.transcriptWhole) private var whole
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        if whole {
+            VStack(alignment: .leading, spacing: ChatSpace.turns) { rows }.scrollTargetLayout()
+        } else {
+            LazyVStack(alignment: .leading, spacing: ChatSpace.turns) { rows }.scrollTargetLayout()
+        }
+    }
+}
+
 /// Where a transcript's scroll view stands, as it last said: read when a
 /// rule needs it. A reference the view holds, so a point scrolled writes it
 /// and draws nothing.
@@ -663,6 +820,13 @@ final class TranscriptReach {
     /// How many times in a row the end was asked for and not reached, with
     /// the content and the room as they are in `askedOf`.
     var asked = 0
+    /// The scroll view's own way to a row, handed over each time the body
+    /// is made.
+    var reader: ScrollViewProxy?
+    /// The transcript is waiting to see whether it has a row on screen,
+    /// and how many times it was made anew since one was.
+    var starting = false
+    var started = 0
     var askedOf: [Double] = []
 }
 
@@ -697,7 +861,7 @@ struct TranscriptRows: View {
         // A sub-agent's asks: its own tool rows are in its own
         // conversation, so they wait here.
         ForEach(screen.approvals, id: \.self) { id in
-            if let card = screen.cards[id]?.approval { ApprovalCardView(id: id, card: card) }
+            if let card = screen.cards[id]?.approval { ApprovalCardView(id: id, card: card).placed(id) }
         }
         ConversationStatus(screen: screen, key: key)
         if let technical = screen.technical {

@@ -921,6 +921,10 @@ run = ".mise/apple.sh sim:chat"
 description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app target's"
 run = ".mise/apple.sh test:chat"
 
+[tasks."apple:test:chat:sim"]
+description = "Run Substrate Chat's app tests in the iOS app on a simulator (SUBSTRATE_APPLE_SIMULATOR, else the booted one): what an iPhone's scroll view does and a Mac's does not"
+run = ".mise/apple.sh test:chat:sim"
+
 [tasks."apple:measure:chat"]
 description = "Run Substrate Chat against its fixture and print what a streamed reply and typing cost: main-thread time, presenter runs, body evaluations and parses per flush; [mac|sim|all], the simulator from SUBSTRATE_APPLE_SIMULATOR"
 run = ".mise/apple.sh measure:chat"

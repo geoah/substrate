@@ -341,6 +341,13 @@ struct TranscriptPiece: Identifiable {
 }
 
 extension TranscriptPiece {
+    /// The id of the transcript's last row: the last piece of its last
+    /// turn, made from that turn alone.
+    static func lastRow(of turns: [TurnPresentation], failures: [String: FailurePresentation] = [:]) -> String? {
+        guard let turn = turns.last else { return nil }
+        return pieces(of: [turn], failures: failures).last?.id
+    }
+
     /// The turn of the last of `rows` (the ids of the rows on screen) in
     /// the transcript's order: the last turn a reader can see.
     static func lastTurn(among rows: [String], of turns: [TurnPresentation]) -> String? {
