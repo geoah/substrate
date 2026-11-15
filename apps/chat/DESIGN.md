@@ -833,8 +833,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   the insets change. On a Mac the bottom edge is exact and is what is
   used. A Mac's scroll view says nothing of a wheel or a trackpad as a
   touch's phases do, so the events themselves are watched: from the first
-  one turned up the transcript is yours, however little it has moved, and
-  a quarter of a second after the last it has come to rest.
+  one turned up the transcript is yours, however little it has moved. It
+  has come to rest a quarter of a second after the last event, and never
+  while fingers lie on the trackpad. The glide after a flick lets go of
+  nothing, so a send or Jump to Latest made while it lasts keeps the end.
   `scrollDismissesKeyboard(.interactively)`.
 - **Where it opens**: a chat with more than the person had read opens at
   the first turn they had not, under a "New" line; where all of that fits

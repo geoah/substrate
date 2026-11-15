@@ -327,7 +327,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 // from it, in either order.
                 if rows != seen { seen = rows }
             }
-            .onChange(of: sends) { _, _ in move(follow.sent()) }
+            .onChange(of: sends) { _, _ in take(follow.sent()) }
             .onChange(of: front) { _, front in
                 // Back in front: a chat that was at its end is at its end,
                 // whatever arrived meanwhile.
@@ -342,17 +342,21 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         // in the same breath, and a change of height alone takes a
         // transcript that follows back to its end. From then, while it
         // turns, the transcript is the reader's, however little it has
-        // moved, and a quarter of a second after its last event it has
-        // come to rest, which is when the rule is asked. Turned down at
-        // an end that is followed it changes nothing: the glide of a
-        // flick goes on for seconds, and a reply that grew meanwhile
-        // would read as the reader having left.
+        // moved. It has come to rest a quarter of a second after its last
+        // event, and never while fingers lie on a trackpad, however long
+        // they pause; that is when the rule is asked. The glide after a
+        // flick is no hand: it lets go of nothing, so a send or Jump to
+        // Latest made while it lasts keeps the end. Turned down at an
+        // end that is followed it changes nothing: a glide goes on for
+        // seconds, and a reply that grew meanwhile would read as the
+        // reader having left.
         .background {
-            WheelWatcher { up in
-                if up, follow.following { leave() }
+            WheelWatcher { wheel in
+                if wheel.up, !wheel.gliding, follow.following { leave() }
                 guard !follow.following else { return }
                 reach.touched = true
                 reach.wheel += 1
+                guard !wheel.held else { return }
                 let turn = reach.wheel
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(250))
@@ -366,7 +370,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             .scrollDismissesKeyboard(.interactively)
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .bottom) {
-                bar(atEnd, seen) { move(follow.jumped()) }
+                bar(atEnd, seen) { take(follow.jumped()) }
             }
     }
 
@@ -385,6 +389,16 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     private func leave() {
         follow.touched()
         position = ScrollPosition(idType: String.self)
+    }
+
+    /// A send and Jump to Latest take the transcript from whatever hand
+    /// was on it: a rest that hand was still to come to is not asked
+    /// after, or it would let go of the end while the move there is under
+    /// way.
+    private func take(_ move: TranscriptFollow.Move) {
+        reach.touched = false
+        reach.wheel += 1
+        self.move(move)
     }
 
     /// Does what the rule answered.
@@ -452,10 +466,20 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
 
 #if os(macOS)
 /// Tells of a wheel, or two fingers on a trackpad, turned over the view it
-/// stands behind, and whether up: the scroll view over it takes the event
-/// itself, so it is watched for on its way there and passed on as it came.
+/// stands behind: the scroll view over it takes the event itself, so it is
+/// watched for on its way there and passed on as it came.
 struct WheelWatcher: NSViewRepresentable {
-    let turned: (_ up: Bool) -> Void
+    /// One event of a wheel.
+    struct Wheel {
+        /// Turned up, towards the transcript's start.
+        var up: Bool
+        /// Fingers lie on a trackpad: it is not at rest, moving or not.
+        var held = false
+        /// The glide after the fingers left.
+        var gliding = false
+    }
+
+    let turned: (Wheel) -> Void
 
     func makeNSView(context: Context) -> Watching {
         let view = Watching()
@@ -468,7 +492,7 @@ struct WheelWatcher: NSViewRepresentable {
     }
 
     final class Watching: NSView {
-        var turned: (_ up: Bool) -> Void = { _ in }
+        var turned: (Wheel) -> Void = { _ in }
         private var monitor: Any?
 
         override func viewDidMoveToWindow() {
@@ -477,15 +501,22 @@ struct WheelWatcher: NSViewRepresentable {
             monitor = nil
             guard window != nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                if let self, event.window === self.window { self.turned(by: event.scrollingDeltaY, at: event.locationInWindow) }
+                if let self, event.window === self.window {
+                    self.turned(
+                        by: event.scrollingDeltaY, at: event.locationInWindow,
+                        held: !event.phase.isDisjoint(with: [.mayBegin, .began, .changed, .stationary]),
+                        gliding: !event.momentumPhase.isEmpty)
+                }
                 return event
             }
         }
 
         /// A wheel turned by `delta` (up is more than none) at a point of
-        /// the window.
-        func turned(by delta: CGFloat, at point: CGPoint) {
-            if delta != 0, convert(bounds, to: nil).contains(point) { turned(delta > 0) }
+        /// the window. An event that moves nothing still says whether
+        /// fingers lie on a trackpad, or have left it.
+        func turned(by delta: CGFloat, at point: CGPoint, held: Bool = false, gliding: Bool = false) {
+            guard convert(bounds, to: nil).contains(point) else { return }
+            turned(Wheel(up: delta > 0, held: held, gliding: gliding))
         }
 
         isolated deinit {
