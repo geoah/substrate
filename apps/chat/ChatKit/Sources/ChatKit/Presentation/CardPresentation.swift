@@ -52,6 +52,11 @@ public struct CardResolution: Codable, Hashable, Sendable {
     public struct Fact: Codable, Hashable, Sendable {
         public var label: String
         public var value: String
+
+        public init(label: String, value: String) {
+            self.label = label
+            self.value = value
+        }
     }
 
     public var card: CardReference

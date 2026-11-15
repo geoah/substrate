@@ -32,6 +32,15 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     private var holdAfter: Int?
     /// The runs written a line at a time, by thread.
     private var scripts: [String: Script] = [:]
+    /// The `agents` feature's revision the discovery document states: 0
+    /// for a server from before it, as the measurement runs against.
+    private let agents: Int
+    /// A chat's rows where a picture sets them whole, by thread; and the
+    /// records served by path under `/api/v1/` (a question's, an
+    /// approval's), each with what a write of it leaves.
+    private var pages: [String: String] = [:]
+    private var records: [String: String] = [:]
+    private var written: [String: (record: String, thread: String, page: String)] = [:]
 
     /// A run a test writes a line at a time (`step`), so every screen
     /// between its first piece and its stored rows can be looked at: the
@@ -51,10 +60,28 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         var page: String? { rows.last { $0.after <= out }?.page }
     }
 
-    init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace()) {
+    init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace(), agents: Int = 0) {
         rows = [ChatFixtures.long: 200, ChatFixtures.full: 500]
         self.reply = reply
         self.pace = pace
+        self.agents = agents
+    }
+
+    /// A chat that holds exactly this page of rows.
+    func rows(_ thread: String, page: String) {
+        lock.withLock { pages[thread] = page }
+    }
+
+    /// A chat whose reply asked the person something: its rows, and the
+    /// card's record, which a write resolves as the fixture says, with the
+    /// rows the thread holds from then. `resolved` serves it as ended from
+    /// the start.
+    func ask(_ asked: ChatFixtures.Asked, resolved: Bool = false) {
+        lock.withLock {
+            pages[asked.thread] = resolved ? asked.rowsResolved : asked.rows
+            records[asked.path] = resolved ? asked.resolved : asked.pending
+            written[asked.path] = (asked.resolved, asked.thread, asked.rowsResolved)
+        }
     }
 
     /// A chat that holds one settled turn: `message`, answered with `reply`.
@@ -146,7 +173,20 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         func json(_ body: String, status: Int = 200) -> LineStream { LineStream(head: head(status), body: Data(body.utf8)) }
         let missing = json(#"{"error":{"code":"not_found","message":"The fixture holds nothing there."}}"#, status: 404)
 
-        if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery) }
+        if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery(agents: agents)) }
+        // A card's record: read, and resolved by the one write a card makes.
+        if let range = path.range(of: "/api/v1/"), let held = lock.withLock({ records[String(path[range.upperBound...])] }) {
+            let key = String(path[range.upperBound...])
+            guard method == "PATCH" else { return json(held) }
+            let next = lock.withLock { () -> String in
+                guard let after = written[key] else { return held }
+                records[key] = after.record
+                pages[after.thread] = after.page
+                versions[after.thread] = (versions[after.thread] ?? 3) + 1
+                return after.record
+            }
+            return json(next)
+        }
         // A run whose stream was dropped: the thread and its stream are
         // out of reach, the rest answers.
         if path.contains("/llm/thread/"), lock.withLock({ scripts.values.contains(where: \.dropped) }) {
@@ -167,6 +207,16 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         if method == "POST", path.hasSuffix("/chat") {
             let body = request.httpBody.flatMap { JSONValue.parse(String(decoding: $0, as: UTF8.self)) }
             if let thread = body?["thread"]?.string, lock.withLock({ scripts[thread] != nil }) {
+                // A message into the run while it is written joins it: the
+                // script's `$Q` is the id it was sent under.
+                if let id = body?["messageId"]?.string, lock.withLock({ scripts[thread].map { $0.out > 0 && !$0.done } ?? false }) {
+                    lock.withLock {
+                        guard var script = scripts[thread] else { return }
+                        script.lines = script.lines.map { $0.replacingOccurrences(of: "$Q", with: id) }
+                        script.rows = script.rows.map { ($0.after, $0.page.replacingOccurrences(of: "$Q", with: id)) }
+                        scripts[thread] = script
+                    }
+                }
                 return LineStream(head: head(200, "application/x-ndjson"), lines: scripted(thread))
             }
             return LineStream(
@@ -198,8 +248,14 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 return LineStream(head: head(200, "application/x-ndjson"), lines: running ? scripted(thread) : idle)
             }
             guard !id.contains("/") else { return missing }
-            let (version, running) = lock.withLock { (versions[id] ?? 3, scripts[id].map { $0.out > 0 && !$0.done } ?? false) }
-            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : "ok"))
+            let (version, running, stopped) = lock.withLock {
+                // A run whose last line says it was stopped left its thread so.
+                (
+                    versions[id] ?? 3, scripts[id].map { $0.out > 0 && !$0.done } ?? false,
+                    scripts[id].map { $0.done && $0.lines.last?.contains(#""status":"stopped""#) == true } ?? false
+                )
+            }
+            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : stopped ? "stopped" : "ok"))
         }
         return missing
     }
@@ -212,6 +268,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     }
 
     private func transcript(_ thread: String) -> String {
+        if let page = lock.withLock({ pages[thread] }) { return page }
         if let script = lock.withLock({ scripts[thread] }) { return script.page ?? ChatFixtures.page([]) }
         let (held, turns) = lock.withLock { (rows[thread] ?? 4, answered[thread] ?? []) }
         guard let last = turns.last else { return ChatFixtures.transcript(thread, rows: held) }
@@ -250,14 +307,18 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     }
 
     /// A released server's discovery document, with no app authorization:
-    /// the session is a password one.
-    private static let discovery = #"""
-        {"versions":[{"name":"v1","status":"served"}],
-         "server":{"version":"v0.123.1","build":"0123456789abcdef0123456789abcdef01234567"},
-         "changelog":{"horizon":0},"vocabulary":{"dialect":3},
-         "features":[{"name":"records","stability":"stable","revision":1,"surfaces":["rest"]}],
-         "registration":{"inviteRequired":false,"totpRequired":false}}
-        """#
+    /// the session is a password one. Its `agents` feature is listed where
+    /// a picture needs what a revision of it brought.
+    private static func discovery(agents: Int) -> String {
+        let listed = agents > 0 ? #",{"name":"agents","stability":"experimental","revision":\#(agents),"surfaces":["rest"]}"# : ""
+        return #"""
+            {"versions":[{"name":"v1","status":"served"}],
+             "server":{"version":"v0.123.1","build":"0123456789abcdef0123456789abcdef01234567"},
+             "changelog":{"horizon":0},"vocabulary":{"dialect":3},
+             "features":[{"name":"records","stability":"stable","revision":1,"surfaces":["rest"]}\#(listed)],
+             "registration":{"inviteRequired":false,"totpRequired":false}}
+            """#
+    }
 }
 
 /// A session kept in memory, for a fixture: nothing reaches the Keychain.

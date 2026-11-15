@@ -88,4 +88,47 @@ import Testing
         #expect(folded.turns.map(\.content) == [run.message, run.first, run.second])
         #expect(folded.turns[1].tools.map(\.ok) == [true] && folded.turns[1].reasoning == run.thinking)
     }
+
+    @Test func aCardsFixtureIsRowsThatAskAndARecordThatWaitsThenEnded() throws {
+        for (asked, kind) in [(ChatFixtures.question(), Kinds.interaction), (ChatFixtures.approval(), Kinds.approval)] {
+            let record = { (json: String) in try ValueCoding.decode(Record.self, from: try #require(JSONValue.parse(json))) }
+            let pending = try record(asked.pending)
+            let resolved = try record(asked.resolved)
+            #expect(pending.kind == kind && pending.id == asked.card.id && asked.path == "\(kind)/\(pending.id)")
+            #expect(ChatApp.waits(pending) && !ChatApp.waits(resolved) && resolved.version > pending.version)
+            // The rows hold the call that asked, stamped with the record
+            // it landed; once it ended, the line that says so follows.
+            let waiting = transcript(of: try records(asked.rows).reversed())
+            let call = try #require(waiting.last?.tools.first)
+            #expect((interactionID(of: call) ?? approvalID(of: call)) == pending.id)
+            let ended = transcript(of: try records(asked.rowsResolved).reversed())
+            #expect(ended.contains { interactionNotice($0)?.interactionID == pending.id || approvalNotice($0)?.approvalID == pending.id })
+            #expect(ended.last?.role == .assistant)
+        }
+        // And the notifications made of them take an answer.
+        let made = ChatFixtures.notifications()
+        #expect(
+            made.requests.map(\.category) == [
+                ChatNotifications.replyCategory, ChatNotifications.questionCategory(ChatFixtures.question().card.id), ChatNotifications.approvalCategory,
+            ])
+        #expect(made.categories.last?.actions.map(\.title) == ["Tuesday at 9:00", "Wednesday at 8:30", "Thursday at 10:15"])
+        #expect(made.requests.last?.body?.contains("To: sam@example.com") == true)
+    }
+
+    @Test func aRunAMessageJoinsFoldsWithTheMessageWhereItsRowStands() throws {
+        for stopped in [false, true] {
+            let run = ChatFixtures.queued(thread: "t-live", stopped: stopped, id: "q1")
+            let events = try run.lines.map { try #require(AgentEvent.parse($0), "unread: \($0)") }
+            #expect(events[run.joins].kind == .messageQueued && events[run.joins].id == "q1")
+            #expect(events.contains { $0.kind == .messageTaken } == !stopped)
+            var live = LiveRows()
+            live.send(run.message, seq: 1, baseline: -1, at: Date())
+            live.hear(Array(events.dropFirst().dropLast()))
+            #expect(live.turns.map(\.id) == (stopped ? ["sent-1", "turn-1", "q1"] : ["sent-1", "turn-1", "q1", "turn-4"]))
+            let last = try #require(run.rows.last)
+            let folded = TurnFold.fold(StoredTurns(transcript(of: try records(last.page).reversed())), live)
+            #expect(folded.turns.map(\.role) == (stopped ? [.user, .assistant, .user] : [.user, .assistant, .user, .assistant]))
+            #expect(folded.turns[2].content == run.joining && folded.turns[2].id == "q1")
+        }
+    }
 }

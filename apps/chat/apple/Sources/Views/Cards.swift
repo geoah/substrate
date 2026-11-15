@@ -265,6 +265,12 @@ struct ApprovalCardView: View {
     }
 }
 
+extension EnvironmentValues {
+    /// A call's row is drawn opened where its card ended: for a picture of
+    /// what the row opens to. False in the app, where a tap opens it.
+    @Entry var opensEndedCards = false
+}
+
 /// A card's answer or decision that did not go through, in the card: the one
 /// component every failure is drawn by, with the button that tries again
 /// where trying again can help.
@@ -279,19 +285,16 @@ struct CardFailureView: View {
     }
 }
 
-/// How a card ended, under the call that asked, when its row is opened: who
-/// decided and when, then each thing that was asked with what was answered,
-/// or the change as it was applied or not taken. What was asked is on the
-/// card's record, read when this is first shown.
+/// How a card ended, under the call that asked, when its row is opened: each
+/// thing that was asked with what was answered, or the change as it was
+/// applied or not taken, then when. Who ended it is the row's own line. What
+/// was asked is on the card's record, read when this is first shown.
 struct ResolvedCardView: View {
     @Environment(ChatHost.self) private var host
     let resolution: CardResolution
 
     var body: some View {
         VStack(alignment: .leading, spacing: ResolvedCardView.spacing) {
-            Text(when)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.quietText)
             if resolution.loading {
                 ProgressView().controlSize(.small)
             }
@@ -306,6 +309,13 @@ struct ResolvedCardView: View {
             if let panel = resolution.panel {
                 ChangePanel(panel: panel)
             }
+            if let at = resolution.at {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ResolvedCardView.whenLabel).font(.caption).foregroundStyle(.quietText)
+                    Text(at.formatted(date: .abbreviated, time: .shortened)).font(.footnote)
+                }
+                .accessibilityElement(children: .combine)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: resolution.card) {
@@ -316,12 +326,9 @@ struct ResolvedCardView: View {
     /// Between two facts of a folded card.
     static let spacing: CGFloat = 8
 
-    /// "You answered · 14 Nov 2026 at 09:41", or the words alone where the
-    /// record says no time.
-    private var when: String {
-        guard let at = resolution.at else { return resolution.label }
-        return "\(resolution.label) · \(at.formatted(date: .abbreviated, time: .shortened))"
-    }
+    /// Over the instant the card ended, where its record says one. Who
+    /// ended it and how is the row's own line, above.
+    static let whenLabel = "When"
 }
 
 /// Under a message sent while a reply was being written: it waits for the

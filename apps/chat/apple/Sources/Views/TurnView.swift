@@ -459,6 +459,7 @@ extension EnvironmentValues {
 struct ToolCallRow: View {
     @Environment(\.openThread) private var openThread
     @Environment(\.recordDirectory) private var directory
+    @Environment(\.opensEndedCards) private var opensEnded
     let tool: ToolRowPresentation
     @State private var open = false
     @State private var raw = false
@@ -499,7 +500,7 @@ struct ToolCallRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint(open ? "Hides the details" : "Shows the details")
-            if open {
+            if open || (opensEnded && tool.resolution != nil) {
                 VStack(alignment: .leading, spacing: 8) {
                     // A card that ended: what was asked and what was answered.
                     if let resolution = tool.resolution { ResolvedCardView(resolution: resolution) }
