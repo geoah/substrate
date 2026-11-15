@@ -53,8 +53,10 @@ public struct Diagnostic: Codable, Hashable, Sendable {
     /// A word written in this source.
     func with(_ name: StaticString, word: StaticString) -> Diagnostic { adding(name, "\(word)") }
 
-    /// A word of one of the app's own closed sets.
-    func with<Word: RawRepresentable>(_ name: StaticString, _ word: Word?) -> Diagnostic where Word.RawValue == String {
+    /// A word of one of the app's own closed sets: a case of an enum that
+    /// lists its cases, so no type that only wraps a string (a key, an
+    /// id) can be handed in for one.
+    func with<Word: RawRepresentable & CaseIterable>(_ name: StaticString, _ word: Word?) -> Diagnostic where Word.RawValue == String {
         guard let word else { return self }
         return adding(name, Self.plain(word.rawValue) ? word.rawValue : "other")
     }

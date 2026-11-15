@@ -481,7 +481,7 @@ extension ChatApp {
 }
 
 /// Why a mark's write did not land.
-enum MarkRefusal: String, Codable, Sendable {
+enum MarkRefusal: String, Codable, Sendable, CaseIterable {
     /// No answer, or one that says nothing of the write: tried again.
     case later
     /// The server's own refusal, which trying again cannot change.
