@@ -1300,7 +1300,19 @@ bubble is a tinted fill. The transcript softens under the composer with
   rows read on opening bring the line with them: the chat is put at it
   once they are laid out, and does not follow its end in between. The
   line stays while the chat is open and is gone the next time
-  ([Read state](#read-state)). A chat opened at a message, from a search,
+  ([Read state](#read-state)). Where the person read through a message
+  further back than the rows held (the newest 500), the line is above
+  them: the rows before are read toward it, as for a search's hit, five
+  reads of 200 at most. While that is out the chat stands at the top of
+  what it holds, under the row at the top, which says "Finding where you
+  left off…", and no line is drawn where none is known
+  (`ConversationScreen.seeks`). Once the rows hold the message, the line
+  is drawn and the chat is put at it, unless its reader has touched,
+  scrolled, sent or jumped by then. A line more than about 1,500 messages
+  back is not reached, and neither is one past a read that failed: the
+  chat stays at the top of what was read, a line there says "New from
+  above", and the row over it, "Earlier messages", reads further. A chat
+  opened at a message, from a search,
   opens at that message's turn the same way, and each time it is opened at
   one again while it is shown (`ConversationScreen.visit`); where the rows
   held do not reach the message, the rows before them are read until they
