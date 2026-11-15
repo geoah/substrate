@@ -206,7 +206,8 @@ enum ChatColours {
                 Pair(name: "the accent as words on a \(tone) card: a link", text: accent, fill: card),
             ]
         }
-        return out
+        // A reply's code and its tables (`CodeColours.swift`).
+        return out + codePairs
     }
 }
 

@@ -13,7 +13,10 @@ import SubstrateKit
 /// `tool`, `answering` and `done` stop there; `reconnecting` drops the
 /// stream part way and keeps the next from opening; `play` writes the whole
 /// run a line every 0.7 seconds; `long` shows the chat of 200 turns, with
-/// nothing running, for a transcript to scroll.
+/// nothing running, for a transcript to scroll. `reply:<name>` shows a chat
+/// that holds one settled reply of the fixtures: `week` (every block),
+/// `short`, `lines` (code with long lines), `tables`, `table` (a small
+/// one), or a language's name for its code sample.
 ///
 /// And how a person answers: `question` and `approval` show a card that
 /// waits, `words` the same question being answered in the person's own
@@ -25,13 +28,31 @@ import SubstrateKit
 /// and `notify-approval` post one of them, for its banner to be pulled open.
 @MainActor
 enum Demo {
-    static let asked = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO"]
+    /// From the environment, or as a launch argument (`-SUBSTRATE_CHAT_DEMO
+    /// <state>`), which is what a tool that launches the app on a
+    /// simulator can pass.
+    static let asked = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO"] ?? UserDefaults.standard.string(forKey: "SUBSTRATE_CHAT_DEMO")
     static let scene = "demo"
     static let thread = "t-live"
 
     private static var server: FixtureServer?
     private static let run = ChatFixtures.run(thread: thread)
     private static let joined = ChatFixtures.queued(thread: thread)
+    /// The chat a `reply:` state shows.
+    static let settled = "t-reply"
+
+    /// The reply a `reply:<name>` state shows.
+    private static var reply: String? {
+        guard let asked, asked.hasPrefix("reply:") else { return nil }
+        switch String(asked.dropFirst("reply:".count)) {
+        case "week": return ChatFixtures.reply
+        case "short": return ChatFixtures.short
+        case "lines": return ChatFixtures.longLines
+        case "tables": return ChatFixtures.tables
+        case "table": return ChatFixtures.smallTable
+        case let language: return CodeFixtures.reply([language])
+        }
+    }
 
     /// The states that are a card's: the chat that holds it, and whether
     /// it has ended.
@@ -59,6 +80,7 @@ enum Demo {
             server.script(thread, lines: run.lines, rows: run.rows)
         }
         if let card = card(asked) { server.ask(card.asked, resolved: card.resolved) }
+        if let reply { server.seed(settled, message: "Show me.", reply: reply) }
         self.server = server
         var parts = ChatHost.Parts.fixture(server)
         // The device's own service, for the notifications alone.
@@ -88,8 +110,8 @@ enum Demo {
             _ = await until { host.chats?.list.loading == false ? true : nil }
             if let only = notified(asked) { return await notify(only) }
             let card = card(asked)
-            host.send(.show(thread: asked == "long" ? ChatFixtures.long : card?.asked.thread ?? thread, scene: scene))
-            if asked == "long" { return }
+            host.send(.show(thread: asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread, scene: scene))
+            if asked == "long" || reply != nil { return }
             guard let key = await until({ host.chats?.scenes[scene]?.current }) else { return }
             _ = await until { host.conversation(key) != nil ? true : nil }
             if let card {

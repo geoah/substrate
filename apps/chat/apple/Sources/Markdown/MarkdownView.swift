@@ -2,19 +2,19 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// Parsed blocks, memoized by text, for the texts a view parses itself.
+/// Parsed rows, memoized by text, for the texts a view parses itself.
 @MainActor
 enum MarkdownCache {
-    private static var blocks: [String: [MarkdownBlock]] = [:]
+    private static var rows: [String: [MarkdownRow]] = [:]
     static var inlines: [String: InlineLine] = [:]
     private static var order: [String] = []
 
-    static func parse(_ text: String) -> [MarkdownBlock] {
-        if let hit = blocks[text] { return hit }
-        let parsed = Markdown.parse(text)
-        blocks[text] = parsed
+    static func parse(_ text: String) -> [MarkdownRow] {
+        if let hit = rows[text] { return hit }
+        let parsed = Markdown.rows(text, open: false)
+        rows[text] = parsed
         order.append(text)
-        if order.count > 400 { blocks[order.removeFirst()] = nil }
+        if order.count > 400 { rows[order.removeFirst()] = nil }
         return parsed
     }
 }
@@ -44,13 +44,13 @@ struct MarkdownView: View {
 
     var body: some View {
         let _ = Meter.shared.count(.body, "Markdown")
-        let blocks = rows.map { $0.map(\.block) } ?? MarkdownCache.parse(text)
+        let rows = rows.map(Array.init) ?? MarkdownCache.parse(text)
         // By position: the block being written keeps its view, and with it
         // where its code or its table was scrolled to. A finished block is
         // an equal value there, which is not drawn again.
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                BlockView(block: block)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                BlockView(block: row.block, code: row.code[...])
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -242,6 +242,20 @@ func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString 
 private struct BlockView: View {
     @Environment(\.missingRecords) private var missing
     let block: MarkdownBlock
+    /// The colours of the code blocks in this block, in the order they
+    /// stand (`MarkdownRow.code`).
+    let code: ArraySlice<CodeHighlight>
+
+    /// The colours of the code in each of `blocks`, which stand one after
+    /// another in this block from `start` of its own.
+    private func colours(_ blocks: [MarkdownBlock], from start: Int) -> [ArraySlice<CodeHighlight>] {
+        var at = start
+        return blocks.map { block in
+            let end = min(at + block.codeCount, code.endIndex)
+            defer { at = end }
+            return code[min(at, end) ..< end]
+        }
+    }
 
     var body: some View {
         let _ = Meter.shared.count(.body, "MarkdownBlock")
@@ -255,18 +269,23 @@ private struct BlockView: View {
                 .padding(.top, level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
         case let .code(language, text, _):
-            CodeBlock(language: language, text: text)
+            CodeBlockView(language: language, text: text, code: code.first)
         case let .quote(blocks):
+            let colours = colours(blocks, from: code.startIndex)
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(.tertiary)
                     .frame(width: 3)
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in BlockView(block: block) }
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in BlockView(block: block, code: colours[index]) }
                 }
                 .foregroundStyle(.secondary)
             }
         case let .list(ordered, start, items):
+            // Each item's code follows the code of the items before it.
+            let starts = items.reduce(into: [code.startIndex]) { starts, item in
+                starts.append((starts.last ?? 0) + item.blocks.reduce(0) { $0 + $1.codeCount })
+            }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -282,95 +301,17 @@ private struct BlockView: View {
                         }
                         .foregroundStyle(.secondary)
                         .frame(minWidth: ordered ? 22 : 12, alignment: .trailing)
+                        let colours = colours(item.blocks, from: starts[index])
                         VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(item.blocks.enumerated()), id: \.offset) { _, block in BlockView(block: block) }
+                            ForEach(Array(item.blocks.enumerated()), id: \.offset) { at, block in BlockView(block: block, code: colours[at]) }
                         }
                     }
                 }
             }
         case let .table(header, alignments, rows):
-            TableBlock(header: header, alignments: alignments, rows: rows)
+            TableBlockView(header: header, alignments: alignments, rows: rows)
         case .rule:
             Divider().padding(.vertical, 4)
-        }
-    }
-}
-
-private struct CodeBlock: View {
-    let language: String?
-    let text: String
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language ?? "code")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    copyToPasteboard(text)
-                    copied = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(1.5))
-                        copied = false
-                    }
-                } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.caption)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .buttonStyle(.borderless)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            Divider().opacity(0.5)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(text)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(12)
-            }
-        }
-        .background(Color.secondary.opacity(0.09), in: .rect(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5) }
-    }
-}
-
-private struct TableBlock: View {
-    @Environment(\.missingRecords) private var missing
-    let header: [String]
-    let alignments: [MarkdownAlignment]
-    let rows: [[String]]
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
-                        inline(cell, missing: missing).font(.subheadline.weight(.semibold))
-                            .gridColumnAlignment(alignment(i))
-                    }
-                }
-                Divider()
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            inline(cell, missing: missing).font(.subheadline)
-                        }
-                    }
-                }
-            }
-            .padding(12)
-        }
-        .background(Color.secondary.opacity(0.06), in: .rect(cornerRadius: 12))
-    }
-
-    private func alignment(_ i: Int) -> HorizontalAlignment {
-        switch i < alignments.count ? alignments[i] : .leading {
-        case .leading: .leading
-        case .center: .center
-        case .trailing: .trailing
         }
     }
 }
