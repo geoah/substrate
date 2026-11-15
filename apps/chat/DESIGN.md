@@ -1086,7 +1086,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   joiners, which draw nothing and break no line (`SpokenPiece`, in the
   kit). An iPhone and an iPad read a link from where it is, and their
   lines are as they were. A pill's link is read as its name on a Mac: the
-  kind is the tile's, and a link's words there are the line's own.
+  kind is the tile's, and a link's words there are the line's own. Words
+  selected in a reply on a Mac and copied carry the joiners, unseen, as
+  they carry the mark's own character and a pill's spaces; Copy, Share and
+  Select Text take the reply's own text and carry none.
 - **Sources**: under a finished reply, the web pages it links as numbered
   pills, once each, in the order it first cites them.
 - **Questions** (`ask`): a card with each question's options (one or many,
