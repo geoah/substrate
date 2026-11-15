@@ -212,7 +212,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     @State private var position = ScrollPosition(idType: String.self)
     @State private var follow: TranscriptFollow
     /// The chat was put at the row it opens at, which happens once, and
-    /// only once the transcript has a size to scroll in.
+    /// only once the transcript has a size to scroll in; or its reader
+    /// took it first, by a touch, a wheel, a send or Jump to Latest. Rows
+    /// that bring a line after that leave the transcript where they put
+    /// it.
     @State private var placed = false
     @State private var laidOut = false
     @State private var atEnd = true
@@ -276,8 +279,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             .onScrollPhaseChange { _, phase in
                 switch phase {
                 case .tracking, .interacting:
-                    // A finger on it: the reader's.
+                    // A finger on it: the reader's, and where it opens is
+                    // no longer the app's to say.
                     reach.touched = true
+                    placed = true
                     if follow.following { leave() }
                 case .idle:
                     // Come to rest: where a finger left it, that is the
@@ -359,6 +364,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         // reader having left.
         .background {
             WheelWatcher { wheel in
+                placed = true
                 if wheel.up, !wheel.gliding, follow.following { leave() }
                 guard !follow.following else { return }
                 reach.touched = true
@@ -397,6 +403,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// let go of with it: one still bound to a place would be put back
     /// there at the next change.
     private func leave() {
+        placed = true
         follow.touched()
         position = ScrollPosition(idType: String.self)
     }
@@ -406,6 +413,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// after, or it would let go of the end while the move there is under
     /// way.
     private func take(_ move: TranscriptFollow.Move) {
+        placed = true
         reach.touched = false
         reach.wheel += 1
         self.move(move)

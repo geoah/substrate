@@ -715,6 +715,32 @@ extension OffscreenTranscript {
         #expect(abs(try #require(stage.reach).offset - read.offset) < 2)
     }
 
+    /// A reader who moved the transcript before the line came is left
+    /// where they are: where a chat opens is the app's to say only until
+    /// its reader has said.
+    @Test(.timeLimit(.minutes(5)))
+    func aLineThatComesAfterItsReaderMovedLeavesThemThere() async throws {
+        let chat = Chat(rows: 30, line: nil)
+        let stage = Stage(chat)
+        try await stage.rest()
+        // Something arrives and is followed, as in a chat that is open,
+        // and then its reader goes up. (A scroll view the app has never
+        // moved takes this window's wheel back, which moves the clip view
+        // from outside it; one it has moved does not.)
+        chat.rows = 32
+        try await stage.rest()
+        stage.wheel(up: 500)
+        try await stage.rest()
+        let read = try #require(stage.reach)
+        try #require(read.below > TranscriptFollow.near, "not where its reader put it: \(read)")
+        chat.rows = 50
+        chat.line = 30
+        try await stage.rest()
+        let after = try #require(stage.reach)
+        #expect(abs(after.offset - read.offset) < 2, "taken from where its reader was: \(read) then \(after)")
+        #expect(chat.looked.last == false)
+    }
+
     /// Where what is new fits on one screen the scroll stops at the end,
     /// and the chat is at its end as one with nothing new is.
     @Test(.timeLimit(.minutes(5)))

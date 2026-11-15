@@ -866,7 +866,9 @@ bubble is a tinted fill. The transcript softens under the composer with
   under (a row streamed in this conversation keeps the id its stream gave
   it); the line is a row of the transcript above that turn's first, which
   is the row the scroll view is put at, once; and a chat opened there does
-  not follow its end until you come down to it.
+  not follow its end until you come down to it. A reader who has already
+  touched, scrolled, sent or jumped when the line arrives is left where
+  they are.
 
 ### New chat
 
