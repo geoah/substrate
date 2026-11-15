@@ -963,14 +963,35 @@ bubble is a tinted fill. The transcript softens under the composer with
   first words at the height it keeps, so a reply that settles moves
   nothing (Share arrives in the row's own height), and the reply that
   takes it over gains what the one before gives up. The last reply is the
-  assistant's last turn that has words with no message of the person's
-  after it, so while a run's next call thinks or runs tools the row stays
-  where the last words are. Older replies keep the same behind a long
+  assistant's last turn that has words, and the row stays under it while
+  a run goes on (the message that started it, one queued behind it, the
+  next call thinking or running tools) and where something of the
+  assistant's follows the person's last message (a call, a card that
+  waits). It leaves only where the chat is at rest with a message nothing
+  answered, and a card stands under that message then, so the transcript
+  never gets shorter for it. Older replies keep the same behind a long
   press: Copy, Select Text and Share, and the last reply's long press
   offers what its row does. Where a run ended before the assistant said
   or did anything, its card stands at the person's message, and a Try
   Again the card names beside its button stands alone under that
   message, on its side.
+- **The row and what else offers a way on** are decided in one place
+  (`ReplyActions(under:failures:working:)`, from `FailurePresenter`'s card
+  at the last turn and the turns), so one thing offers each:
+
+  | The chat | Under the last reply | Elsewhere |
+  | --- | --- | --- |
+  | a reply being written, a message queued or not | Copy | the queued message says "Queued for <Agent>'s next step" |
+  | a card that waits (a question, an approval) | Copy, Share | the card; nothing runs again while it waits |
+  | a card answered, folded onto its call | as the run it resumed | the call's row says how it ended |
+  | stopped, or failed where its card's button leads elsewhere (a key to replace) | Copy, Share, and Try Again or Continue | the card's own button |
+  | failed where the card's button is Try Again | Copy, Share | Try Again on the card |
+  | ended with a queued message unread | nothing: the message stands after the reply | Continue on the card under the message |
+  | ended before any reply, the card's button leading elsewhere | Try Again, alone under the message | the card's own button |
+
+  Rows that arrive above the ones drawn, and a chat opened at an old
+  message, change none of it: the row is part of the last reply's row,
+  which neither moves.
 - **Select Text** opens the reply in a sheet, in the system's own text
   view, where a selection runs across the whole of it: a reply's rows are
   separate views, and a SwiftUI text on an iPhone selects nothing less
@@ -1053,6 +1074,19 @@ bubble is a tinted fill. The transcript softens under the composer with
   record it links, by its own name. The `done` event's mentions reach the
   reply at once, so its links read so from the run's end, before its rows
   land. While a reply streams, a link is its Markdown until it closes.
+- **A link in a line is read as its own words.** On a Mac every link of a
+  text is an element a screen reader can go to, and SwiftUI reads its
+  words out of the line from a place it worked out in the line as spoken,
+  where a piece with words of its own for a screen reader (the mark after
+  a link that leaves the app, "opens in your browser", for one image; a
+  pill's tile, its kind for four spaces) is as long as those words. Every
+  link after such a piece was read from the wrong place: as other words,
+  or, past the line's end, as nothing, AppKit raising where it was asked.
+  So on a Mac each such piece is made as long as its words with word
+  joiners, which draw nothing and break no line (`SpokenPiece`, in the
+  kit). An iPhone and an iPad read a link from where it is, and their
+  lines are as they were. A pill's link is read as its name on a Mac: the
+  kind is the tile's, and a link's words there are the line's own.
 - **Sources**: under a finished reply, the web pages it links as numbered
   pills, once each, in the order it first cites them.
 - **Questions** (`ask`): a card with each question's options (one or many,
@@ -1162,7 +1196,12 @@ bubble is a tinted fill. The transcript softens under the composer with
   again once the rows are laid out, since content that grows above a
   reader moves what they read down). A reader who went on down the
   transcript while the rows were out stays at the first row they have on
-  screen. The next read of the newest rows
+  screen: the first they had before the rows were laid out (`RowsBefore`),
+  since by the time the scroll view can be asked, the rows it has on
+  screen are the ones that arrived. A row is kept by its top. A row of a
+  reply is about a screen and a half, a table or a block of code in it
+  the taller for it, so a reader part way down one when rows arrive is
+  put at the start of that row and no further. The next read of the newest rows
   (the thread moved, a run handed over) keeps the older ones where it
   begins among the rows held, and starts the transcript over where it
   does not: more rows were written since than a read holds. The folder
