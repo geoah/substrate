@@ -131,10 +131,18 @@ enum Demo {
             if let only = notified(asked) { return await notify(only) }
             let card = card(asked)
             if asked == "deep" || left != nil { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
-            host.send(.show(thread: asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread, scene: scene))
+            let shown = asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread
+            host.send(.show(thread: shown, scene: scene))
             if asked == "long" || reply != nil { return }
-            guard let key = await until({ host.chats?.scenes[scene]?.current }) else { return }
-            _ = await until { host.conversation(key) != nil ? true : nil }
+            // The conversation of the chat just shown, and not the one the
+            // window landed on first: a chat a launch before left open is
+            // put back before this one is shown, and what was sent to its
+            // key went nowhere.
+            let found = await until { () -> ChildKey? in
+                guard let key = host.chats?.scenes[scene]?.current, host.conversation(key)?.thread == shown else { return nil }
+                return key
+            }
+            guard let key = found else { return }
             if let card {
                 // The card's view reads its record when it appears.
                 _ = await until { host.conversation(key)?.cards[card.asked.card.id]?.stands == !card.resolved ? true : nil }
