@@ -12,6 +12,7 @@ import SwiftUI
 struct TableBlockView: View {
     @Environment(\.missingRecords) private var missing
     @Environment(\.dynamicTypeSize) private var size
+    @Environment(\.spill) private var spill
     let header: [String]
     let alignments: [MarkdownAlignment]
     let rows: [[String]]
@@ -19,12 +20,14 @@ struct TableBlockView: View {
     /// while the table scrolls, with the text's size.
     @ScaledMetric(relativeTo: .subheadline) private var least = TableLayout.Metrics().least
     @ScaledMetric(relativeTo: .subheadline) private var widest = TableLayout.Metrics().widest
-    /// What the scroll view says of itself: its width, and whether the
-    /// table is wider.
+    /// What the scroll view says of itself: how wide the table is, and
+    /// whether that is wider than the scroll view.
     @State private var scroll = Scrolled()
+    /// The width of the table's place among the reply's blocks.
+    @State private var place: CGFloat = 0
 
     struct Scrolled: Equatable {
-        var room: CGFloat = 0
+        var content: CGFloat = 0
         var scrolls = false
     }
 
@@ -40,9 +43,14 @@ struct TableBlockView: View {
 
     // MARK: The grid
 
+    /// Laid out for the room the window has, not the measure: its place
+    /// and what it may reach past it on both sides. A table that fits its
+    /// place stays in it; a wider one reaches as far as it needs, and
+    /// scrolls only when the window itself is too narrow.
     private var grid: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            TableGrid(columns: header.count, room: scroll.room, metrics: metrics) {
+        let room = place + 2 * spill
+        return ScrollView(.horizontal, showsIndicators: false) {
+            TableGrid(columns: header.count, room: room, metrics: metrics) {
                 ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
                     self.cell(cell, column: column, row: 0)
                         .font(ChatType.heading)
@@ -62,11 +70,14 @@ struct TableBlockView: View {
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .onScrollGeometryChange(for: Scrolled.self) { geometry in
-            Scrolled(room: geometry.containerSize.width, scrolls: geometry.contentSize.width > geometry.containerSize.width + 0.5)
+            Scrolled(content: geometry.contentSize.width, scrolls: geometry.contentSize.width > geometry.containerSize.width + 0.5)
         } action: { _, now in
             if now != scroll { scroll = now }
         }
         .clipShape(.rect(cornerRadius: ChatRadius.block))
+        .reaching(reach(wanting: scroll.content, in: place, spill: spill)) { width in
+            if abs(width - place) > 0.5 { place = width }
+        }
     }
 
     /// One cell, filling its place in the grid.

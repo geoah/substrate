@@ -282,6 +282,7 @@ private struct BlockView: View {
                 // Quoted words are quiet, and still read: the system's
                 // secondary label is 3.4:1 on a white page.
                 .ink(.quiet, on: .page, .card)
+                .keepsToItsWidth()
             }
         case let .list(ordered, start, items):
             // Each item's code follows the code of the items before it.
@@ -311,6 +312,8 @@ private struct BlockView: View {
                     }
                 }
             }
+            // Said once for the list, not at each item.
+            .keepsToItsWidth()
         case let .table(header, alignments, rows):
             TableBlockView(header: header, alignments: alignments, rows: rows)
         case .rule:

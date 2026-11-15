@@ -80,6 +80,9 @@ import Testing
         /// The text is at an accessibility size, as far as a Mac draws
         /// one: the layout is that size's, the letters are not.
         var large = false
+        /// Drawn at a Mac window's width too: what holds a wide block
+        /// reaches past the reading measure there.
+        var window = false
     }
 
     static var parts: [Part] {
@@ -94,9 +97,9 @@ import Testing
             Part(name: "actions-writing", reply: ChatFixtures.short, stop: ChatFixtures.short.count - 30),
             Part(name: "actions-try-again", reply: ChatFixtures.short, failure: FailureFixtures.keyRefused),
             Part(name: "actions-try-again-alone", reply: ChatFixtures.short, failure: FailureFixtures.keyRefused, unanswered: true),
-            Part(name: "code-long-lines", reply: ChatFixtures.longLines),
+            Part(name: "code-long-lines", reply: ChatFixtures.longLines, window: true),
             Part(name: "code-long-lines-wrapped", reply: ChatFixtures.longLines, wraps: true),
-            Part(name: "tables", reply: ChatFixtures.tables),
+            Part(name: "tables", reply: ChatFixtures.tables, window: true),
             Part(name: "tables-cards", reply: ChatFixtures.tables, large: true),
         ] + code
     }
@@ -150,6 +153,7 @@ import Testing
             if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
         }
         .transcriptMargins()
+        .readingMeasure()
         .environment(\.recordTitles, screen?.titles ?? [:])
         .replyLinks()
         .replyTools(wraps: screen?.wrapsCode ?? false)
@@ -258,7 +262,8 @@ import Testing
     func everyPartOfAReplyDraws() async throws {
         for part in Self.parts {
             let (host, key) = try await host(reply: part.reply, stop: part.stop)
-            for (device, width) in [("iphone", OffscreenDrawing.phone.width), ("ipad", Self.wide)] {
+            let widths = [("iphone", OffscreenDrawing.phone.width), ("ipad", Self.wide)] + (part.window ? [("window", OffscreenDrawing.mac.width)] : [])
+            for (device, width) in widths {
                 // As tall as what it holds: laid out once to know.
                 let shown = view(host, key, streaming: false) { screen in
                     screen.wrapsCode = part.wraps
@@ -437,7 +442,6 @@ import Testing
                     let drawn = view(host, key, streaming: false)
                         .environment(\.conversationKey, key)
                         .environment(\.opensEndedCards, state.hasSuffix("-opened"))
-                        .readingMeasure()
                     Attachment.record(
                         try await OffscreenDrawing.png(drawn, size: CGSize(width: size.width, height: 700), scheme: scheme),
                         named: "answer-\(state)-\(device)-\(scheme == .dark ? "dark" : "light").png")

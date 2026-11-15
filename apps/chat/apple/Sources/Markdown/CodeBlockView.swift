@@ -14,14 +14,20 @@ extension MeterPoint {
 struct CodeBlockView: View {
     @Environment(\.codeAdvance) private var advance
     @Environment(\.codeWrap) private var wrap
+    @Environment(\.spill) private var spill
     let language: String?
     let text: String
     let code: CodeHighlight?
-    /// The width the block has, less the code's insets.
-    @State private var room: CGFloat = 0
+    /// The width of the block's place among the reply's blocks.
+    @State private var place: CGFloat = 0
     @State private var source = CodeSource()
 
     var body: some View {
+        // Its longest line's width, with the block's insets: what it
+        // would be drawn at with all the room there is.
+        let wanted = CGFloat(code?.columns ?? 0) * advance + 2 * ChatSpace.blockInset
+        let reach = reach(wanting: wanted, in: place, spill: spill)
+        let room = max(0, place + 2 * reach - 2 * ChatSpace.blockInset)
         let layout = CodeWrap.layout(columns: code?.columns ?? 0, advance: advance, room: room, prefersWrap: wrap.on)
         // Copy reads the code when it is pressed.
         let _ = source.text = text
@@ -34,13 +40,13 @@ struct CodeBlockView: View {
                 ScrollView(.horizontal, showsIndicators: false) { lines }
             }
         }
-        .onGeometryChange(for: CGFloat.self) {
-            $0.size.width - 2 * ChatSpace.blockInset
-        } action: { width in
-            if abs(width - room) > 0.5 { room = width }
-        }
         .background(ChatColours.codeStyle, in: .rect(cornerRadius: ChatRadius.block))
         .overlay { RoundedRectangle(cornerRadius: ChatRadius.block).strokeBorder(ChatColours.codeEdge, lineWidth: ChatLine.hairline) }
+        // A long line has the room the window has past the measure
+        // before it scrolls or wraps.
+        .reaching(reach) { width in
+            if abs(width - place) > 0.5 { place = width }
+        }
     }
 
     private var lines: some View {
@@ -101,7 +107,8 @@ private struct CodeBar: View, Equatable {
         .font(ChatType.caption)
         .padding(.leading, ChatSpace.blockInset)
         // The bar keeps its height; a control's room to touch reaches
-        // past it.
+        // past it. Its words and marks grow as far as the bar does.
+        .growing(to: .codeBar)
         .frame(height: height)
     }
 }
@@ -224,6 +231,7 @@ struct CopyButton: View {
             Image(systemName: done ? "checkmark" : "doc.on.doc")
                 .changes(.mark)
                 .ink(.quiet, on: .page, .code)
+                .growing(to: .actionMark)
                 .barTarget()
         }
         .buttonStyle(.borderless)
