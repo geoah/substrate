@@ -376,6 +376,12 @@ extension ChatApp {
                 (again.pinned, again.archived) = (sent.pinned, sent.archived)
                 state.flagRefused = State.FlagRefused(thread: thread, change: again)
             }
+            // What it carried beside the flag (a position) is not what a
+            // server that keeps no flags refused: it goes again alone, and
+            // is dropped if it is refused alone.
+            if state.marks != nil, let rest = sent.unflagged {
+                state.marking[thread] = state.marking[thread].map { rest.then($0) } ?? rest
+            }
         }
         guard state.marks != nil, refusal != .dropped else { return }
         if let later = state.marking[thread] {
@@ -421,9 +427,11 @@ extension ChatApp {
         for thread in state.announced.sorted() {
             if visible.contains(thread) {
                 state.announced.remove(thread)
-            } else if let row = state.thread(thread), !state.notifies(row) {
+            } else if state.thread(thread).map({ !state.notifies($0) }) ?? state.archived(thread) {
                 // Archived since, here or on another device: what it
-                // notified is put away with it.
+                // notified is put away with it. Also where no list holds
+                // its row any more and its mark, read by name, says so: a
+                // chat that waits is always in a list.
                 state.announced.remove(thread)
                 state.asks.append(.cancelGroup(thread))
             } else if let row = state.thread(thread), !row.running, state.marked(thread), !state.unread(row), !state.failedUnseen(row) {
@@ -437,6 +445,8 @@ extension ChatApp {
         for (thread, change) in state.marking.sorted(by: { $0.key < $1.key })
         where change.due == nil && !change.held && state.markSending[thread] == nil {
             state.marking[thread] = nil
+            // A flag goes only to a server that keeps the flags.
+            guard let change = state.flags ? change : change.unflagged else { continue }
             state.markSending[thread] = change
             state.asks.append(.writeMark(thread: thread, change))
         }

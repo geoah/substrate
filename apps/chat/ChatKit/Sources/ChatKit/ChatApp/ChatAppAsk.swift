@@ -101,7 +101,7 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case followResponses
     /// A run of the refresh job the lease scheduled; its result lands only
     /// while the lease holds its generation, and within the run's budget.
-    case backgroundRefresh(BackgroundRun, Lease, Plan, threads: [String])
+    case backgroundRefresh(BackgroundRun, Lease, Plan, threads: [String], beside: [String])
     case finishRun(BackgroundRun, success: Bool)
     /// The refresh job, naming the lease's repository and generation.
     case scheduleRefresh(Lease)

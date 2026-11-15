@@ -58,6 +58,7 @@ extension ChatApp {
             // that grew goes back to its first page, and whatever went
             // stale past it with it.
             next.window.restart = true
+            next.archive.window.restart = true
             // Try Again on the strip also does again what it said failed:
             // the search, or the pin or archive that was refused.
             if next.listFailure?.attempt == .search {
@@ -557,7 +558,7 @@ extension ChatApp {
         // The refresh under way is cancelled by this one's key.
         if let earlier = state.backgroundRun { state.asks.append(.finishRun(earlier, success: false)) }
         state.backgroundRun = run
-        state.asks.append(.backgroundRefresh(run, disk, state.plan, threads: state.cardThreads))
+        state.asks.append(.backgroundRefresh(run, disk, state.plan, threads: state.cardThreads, beside: beside(state)))
     }
 
     private func phase(_ state: inout State, _ phase: AppPhase) {
@@ -1116,6 +1117,9 @@ extension ChatApp {
         switch (row, toggle, choice) {
         case let ("showAutomated", on?, _):
             state.preferences.showAutomated = on
+            // The archived chats are another list with the runs among
+            // them: its cursor was cut for the one without.
+            state.archive.window.restart = true
             refresh(&state)
         case let ("expandThinking", on?, _): state.preferences.expandThinking = on
         case let ("technicalDetails", on?, _): state.preferences.technicalDetails = on

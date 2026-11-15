@@ -1297,6 +1297,13 @@ struct SeededRun {
                     "\(id) is held as archived \(state.archived(id)) and pinned \(state.isPinned(id)), and the server holds \(String(describing: mark))")
             }
         }
+        // By what the server holds, whether or not the app holds the chat's
+        // row: a notification of a chat archived with nothing waiting is
+        // taken back however the app came to hear of it.
+        for (id, request) in rig.notifications.pending.sorted(by: { $0.key < $1.key }) where id.hasSuffix("|reply") {
+            guard let name = request.thread, server.mark(of: name)?.archived == true, server.waiting(name) == 0 else { continue }
+            return broke(.archived, "a notification of \(name)'s reply stands at the end, and the server holds the chat archived with nothing waiting")
+        }
         let pinned = Set(presentation.list.sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
         let shown = Set(want.filter { server.mark(of: $0)?.pinned == true })
         if pinned != shown { return broke(.pinned, "the pinned section draws \(pinned.sorted()), and the server's pinned chats are \(shown.sorted())") }

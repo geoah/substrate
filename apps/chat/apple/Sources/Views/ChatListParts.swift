@@ -303,6 +303,15 @@ struct OlderRowsRow: View {
     }
 }
 
+extension TranscriptPiece {
+    /// The first of `rows` (the ids of the rows on screen) in the
+    /// transcript's order: the row a reader has at the top.
+    static func firstRow(among rows: [String], of turns: [TurnPresentation]) -> String? {
+        let onScreen = Set(rows)
+        return pieces(of: turns).first { onScreen.contains($0.id) }?.id
+    }
+}
+
 /// What a window that just appeared tells the list, and what it keeps for
 /// the next launch: the chat it shows and when it was last in it. The list
 /// decides what the window opens to (`ChatApp.land`): that chat while it

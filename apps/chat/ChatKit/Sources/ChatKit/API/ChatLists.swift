@@ -64,14 +64,16 @@ enum ChatLists {
     }
 
     /// Every thread of a list that is read whole (the pinned ones, the ones
-    /// that wait), up to `limit`: each is few by what it is.
-    static func all(_ client: SubstrateClient, _ part: Part, modes: [String], page: Int = page, limit: Int = 500) async throws -> RecordPage {
+    /// that wait), to its end: each is few by what it is, and one left out
+    /// is a chat that waits on its person and cannot be seen.
+    static func all(_ client: SubstrateClient, _ part: Part, modes: [String], page: Int = page) async throws -> RecordPage {
         var read = try await threads(client, part, modes: modes, first: page)
         var cursor = read.cursor
-        while let after = cursor, read.records.count < limit {
+        while let after = cursor {
             let next = try await threads(client, part, modes: modes, first: page, after: after)
             read.records += next.records
-            cursor = next.cursor
+            // A page that brings nothing ends it, whatever its cursor says.
+            cursor = next.records.isEmpty ? nil : next.cursor
         }
         return read
     }
