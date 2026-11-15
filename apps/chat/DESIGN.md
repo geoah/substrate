@@ -1588,7 +1588,13 @@ clips: a chat's date goes under its title and its marks under its
 preview, a card's buttons stack, a change's badge and a note's button go
 under their words, the assistant's picker stands over the field, the row
 under a reply wraps, a page's title goes under its site in its pill, and
-a table is a card for each row.
+a table is a card for each row. The lines over the composer's field (what
+is happening, what Stop does to a queued message, why the field is
+blocked, the title of an answer in the person's own words) are whole at
+any size. At the accessibility sizes the question being answered is left
+to its card, and where the keyboard leaves the lines less room than they
+need the field gives up its lines first, to one, and then they scroll;
+the field and its buttons keep their place.
 
 **Touch.** Every control is touched in at least 44 points
 (`DesignTokens.touchTarget`). Where it is drawn smaller (a mark in a low
