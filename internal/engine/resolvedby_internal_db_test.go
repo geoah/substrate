@@ -209,3 +209,46 @@ func TestARequestAPolicyDecidedLinksNobody(t *testing.T) {
 		t.Fatal("a request a policy decided names no policy")
 	}
 }
+
+// An agent that accepts its own voluntary proposal is the hand that decided
+// it: the request links the agent's actor, not a person's.
+func TestAChangeRequestAnAgentDecidedLinksTheAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: crewPackage + "/widget", ID: fid("w-self"), Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.script("self",
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-self") + `","diff":{"properties":{"name":"mine"}}}`}}},
+		fakeTurn{content: "proposed."},
+	)
+	if _, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "take the widget"); err != nil {
+		t.Fatal(err)
+	}
+	req := onlyPatchRequest(t, ds)
+	fake.script("self",
+		fakeTurn{calls: []fakeCall{{"write", decideArgs(t, req.ID, "accepted")}}},
+		fakeTurn{content: "approved my own."},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "approve your proposal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tool := lastToolMessage(t, ds, res.Thread); tool["ok"] != true {
+		t.Fatalf("the self-accept was refused: %v", tool["content"])
+	}
+	ag, err := ds.registry().ResolveAgent(crewPackage + "/selfjudge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path := storedReferencePath(got.Properties[propDecidedBy]); path != actorPath(substrate.Actor(ag.Actor())) {
+		t.Fatalf("decidedBy = %q, want the agent's actor %q", path, actorPath(substrate.Actor(ag.Actor())))
+	}
+}

@@ -460,6 +460,10 @@ func TestADismissalInASettledThreadStillResumes(t *testing.T) {
 	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/poller", substrate.ChatInput{Thread: thread, Message: "let me think", MessageID: "w1"}, nil); err != nil {
 		t.Fatal(err)
 	}
+	// A loop stays registered past its settle, until its run returns: the
+	// dismissal that lands in that moment reads the stored status, and is
+	// not swallowed for a turn that already ended.
+	ds.runningThreads.Store(thread, &agentLoop{ds: ds, threadID: thread, hub: newTurnHub(), in: agentInvocation{mode: agentModeChat}})
 	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{"state": interactionDismissed}, IfVersion: &interaction.Version,
 	}); err != nil {
