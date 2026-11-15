@@ -582,6 +582,7 @@ extension ChatApp {
                 canSend: blocked == nil, status: Self.status(live, agent: agent), queues: live.queues,
                 queued: Self.queuedNote(live), answering: Self.answering(state, live), focus: live.focuses),
             streaming: live.phase == .streaming, stopping: live.stopping,
+            wrapsCode: state.preferences.wrapCode,
             expandThinking: state.preferences.expandThinking, sends: live.sends,
             opens: at.map { .turn($0) } ?? newLine.map { .turn($0.turn) } ?? .end, visit: entry?.visits ?? 0, above: above)
     }

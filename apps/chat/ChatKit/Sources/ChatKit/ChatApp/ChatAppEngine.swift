@@ -1233,6 +1233,7 @@ extension ChatApp {
             refresh(&state)
         case let ("expandThinking", on?, _): state.preferences.expandThinking = on
         case let ("technicalDetails", on?, _): state.preferences.technicalDetails = on
+        case let ("wrapCode", on?, _): state.preferences.wrapCode = on
         case let ("notifyReplies", on?, _): state.preferences.notifyReplies = on
         case let ("notifyAttention", on?, _): state.preferences.notifyAttention = on
         case let ("defaultAgent", _, option?): state.preferences.defaultAgent = option.isEmpty ? nil : option

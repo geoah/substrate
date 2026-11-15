@@ -44,6 +44,8 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var composer: ComposerPresentation
     public var streaming: Bool
     public var stopping: Bool
+    /// A long line of code wraps (`ChatPreferences.wrapCode`).
+    public var wrapsCode = false
     public var expandThinking: Bool
     /// Moved by every send from this conversation: the transcript goes to
     /// its end, wherever it was.

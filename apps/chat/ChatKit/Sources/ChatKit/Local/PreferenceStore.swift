@@ -29,6 +29,7 @@ public final class DefaultsPreferenceStore: PreferenceStore, @unchecked Sendable
         out.showAutomated = defaults.object(forKey: p + "showAutomated") as? Bool ?? false
         out.expandThinking = defaults.object(forKey: p + "expandThinking") as? Bool ?? false
         out.technicalDetails = defaults.object(forKey: p + "technicalDetails") as? Bool ?? false
+        out.wrapCode = defaults.object(forKey: p + "wrapCode") as? Bool ?? false
         out.notifyReplies = defaults.object(forKey: p + "notifyReplies") as? Bool ?? true
         out.notifyAttention = defaults.object(forKey: p + "notifyAttention") as? Bool ?? true
         out.voiceLocale = defaults.string(forKey: p + "voiceLocale")
@@ -47,6 +48,7 @@ public final class DefaultsPreferenceStore: PreferenceStore, @unchecked Sendable
         set("showAutomated", preferences.showAutomated)
         set("expandThinking", preferences.expandThinking)
         set("technicalDetails", preferences.technicalDetails)
+        set("wrapCode", preferences.wrapCode)
         set("notifyReplies", preferences.notifyReplies)
         set("notifyAttention", preferences.notifyAttention)
         set("voiceLocale", preferences.voiceLocale)

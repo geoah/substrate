@@ -48,6 +48,7 @@ extension ChatApp {
                 rows: [
                     SettingsRow(id: .app("showAutomated"), label: "Show automated runs", control: .toggle(prefs.showAutomated)),
                     SettingsRow(id: .app("expandThinking"), label: "Expand thinking", control: .toggle(prefs.expandThinking)),
+                    SettingsRow(id: .app("wrapCode"), label: "Wrap long lines of code", control: .toggle(prefs.wrapCode)),
                     SettingsRow(id: .app("technicalDetails"), label: "Technical details", control: .toggle(prefs.technicalDetails)),
                 ], footer: "Automated runs are the ones a trigger, a schedule or a webhook started. Technical details show each chat's id, status and cost."),
             SettingsSection(

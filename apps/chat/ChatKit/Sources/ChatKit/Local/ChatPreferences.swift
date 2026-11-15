@@ -9,6 +9,8 @@ public struct ChatPreferences: Codable, Equatable, Sendable {
     public var showAutomated = false
     public var expandThinking = false
     public var technicalDetails = false
+    /// A long line of code wraps; off, it scrolls sideways.
+    public var wrapCode = false
     public var notifyReplies = true
     public var notifyAttention = true
     /// A locale identifier, or nil for the device's.
