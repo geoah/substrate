@@ -6,7 +6,7 @@ public enum ChatRoute: Codable, Equatable, Sendable {
 }
 
 /// Where the app is on the screen.
-public enum AppPhase: String, Codable, Equatable, Sendable {
+public enum AppPhase: String, Codable, Equatable, Sendable, CaseIterable {
     case active
     /// Leaving: what still streams asks to keep running now, while iOS
     /// lets it.

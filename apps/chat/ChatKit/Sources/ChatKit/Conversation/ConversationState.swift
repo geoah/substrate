@@ -7,7 +7,7 @@ import SubstrateCore
 /// web/console/src/components/agent/conversation.tsx, with the exits
 /// DESIGN.md's tables list).
 public struct ConversationState: Codable, Equatable, Sendable {
-    enum Phase: String, Codable, Sendable {
+    enum Phase: String, Codable, Sendable, CaseIterable {
         case idle
         /// A send or an attach is streaming.
         case streaming
