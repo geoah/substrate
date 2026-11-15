@@ -48,7 +48,8 @@ struct ChatSplitView: View {
     #endif
     @State private var scene = UUID().uuidString
     @SceneStorage("chat.thread") private var restored = ""
-    @State private var columns = NavigationSplitViewVisibility.automatic
+    @SceneStorage("chat.left") private var left = 0.0
+    @State private var columns = NavigationSplitViewVisibility.all
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var showSettings = false
 
@@ -68,9 +69,10 @@ struct ChatSplitView: View {
             }
         }
         .onAppear {
-            host.send(.sceneAppeared(scene: scene, restoring: restored.isEmpty ? nil : restored))
+            host.send(FirstScreen.appeared(scene: scene, restored: restored, left: left))
             take()
         }
+        .modifier(KeepsPlace(scene: scene, restored: $restored, left: $left))
         .onDisappear { host.send(.sceneGone(scene: scene)) }
         .onChange(of: host.chats?.routePending) { _, _ in take() }
         .onChange(of: current) { _, key in

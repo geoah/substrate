@@ -14,6 +14,7 @@ struct ChatListView: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var chats: ChatSurface? { host.chats }
 
@@ -29,7 +30,11 @@ struct ChatListView: View {
         let _ = Meter.shared.count(.body, "ChatList")
         let list = chats?.list
         let searched = chats?.scenes[scene]
-        let sections = searched?.found ?? list?.sections ?? []
+        // The window lists the archived chats, a search's finds, or the
+        // chats: one of the three.
+        let shelf = searched?.archived == true ? list?.archived : nil
+        let sections = shelf.map { [DaySection(title: "", rows: $0.rows)] } ?? searched?.found ?? list?.sections ?? []
+        let flags = list?.flags == true
         List(selection: selection) {
             if let banner = host.link.banner {
                 AccessBannerView(banner) { perform($0) }
@@ -53,12 +58,16 @@ struct ChatListView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
+            // Rows stand in for the chats while the first read is out.
+            if shelf == nil, query.isEmpty, let placeholders = list?.placeholders, placeholders > 0 {
+                PlaceholderRows(count: placeholders)
+            }
             ForEach(sections) { section in
                 Section {
                     ForEach(section.rows) { row in
                         ThreadRowView(row: row, selected: selection.wrappedValue == row.id)
                             .tag(row.id)
-                            .contextMenu { menu(row) }
+                            .contextMenu { menu(row, flags: flags) }
                             .swipeActions(edge: .leading) {
                                 if row.unread {
                                     Button("Read", systemImage: "envelope.open") { host.send(.markRead(row.id)) }
@@ -67,16 +76,31 @@ struct ChatListView: View {
                                     Button("Unread", systemImage: "envelope.badge") { host.send(.markUnread(row.id)) }
                                         .tint(.accentFill)
                                 }
+                                if flags { PinButton(row: row, short: true) }
                             }
                             .swipeActions(edge: .trailing) {
+                                if flags { ArchiveButton(row: row, short: true) }
                                 Button("Rename", systemImage: "pencil") { beginRename(row) }
                                     .tint(.gray)
                             }
                     }
                 } header: {
                     // The system's header grey is 3.2:1 on the list.
-                    Text(section.title).foregroundStyle(.quietText)
+                    if !section.title.isEmpty { SectionTitle(title: section.title) }
                 }
+            }
+            if let shelf {
+                ShelfFooter(shelf: shelf)
+            } else if searched?.found == nil, list?.more == true {
+                // The list goes on: its next page is read when its end
+                // comes on screen.
+                MoreRow(loading: list?.loadingMore == true, title: "Earlier chats") { host.send(.more(archived: false)) }
+            }
+            if let groups = searched?.messages, !groups.isEmpty {
+                SearchGroups(groups: groups, scene: scene)
+            }
+            if searched?.searching == true {
+                SearchingRow()
             }
             if let nothing = searched?.nothingFound {
                 Text(nothing)
@@ -85,6 +109,10 @@ struct ChatListView: View {
             }
         }
         .listStyle(.sidebar)
+        // A row takes its new place with motion when the order changes: a
+        // chat that answered, one pinned, one archived. With none where
+        // the device asks for less.
+        .animation(reduceMotion ? nil : .default, value: sections.map { $0.rows.map(\.id) })
         // An iPad fills the focused selection with the list's tint. The
         // accent in dark mode is a text tone, and the system's white words
         // are 2.8:1 on it, so the list's tint is the accent as a fill, the
@@ -92,7 +120,11 @@ struct ChatListView: View {
         // system's own tone of the accent, whatever the tint.
         .tint(ChatColours.selectionTint)
         .overlay {
-            if query.isEmpty, let empty = list?.empty {
+            if let empty = shelf?.empty {
+                ContentUnavailableView("No Archived Chats", systemImage: "archivebox", description: Text(empty))
+            } else if shelf != nil {
+                EmptyView()
+            } else if query.isEmpty, let empty = list?.empty {
                 ContentUnavailableView {
                     Label(empty.title, systemImage: "bubble.left.and.text.bubble.right")
                 } description: {
@@ -104,18 +136,33 @@ struct ChatListView: View {
                             .tint(.accentFill)
                     }
                 }
-            } else if query.isEmpty, list?.loading != false {
-                ProgressView()
             }
         }
+        // The chat archived a moment ago, and Undo, for a few seconds.
+        .safeAreaInset(edge: .bottom) {
+            if let undo = list?.undo { UndoBar(undo: undo) }
+        }
+        .animation(reduceMotion ? nil : .snappy, value: list?.undo)
         .searchable(text: $query, prompt: list?.searchPrompt ?? "Search chats")
         .onChange(of: query) { _, query in host.send(.search(scene: scene, query: query)) }
         .refreshable { host.send(.refresh) }
-        .navigationTitle(list?.title ?? "Chats")
+        .navigationTitle(shelf?.title ?? list?.title ?? "Chats")
         .toolbar {
+            // Back from the archived chats to the chats, where Settings
+            // stands on a phone and a tablet.
             #if os(iOS)
             ToolbarItem(placement: .topBarLeading) {
-                Button("Settings", systemImage: "gearshape") { showSettings = true }
+                if shelf != nil {
+                    Button("Chats", systemImage: "chevron.backward") { host.send(.showArchived(scene: scene, shown: false)) }
+                } else {
+                    Button("Settings", systemImage: "gearshape") { showSettings = true }
+                }
+            }
+            #else
+            if shelf != nil {
+                ToolbarItem(placement: .navigation) {
+                    Button("Chats", systemImage: "chevron.backward") { host.send(.showArchived(scene: scene, shown: false)) }
+                }
             }
             #endif
             ToolbarItem(placement: .primaryAction) {
@@ -125,6 +172,14 @@ struct ChatListView: View {
                         isOn: Binding(
                             get: { list?.showAutomated ?? false },
                             set: { host.send(.settings(.toggle(row: .app("showAutomated"), on: $0))) }))
+                    // Offered by what the server keeps, not by having read
+                    // an archived chat: with every chat archived the list
+                    // is empty.
+                    if flags {
+                        Toggle(
+                            "Archived Chats", systemImage: "archivebox",
+                            isOn: Binding(get: { shelf != nil }, set: { host.send(.showArchived(scene: scene, shown: $0)) }))
+                    }
                 }
             }
             #if os(iOS)
@@ -170,7 +225,12 @@ struct ChatListView: View {
     @Environment(\.openURL) private var openURL
 
     @ViewBuilder
-    private func menu(_ row: ThreadRow) -> some View {
+    private func menu(_ row: ThreadRow, flags: Bool) -> some View {
+        if flags {
+            PinButton(row: row)
+            ArchiveButton(row: row)
+            Divider()
+        }
         Button("Rename…", systemImage: "pencil") { beginRename(row) }
         if row.unread {
             Button("Mark as Read", systemImage: "envelope.open") { host.send(.markRead(row.id)) }
@@ -279,7 +339,8 @@ struct ThreadRowView: View {
                     Circle().fill(own(ChatColours.accent.color)).frame(width: 9, height: 9).padding(.top, 5)
                         .accessibilityLabel("Unread")
                 case nil:
-                    EmptyView()
+                    // A chat at work says so where its mark would stand.
+                    if row.running { RunningMark() }
                 }
             }
         }

@@ -17,8 +17,9 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var agentName: String
     /// Who a new chat is with, and a few openers; nil once it has turns.
     public var hero: NewChatHero?
-    /// "Older messages aren't shown here."
-    public var olderHidden: String?
+    /// The thread holds rows before the ones drawn: a row at the top that
+    /// reads them when it comes on screen (`ChatApp.Command.olderRows`).
+    public var older: OlderRows?
     public var turns: [TurnPresentation]
     /// Where what the person had not read begins, when the chat was opened
     /// with more than they had seen: a line above that turn, which the
@@ -49,6 +50,13 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var sends: Int
     /// Where the transcript stands when the chat is shown.
     public var opens: TranscriptOpening
+    /// Moved each time the chat is asked to be put at a row again while it
+    /// is shown (a message opened from a search): the transcript goes to
+    /// `opens` once more.
+    public var visit = 0
+    /// Rows arrived above the ones drawn: the turn that stood first before
+    /// them, which a transcript on screen is kept at.
+    public var above: RowsAbove?
 
     /// How many messages stand below `turn`, the last one a reader can
     /// see: what Jump to Latest says. A message is what somebody said, the
@@ -83,6 +91,20 @@ public struct JumpToLatest: Equatable, Sendable {
         count = messages > 0 ? (messages > 99 ? "99+" : "\(messages)") : nil
         label = messages > 0 ? "Jump to Latest, \(plural(messages, "message")) below" : "Jump to Latest"
     }
+}
+
+/// The row at the top of a transcript whose thread holds more.
+public struct OlderRows: Codable, Equatable, Sendable {
+    /// "Earlier messages", or "Loading earlier messages…".
+    public var label: String
+    public var loading: Bool
+}
+
+/// Rows read in above a transcript: the turn that was its first, by the id
+/// it is drawn under, and how many times rows have arrived so.
+public struct RowsAbove: Codable, Equatable, Sendable {
+    public var turn: String
+    public var count: Int
 }
 
 /// The line above the first turn the person had not read.

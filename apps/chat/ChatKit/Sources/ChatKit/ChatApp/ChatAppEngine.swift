@@ -53,11 +53,65 @@ extension ChatApp {
         case let .phase(phase): self.phase(&next, phase)
         case let .paced(paces): next.paces = paces
 
-        case .refreshAsked: refresh(&next)
+        case .refreshAsked:
+            // Asked for by hand, the list is read from its start: a window
+            // that grew goes back to its first page, and whatever went
+            // stale past it with it.
+            next.window.restart = true
+            // Try Again on the strip also does again what it said failed:
+            // the search, or the pin or archive that was refused.
+            if next.listFailure?.attempt == .search {
+                next.listFailure = nil
+                for (scene, held) in next.scenes {
+                    next.searches[scene] = nil
+                    search(&next, scene: scene, query: held.query)
+                }
+            }
+            if next.listFailure?.attempt == .flag {
+                next.listFailure = nil
+                if let refused = next.flagRefused { flag(&next, refused.thread, pinned: refused.change.pinned, archived: refused.change.archived) }
+            }
+            next.flagRefused = nil
+            refresh(&next)
         case let .refreshed(refresh): refreshed(&next, refresh)
         case let .refreshFailed(failure):
             next.refreshing = false
             next.listFailure = failure.report == nil ? failure : nil
+        case let .pageRead(part, after, rows, cursor, marks):
+            pageRead(&next, part: part, after: after, rows: rows, cursor: cursor, marks: marks)
+        case let .pageFailed(part, _, failure, compacted):
+            if part == .archived { next.archive.window.reading = false } else { next.window.reading = false }
+            if compacted {
+                // The server cannot go on from the cursor: the list is
+                // read again from its start.
+                if part == .archived { next.archive.window.restart = true } else { next.window.restart = true }
+                refresh(&next)
+            } else if failure.report == nil {
+                next.listFailure = failure
+            }
+        case let .moreAsked(archived): more(&next, archived: archived)
+        case let .archivedShown(scene, shown): showArchived(&next, scene: scene, shown: shown)
+        case let .pinAsked(thread, pinned): flag(&next, thread, pinned: pinned)
+        case let .archiveAsked(thread, archived, at):
+            if archived { archive(&next, thread, at: at) } else { unarchive(&next, thread) }
+        case .undoAsked:
+            if let undo = next.undo { unarchive(&next, undo.thread) }
+        case let .undoPassed(thread):
+            if next.undo?.thread == thread {
+                next.undo = nil
+                shelve(&next)
+            }
+        case let .searchRead(scene, query, hits, threads, marks):
+            searchRead(&next, scene: scene, query: query, hits: hits, threads: threads, marks: marks)
+        case let .searchFailed(scene, query, failure, unserved):
+            searchFailed(&next, scene: scene, query: query, failure, unserved: unserved)
+        case let .olderRowsAsked(thread): older(&next, thread)
+        case let .olderRowsRead(thread, epoch, rows, more): olderRead(&next, thread: thread, epoch: epoch, rows: rows, more: more)
+        case let .olderRowsFailed(thread, epoch):
+            if next.readEpochs[thread, default: 0] == epoch {
+                next.olderReading.remove(thread)
+                next.seeking[thread] = nil
+            }
         case let .featuresRead(agents, records): featuresRead(&next, agents: agents, records: records)
         case let .marksRead(marks):
             let learned = apply(&next, marks: marks)
@@ -72,7 +126,8 @@ extension ChatApp {
         case let .sighted(thread, message, at): sighted(&next, thread: thread, message: message, at: at)
         case let .marksDue(at): marksDue(&next, at: at)
         case let .markWritten(thread, sent, record): markWritten(&next, thread: thread, sent: sent, record)
-        case let .markWriteFailed(thread, sent, refusal): markWriteFailed(&next, thread: thread, sent: sent, refusal)
+        case let .markWriteFailed(thread, sent, refusal, failure):
+            markWriteFailed(&next, thread: thread, sent: sent, refusal, failure)
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -111,6 +166,7 @@ extension ChatApp {
                 next.transcripts[thread] = State.Held(
                     records: cached.records, turns: transcript(of: cached.records),
                     version: cached.threadVersion, full: cached.full)
+                seek(&next, thread)
             }
             // What a conversation shows is read where the disk held none, or
             // held rows that are not current.
@@ -170,16 +226,33 @@ extension ChatApp {
         case .feedDue: drain(&next)
         case let .feedApplied(feed): fed(&next, feed)
 
-        case let .sceneAppeared(scene, restoring, key):
+        case let .sceneAppeared(scene, restoring, key, lands):
             next.scenes[scene] = next.scenes[scene] ?? State.Scene()
-            if let restoring, next.scenes[scene]?.current == nil, next.thread(restoring) != nil { show(&next, restoring, in: scene, key: key) }
+            if lands {
+                // Decided once the chats are held: the folder may not be
+                // read yet.
+                next.scenes[scene]?.arriving = State.Arrival(restoring: restoring, key: key)
+                land(&next)
+                release(&next)
+            } else if let restoring, next.scenes[scene]?.current == nil, next.thread(restoring) != nil {
+                show(&next, restoring, in: scene, key: key)
+            }
         case let .sceneActive(scene, active):
             next.scenes[scene, default: State.Scene()].active = active
         case let .sceneGone(scene):
             next.scenes[scene] = nil
+            shelve(&next)
             release(&next)
-        case let .show(thread, scene, key):
+        case let .show(thread, scene, key, message):
             show(&next, thread, in: scene, key: key)
+            if let message {
+                // Opened at a message: the chat is put at its row, and the
+                // rows before the ones held are read where they lack it.
+                next.conversations[key]?.opensAt = message
+                next.conversations[key]?.visits += 1
+                next.seeking[thread] = State.Seek(message: message)
+                seek(&next, thread)
+            }
             release(&next)
         case let .newChat(agent, listen, scene, key):
             newChat(&next, agent: agent, listen: listen, in: scene, key: key)
@@ -187,7 +260,7 @@ extension ChatApp {
         case let .back(scene):
             next.scenes[scene, default: State.Scene()].current = nil
             release(&next)
-        case let .searched(scene, query): next.scenes[scene, default: State.Scene()].query = query
+        case let .searched(scene, query): search(&next, scene: scene, query: query)
         case let .draftKept(key, thread, text):
             // By the thread the conversation is bound to now, else the one
             // the field knew it by, else as a new chat's.
@@ -352,7 +425,7 @@ extension ChatApp {
         if session?.identity != state.session?.identity {
             let forget = state.forgetOnSignOut
             let old = state.session
-            state = State()
+            state = initialState
             state.restarted = true
             if let old {
                 state.asks.append(.closeDisk(old.identity, deleting: forget))
@@ -414,6 +487,11 @@ extension ChatApp {
             state.keys = cached.keys
             state.chats = cached.threads
             state.automated = cached.automated
+            // Which lists the last launch read, until the server's document
+            // is read again: its flags' lists where it kept them.
+            state.recordsRevision = cached.records
+            state.pinned = cached.pinned ?? []
+            state.waiting = cached.waiting ?? []
             state.openings = cached.openings
             state.interactions = cached.interactions
             state.requests = cached.requests
@@ -451,6 +529,7 @@ extension ChatApp {
             state.waitingRun = nil
             backgroundRun(&state, run)
         }
+        land(&state)
     }
 
     // MARK: Background work
@@ -516,10 +595,10 @@ extension ChatApp {
 
     // MARK: Reading the list
 
-    private func refresh(_ state: inout State) {
+    func refresh(_ state: inout State) {
         guard state.session != nil, state.opened, !state.accessEnded, state.online else { return }
         state.refreshing = true
-        state.asks += [.refresh(state.plan, held: state.readsMarks ? state.cardThreads : []), .readFeatures]
+        state.asks += [.refresh(state.plan, held: state.readsMarks ? state.cardThreads : [], beside: beside(state)), .readFeatures]
     }
 
     private func refreshed(_ state: inout State, _ refresh: ChatAppStep.Refresh) {
@@ -541,6 +620,10 @@ extension ChatApp {
         if refresh.threads.marks == nil { askMarks(&state) }
         retryMarks(&state)
         afterList(&state)
+        land(&state)
+        // Read before the server's document said it keeps the flags: the
+        // lists are read again by them.
+        if state.flags, refresh.threads.pinned == nil { self.refresh(&state) }
     }
 
     func watch(_ state: inout State, head: WatchCursor? = nil) {
@@ -575,41 +658,20 @@ extension ChatApp {
         if !items.isEmpty { state.asks.append(.prefetch(disk, items)) }
     }
 
-    /// A new list: an older row never replaces a newer one, what settled
-    /// since notifies, and on the first sign-in all of it is history.
-    func apply(_ state: inout State, threads: ChatAppStep.Threads) {
-        // The marks read with the list land first, so what the list moved
-        // is told read from unread by them.
-        let learned = threads.marks.map { apply(&state, marks: $0) } ?? []
-        let before = Dictionary((state.chats + state.automated).map { ($0.id, $0) }) { a, _ in a }
-        let newer = { (record: Record) -> Record in
-            if let held = before[record.id], held.version > record.version { return held }
-            return record
-        }
-        state.chats = threads.chats.map(newer)
-        state.automated = threads.automated.map(newer)
-        if !state.baselined {
-            for record in state.chats + state.automated {
-                if let finished = record["finishedAt"]?.string {
-                    if state.marks == nil { state.seen[record.id] = finished }
-                    state.notified.insert("reply|\(record.id)|\(finished)")
-                }
-            }
-        }
-        for record in state.chats + state.automated where before[record.id]?.version != record.version {
-            threadMoved(&state, record)
-        }
-        announceLearned(&state, learned)
-    }
-
     /// One thread row, read on its own: a handover, a poll, a rename.
-    private func upsert(_ state: inout State, _ record: Record) {
+    func upsert(_ state: inout State, _ record: Record) {
         if let held = state.thread(record.id)?.record, held.version > record.version { return }
         replaceRow(&state, record)
         threadMoved(&state, record)
     }
 
     private func replaceRow(_ state: inout State, _ record: Record) {
+        // In every list that holds the thread: one the person archived, or
+        // an old one they pinned, is not thereby one of the chats.
+        if state.flags, replaceHeld(&state, record) {
+            state.others[record.id] = nil
+            return
+        }
         let mode = record["mode"]?.string
         if mode == "chat" {
             if let i = state.chats.firstIndex(where: { $0.id == record.id }) { state.chats[i] = record } else { state.chats.insert(record, at: 0) }
@@ -637,7 +699,7 @@ extension ChatApp {
     /// notifies once, and a chat with a conversation and nothing running is
     /// read again where the rules allow. Its conversation is told by the
     /// value the list hands it.
-    private func threadMoved(_ state: inout State, _ record: Record) {
+    func threadMoved(_ state: inout State, _ record: Record) {
         let thread = ChatThread(record: record)
         if state.marks == nil, !thread.running, record["finishedAt"] != nil, state.visibleThreads.contains(thread.id) {
             markSeen(&state, thread.id)
@@ -658,6 +720,9 @@ extension ChatApp {
         guard !state.notified.contains(key) else { return }
         if state.readsMarks, !state.marked(thread.id) { return }
         state.notified.insert(key)
+        // A reply in a chat its person archived reaches nobody, but while
+        // the chat waits on a person.
+        guard state.notifies(thread) else { return }
         // A stop is the owner's own act; an error says so rather than
         // offering the turn before it as the answer.
         guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
@@ -714,6 +779,7 @@ extension ChatApp {
         state.readEpochs[thread, default: 0] += 1
         state.reading[thread] = nil
         state.asks.append(.cancel("read:\(thread)"))
+        if state.olderReading.remove(thread) != nil { state.asks.append(.cancel("older:\(thread)")) }
     }
 
     /// Reads a thread's rows unless they are current (rule 7) or a
@@ -737,8 +803,19 @@ extension ChatApp {
     /// version than those held are stale and dropped.
     private func publish(_ state: inout State, _ thread: String, _ rows: [Record], version: Int, full: Bool) {
         if let held = state.transcripts[thread], held.version > version { return }
-        state.transcripts[thread] = State.Held(records: rows, turns: transcript(of: rows), version: version, full: full)
+        var next = State.Held(records: rows, turns: [], version: version, full: full)
+        // The newest rows again, under a transcript that grew at its start:
+        // where the read begins inside the rows held, the ones before it
+        // stay. Where it does not, more rows were written since than a
+        // read holds, and what lies between was never read.
+        if full, let held = state.transcripts[thread], let first = rows.first, let at = held.records.firstIndex(where: { $0.id == first.id }), at > 0 {
+            next.records = Array(held.records[..<at]) + rows
+            (next.full, next.above, next.grown) = (held.full, held.above, held.grown)
+        }
+        next.turns = transcript(of: next.records)
+        state.transcripts[thread] = next
         state.rowsFailed[thread] = nil
+        seek(&state, thread)
         if let disk = state.disk {
             state.asks.append(.saveTranscript(disk, thread: thread, CachedTranscript(threadVersion: version, full: full, records: rows, openedAt: nil)))
         }
@@ -758,7 +835,24 @@ extension ChatApp {
         if batch.contains(where: { $0.kind == Kinds.message }) {
             for key in state.conversations.keys { state.conversations[key]?.pollNudge += 1 }
         }
-        state.asks.append(.applyFeed(state.plan, batch, threads: state.cardThreads))
+        state.asks.append(.applyFeed(state.plan, batch, threads: state.cardThreads, named: named(state, batch)))
+    }
+
+    /// The threads held that a batch of the watch's rows names, by a row
+    /// of their own or of the person's mark of them (a mark's id starts
+    /// with its thread's). The lists read for the batch may hold none of
+    /// them: a chat past the first page, or one that just left the list it
+    /// was in, as an archived one does. Each such thread is then read on
+    /// its own, so the row held is never left as it was.
+    private func named(_ state: State, _ batch: Set<State.WatchKey>) -> [String] {
+        let threads = Set(batch.filter { $0.kind == Kinds.thread }.map(\.id))
+        let marks = batch.filter { $0.kind == Kinds.threadMark }.map(\.id)
+        guard !threads.isEmpty || !marks.isEmpty else { return [] }
+        // And the threads a conversation is on that no list holds yet: a
+        // chat just started, archived on another device since.
+        var seen: Set<String> = []
+        let known = (state.threadIDs + beside(state)).filter { seen.insert($0).inserted }
+        return known.filter { id in threads.contains(id) || marks.contains { $0.hasPrefix(id + ".") } }
     }
 
     private func fed(_ state: inout State, _ feed: ChatAppStep.Feed) {
@@ -783,7 +877,7 @@ extension ChatApp {
 
     // MARK: Scenes and conversations
 
-    private func show(_ state: inout State, _ thread: String, in scene: String, key: ChildKey) {
+    func show(_ state: inout State, _ thread: String, in scene: String, key: ChildKey) {
         if state.conversations[key] == nil {
             let row = state.thread(thread)
             let unsent = state.unsent[thread]
@@ -809,7 +903,7 @@ extension ChatApp {
     /// whose conversation is gone), so what was typed into it is there
     /// again; and a message one sent that the server never took, with the
     /// assistant it was sent to.
-    private func newChat(_ state: inout State, agent: String?, listen: Bool, in scene: String, key: ChildKey) {
+    func newChat(_ state: inout State, agent: String?, listen: Bool, in scene: String, key: ChildKey) {
         // A new chat whose first message the server has not taken, and
         // that no window shows, has no row in the list to come back by:
         // New Chat is the way back to it.
@@ -839,7 +933,7 @@ extension ChatApp {
 
     /// A conversation stays while a window shows it, it runs, what its
     /// stream drew waits for its rows, or an outcome waits to be read.
-    private func release(_ state: inout State) {
+    func release(_ state: inout State) {
         let shown = Set(state.scenes.values.compactMap(\.current))
         for (key, entry) in state.conversations where !shown.contains(key) && !entry.owns && !entry.active && entry.outcomes == 0 {
             state.conversations[key] = nil
@@ -944,6 +1038,7 @@ extension ChatApp {
         entry.name = report.name
         if report.continueUnserved { state.continueUnserved = true }
         if report.idsUnserved { state.idsUnserved = true }
+        if report.spoke, let thread = entry.thread { spoke(&state, in: thread) }
         // The message this conversation waits on the server for, kept in
         // the folder under its chat's name. Only the one this conversation
         // reported is taken away, so another's is never dropped with it.

@@ -14,7 +14,12 @@ import FoundationNetworking
 /// Unread is a flag a position taken clears), and a change feed every
 /// device's watch reads the same rows from. With `records` below 8 it is a
 /// server from before marks: it does not know the kind and its threads name
-/// no newest message.
+/// no newest message. At 9 it keeps `pinned` and `archived` on a mark as
+/// #1459's does (decision 0322): two flags only the person's write moves,
+/// and a list of threads narrowed by the marks that point at them
+/// (`referencedBy`), cut into pages with a cursor. Below 9 it refuses the
+/// arm (`400`) and the two properties (`422`), as a server before them
+/// does.
 final class MarkServer: HTTPTransport, @unchecked Sendable {
     struct Message {
         var id: String
@@ -39,6 +44,9 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         var version = 0
         /// The place in the feed where the position was taken.
         var readAt: Int?
+        /// Absent until set.
+        var pinned: Bool?
+        var archived: Bool?
     }
 
     private let lock = NSLock()
@@ -61,6 +69,11 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
     }
 
     private var keepsMarks: Bool { features.records >= 8 }
+    private var keepsFlags: Bool { features.records >= 9 }
+    /// The next `count` searches are answered 500; `refusesSearch` answers
+    /// every one as an app's token is (`403`).
+    private var failingSearches = 0
+    private var refusesSearch = false
 
     // MARK: What a test does to it
 
@@ -117,9 +130,37 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
 
     /// A device not in the test moves the person's mark, held to the same
     /// rules.
-    func write(_ thread: String, readThrough: String? = nil, markedUnread: Bool? = nil) {
-        lock.withLock { _ = put(thread, readThrough: readThrough, markedUnread: markedUnread) }
+    func write(_ thread: String, readThrough: String? = nil, markedUnread: Bool? = nil, pinned: Bool? = nil, archived: Bool? = nil) {
+        lock.withLock { _ = put(thread, readThrough: readThrough, markedUnread: markedUnread, pinned: pinned, archived: archived) }
     }
+
+    /// A chat starts running, or settles as it was, by a turn no device
+    /// here streams.
+    func run(_ id: String, running: Bool = true) {
+        lock.withLock {
+            seq += 1
+            chats[id]?.status = running ? "running" : "ok"
+            chats[id]?.version += 1
+            chats[id]?.finished = seq
+            push(Kinds.thread, id)
+        }
+    }
+
+    /// A message somebody said in a chat long ago: before every row it holds.
+    func older(_ id: String, messages count: Int) {
+        lock.withLock {
+            guard var chat = chats[id] else { return }
+            let old = (0 ..< count).map { n in Message(id: "\(id)-o\(n)", role: n % 2 == 0 ? "user" : "assistant", content: "Older message \(n) of \(id)") }
+            chat.messages = old + chat.messages
+            chats[id] = chat
+        }
+    }
+
+    /// The thread ids in the order the list answers them.
+    var listed: [String] { lock.withLock { chats.values.sorted { ($0.finished, $0.id) > ($1.finished, $1.id) }.map(\.id) } }
+
+    func failSearches(_ count: Int) { lock.withLock { failingSearches = count } }
+    func refuseSearch(_ refuses: Bool = true) { lock.withLock { refusesSearch = refuses } }
 
     /// The next `count` writes of a mark are answered 500.
     func failWrites(_ count: Int) { lock.withLock { failing = count } }
@@ -146,7 +187,9 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
 
     /// Called under the lock. Answers the record's JSON and whether the
     /// write created it; nil for a thread the server does not hold.
-    private func put(_ thread: String, readThrough: String?, markedUnread: Bool?) -> (json: [String: Any], created: Bool)? {
+    private func put(_ thread: String, readThrough: String?, markedUnread: Bool?, pinned: Bool? = nil, archived: Bool? = nil)
+        -> (json: [String: Any], created: Bool)?
+    {
         guard let chat = chats[thread] else { return nil }
         let created = marks[thread] == nil
         var mark = marks[thread] ?? Mark()
@@ -164,6 +207,15 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         }
         if let markedUnread, mark.markedUnread != markedUnread {
             mark.markedUnread = markedUnread
+            changed = true
+        }
+        // A flag moves nothing else, and nothing else moves a flag.
+        if let pinned, mark.pinned != pinned {
+            mark.pinned = pinned
+            changed = true
+        }
+        if let archived, mark.archived != archived {
+            mark.archived = archived
             changed = true
         }
         if changed {
@@ -195,6 +247,8 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
             properties["readAt"] = stamp(mark.readAt ?? seq)
         }
         if let unread = mark.markedUnread { properties["markedUnread"] = unread }
+        if let pinned = mark.pinned { properties["pinned"] = pinned }
+        if let archived = mark.archived { properties["archived"] = archived }
         return record("\(thread).me", Kinds.threadMark, mark.version, at: seq, properties)
     }
 
@@ -239,23 +293,74 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         .json(status, ["error": ["code": code, "message": message]])
     }
 
-    /// Called under the lock.
-    private func list(_ filter: [String: Any]) -> Answer {
+    /// Called under the lock. A list of threads is narrowed by the
+    /// person's marks where the filter says (`referencedBy`), then cut
+    /// into a page: `first` rows after the cursor, which is the last row's
+    /// place in the order.
+    private func list(_ filter: [String: Any], _ query: [String: String]) -> Answer {
         let kind = (filter["kinds"] as? [String])?.first ?? ""
         let properties = filter["properties"] as? [String: [String: Any]] ?? [:]
         let named = (properties["thread"]?["in"] as? [String]) ?? (properties["thread"]?["eq"] as? String).map { [$0] }
+        let first = query["first"].flatMap(Int.init) ?? 100
+        if let words = query["q"] {
+            if failingSearches > 0 {
+                failingSearches -= 1
+                return refusal(500, "internal", "the search could not be read")
+            }
+            if refusesSearch { return refusal(403, "forbidden", "an app's token reads \(kind) through a list") }
+            guard kind == Kinds.message else { return page([]) }
+            let wanted = words.lowercased().split(separator: " ").map(String.init)
+            var found: [[String: Any]] = []
+            for chat in chats.values.sorted(by: { ($0.finished, $0.id) > ($1.finished, $1.id) }) {
+                for index in chat.messages.indices where wanted.allSatisfy(chat.messages[index].content.lowercased().contains) {
+                    found.append(messageJSON(chat, index))
+                }
+            }
+            return .json(200, ["records": Array(found.prefix(first)), "scores": [String: Any](), "pending": 0])
+        }
         switch kind {
         case Kinds.agent:
             return page([record(helper, Kinds.agent, 1, at: 0, ["description": "Helps."])])
         case Kinds.thread:
-            guard properties["mode"]?["eq"] as? String == "chat" else { return page([]) }
-            return page(chats.values.sorted { ($0.finished, $0.id) > ($1.finished, $1.id) }.map(threadJSON))
+            let modes = (properties["mode"]?["in"] as? [String]) ?? (properties["mode"]?["eq"] as? String).map { [$0] } ?? ["chat"]
+            guard modes.contains("chat") else { return page([]) }
+            var held = chats.values.sorted { ($0.finished, $0.id) > ($1.finished, $1.id) }
+            if let waits = properties["waitingOnPerson"]?["gt"] as? Int { held = held.filter { $0.waiting > waits } }
+            if let arm = filter["referencedBy"] as? [String: Any] {
+                guard keepsFlags else { return refusal(400, "bad_request", #"filter: unknown field "referencedBy""#) }
+                let conditions = arm["properties"] as? [String: [String: Any]] ?? [:]
+                let exists = arm["exists"] as? Bool ?? true
+                held = held.filter { chat in
+                    var points = marks[chat.id] != nil
+                    if conditions["archived"]?["eq"] as? Bool == true, marks[chat.id]?.archived != true { points = false }
+                    if conditions["pinned"]?["eq"] as? Bool == true, marks[chat.id]?.pinned != true { points = false }
+                    return points == exists
+                }
+            }
+            // A cursor is taken back only with the filter it was cut for.
+            let bound = SeededNumbers.hash(query["filter"] ?? "")
+            if let after = query["after"] {
+                let parts = after.split(separator: "|", maxSplits: 2).map(String.init)
+                guard parts.count == 3, let finished = Int(parts[1]) else { return refusal(422, "validation", "after: not a cursor") }
+                guard parts[0] == "\(bound)" else { return refusal(422, "validation", "cursor does not match this filter and orderBy") }
+                held = held.filter { ($0.finished, $0.id) < (finished, parts[2]) }
+            }
+            let rows = Array(held.prefix(first))
+            var body: [String: Any] = ["head": seq, "generation": "g", "records": rows.map(threadJSON)]
+            if held.count > first, let last = rows.last { body["cursor"] = "\(bound)|\(last.finished)|\(last.id)" }
+            return .json(200, body)
         case Kinds.message:
             let threads = (named ?? []).compactMap { chats[$0] }
             if properties["role"] != nil {
                 return page(threads.compactMap { chat in chat.messages.indices.first.map { messageJSON(chat, $0) } })
             }
-            return page(threads.flatMap { chat in chat.messages.indices.reversed().map { messageJSON(chat, $0) } })
+            // Newest first, as the transcript asks, from the ordinal named
+            // down where it names one.
+            let before = properties["turn"]?["lte"] as? Int
+            let rows = threads.flatMap { chat in
+                chat.messages.indices.reversed().filter { index in before.map { index <= $0 } ?? true }.map { messageJSON(chat, $0) }
+            }
+            return page(Array(rows.prefix(first)))
         case Kinds.threadMark:
             guard keepsMarks else { return refusal(404, "not_found", "unknown kind \(kind)") }
             return page((named ?? []).compactMap { thread in marks[thread].map { markJSON(thread, $0) } })
@@ -270,6 +375,8 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         let path = components?.percentEncodedPath ?? url.path
         let query = components?.queryItems ?? []
         let method = request.httpMethod ?? "GET"
+        var asked: [String: String] = [:]
+        for item in query { asked[item.name] = item.value ?? "" }
         return lock.withLock {
             kept.append("\(method) \(path)?\(components?.query ?? "")")
             if path.hasSuffix("/.well-known/substrate/server.json") {
@@ -286,7 +393,7 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
             if method == "GET", path.hasSuffix("/api/v1/records") {
                 let text = query.first { $0.name == "filter" }?.value ?? "{}"
                 let filter = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
-                return list(filter)
+                return list(filter, asked)
             }
             if method == "POST", path.hasSuffix("/api/v1/records") {
                 let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
@@ -305,7 +412,15 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
                 if let read, chats[thread]?.messages.contains(where: { $0.id == read }) == false {
                     return refusal(422, "validation", "readThrough names no message of thread \(thread)")
                 }
-                guard let put = put(thread, readThrough: read, markedUnread: properties["markedUnread"] as? Bool) else {
+                // A server from before the flags does not declare them.
+                if !keepsFlags, properties["pinned"] != nil || properties["archived"] != nil {
+                    return refusal(422, "validation", "unknown property \"pinned\" or \"archived\"")
+                }
+                guard
+                    let put = put(
+                        thread, readThrough: read, markedUnread: properties["markedUnread"] as? Bool, pinned: properties["pinned"] as? Bool,
+                        archived: properties["archived"] as? Bool)
+                else {
                     return refusal(404, "not_found", "thread \(thread)")
                 }
                 return .json(put.created ? 201 : 200, put.json)

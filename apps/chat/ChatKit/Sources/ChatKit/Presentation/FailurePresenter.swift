@@ -323,6 +323,10 @@ enum FailurePresenter {
             return Words(tone: .warn, sentence: "Couldn't refresh your chats.", note: because, button: button)
         case .feed:
             return Words(tone: .warn, sentence: "Live updates stopped.", note: because, button: button)
+        case .search:
+            return Words(tone: .warn, sentence: "Couldn't search your messages. Chats are found by their titles.", note: because, button: button)
+        case .flag:
+            return Words(tone: .warn, sentence: "Couldn't save that change to the chat.", note: because, button: button)
         case .guidance:
             return Words(tone: .warn, sentence: "Couldn't read them.", note: because, button: button)
         }
@@ -345,7 +349,9 @@ enum FailurePresenter {
             } else {
                 nil
             }
-        case .refresh, .feed: FailureButton(title: "Try Again", action: .refresh, busy: c.busy)
+        // Try Again on the list reads it again, and with it searches
+        // again and writes the change again.
+        case .refresh, .feed, .search, .flag: FailureButton(title: "Try Again", action: .refresh, busy: c.busy)
         case .poll, .card, .answer, .decide, .addKey, .guidance, .guidanceChange, .keep: nil
         }
     }

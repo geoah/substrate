@@ -141,11 +141,15 @@ one segment, encoded exactly once: an agent's id
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
 | Whose key | `GET /api/v1/operator/defaults` → `{items: [{id: "llm/<row>", source, readiness}]}`, read with full access alone; 404, 405 or 501 on a server older than it, where each row's own `apiKey` says |
-| Chats | `{"kinds":["…/llm/thread"],"properties":{"mode":{"eq":"chat"}}}`, `updatedAt:desc`, first 100 |
+| Chats | `{"kinds":["…/llm/thread"],"properties":{"mode":{"eq":"chat"}}}`, `updatedAt:desc`, first 100; the next hundred with the page's `cursor` as `after`, when the list is scrolled to its end ([The list's window](#the-lists-window)) |
+| Chats, where `records` is at revision 9 or more | the same with `"referencedBy":{"kind":"…/llm/threadmark","property":"thread","properties":{"readBy":{"eq":"me"},"archived":{"eq":true}},"exists":false}`: the chats the person has not archived. Beside it, each read whole: the pinned ones (the arm with `"pinned":{"eq":true}` and no `exists`) and the ones that wait on a person (`"waitingOnPerson":{"gt":0}`, no arm). The archived ones (the arm with `archived` and no `exists`), a page at a time, while a window lists them ([Pinned and archived chats](#pinned-and-archived-chats)) |
 | Automated runs (when shown) | same, `mode in [manual, call, record, schedule, webhook]`, first 50 |
 | Titles without a subject | `{"kinds":["…/llm/message"],"properties":{"role":{"eq":"user"},"thread":{"in":[ids]}}}`, `turn:asc,createdAt:asc`, first 500 |
 | One thread | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}` (404 or `deletedAt`: deleted) |
 | A transcript | `{"kinds":["…/llm/message"],"properties":{"thread":{"eq":id}}}`, `turn:desc,createdAt:desc`, first 500, reversed |
+| The rows before the ones held | the same with `"turn":{"lte":<the first held row's turn>}`, first 200: a keyset of the transcript's own order, so it needs no cursor from the read that brought the rows held (the folder's, a conversation's own). The row at that ordinal comes again and is dropped by its id |
+| A search's messages | `GET /api/v1/records?q=<words>&mode=lexical&first=50&filter={"kinds":["…/llm/message"]}`: the ranked read, by its words alone, so every hit holds a word to show. Full access only: an app's token reads messages thread by thread and is answered `403`, after which the app searches what the device holds and asks no more until the server's document is read again |
+| Pin, Unpin, Archive, Unarchive | the mark's `POST` with `{thread, pinned}` or `{thread, archived}`, alone or beside `readThrough` in one write; only where `records` is at revision 9 or more. An older server refuses the properties (`422`, or `403` to an app's token) |
 | My marks | `{"kinds":["…/llm/threadmark"],"properties":{"thread":{"in":[ids]},"readBy":{"eq":"me"}}}`, first 100, a hundred threads a request, with every list of threads; only where `records` is at revision 8 or more. `me` is the person the token acts for, so the app never learns its actor |
 | Read a chat | `POST /api/v1/records` `{kind: …/llm/threadmark, properties: {thread, readThrough}}`, with no id: the server builds it from the thread and the person. `201` or `200` with the mark as it stands. Never `readAt`, which is the server's |
 | Mark as Unread | the same `POST` with `{thread, markedUnread: true}` and no `readThrough`: the position never moves |
@@ -156,7 +160,7 @@ one segment, encoded exactly once: an agent's id
 | A message kept from a launch before | `GET /api/v1/substrate.reamde.dev/llm/message/{messageId}` (404: no copy was written) |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
-| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision` (3 or more takes a `messageId` and has the continue route) and the `records` feature's (8 or more has the person's marks) |
+| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision` (3 or more takes a `messageId` and has the continue route) and the `records` feature's (8 or more has the person's marks, 9 or more their pins and archives and the `referencedBy` arm) |
 | Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message, called only where `agents` is at revision 3 or more; below it, or before the document is read, the app sends "Continue where you left off." through Send, as it did before the route. The route is never probed. `409` `thread_busy` or `nothing_to_continue`: the thread is read for what it holds |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
@@ -450,8 +454,8 @@ be read again.
 
 | File | Holds |
 | ---- | ----- |
-| `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, the person's marks as the server last said them and the ones this device moved and has not had answered, the device's own `seen` map (what is unread on a server without marks), the notified set; a build before ChatKit kept the feed cursor here too |
-| `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
+| `state.json` | format version, agents, providers, the chat list's first page (the newest hundred, however far the list was scrolled), the pinned chats and the ones that wait on a person, the `records` revision the server last said (which lists a launch reads before it asks again), opening lines, pending cards, the person's marks as the server last said them and the ones this device moved and has not had answered, the device's own `seen` map (what is unread on a server without marks), the notified set; a build before ChatKit kept the feed cursor here too |
+| `cache/<thread>.json` | one thread's newest rows (the read's window, never the older ones read in above it), the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
 | `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit moves into it at the first open, which removes it from `state.json`, so it is read once |
 | `drafts.json` | each chat's unsent draft |
 | `unsent.json` | each chat's message sent under an id of its own that the server has not taken: the id, the text, the assistant, the thread. Written before the request leaves and before the draft is cleared, so a kill between the two leaves the message in both files, and the next launch gives it one owner |
@@ -653,8 +657,25 @@ beside its text, which VoiceOver reads as "opens in your browser".
 ## The interface
 
 **Layout.** `NavigationSplitView`: chats in the sidebar, the conversation in
-the detail. iPhone collapses it to a stack. The selected chat and the
-sidebar state are scene storage, so a relaunch returns where it was.
+the detail, both columns shown on an iPad and a Mac. iPhone collapses it to
+a stack.
+
+**The first screen.** A window opens to a chat, never to an empty detail
+(`ChatApp.land`, decided once the chats are held, from the folder at a
+launch):
+
+1. the chat it was left in, where that was less than half an hour ago;
+2. else the newest chat that is running;
+3. else a new chat with the default assistant, whose composer takes the
+   focus.
+
+A route the window is about to take (a notification's tap, a shortcut, the
+Action Button) wins over all three. Scene storage keeps which chat a window
+showed and when it was last in it (`chat.thread`, `chat.left`: moved when
+the chat changes and when the window leaves the front), and that is all
+state restoration does: it names the chat for the first rule, and a chat
+left longer ago is not gone back to. A window left on the list of a phone
+has no chat to go back to.
 
 **Glass is the control layer only** (HIG): the toolbars (already glass on 26),
 the composer and the Jump to Latest button, which share one
@@ -666,7 +687,10 @@ bubble is a tinted fill. The transcript softens under the composer with
 ### Chat list
 
 - Grouped Today, Yesterday, Previous 7 Days, Earlier, by last activity (the
-  console has no week group; the list here is longer).
+  console has no week group; the list here is longer), under a Pinned
+  section where any chat is pinned
+  ([Pinned and archived chats](#pinned-and-archived-chats)). A chat is in
+  one section.
 - A row: the title (`subject`, else the opening line, else "New chat") and
   when, then the agent's name in its colour running into the start of the
   last reply ("Working…" while it runs), and a state: a dot when unread, a
@@ -675,8 +699,17 @@ bubble is a tinted fill. The transcript softens under the composer with
   pending cards), and the console's mark in
   words for a last turn that didn't finish: "Didn’t finish" (orange) for a
   restart or a limit, "Stopped" (grey) for a stop, "Failed" (red) for an
-  error. No avatar and no agent pill: each took a column and said no more
-  than the name.
+  error. A chat at work shows a small spinner where its mark would stand.
+  No avatar and no agent pill: each took a column and said no more than
+  the name.
+- Each row is a part of the presentation of its own (`row/<thread>`), kept
+  until its thread, its mark or its instant moves: a page read in at the
+  list's end makes that page's rows and none above them.
+- A row takes its new place with motion when the order changes (a reply
+  settled, a pin, an archive), and with none under Reduce Motion.
+- While the first read is out and the folder held nothing, eight rows of
+  grey bars stand in for the chats, shimmering unless the device asks for
+  less motion.
 - The selected row draws every word in the system's primary style and
   keeps no colour of its own: the system makes that white on the
   selection's fill while the list has the focus, and the label colour on
@@ -687,10 +720,23 @@ bubble is a tinted fill. The transcript softens under the composer with
   mark is an outline.
 - Automated runs are behind a toggle in the list's filter menu (off by
   default), with a glyph for what started each.
-- Search filters titles, previews and cached transcripts, and says it is
-  searching what is on this device.
+- Search: the chats whose title, preview or rows held on the device match
+  are found at once, as typed, the archived ones under "Archived". 0.35 s
+  after the typing stops the server is asked for the messages that hold
+  the words (the ranked read above), and they come under the chats, by
+  chat, in the order of each chat's best message: the chat's title, up to
+  three of its messages cut to the words around the first that matched,
+  each matching word in the accent, and "and 4 more". An archived chat's
+  group says "Archived". A message opens its chat at that message
+  ([Where it opens](#conversation)). A search that fails says so in the
+  list's strip, with Try Again, and keeps the chats found. On a server that
+  takes no search from this sign-in the rows on the device are searched
+  alone, and "No chat on this device matches" says so.
 - Swipe and context menu: Rename, Mark as Read or Unread
-  ([Read state](#read-state)), Copy Thread ID.
+  ([Read state](#read-state)), Copy Thread ID; and, where the server keeps
+  them, Pin or Unpin and Archive or Unarchive.
+- At the list's end, while the server's list goes on, a row reads the next
+  page when it comes on screen ([The list's window](#the-lists-window)).
 - Pull to refresh; an offline banner ("Offline. Showing saved chats.").
 - Toolbar: New Chat (⌘N); Settings (⌘, on the Mac). On a phone the search
   field sits in the bottom bar with New Chat to its right.
@@ -806,7 +852,18 @@ bubble is a tinted fill. The transcript softens under the composer with
   a password sign-in, writes the key (an app token links to the provider's
   record in the console). The key lives only in the field until it is sent;
   it is never cached or logged.
-- **More than 500 rows**: "Older messages aren't shown here" at the top.
+- **More than 500 rows**: a chat opens with its newest 500. A row at the
+  top, "Earlier messages", reads the 200 before the first one held when it
+  comes on screen, or when pressed, for as long as the thread holds more
+  (`ChatApp.Command.olderRows`). The rows arrive above the ones drawn, and
+  a transcript that does not follow its end stays at the turn that stood
+  first (`TranscriptScroll`'s `above`: the scroll view is put at that turn
+  again once the rows are laid out, since content that grows above a
+  reader moves what they read down). The next read of the newest rows
+  (the thread moved, a run handed over) keeps the older ones where it
+  begins among the rows held, and starts the transcript over where it
+  does not: more rows were written since than a read holds. The folder
+  keeps the newest window alone.
 - **The transcript follows its end while you let it** (`TranscriptFollow`,
   ChatKit's rule; `TranscriptScroll`, the view that keeps it). Following
   is your intent, and only you change it:
@@ -861,7 +918,11 @@ bubble is a tinted fill. The transcript softens under the composer with
   rows read on opening bring the line with them: the chat is put at it
   once they are laid out, and does not follow its end in between. The
   line stays while the chat is open and is gone the next time
-  ([Read state](#read-state)). It stands on the scroll view's seam:
+  ([Read state](#read-state)). A chat opened at a message, from a search,
+  opens at that message's turn the same way, and each time it is opened at
+  one again while it is shown (`ConversationScreen.visit`); where the rows
+  held do not reach the message, the rows before them are read until they
+  do, five reads at most. It stands on the scroll view's seam:
   `ConversationScreen.opens` names the turn, by the id the turn is drawn
   under (a row streamed in this conversation keeps the id its stream gave
   it); the line is a row of the transcript above that turn's first, which
@@ -1067,7 +1128,10 @@ watch.
 thread settled with, passing over a message of the person's that no reply
 came after (from `agents` 6), so a chat whose last send failed is failed
 by its status and not unread. A thread with no `lastMessage` is unread
-only when marked so. A thread the person has no mark of was never opened, and is unread. A
+only when marked so. A thread the person has no mark of was never opened,
+and is unread; so is one whose mark holds no position, as a chat pinned or
+archived from the list before it was ever opened has: a mark alone does
+not say a chat was opened. A
 chat that is running is working, not unread. A chat whose mark the server
 has not said yet is not called unread, and its reply is not notified, until
 it has: a list read whose marks failed shows no dot it would have to take
@@ -1195,6 +1259,112 @@ between shows every chat as unread. The map is kept for servers without
 marks, and a server that stops keeping them (a rollback) leaves each dot
 where it was.
 
+## The list's window
+
+The list holds a window of the server's list that grows at its end: its
+first page at a launch and at every refresh, and the page after the last
+one read each time the list is scrolled to its end, asked for with the
+cursor that page gave (`ChatAppLists.swift`; `ListTests.swift` holds it).
+A chat is never listed twice: a page's row takes the place of the row held
+under the same id.
+
+**A refresh reads the first page alone**, however far the window has
+grown, and so do the change feed and a mark that arrives. The page is
+merged into the window:
+
+- Where the page and the window share a chat that has not moved since,
+  every chat that did move is on the page above it. The chats on the page
+  replace their rows, the rows past the page stay, and a row inside the
+  page's span that is not on it has left the list (deleted, or archived on
+  another device).
+- Where they share none, more chats moved than a page holds, and what lies
+  between the page and the rows held was never read. The window starts
+  over from the page, and grows again from its cursor.
+- Pull to refresh, and Try Again on the list's strip, start the window
+  over too: the person asked for the list anew. So does a cursor the
+  server can no longer go on from (`410`).
+
+**What no list read reaches is read by name.** A read of the first page
+says nothing of a chat past it, of one that just left its list, or of one
+a window shows that no list holds. Each thread held that a row of the
+change feed names (its own, or its mark's, whose id starts with the
+thread's), and each thread a conversation is on, is read on its own with
+the person's mark of it wherever the lists read beside it do not hold it.
+The watch resumes from where it stopped, so what moved while a phone was
+away is told when it is back.
+
+A page asked for from a place the window has since left is dropped.
+Automated runs are their first fifty and do not grow.
+
+## Pinned and archived chats
+
+Where the server keeps a person's `pinned` and `archived` on their mark of
+a thread (decision 0322, `records` at revision 9 or more), a chat can be
+pinned and archived, from the row's swipe and its context menu on iPhone,
+iPad and Mac. Below that revision the list is every chat, neither action
+is offered, and neither property nor the filter arm is ever sent. A server
+that says revision 9 and then refuses the arm (`400`: a rollback the
+folder had not heard of) is read as one without, until its document is
+read again.
+
+**Four lists, merged by the thread.** The chats not archived are the list,
+and its window. The pinned ones and the ones that wait on a person are
+each read whole beside it, since either may be older than any page, and a
+chat that waits may be archived. The archived ones are read a page at a
+time while a window lists them. A thread in several is one row, at the
+newest version any of them holds.
+
+**The rules, which are the client's** (the server holds none of them):
+
+- An archived chat is in no list, not in the unread count or the badge,
+  and a reply in it notifies nobody. `ChatAppState.notifies(_:)` is the
+  one test of that, for whatever posts a notification of a thread.
+- But while something in it waits on a person (`waitingOnPerson` above
+  0): then it is listed, with the waiting mark, counted and notified for
+  as if it were not archived. Its flag stays, so it leaves the list again
+  once answered.
+- Pinned chats stand in a section of their own above the rest, however
+  old. A chat both pinned and archived is with the archived ones and keeps
+  its pin.
+- Speaking in an archived chat ends its archive: a message, Send Again,
+  Try Again and Continue write `archived: false`. The message never waits
+  for that write.
+- Until the person's mark of a chat is read, and where that read failed,
+  the list the server answered a chat in says which it is (it narrowed
+  the lists by the same marks): one that came with the chats is not
+  archived, one that came with the pinned ones is pinned.
+- The Archived list is offered by the server's revision, never by having
+  read an archived chat: with every chat archived the list is empty.
+- The thread kind is followed on the change feed whenever the app runs in
+  front, and the mark kind once a read of the marks was answered, also
+  with no chat listed: an archived run comes back when it comes to wait,
+  and a chat unarchived on another device when its mark says so.
+
+**Pin and Archive are the mark's writes.** Each reads so here at once and
+is written on the path every write of a mark takes (`ChatAppMarks.swift`):
+laid over the server's mark until the server answers, one write a thread
+at a time, with whatever position the thread's mark has waiting. A write
+that fails is made again at the next chance, across a launch too, and is
+not shown; one the server refuses for good is said in the list's strip
+("Couldn't save that change to the chat."), where Try Again writes it
+again, and the chat reads as the server says. A list read that left the
+server before the write was taken brings the chat back in its page and
+moves nothing: what this device moved stays laid over until its own
+answer.
+
+**Archive asks nothing and offers Undo.** The row leaves at once and a bar
+at the list's end says "Archived “Title”" with Undo for six seconds. Undo
+writes `archived: false` and puts back the row that was there, at its
+place: the chat's row is kept among the archived ones from the moment it
+leaves. What the chat had notified is taken back when it is archived, and
+when a mark from another device says it was.
+
+**The Archived list** is in the list's Show menu: the window's list
+becomes the archived chats, newest activity first, each with Unarchive on
+its swipe and its menu, a page at a time, and Chats leads back. An
+unarchived chat is listed again where its place is inside the window read
+so far, and otherwise once the list is scrolled to it.
+
 ## Failures
 
 A failure is a value until it is drawn. Where a request, a stream or a run
@@ -1220,7 +1390,7 @@ and its button.
 | ----- | ----- | -------------- |
 | A turn | a card at that turn in the transcript | the reply, Try Again, Continue, a message that stands unsent |
 | The chat as a whole | one strip directly above the composer | a send that started no turn, a stop, a stream that will not open, a reload, a chat's rows, a rename |
-| The list | one strip at its top | a refresh, the change feed, a rename of a chat no window shows |
+| The list | one strip at its top | a refresh, a page of the list, the change feed, a rename of a chat no window shows, a search of the messages, a pin or an archive the server refused |
 
 A second failure in a place replaces the first. A question's, a
 suggestion's and an approval's card, the key sheet and a row of Settings say
@@ -1264,7 +1434,10 @@ any thread opens, so it is never a run's cause), and today's `quota` and
 "You're offline. Your message is in the box below." (Send Again), "Couldn't
 stop Moss. The reply is still being written." (Try Again), "Couldn't load
 the end of this chat." (Try Again), "Couldn't refresh your chats." (Try
-Again), "Live updates stopped." (Try Again).
+Again), "Live updates stopped." (Try Again), "Couldn't search your
+messages. Chats are found by their titles." (Try Again, which searches
+again), "Couldn't save that change to the chat." (Try Again, which writes
+the pin or the archive again).
 
 **The details.** The server's own words (a thread's `reason`, an envelope's
 message) are behind a Details disclosure, under "The server said". What the
@@ -1346,16 +1519,17 @@ button and Details stack where the text size leaves no room side by side.
 18. Mac menus and shortcuts, Settings window, ⌘Return to send.
 19. Glass composer that says what is happening, toolbar, and Jump to Latest with how many messages are below.
 20. Action Button / App Shortcuts: New Chat with an assistant, optionally listening.
-21. Scene restoration of the open chat.
+21. A window opens to the chat left a short while ago, a running one, or a new chat.
 
 **Polish (v1)**
 
 22. Delta coalescing; Markdown parsed in the presenter, closed while it is written, a long reply in several rows; equatable turn views; a presenter made of kept parts, and a tree published in parts.
 23. Haptics; the send/stop morph; the thinking shimmer and its window; text drawn at a steady rate.
-24. Search over titles, previews and cached transcripts.
+24. Search over titles, previews and cached transcripts, with the server's ranked messages under them.
 25. Technical details.
 26. Unread dot and badge.
 27. Accessibility for streaming text.
+28. A list and a transcript that grow past their first read; pinned and archived chats where the server keeps them.
 
 **Later**
 
@@ -1363,7 +1537,6 @@ button and Details stack where the text size leaves no room side by side.
 - Handoff of the open chat (`NSUserActivity`).
 - A share extension that starts a chat with the shared text.
 - Widgets; a Live Activity of its own.
-- Older messages past the 500-row window.
 
 ## Testing
 
@@ -1519,9 +1692,12 @@ button and Details stack where the text size leaves no room side by side.
   starts; a runtime that honoured the hook for some enqueues and not for
   others could pass it, and would be caught only where the run is met.
   A rule the app is known to break is listed in `SeededRun.known`, noted
-  and not failed; the list is empty today (its four entries were the two
-  models of a turn, gone with them), and an entry that no longer fails
-  must not stay. A kill may take a draft typed inside its save's pause and
+  and not failed, and an entry that no longer fails must not stay. It
+  holds one today (its first four were the two models of a turn, gone
+  with them): a message sent under no id, before the chat's rows are
+  read, into a thread that already holds the same words under an id, is
+  paired with that older row, so the two equal bubbles swap ids (seed
+  6523, 76 steps). What is drawn is still the server's rows, each once. A kill may take a draft typed inside its save's pause and
   a send without an id still on its way, and nothing else.
 - Read state (`MarkTests.swift`, over `MarkServer`, a server that keeps
   marks by the real one's rules for any number of devices at once): the
@@ -1559,6 +1735,48 @@ button and Details stack where the text size leaves no room side by side.
   message say; no reply's notification stands, waiting or shown, for a
   chat the app holds read. A kill takes what the list drew read, since
   the launch after it draws from the folder first.
+- The list (`ListTests.swift`, over `MarkServer` at `records` 9, which
+  keeps the two flags, narrows a list by the marks that point at its rows
+  and cuts every list into pages): the window grows by the cursor and
+  lists no chat twice; a chat that moves keeps a grown window whole from a
+  read of its first page; a page asked for before the order moved loses
+  none; more chats moved than a page holds start the window over; a row is
+  made once and a page makes its own rows alone. A transcript's older rows
+  arrive above the ones held, a page a read, and stay through the next
+  read of its newest. The four lists merge by the thread; Pin and Unpin
+  read so at once and reach the mark through a write that failed; Archive
+  takes the row and Undo puts back the very sections; Undo stands six
+  seconds; an archived chat that comes to wait is listed and leaves again
+  once answered; a reply in an archived chat notifies nobody and counts
+  nowhere; archiving takes back what a chat notified; speaking in an
+  archived chat ends its archive; the archived list is read when shown
+  and grows; a chat archived or unarchived on another device, on the
+  first page and past it; every chat archived and one coming back; a
+  write that races the list reads; a flag refused for good; the lists as
+  what says which chat is which until a mark is read. Below revision 9
+  nothing of it is offered or sent, and a server that stops keeping the
+  flags is read as one that never did. A search's titles at once and its
+  messages after the pause, by chat with the words that matched; one that
+  fails, in the strip with the titles kept; a server that takes none; a
+  hit opening its chat at that message, the rows before the ones held
+  read to reach it. A window's first screen, each of its rules.
+- The list by a seed (`SeededRun`, `SeededServer`): three in four of the
+  seeded servers that keep marks keep the flags too (`records` 9), with a
+  thread's `waitingOnPerson` moved by the run and told on the feed, and
+  the list is read two, three or four chats a page, so a handful of chats
+  is several pages. The person also pins and unpins, archives, presses
+  Undo, opens the archived list and unarchives there, scrolls a list to
+  its end and searches; another device of theirs moves a flag; a chat
+  comes to wait on them, and is answered. After every step: an archived
+  chat is drawn, counted or notified for only while it waits; a pinned
+  chat the app holds is in the pinned section and nothing else is; a chat
+  is in one section; a flag is written only where the person set it, or
+  spoke in a chat they had archived, and never to a server that keeps
+  none; Undo puts the chat back, and pressed at once the very row at the
+  very place; a search draws each message under the chat that holds it.
+  At the end the list is pulled and scrolled to its end, and must draw
+  every chat the server lists, once, the pinned ones in their section,
+  with each chat's flags as the server holds them.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

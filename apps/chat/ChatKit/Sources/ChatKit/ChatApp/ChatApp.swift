@@ -13,11 +13,16 @@ import SubstrateScreens
 /// environment's services.
 public struct ChatApp: LinkedApp {
     public enum Command: Codable, Equatable, Sendable {
-        /// A window drew; `restoring` is the chat it showed when it last ran.
-        case sceneAppeared(scene: String, restoring: String?)
+        /// A window drew; `restoring` is the chat it showed when it last
+        /// ran. With `lands` it opens to something: that chat where it was
+        /// left at `left`, less than half an hour ago, else a chat that is
+        /// running, else a new chat (`ChatApp.land`).
+        case sceneAppeared(scene: String, restoring: String?, left: Date? = nil, lands: Bool = false)
         case sceneActive(scene: String, active: Bool)
         case sceneGone(scene: String)
         case show(thread: String, scene: String)
+        /// A chat opened at one of its messages, from a search.
+        case open(thread: String, message: String, scene: String)
         case newChat(agent: String?, listen: Bool, scene: String)
         /// Back to the list on a phone: nothing is selected.
         case back(scene: String)
@@ -33,6 +38,18 @@ public struct ChatApp: LinkedApp {
         case refresh
         case markRead(String)
         case markUnread(String)
+        /// Pin and Unpin, Archive and Unarchive: offered only where the
+        /// server keeps the flags (`ChatListPresentation.flags`).
+        case pin(thread: String, pinned: Bool)
+        case archive(thread: String, archived: Bool)
+        /// Undo, on the chat archived a moment ago.
+        case undoArchive
+        /// A window lists the archived chats, or the chats again.
+        case showArchived(scene: String, shown: Bool)
+        /// A list was scrolled to its end: the chats, or the archived ones.
+        case more(archived: Bool)
+        /// A transcript was scrolled to the first row held.
+        case olderRows(thread: String)
         /// A window's view says whether somebody looking at it sees the end
         /// of the conversation it shows: the window is in front and
         /// active, and the newest message is on screen.
@@ -87,6 +104,8 @@ public struct ChatApp: LinkedApp {
     public let storage: ChatStorage
     public let preferences: any PreferenceStore
     public let platform: ChatPlatform
+    /// How many chats one read of the list asks for.
+    let page: Int
     /// The presentation's parts as last made, each kept until what it reads
     /// changes: a streamed reply presents its own turn again, and neither
     /// the list nor the turns above it.
@@ -95,10 +114,13 @@ public struct ChatApp: LinkedApp {
     /// - Parameter verifiesParts: every part answered from the store is
     ///   made again and compared, for a test: a part kept past a change to
     ///   what it reads stops the process.
-    public init(storage: ChatStorage, preferences: any PreferenceStore, platform: ChatPlatform, verifiesParts: Bool = false) {
+    /// - Parameter page: how many chats one read of the list asks for,
+    ///   for a test whose server holds few.
+    public init(storage: ChatStorage, preferences: any PreferenceStore, platform: ChatPlatform, verifiesParts: Bool = false, page: Int = 100) {
         self.storage = storage
         self.preferences = preferences
         self.platform = platform
+        self.page = page
         kept = PresenterParts(verifies: verifiesParts)
     }
 
@@ -108,9 +130,14 @@ public struct ChatApp: LinkedApp {
 
     public static func == (lhs: ChatApp, rhs: ChatApp) -> Bool {
         lhs.storage === rhs.storage && (lhs.preferences as AnyObject) === (rhs.preferences as AnyObject) && lhs.platform == rhs.platform
+            && lhs.page == rhs.page
     }
 
-    public var initialState: State { State() }
+    public var initialState: State {
+        var state = State()
+        state.page = page
+        return state
+    }
 
     // MARK: Commands into events
 
@@ -118,11 +145,19 @@ public struct ChatApp: LinkedApp {
         let state = context.state
         let key = { ChildKey(context.mint().uuidString.lowercased()) }
         switch command {
-        case let .sceneAppeared(scene, restoring):
-            return [Event(.sceneAppeared(scene: scene, restoring: restoring, key: restoring.flatMap { state.key(of: $0) } ?? key()))]
+        case let .sceneAppeared(scene, restoring, left, lands):
+            guard lands else {
+                return [Event(.sceneAppeared(scene: scene, restoring: restoring, key: restoring.flatMap { state.key(of: $0) } ?? key()))]
+            }
+            // The chat it was left in is gone back to only while that was
+            // a short while ago.
+            let fresh = left.map { context.now.timeIntervalSince($0) < Self.freshFor } ?? false
+            return [Event(.sceneAppeared(scene: scene, restoring: fresh ? restoring : nil, key: key(), lands: true))]
         case let .sceneActive(scene, active): return [Event(.sceneActive(scene: scene, active: active))]
         case let .sceneGone(scene): return [Event(.sceneGone(scene: scene))]
         case let .show(thread, scene): return [Event(.show(thread: thread, scene: scene, key: state.key(of: thread) ?? key()))]
+        case let .open(thread, message, scene):
+            return [Event(.show(thread: thread, scene: scene, key: state.key(of: thread) ?? key(), message: message))]
         case let .newChat(agent, listen, scene): return [Event(.newChat(agent: agent, listen: listen, scene: scene, key: key()))]
         case let .back(scene): return [Event(.back(scene: scene))]
         case let .search(scene, query): return [Event(.searched(scene: scene, query: query))]
@@ -135,6 +170,12 @@ public struct ChatApp: LinkedApp {
         case .refresh: return [Event(.refreshAsked)]
         case let .markRead(thread): return [Event(.markedRead(thread))]
         case let .markUnread(thread): return [Event(.markedUnread(thread))]
+        case let .pin(thread, pinned): return [Event(.pinAsked(thread: thread, pinned: pinned))]
+        case let .archive(thread, archived): return [Event(.archiveAsked(thread: thread, archived: archived, at: context.now))]
+        case .undoArchive: return [Event(.undoAsked)]
+        case let .showArchived(scene, shown): return [Event(.archivedShown(scene: scene, shown: shown))]
+        case let .more(archived): return [Event(.moreAsked(archived: archived))]
+        case let .olderRows(thread): return [Event(.olderRowsAsked(thread))]
         case let .end(scene, key, shown):
             // Said again with nothing changed, it is no event.
             if (state.scenes[scene]?.atEnd == key) == shown { return [] }
@@ -215,6 +256,11 @@ public struct ChatApp: LinkedApp {
         // A read found a new chat's pending message on a thread: the chat
         // is bound to it, as its `thread` event would have bound it.
         if let adopted = state.adopted { named = adopted }
+        var spoke = false
+        switch event.step {
+        case .sent, .sentAgain, .continued: spoke = true
+        default: break
+        }
         // Whatever put a message back into the composer, the list keeps it.
         if state.gaveBack { draft = state.draft }
         return Event(
@@ -224,7 +270,7 @@ public struct ChatApp: LinkedApp {
                     thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
                     outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
                     read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved,
-                    unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack)))
+                    unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack, spoke: spoke)))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -235,7 +281,8 @@ public struct ChatApp: LinkedApp {
             let .cardWriteFailed(_, failure), let .renameFailed(_, _, failure):
             failure.report
         case let .watchEnded(_, failure?): failure.report
-        case .markWriteFailed(_, _, .signedOut): .accessEnded
+        case .markWriteFailed(_, _, .signedOut, _): .accessEnded
+        case let .pageFailed(_, _, failure, _), let .searchFailed(_, _, failure, _): failure.report
         case let .feedApplied(feed): feed.failure?.report
         case let .guidance(.readFailed(failure)), let .guidance(.writeFailed(_, failure, _)): failure.report
         default: nil
@@ -312,6 +359,10 @@ public struct ChatApp: LinkedApp {
         case .prefetch: "prefetch"
         case let .fetchThread(thread): "fetch:\(thread)"
         case let .rereadBehind(thread, _): "behind:\(thread)"
+        case let .page(_, part, _): "page:\(part.rawValue)"
+        case let .readOlder(thread, _, _): "older:\(thread)"
+        case let .search(_, scene, _, _): "search:\(scene)"
+        case .undoWait: "undo"
         case .watch: "watch"
         case .feedWait: "feedWait"
         case .applyFeed: "feedApply"

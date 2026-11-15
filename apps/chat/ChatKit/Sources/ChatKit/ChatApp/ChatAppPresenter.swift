@@ -19,6 +19,22 @@ extension ChatApp {
         var rows: [ThreadRow]
         var sections: [DaySection]
         var unread: Int
+        /// The archived chats' rows, for the window that lists them.
+        var archived: [ThreadRow] = []
+    }
+
+    /// What one row of the list is made from: its thread's row and opening
+    /// line, what the person's mark and the cards say of it, and how the
+    /// device writes a time.
+    struct ListRowReads: Equatable, Sendable {
+        var record: Record
+        var opening: String?
+        var unread: Bool
+        var attention: Int
+        var pinned: Bool
+        var archived: Bool
+        var locale: Locale
+        var timeZone: TimeZone
     }
 
     /// The rest of the app's own part: who is offered, what is on screen,
@@ -46,6 +62,13 @@ extension ChatApp {
         var listed: State?
         var sections: [DaySection]?
         var transcripts: [String: State.Held]?
+        /// The archived chats' rows, the messages the server found, the
+        /// rows of the chats they are in that no list holds, and whether
+        /// the server is searched at all.
+        var archived: [ThreadRow]?
+        var search: State.Search?
+        var others: [String: Record]?
+        var server = false
     }
 
     struct ConversationReads: Equatable, Sendable {
@@ -53,6 +76,9 @@ extension ChatApp {
         var state: State
         /// Where the chat's "New" line stands, which its entry holds.
         var newFrom: State.NewFrom?
+        /// The message it was opened at, and how often it was put at a row.
+        var opensAt: String?
+        var visits = 0
     }
 
     public func present(_ input: PresenterInput<ChatApp>) -> ChatPresentation {
@@ -64,20 +90,39 @@ extension ChatApp {
         for (id, scene) in state.scenes {
             let thread = scene.current.flatMap { state.conversations[$0]?.thread }
             let searching = !scene.query.trimmingCharacters(in: .whitespaces).isEmpty
+            let search = searching ? state.searches[id] : nil
+            let server = searching && state.searchesServer(scene.query)
             scenes[id] = kept.part(
                 "scene/\(id)",
                 reading: SceneReads(
                     scene: scene, thread: thread, listed: searching ? state.listed : nil, sections: searching ? listed.sections : nil,
-                    transcripts: searching ? state.transcripts : nil)
-            ) { self.scene(state, scene, thread: thread, listed: listed) }
+                    transcripts: searching ? state.transcripts : nil, archived: searching ? listed.archived : nil, search: search,
+                    others: search == nil ? nil : state.others, server: server)
+            ) { self.scene(state, scene, thread: thread, listed: listed, search: search, server: server) }
         }
         kept.keep(under: "scene/") { scenes[String($0.dropFirst("scene/".count))] != nil }
         let framed = kept.part("frame", reading: state.framed) { self.framed(state) }
-        let list = ChatListPresentation(
+        var list = ChatListPresentation(
             title: "Chats", sections: listed.sections, offline: state.online ? nil : "Offline. Showing saved chats.",
             failure: listFailure(state), reconnecting: state.feedReconnecting,
             empty: listed.rows.isEmpty && state.loaded ? framed.emptyList : nil, loading: listed.rows.isEmpty && !state.loaded,
             showAutomated: state.preferences.showAutomated, searchPrompt: "Search chats")
+        // The list's own facts that no kept part reads: how far its window
+        // reaches, the chat just archived, and the archived ones.
+        list.flags = state.flags
+        list.more = state.window.read && state.window.cursor != nil
+        list.loadingMore = state.window.reading
+        list.placeholders = list.loading ? Self.placeholderRows : 0
+        if let undo = state.undo, let thread = state.thread(undo.thread) {
+            list.undo = UndoPresentation(thread: undo.thread, words: "Archived “\(state.title(thread))”", action: "Undo")
+        }
+        if state.flags {
+            let window = state.archive.window
+            list.archived = ArchivedList(
+                title: "Archived", rows: listed.archived, loading: listed.archived.isEmpty && window.reading && !window.read,
+                more: window.read && window.cursor != nil, loadingMore: window.reading && window.read,
+                empty: listed.archived.isEmpty && !window.reading ? "No archived chats. A chat you archive is kept here, out of your list." : nil)
+        }
         var conversations: [ChildKey: ConversationScreen] = [:]
         var redrawAt: Date?
         for (key, live) in input.children {
@@ -85,7 +130,9 @@ extension ChatApp {
             // reply's rows, left as they were, may be parsed again.
             let screen = kept.timed(
                 "chat/\(key.rawValue)/screen",
-                reading: ConversationReads(live: live, state: state.conversed(live.thread), newFrom: state.conversations[key]?.newFrom),
+                reading: ConversationReads(
+                    live: live, state: state.conversed(live.thread), newFrom: state.conversations[key]?.newFrom,
+                    opensAt: state.conversations[key]?.opensAt, visits: state.conversations[key]?.visits ?? 0),
                 at: input.now
             ) {
                 let pace = TurnPresenter.Pace(now: input.now, reveals: state.paces)
@@ -123,52 +170,119 @@ extension ChatApp {
             + presentation.conversations.keys.sorted().map { PresentationPart(presentation.conversations[$0], at: [$0]) }
     }
 
+    /// How many rows stand in for the chats while the first read is out.
+    static let placeholderRows = 8
+    /// How many of a chat's messages a search draws under it.
+    static let hitsShown = 3
+
     /// The list from the threads, and the instant it stops being true as
     /// made: a row says "now" for a minute, a time until its day ends, a
-    /// weekday for six days, and the day headings move at midnight.
+    /// weekday for six days, and the day headings move at midnight. Each
+    /// row is a part of its own, kept until its thread, its mark or its
+    /// instant moves, so a list that grew by a page makes that page's rows
+    /// and no row above them again.
     private func listed(_ state: State, _ input: PresenterInput<ChatApp>) -> (value: Listed, until: Date) {
         let calendar = input.calendar
         let threads = state.threads
-        let rows = threads.map { row(state, $0, input) }
+        let archived = state.archivedThreads
+        let standing = State.Standing(state)
         let today = calendar.startOfDay(for: input.now)
-        var until = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
-        for thread in threads {
-            for age: TimeInterval in [60, 6 * 86400] {
-                let edge = thread.activeAt.addingTimeInterval(age)
-                if edge > input.now, edge < until { until = edge }
+        let midnight = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
+        var until = midnight
+        var made: [String: ThreadRow] = [:]
+        func row(_ thread: ChatThread) -> ThreadRow {
+            if let row = made[thread.id] { return row }
+            let waits = state.marks != nil ? thread.waiting : state.attention(thread.id)
+            let reads = ListRowReads(
+                record: thread.record, opening: state.openings[thread.id], unread: state.unread(thread), attention: waits,
+                pinned: standing.pinned(thread.id), archived: standing.archived(thread.id), locale: input.locale, timeZone: input.timeZone)
+            let part = kept.timed("row/\(thread.id)", reading: reads, at: input.now) {
+                var edge = midnight
+                for age: TimeInterval in [60, 6 * 86400] {
+                    let at = thread.activeAt.addingTimeInterval(age)
+                    if at > input.now, at < edge { edge = at }
+                }
+                return (Self.row(reads, thread, agent: agentName(thread.agentID ?? ""), input), edge)
             }
+            if part.until < until { until = part.until }
+            made[thread.id] = part.value
+            return part.value
         }
+        let rows = threads.map(row)
+        let shelved = archived.map(row)
+        kept.keep(under: "row/") { made[String($0.dropFirst("row/".count))] != nil }
         return (
             Listed(
                 rows: rows, sections: Self.sections(rows, threads, now: input.now, calendar: calendar),
-                unread: rows.count { $0.unread }),
+                unread: rows.count { $0.unread }, archived: shelved),
             until
         )
     }
 
-    /// One window: the chat it shows, and its search over the titles, the
-    /// previews and the rows held on this device.
-    private func scene(_ state: State, _ scene: State.Scene, thread: String?, listed: Listed) -> ScenePresentation {
+    /// One window: the chat it shows, and its search. The chats are found
+    /// at once by their titles, their previews and the rows held on this
+    /// device; the messages the server found come under them, by chat, with
+    /// the words that matched.
+    private func scene(_ state: State, _ scene: State.Scene, thread: String?, listed: Listed, search: State.Search?, server: Bool)
+        -> ScenePresentation
+    {
         let query = scene.query.trimmingCharacters(in: .whitespaces)
         var found: [DaySection]?
+        var messages: [SearchGroup]?
         if !query.isEmpty {
             let matches = Set(
-                state.threads.filter { thread in
+                (state.threads + state.archivedThreads).filter { thread in
                     state.title(thread).localizedCaseInsensitiveContains(query)
                         || (thread.preview?.localizedCaseInsensitiveContains(query) ?? false)
                         || (state.transcripts[thread.id]?.records.contains {
                             $0["content"]?.string?.localizedCaseInsensitiveContains(query) ?? false
                         } ?? false)
                 }.map(\.id))
-            // The rows as the list made them, under the same days.
-            found = listed.sections.compactMap { section in
+            // The rows as the list made them, under the same days, and the
+            // archived ones after them, said to be so.
+            var sections = listed.sections.compactMap { section -> DaySection? in
                 let rows = section.rows.filter { matches.contains($0.id) }
                 return rows.isEmpty ? nil : DaySection(title: section.title, rows: rows)
             }
+            let shown = Set(sections.flatMap(\.rows).map(\.id))
+            let shelved = listed.archived.filter { matches.contains($0.id) && !shown.contains($0.id) }
+            if !shelved.isEmpty { sections.append(DaySection(title: "Archived", rows: shelved)) }
+            found = sections
+            if let search { messages = groups(state, search) }
         }
+        let nothing = found?.isEmpty == true && (messages ?? []).isEmpty && search?.reading != true
         return ScenePresentation(
             current: scene.current, thread: thread, query: scene.query, found: found,
-            nothingFound: found?.isEmpty == true ? "No chat on this device matches “\(scene.query)”." : nil)
+            nothingFound: nothing ? (server ? "Nothing matches “\(scene.query)”." : "No chat on this device matches “\(scene.query)”.") : nil,
+            messages: messages, searching: search?.reading ?? false, archived: scene.archived && state.flags)
+    }
+
+    /// The messages a search found, by the chat each is in: the chats in
+    /// the order of their best message, each with its first few and the
+    /// words that matched.
+    private func groups(_ state: State, _ search: State.Search) -> [SearchGroup] {
+        let words = State.searchWords(search.query)
+        var order: [String] = []
+        var hits: [String: [Record]] = [:]
+        for hit in search.hits {
+            guard let thread = hit["thread"]?.referenceID else { continue }
+            if hits[thread] == nil { order.append(thread) }
+            hits[thread, default: []].append(hit)
+        }
+        return order.map { id in
+            let row = state.thread(id)
+            let name = agentName(row?.agentID ?? "")
+            let found = hits[id] ?? []
+            return SearchGroup(
+                id: id, title: row.map(state.title) ?? "Chat", agent: row?.agentID, agentName: name,
+                archived: state.archived(id) ? "Archived" : nil,
+                hits: found.prefix(Self.hitsShown).map { hit in
+                    let said = hit["content"]?.string ?? ""
+                    let mine = hit["role"]?.string == "user"
+                    return SearchHit(id: hit.id, who: mine ? "You" : name, runs: SearchSnippet.runs(of: mine ? said : plainText(markdown: said), words: words))
+                },
+                more: found.count > Self.hitsShown ? "and \(found.count - Self.hitsShown) more" : nil)
+        }
     }
 
     private func framed(_ state: State) -> Framed {
@@ -223,14 +337,15 @@ extension ChatApp {
 
     // MARK: The list
 
-    private func row(_ state: State, _ thread: ChatThread, _ input: PresenterInput<ChatApp>) -> ThreadRow {
-        let unread = state.unread(thread)
-        let mark: ThreadRow.Mark? = state.attention(thread.id) > 0 ? .attention : unread ? .unread : nil
+    static func row(_ reads: ListRowReads, _ thread: ChatThread, agent: String, _ input: PresenterInput<ChatApp>) -> ThreadRow {
+        let title = thread.title(opening: reads.opening)
+        let mark: ThreadRow.Mark? = reads.attention > 0 ? .attention : reads.unread ? .unread : nil
         return ThreadRow(
-            id: thread.id, title: state.title(thread), subject: thread.subject ?? state.title(thread),
-            stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agentName(thread.agentID ?? ""),
+            id: thread.id, title: title, subject: thread.subject ?? title,
+            stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agent,
             preview: thread.running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
-            unread: unread, mark: mark, unfinished: Self.unfinished(thread))
+            unread: reads.unread, mark: mark, unfinished: Self.unfinished(thread), running: thread.running, pinned: reads.pinned,
+            archived: reads.archived)
     }
 
     /// The console's pill for a chat whose last turn didn't finish.
@@ -246,12 +361,19 @@ extension ChatApp {
         }
     }
 
+    /// The pinned chats first, in a section of their own, then the rest
+    /// under their days: a chat is in one section.
     static func sections(_ rows: [ThreadRow], _ threads: [ChatThread], now: Date, calendar: Calendar) -> [DaySection] {
-        DayGroup.allCases.compactMap { day in
-            let inDay = zip(rows, threads).filter { DayGroup.of($0.1.activeAt, now: now, calendar: calendar) == day }.map(\.0)
-            return inDay.isEmpty ? nil : DaySection(title: day.rawValue, rows: inDay)
-        }
+        let pinned = rows.filter(\.pinned)
+        let rest = zip(rows, threads).filter { !$0.0.pinned }
+        return (pinned.isEmpty ? [] : [DaySection(title: pinnedTitle, rows: pinned)])
+            + DayGroup.allCases.compactMap { day in
+                let inDay = rest.filter { DayGroup.of($0.1.activeAt, now: now, calendar: calendar) == day }.map(\.0)
+                return inDay.isEmpty ? nil : DaySection(title: day.rawValue, rows: inDay)
+            }
     }
+
+    static let pinnedTitle = "Pinned"
 
     /// "now", "09:41", "Yesterday", "Mon", "12 Oct".
     static func stamp(_ date: Date, _ input: PresenterInput<ChatApp>) -> String {
@@ -398,12 +520,18 @@ extension ChatApp {
         // gave it.
         var newLine = Self.newLine(held, from: state.conversations[key]?.newFrom)
         if let row = newLine?.turn, let drawn = claims[row] ?? live.aliases[row] { newLine?.turn = drawn }
+        let drawn = { (row: String) in claims[row] ?? live.aliases[row] ?? row }
+        // Opened at a message, from a search: the turn of that row, once
+        // the rows held have it.
+        let entry = state.conversations[key]
+        let at = entry?.opensAt.flatMap { message in held?.turns.first { $0.row == message || $0.id == message }?.id }.map(drawn)
+        let above = held?.above.map { RowsAbove(turn: drawn($0), count: held?.grown ?? 0) }
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
-            olderHidden: (held?.records.count ?? 0) >= 500 ? "Older messages aren't shown here." : nil,
+            older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false),
             turns: turns, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
             failures: failures(state, live: live, row: row, all: all, turns: turns), technical: technical,
             cards: shown, approvals: asked, titles: titles,
@@ -416,7 +544,15 @@ extension ChatApp {
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
                 canSend: blocked == nil, status: Self.status(live, agent: agent)),
             streaming: live.phase == .streaming, stopping: live.stopping,
-            expandThinking: state.preferences.expandThinking, sends: live.sends, opens: newLine.map { .turn($0.turn) } ?? .end)
+            expandThinking: state.preferences.expandThinking, sends: live.sends,
+            opens: at.map { .turn($0) } ?? newLine.map { .turn($0.turn) } ?? .end, visit: entry?.visits ?? 0, above: above)
+    }
+
+    /// The row at a transcript's top while its thread holds rows before
+    /// the ones drawn.
+    static func olderRows(_ held: State.Held?, reading: Bool) -> OlderRows? {
+        guard let held, held.full, !held.records.isEmpty else { return nil }
+        return OlderRows(label: reading ? "Loading earlier messages…" : "Earlier messages", loading: reading)
     }
 
     /// What the composer says is happening, from the send to the end of

@@ -66,6 +66,16 @@ struct SeededNumbers: Sendable {
 /// every mark that moved is a row on the change feed, in the order it
 /// moved. Below that revision it does not know the kind.
 ///
+/// **The flags and the lists.** At `records` 9 a mark also holds `pinned`
+/// and `archived`, as #1459's server keeps them (decision 0322): two flags
+/// only a person's write moves, which move nothing else. A list of threads
+/// is narrowed by the marks that point at its rows (`referencedBy`), a
+/// thread counts what waits on a person (`waitingOnPerson`, moved when the
+/// test says, and told on the feed as a row of the thread), and every list
+/// is cut into pages with a cursor. Below 9 it refuses the arm (`400`) and
+/// the two properties (`422`). A search of the messages (`q`) answers the
+/// rows that hold the words.
+///
 /// **The faults.** Each request draws its fault from the seed, the request's
 /// own signature and how many like it came before, so the draw does not
 /// turn on the order two requests of different kinds arrive in: a `500`, a
@@ -134,6 +144,8 @@ final class SeededServer: @unchecked Sendable {
         /// The newest row when the thread last settled.
         var lastMessage: String?
         var turn: Turn?
+        /// How many questions, suggestions and approvals wait on a person.
+        var waiting = 0
     }
 
     /// The person's mark of a thread.
@@ -143,6 +155,9 @@ final class SeededServer: @unchecked Sendable {
         var markedUnread: Bool?
         var version = 0
         var readAt: Date?
+        /// Absent until set.
+        var pinned: Bool?
+        var archived: Bool?
     }
 
     /// A write of a mark the app sent, whatever became of it.
@@ -151,6 +166,8 @@ final class SeededServer: @unchecked Sendable {
         var readThrough: String?
         var markedUnread: Bool?
         var at: Date
+        var pinned: Bool?
+        var archived: Bool?
     }
 
     /// What a stream does wrong once it is open.
@@ -202,8 +219,8 @@ final class SeededServer: @unchecked Sendable {
     /// The change feed: a row for each mark that moved, and who follows.
     private var feedSeq = 1
     private var ordered = Date.distantPast
-    private var feed: [(seq: Int, line: String)] = []
-    private var watchers: [Int: (port: Int, to: AsyncThrowingStream<String, any Error>.Continuation)] = [:]
+    private var feed: [(seq: Int, kind: String, line: String)] = []
+    private var watchers: [Int: (port: Int, kinds: Set<String>, to: AsyncThrowingStream<String, any Error>.Continuation)] = [:]
     private var threads: [String: Thread] = [:]
     private var order: [String] = []
     private var minted = 0
@@ -252,6 +269,56 @@ final class SeededServer: @unchecked Sendable {
     var anyRunning: Bool { lock.withLock { threads.values.contains { $0.turn != nil } } }
 
     var keepsMarks: Bool { records >= 8 }
+    var keepsFlags: Bool { records >= 9 }
+
+    /// How many things wait on a person in a thread.
+    func waiting(_ thread: String) -> Int { lock.withLock { threads[thread]?.waiting ?? 0 } }
+
+    /// A thread comes to wait on a person, or is answered: its row moves,
+    /// and the feed tells of it. False where nothing moved.
+    @discardableResult func wait(_ thread: String, on count: Int) -> Bool {
+        lock.withLock {
+            guard var held = threads[thread], held.waiting != count else { return false }
+            held.waiting = count
+            held.version += 1
+            held.updatedAt = clock.now
+            threads[thread] = held
+            tell("substrate.reamde.dev/llm/thread", thread)
+            return true
+        }
+    }
+
+    /// Another device of the same person pins or archives a thread, or
+    /// takes either back. False where it had nothing to move.
+    @discardableResult func elsewhere(_ thread: String, pinned: Bool? = nil, archived: Bool? = nil) -> Bool {
+        lock.withLock {
+            guard keepsFlags, threads[thread] != nil else { return false }
+            return put(thread, readThrough: nil, markedUnread: nil, pinned: pinned, archived: archived)
+        }
+    }
+
+    /// The threads the list of chats answers, in its order: every one, or
+    /// where the server keeps the flags the ones not archived.
+    var listed: [String] { lock.withLock { ordered(threads: order.compactMap { threads[$0] }).filter { marks[$0.id]?.archived != true }.map(\.id) } }
+
+    /// Called under the lock: a row on the change feed, for whoever
+    /// follows its kind.
+    private func tell(_ kind: String, _ id: String) {
+        feedSeq += 1
+        let row = line(["seq": feedSeq, "ts": stamp(clock.now), "kind": kind, "recordId": id, "op": "patch"])
+        feed.append((feedSeq, kind, row))
+        for reader in watchers.keys.sorted() where watchers[reader]?.port == port && watchers[reader]?.kinds.contains(kind) == true {
+            watchers[reader]?.to.yield(row)
+        }
+    }
+
+    /// The server's order of a list of threads: most recently moved first,
+    /// and of those moved at one instant the one made last.
+    private func ordered(threads held: [Thread]) -> [Thread] {
+        held.sorted { a, b in
+            a.updatedAt == b.updatedAt ? (order.firstIndex(of: a.id) ?? 0) > (order.firstIndex(of: b.id) ?? 0) : a.updatedAt > b.updatedAt
+        }
+    }
 
     /// The newest row a thread settled with.
     func lastMessage(of thread: String) -> String? { lock.withLock { threads[thread]?.lastMessage } }
@@ -286,7 +353,7 @@ final class SeededServer: @unchecked Sendable {
 
     /// Called under the lock: the rules of a mark's write. True when the
     /// mark moved.
-    private func put(_ thread: String, readThrough: String?, markedUnread: Bool?) -> Bool {
+    private func put(_ thread: String, readThrough: String?, markedUnread: Bool?, pinned: Bool? = nil, archived: Bool? = nil) -> Bool {
         guard let rows = threads[thread]?.rows else { return false }
         var mark = marks[thread] ?? Mark()
         var changed = marks[thread] == nil
@@ -307,15 +374,19 @@ final class SeededServer: @unchecked Sendable {
             mark.markedUnread = markedUnread
             changed = true
         }
+        // A flag moves nothing else, and nothing else moves a flag.
+        if let pinned, mark.pinned != pinned {
+            mark.pinned = pinned
+            changed = true
+        }
+        if let archived, mark.archived != archived {
+            mark.archived = archived
+            changed = true
+        }
         guard changed else { return false }
         mark.version += 1
         marks[thread] = mark
-        feedSeq += 1
-        let row = line([
-            "seq": feedSeq, "ts": stamp(clock.now), "kind": "substrate.reamde.dev/llm/threadmark", "recordId": "\(thread).me", "op": "patch",
-        ])
-        feed.append((feedSeq, row))
-        for id in watchers.keys.sorted() where watchers[id]?.port == port { watchers[id]?.to.yield(row) }
+        tell("substrate.reamde.dev/llm/threadmark", "\(thread).me")
         return true
     }
 
@@ -326,6 +397,8 @@ final class SeededServer: @unchecked Sendable {
         if let read = mark.readThrough { properties["readThrough"] = ["ref": "substrate.reamde.dev/llm/message/\(read)"] }
         if let at = mark.readAt { properties["readAt"] = stamp(at) }
         if let unread = mark.markedUnread { properties["markedUnread"] = unread }
+        if let pinned = mark.pinned { properties["pinned"] = pinned }
+        if let archived = mark.archived { properties["archived"] = archived }
         return [
             "id": "\(thread).me", "kind": "substrate.reamde.dev/llm/threadmark", "version": mark.version,
             "createdAt": "2026-10-30T10:00:00Z", "updatedAt": stamp(mark.readAt ?? clock.now), "properties": properties,
@@ -753,7 +826,8 @@ final class SeededServer: @unchecked Sendable {
                 written.append(
                     MarkWrite(
                         thread: properties["thread"] as? String ?? "", readThrough: properties["readThrough"] as? String,
-                        markedUnread: properties["markedUnread"] as? Bool, at: clock.now))
+                        markedUnread: properties["markedUnread"] as? Bool, at: clock.now, pinned: properties["pinned"] as? Bool,
+                        archived: properties["archived"] as? Bool))
             }
             return fault(for: call, signature: signature)
         }
@@ -829,25 +903,25 @@ final class SeededServer: @unchecked Sendable {
             return json(status, body, url: url)
         case let .watching(kinds, from):
             // The change feed: its bookmark, what a watch resumed from a
-            // cursor missed, then each mark as it moves, for as long as the
-            // app listens. Nothing else is told on it: the app hears of a
-            // thread from its reads.
+            // cursor missed, then each mark as it moves and each thread as
+            // what waits on a person in it moves, for as long as the app
+            // listens. Nothing else is told on it: the app hears of a
+            // thread's runs from its reads.
             return ndjson(url: url) { [self] continuation in
                 lock.withLock {
                     continuation.yield(line(["bookmark": from ?? feedSeq, "generation": "g"]))
-                    guard kinds.contains("substrate.reamde.dev/llm/threadmark") else { return nil as Int? }
                     // The server refuses, whole, a watch that names a kind
                     // it does not declare.
-                    guard keepsMarks else {
+                    if kinds.contains("substrate.reamde.dev/llm/threadmark"), !keepsMarks {
                         continuation.yield(#"{"error":{"code":"validation","message":"unknown type \"substrate.reamde.dev/llm/threadmark\""}}"#)
                         continuation.finish()
-                        return nil
+                        return nil as Int?
                     }
                     if let from {
-                        for row in feed where row.seq > from { continuation.yield(row.line) }
+                        for row in feed where row.seq > from && kinds.contains(row.kind) { continuation.yield(row.line) }
                     }
                     readers += 1
-                    watchers[readers] = (number, continuation)
+                    watchers[readers] = (number, kinds, continuation)
                     return readers
                 }
             } ended: { [self] reader in
@@ -960,6 +1034,7 @@ final class SeededServer: @unchecked Sendable {
             properties["reason"] = "the run ended: \(cause)"
         }
         if keepsMarks, let last = thread.lastMessage { properties["lastMessage"] = ["ref": "substrate.reamde.dev/llm/message/\(last)"] }
+        if keepsMarks, thread.waiting > 0 { properties["waitingOnPerson"] = thread.waiting }
         return [
             "id": thread.id, "kind": "substrate.reamde.dev/llm/thread", "version": thread.version, "createdAt": stamp(thread.startedAt),
             "updatedAt": stamp(thread.updatedAt), "properties": properties,
@@ -1006,8 +1081,14 @@ final class SeededServer: @unchecked Sendable {
             if let read, !held.rows.contains(where: { $0.id == read }) {
                 return refuse(422, "validation", "readThrough names no message of thread \(thread)")
             }
+            let (pinned, archived) = (properties["pinned"] as? Bool, properties["archived"] as? Bool)
+            if !keepsFlags, pinned != nil || archived != nil {
+                return refuse(422, "validation", #"substrate: validation failed: unknown property "pinned" or "archived""#)
+            }
             let created = marks[thread] == nil
-            if put(thread, readThrough: read, markedUnread: properties["markedUnread"] as? Bool) { note("a mark moved by the app") }
+            if put(thread, readThrough: read, markedUnread: properties["markedUnread"] as? Bool, pinned: pinned, archived: archived) {
+                note(pinned != nil || archived != nil ? "a flag moved by the app" : "a mark moved by the app")
+            }
             return .json(created ? 201 : 200, line(record(marks[thread] ?? Mark(), thread: thread)))
         case let .thread(id):
             guard let thread = threads[id] else { return refuse(404, "not_found", "substrate: not found: thread \(id)") }
@@ -1127,6 +1208,18 @@ final class SeededServer: @unchecked Sendable {
         let properties = filter["properties"] as? [String: Any] ?? [:]
         let first = query["first"].flatMap(Int.init) ?? 100
         func equal(_ name: String) -> String? { (properties[name] as? [String: Any])?["eq"] as? String }
+        if let words = query["q"] {
+            // The ranked read: the messages that hold the words, newest
+            // thread first.
+            guard kind == "substrate.reamde.dev/llm/message" else { return page([]) }
+            let wanted = words.lowercased()
+            var found: [[String: Any]] = []
+            for thread in order.reversed() {
+                for row in threads[thread]?.rows ?? [] where row.content.lowercased().contains(wanted) { found.append(record(row, thread: thread)) }
+            }
+            note("a search of the messages")
+            return .json(200, line(["records": Array(found.prefix(first)), "scores": [String: Any](), "pending": 0]))
+        }
         switch kind {
         case "substrate.reamde.dev/core/agent":
             return page([
@@ -1137,16 +1230,52 @@ final class SeededServer: @unchecked Sendable {
             ])
         case "substrate.reamde.dev/llm/thread":
             // The chats; an automated run's list is another mode's, and empty.
-            if let mode = properties["mode"] as? [String: Any], mode["eq"] as? String != "chat" { return page([]) }
+            if let mode = properties["mode"] as? [String: Any] {
+                let modes = (mode["in"] as? [String]) ?? (mode["eq"] as? String).map { [$0] } ?? []
+                if !modes.contains("chat") { return page([]) }
+            }
             var held = order.compactMap { threads[$0] }
             if let agent = equal("agent") { held = held.filter { "substrate.reamde.dev/core/agent/\($0.agent)" == agent } }
+            if let waits = (properties["waitingOnPerson"] as? [String: Any])?["gt"] as? Int { held = held.filter { $0.waiting > waits } }
+            // Narrowed by the person's marks that point at each thread,
+            // before the page is cut.
+            if let arm = filter["referencedBy"] as? [String: Any] {
+                guard keepsFlags else { return refuse(400, "bad_request", #"filter: unknown field "referencedBy""#) }
+                let conditions = arm["properties"] as? [String: Any] ?? [:]
+                func asks(_ name: String) -> Bool { (conditions[name] as? [String: Any])?["eq"] as? Bool == true }
+                let exists = arm["exists"] as? Bool ?? true
+                held = held.filter { thread in
+                    var points = marks[thread.id] != nil
+                    if asks("archived"), marks[thread.id]?.archived != true { points = false }
+                    if asks("pinned"), marks[thread.id]?.pinned != true { points = false }
+                    return points == exists
+                }
+            }
             let newest = query["orderBy"]?.hasPrefix("startedAt") == true
             // Stable: threads moved at the same instant keep their order.
-            held = held.enumerated().sorted { a, b in
-                let (x, y) = newest ? (a.element.startedAt, b.element.startedAt) : (a.element.updatedAt, b.element.updatedAt)
-                return x == y ? a.offset > b.offset : x > y
-            }.map(\.element)
-            return page(held.prefix(first).map(record))
+            let placed = held.map { thread in (thread, at: newest ? thread.startedAt : thread.updatedAt, made: order.firstIndex(of: thread.id) ?? 0) }
+                .sorted { a, b in a.at == b.at ? a.made > b.made : a.at > b.at }
+            // A page: the rows after the cursor, which is the last row's
+            // place in the order as it stood.
+            // A cursor is taken back only with the filter it was cut for.
+            let bound = SeededNumbers.hash(query["filter"] ?? "")
+            var rest = placed[...]
+            if let after = query["after"] {
+                let parts = after.split(separator: "|").map(String.init)
+                guard parts.count == 3, let time = Double(parts[1]), let made = Int(parts[2]) else {
+                    return refuse(422, "validation", "after: not a cursor of this list")
+                }
+                guard parts[0] == "\(bound)" else {
+                    return refuse(422, "validation", "substrate: validation failed: cursor does not match this filter and orderBy")
+                }
+                let at = Date(timeIntervalSinceReferenceDate: time)
+                rest = rest.filter { $0.at < at || ($0.at == at && $0.made < made) }[...]
+                note("a page of a list past its first")
+            }
+            let rows = rest.prefix(first)
+            var body: [String: Any] = ["head": feedSeq, "generation": "g", "records": rows.map { record($0.0) }]
+            if rest.count > first, let last = rows.last { body["cursor"] = "\(bound)|\(last.at.timeIntervalSinceReferenceDate)|\(last.made)" }
+            return .json(200, line(body))
         case "substrate.reamde.dev/llm/message":
             var rows: [(Row, String)] = []
             if let thread = equal("thread") {

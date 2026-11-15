@@ -30,17 +30,27 @@ extension ChatAppState {
     }
 
     /// The chat list: chats, and automated runs when shown, newest activity
-    /// first.
+    /// first. Where the server keeps the flags, without the ones the person
+    /// archived, but while they wait on a person; and with the pinned ones
+    /// and the ones that wait, however old (`ChatAppLists.swift`).
     var threads: [ChatThread] {
-        let records = preferences.showAutomated ? chats + automated : chats
-        return records.map(ChatThread.init(record:)).sorted { $0.activeAt > $1.activeAt }
+        guard flags else {
+            let records = preferences.showAutomated ? chats + automated : chats
+            return records.map(ChatThread.init(record:)).sorted { $0.activeAt > $1.activeAt }
+        }
+        return rows(listed: true)
     }
 
     func thread(_ id: String) -> ChatThread? {
-        if let record = chats.first(where: { $0.id == id }) ?? automated.first(where: { $0.id == id }) ?? others[id] {
-            return ChatThread(record: record)
+        var found = chats.first { $0.id == id } ?? automated.first { $0.id == id } ?? others[id]
+        // The lists read beside the chats hold the same row at whatever
+        // version each was read at: the newest is the thread's.
+        if flags {
+            for list in [pinned, waiting, archive.rows] {
+                if let row = list.first(where: { $0.id == id }), row.version >= found?.version ?? .min { found = row }
+            }
         }
-        return nil
+        return found.map(ChatThread.init(record:))
     }
 
     func title(_ thread: ChatThread) -> String { thread.title(opening: openings[thread.id]) }
@@ -174,7 +184,7 @@ extension ChatAppState {
 
     /// The settled chats that read as unread, listed or opened on their own.
     var unreadThreads: Set<String> {
-        Set((chats + automated + Array(others.values)).map(ChatThread.init(record:)).filter { unread($0) }.map(\.id))
+        Set((held + Array(others.values)).map(ChatThread.init(record:)).filter { unread($0) }.map(\.id))
     }
 
     /// Rule 1: there is one conversation per thread in the process.
@@ -216,18 +226,22 @@ extension ChatAppState {
             showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
             canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
             canReadModels: session?.canReadModels ?? true, readsOperator: session?.full ?? true,
-            namesThreads: !(session?.full ?? true), readsMarks: readsMarks)
+            namesThreads: !(session?.full ?? true), readsMarks: readsMarks, flags: flags,
+            archived: flags && scenes.values.contains { $0.archived }, page: page)
     }
 
-    var threadIDs: [String] { (chats + automated).map(\.id) }
+    /// Every thread a list read holds, once each.
+    var threadIDs: [String] { held.map(\.id) }
 
     var cached: CachedState {
         CachedState(
             agents: agents, providers: providers.values.sorted { $0.id < $1.id },
-            models: models.map { $0.values.sorted { $0.id < $1.id } }, keys: keys, threads: chats, automated: automated,
+            models: models.map { $0.values.sorted { $0.id < $1.id } }, keys: keys, threads: Array(chats.prefix(page)),
+            automated: automated,
             openings: openings, interactions: interactions, requests: requests, seen: seen, marks: keptMarks, marking: unsentMarks,
             notified: notified,
             baselined: baselined, lastAgent: lastAgent, memories: guidance.read ? guidance.memories : nil,
-            instructions: guidance.read ? guidance.instructions : nil)
+            instructions: guidance.read ? guidance.instructions : nil, pinned: flags ? pinned : nil, waiting: flags ? waiting : nil,
+            records: recordsRevision)
     }
 }

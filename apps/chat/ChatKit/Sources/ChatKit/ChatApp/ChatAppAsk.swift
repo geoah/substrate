@@ -35,7 +35,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case loadCached(Lease, thread: String, epoch: Int)
 
     /// `held`: the threads beside the list whose cards are read with it.
-    case refresh(Plan, held: [String])
+    /// `beside`: the threads held that no list may answer, whose rows and
+    /// marks are read with it.
+    case refresh(Plan, held: [String], beside: [String] = [])
     /// The server's discovery document, for the revision of what the chat
     /// may call.
     case readFeatures
@@ -49,7 +51,20 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case rereadBehind(thread: String, mark: Int)
     case watch(Lease, head: WatchCursor?, kinds: [String])
     case feedWait(seconds: Double)
-    case applyFeed(Plan, Set<ChatAppState.WatchKey>, threads: [String])
+    /// `named`: the threads held that the batch names, by a row of their
+    /// own or of a mark: each is read on its own where no list read for
+    /// the batch holds it.
+    case applyFeed(Plan, Set<ChatAppState.WatchKey>, threads: [String], named: [String] = [])
+    /// The page of a list after `after`; with none, the archived chats'
+    /// first.
+    case page(Plan, part: ChatLists.Part, after: String?)
+    /// The rows of a thread before the row whose ordinal is `before`.
+    case readOlder(thread: String, before: Int, epoch: Int)
+    /// The messages that hold a window's search, asked for once the typing
+    /// has paused: `threads` are the ones an app's token names.
+    case search(Plan, scene: String, query: String, threads: [String])
+    /// Wakes the engine when Undo's few seconds have passed.
+    case undoWait(thread: String, until: Date)
     case markRefreshed(Lease, [ChatAppState.WatchKey])
 
     case rename(thread: String, subject: String, before: Record?)
@@ -112,6 +127,15 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
         /// the cards are read only under the threads that say something
         /// does.
         var readsMarks = false
+        /// The server keeps `pinned` and `archived`: the list is the chats
+        /// not archived, and the pinned ones and the ones that wait are
+        /// read beside it.
+        var flags = false
+        /// A window lists the archived chats: their first page is read
+        /// with the list.
+        var archived = false
+        /// How many chats one read of a list asks for.
+        var page = ChatLists.page
     }
 
     /// A chat to read ahead, from the disk first.

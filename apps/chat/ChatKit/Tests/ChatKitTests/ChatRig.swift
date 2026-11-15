@@ -128,7 +128,7 @@ struct ChatRig {
     init(
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
         base: URL = temporaryFolder("chat"), transport: (any HTTPTransport)? = nil, clock: TestClock = TestClock(),
-        ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil
+        ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil, page: Int = 100
     ) {
         server = ChatServer(routes)
         self.clock = clock
@@ -147,7 +147,7 @@ struct ChatRig {
             timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
             devices: DeviceServices(transport: transport, notifications: notifications, background: background))
         harness = ControllerHarness(
-            ChatApp(storage: storage, preferences: preferences, platform: platform, verifiesParts: true), clock: clock,
+            ChatApp(storage: storage, preferences: preferences, platform: platform, verifiesParts: true, page: page), clock: clock,
             environment: environment)
     }
 
