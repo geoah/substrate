@@ -295,7 +295,14 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             // scrolled and draws nothing.
             .onScrollGeometryChange(for: TranscriptReach.Measure.self) { geo in
                 TranscriptReach.Measure(geo)
-            } action: { old, new in
+            } action: { _, new in
+                // Against what this view last saw, and never the value the
+                // system hands over as the one before: that one may be a
+                // place the scroll view passed through and never said, and
+                // a lazy stack that guessed its rows' heights again, as it
+                // does when rows are replaced, then reads as the reader
+                // having moved the transcript up.
+                let old = reach.measure
                 reach.measure = new
                 if !laidOut, new.content > 0 { laidOut = true }
                 // Whether the end is near, for Jump to Latest: state, and
