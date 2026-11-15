@@ -239,6 +239,16 @@ enum CardPresenter {
         return tool
     }
 
+    /// The cards whose call is drawn with how they ended on it.
+    static func ended(_ turns: [TurnPresentation]) -> Set<String> {
+        var out: Set<String> = []
+        for turn in turns {
+            guard case let .assistant(reply) = turn.body else { continue }
+            for tool in reply.tools where tool.resolution != nil { if let card = tool.asked { out.insert(card.id) } }
+        }
+        return out
+    }
+
     /// Each suggestion's `propose` call, by the request it landed.
     static func proposals(_ turns: [Turn]) -> [String: ToolCall] {
         var out: [String: ToolCall] = [:]

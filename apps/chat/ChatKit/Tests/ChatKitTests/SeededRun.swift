@@ -1312,7 +1312,9 @@ struct SeededRun {
         // once its time has passed, with room for the app to say so.
         let finished = rig.notifications.calls.compactMap { if case let .finished(response) = $0 { response } else { nil } }
         for act in acts where clock.now.timeIntervalSince(act.at) > ChatApp.actionSeconds + 1 && !finished.contains(act.response) {
-            return broke(.acted, "the action \(act.response.action) of \(act.response.id) was handed over \(Int(clock.now.timeIntervalSince(act.at))) s ago and is not over")
+            return broke(
+                .acted,
+                "the action \(act.response.action) of \(act.response.id) was handed over \(Int(clock.now.timeIntervalSince(act.at))) s ago and is not over")
         }
         if let broken = marks(state, presentation) { return broken }
         if let broken = lists(state, presentation, settled: settled) { return broken }

@@ -401,10 +401,13 @@ struct FoldedCards {
         screen = try await app.screen(key)
         #expect(screen.cards[id]?.stands == false && Array(screen.turns.map(\.id).prefix(pieces.count)) == before)
         #expect(app.server.card(id)?.state == "answered" && app.server.card(id)?.resolutions == 1)
-        // The thread is resumed, and the answer's own line is in it.
+        // The thread is resumed, and the line its rows hold for the answer
+        // is not drawn a second time under the call that says it.
         app.server.finishTurns()
         try await app.settled(key)
-        #expect(try await app.screen(key).turns.contains { $0.body == .answer(OutcomeLine(text: "You answered", done: true)) })
+        screen = try await app.screen(key)
+        #expect(!screen.turns.contains { $0.body == .answer(OutcomeLine(text: "You answered", done: true)) })
+        #expect(Array(screen.turns.map(\.id).prefix(pieces.count)) == before)
     }
 
     @Test func oneResolvedOnAnotherDeviceFoldsWhenTheFeedSaysSo() async throws {
