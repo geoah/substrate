@@ -81,12 +81,7 @@ struct NotificationOfferView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
             }
-            // Side by side, or one above the other where the text size
-            // leaves no room.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: ChatSpace.apart) { buttons }
-                VStack(alignment: .leading, spacing: ChatSpace.items) { buttons }
-            }
+            ButtonRow { buttons }
         }
         .card()
     }
@@ -95,7 +90,9 @@ struct NotificationOfferView: View {
         Button(offer.allow) { host.send(.notifications(allow: true)) }
             .buttonStyle(.borderedProminent)
             .prominentTint()
+            .touchTarget()
         Button(offer.decline) { host.send(.notifications(allow: false)) }
             .buttonStyle(.bordered)
+            .touchTarget()
     }
 }

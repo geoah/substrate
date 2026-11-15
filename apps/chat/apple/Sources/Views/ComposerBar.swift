@@ -37,6 +37,7 @@ struct ComposerBar: View {
     @State private var sent = 0
     @State private var stopped = 0
     @Scaled(.control) private var control
+    @Environment(\.dynamicTypeSize) private var size
 
     private var composer: ComposerPresentation { screen.composer }
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -87,6 +88,7 @@ struct ComposerBar: View {
                             HStack(spacing: ChatSpace.mark) {
                                 Image(systemName: "arrow.down")
                                     .font(ChatType.control)
+                                    .growing(to: .control)
                                 if let count = jump.count {
                                     Text(count)
                                         .font(ChatType.heading)
@@ -157,9 +159,23 @@ struct ComposerBar: View {
 
     // MARK: The field
 
+    /// At the accessibility text sizes the assistant's picker stands over
+    /// the words being typed, which then have the field's whole width.
     @ViewBuilder private var field: some View {
+        if composer.picksAgent, size.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 0) {
+                AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
+                    .padding(.leading, ChatSpace.lines)
+                typing(picker: false)
+            }
+        } else {
+            typing(picker: composer.picksAgent)
+        }
+    }
+
+    private func typing(picker: Bool) -> some View {
         HStack(alignment: .bottom, spacing: ChatSpace.beside) {
-            if composer.picksAgent {
+            if picker {
                 AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
             }
             if dictation.active {
@@ -190,7 +206,7 @@ struct ComposerBar: View {
                 }
             }
         }
-        .padding(.leading, composer.picksAgent ? ChatSpace.lines : ChatSpace.edge)
+        .padding(.leading, picker ? ChatSpace.lines : ChatSpace.edge)
         // The microphone's target reaches the field's edge; anything else
         // stands off it.
         .padding(.trailing, !dictation.active && !empty ? 0 : ChatSpace.beside)
@@ -227,6 +243,7 @@ struct ComposerBar: View {
             Image(systemName: "mic")
                 .font(ChatType.body)
                 .ink(.quiet, on: .field)
+                .growing(to: .control)
                 .frame(width: ChatSize.target, height: control)
                 .contentShape(.rect)
         }
@@ -273,6 +290,7 @@ struct ComposerBar: View {
             Image(systemName: symbol)
                 .font(ChatType.control)
                 .ink(tint == nil ? .label : .onFill, on: tint == nil ? .field : .fill)
+                .growing(to: .control)
                 .frame(width: control, height: control)
                 .changes(.mark)
         }
@@ -416,6 +434,7 @@ struct ComposerStatusLine: View {
             Image(systemName: symbol)
                 .imageScale(.small)
                 .pulses(while: status.kind != .stopping)
+                .growing(to: .actionMark)
                 .frame(width: mark)
             Text(status.words)
                 .lineLimit(2)
@@ -469,6 +488,7 @@ private struct AgentChip: View {
             AgentPill(id: current, name: label, picker: true)
                 .frame(maxWidth: ChatSize.chipMax, alignment: .leading)
                 .frame(minHeight: control)
+                .contentShape(.rect)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -485,18 +505,25 @@ struct KeylessCalloutView: View {
     let add: () -> Void
 
     var body: some View {
-        HStack(spacing: ChatSpace.apart) {
-            Image(systemName: "key.fill").ink(.mark(.caution), on: .card)
-            VStack(alignment: .leading, spacing: ChatSpace.pair) {
-                Text(callout.title).font(ChatType.heading)
-                Text(callout.message)
-                    .font(ChatType.caption).ink(.quiet, on: .card)
+        // The button under the words where the text size leaves it no
+        // room beside them.
+        SplitRow {
+            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
+                Image(systemName: "key.fill").ink(.mark(.caution), on: .card)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(callout.title).font(ChatType.heading)
+                    Text(callout.message)
+                        .font(ChatType.caption).ink(.quiet, on: .card)
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+        } trailing: {
             Button(callout.action, action: add)
                 .buttonStyle(.borderedProminent)
                 .prominentTint()
                 .controlSize(.small)
+                .touchTarget()
         }
         .card(.caution)
     }

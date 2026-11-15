@@ -204,6 +204,7 @@ private struct AssistantRowView: View {
                             .font(ChatType.smallLabel)
                             .buttonStyle(.borderless)
                             .tinted(.tone(.caution), on: .form)
+                            .touchTarget()
                     }
                 }
             }

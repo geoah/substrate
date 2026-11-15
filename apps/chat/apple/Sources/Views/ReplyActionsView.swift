@@ -30,7 +30,9 @@ struct ReplyActionsRow: View, Equatable {
 
     var body: some View {
         let _ = Meter.shared.count(.body, "ReplyActions")
-        HStack(spacing: 0) {
+        // On one line, and on the next where the text size leaves no
+        // room for them all.
+        WrapLayout(spacing: 0) {
             if actions.copies {
                 CopyButton(label: actions.copyLabel, copied: actions.copiedLabel) { written(host, conversation, actions.turn) ?? text ?? "" }
             }
@@ -41,6 +43,7 @@ struct ReplyActionsRow: View, Equatable {
                 ShareLink(item: text) {
                     Image(systemName: "square.and.arrow.up")
                         .ink(.quiet, on: .page)
+                        .growing(to: .actionMark)
                         .barTarget()
                 }
                 .buttonStyle(.borderless)
@@ -89,11 +92,14 @@ private struct ResumeButton: View {
         let enabled = button.enabled(at: now)
         return Button(action: action) {
             HStack(spacing: ChatSpace.mark) {
-                if button.busy {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.clockwise")
+                Group {
+                    if button.busy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
+                .growing(to: .actionMark)
                 Text(button.title(at: now)).monospacedDigit()
             }
             .font(ChatType.heading)

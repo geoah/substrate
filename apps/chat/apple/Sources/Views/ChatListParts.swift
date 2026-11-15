@@ -65,15 +65,18 @@ struct UndoBar: View {
     let undo: UndoPresentation
 
     var body: some View {
-        HStack(spacing: ChatSpace.inset) {
+        // Undo under the words where the text size leaves it no room
+        // beside them.
+        SplitRow {
             Label(undo.words, systemImage: "archivebox")
                 .font(ChatType.detail)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.middle)
-            Spacer(minLength: 0)
+        } trailing: {
             Button(undo.action) { host.send(.undoArchive) }
                 .font(ChatType.heading)
                 .tinted(.accent, on: .list)
+                .touchTarget()
         }
         .padding(ChatSpace.inset)
         .glassEffect(.regular, in: .rect(cornerRadius: ChatRadius.card))
@@ -130,7 +133,8 @@ struct MoreRow: View {
                     .font(ChatType.detail)
                     .ink(.quiet, on: .list)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: ChatSize.target)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .listRowSeparator(.hidden)
@@ -198,7 +202,7 @@ struct SearchGroups: View {
                         } label: {
                             SearchHitText(hit: hit, agent: group.agent)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(.rect)
+                                .touchTarget()
                         }
                         .buttonStyle(.plain)
                     }

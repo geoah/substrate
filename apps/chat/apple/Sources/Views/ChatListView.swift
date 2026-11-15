@@ -302,50 +302,76 @@ struct ThreadRowView: View {
     /// The row is the list's selection, focused or not.
     var selected = false
     @Scaled(.dot) private var dot
+    @Environment(\.dynamicTypeSize) private var size
 
     var body: some View {
         let _ = Meter.shared.count(.body, "ThreadRow")
         VStack(alignment: .leading, spacing: ChatSpace.mark) {
-            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
-                if let mode = row.mode {
-                    Image(systemName: Self.symbol(mode))
-                        .font(ChatType.caption)
-                        .ink(.quiet, on: .list, selected: selected)
-                        .accessibilityLabel(mode)
+            if size.isAccessibilitySize {
+                // Each on a line of its own: the title in full, when under
+                // it, the preview, then what state the chat is in.
+                title.lineLimit(2)
+                stamp
+                preview.font(ChatType.detail).lineLimit(3)
+                HStack(spacing: ChatSpace.words) { marks }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
+                    title.lineLimit(1)
+                    Spacer(minLength: ChatSpace.mark)
+                    stamp
                 }
-                Text(row.title)
-                    .font(ChatType.rowTitle(unread: row.unread))
-                    .lineLimit(1)
-                Spacer(minLength: ChatSpace.mark)
-                Text(row.stamp)
-                    .font(ChatType.caption)
-                    .ink(row.unread ? .accent : .quiet, on: .list, selected: selected)
-                    .monospacedDigit()
-            }
-            HStack(alignment: .top, spacing: ChatSpace.words) {
-                preview
-                    .font(ChatType.detail)
-                    .lineLimit(2)
-                Spacer(minLength: ChatSpace.mark)
-                if let unfinished = row.unfinished {
-                    UnfinishedPill(mark: unfinished, selected: selected)
-                }
-                switch row.mark {
-                case .attention?:
-                    Image(systemName: "questionmark.circle.fill")
-                        .ink(.mark(.caution), on: .list, selected: selected)
-                        .accessibilityLabel("Waiting on you")
-                case .unread?:
-                    Circle().ink(.accent, on: .list, selected: selected).frame(width: dot, height: dot).padding(.top, ChatSpace.mark)
-                        .accessibilityLabel("Unread")
-                case nil:
-                    // A chat at work says so where its mark would stand.
-                    if row.running { RunningMark(selected: selected) }
+                HStack(alignment: .top, spacing: ChatSpace.words) {
+                    preview
+                        .font(ChatType.detail)
+                        .lineLimit(2)
+                    Spacer(minLength: ChatSpace.mark)
+                    marks
                 }
             }
         }
         .padding(.vertical, ChatSpace.pair)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The glyph of an automated run, then the chat's title.
+    private var title: some View {
+        HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
+            if let mode = row.mode {
+                Image(systemName: Self.symbol(mode))
+                    .font(ChatType.caption)
+                    .ink(.quiet, on: .list, selected: selected)
+                    .accessibilityLabel(mode)
+            }
+            Text(row.title)
+                .font(ChatType.rowTitle(unread: row.unread))
+        }
+    }
+
+    private var stamp: some View {
+        Text(row.stamp)
+            .font(ChatType.caption)
+            .ink(row.unread ? .accent : .quiet, on: .list, selected: selected)
+            .monospacedDigit()
+    }
+
+    /// What state the chat is in: a turn that did not finish, a card that
+    /// waits, unread, at work.
+    @ViewBuilder private var marks: some View {
+        if let unfinished = row.unfinished {
+            UnfinishedPill(mark: unfinished, selected: selected)
+        }
+        switch row.mark {
+        case .attention?:
+            Image(systemName: "questionmark.circle.fill")
+                .ink(.mark(.caution), on: .list, selected: selected)
+                .accessibilityLabel("Waiting on you")
+        case .unread?:
+            Circle().ink(.accent, on: .list, selected: selected).frame(width: dot, height: dot).padding(.top, ChatSpace.mark)
+                .accessibilityLabel("Unread")
+        case nil:
+            // A chat at work says so where its mark would stand.
+            if row.running { RunningMark(selected: selected) }
+        }
     }
 
     /// The agent's name in its colour, then the start of the last reply:

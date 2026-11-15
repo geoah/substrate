@@ -33,6 +33,7 @@ struct FailureView: View {
                         Image(systemName: symbol).foregroundStyle(Color(palette.accent))
                     }
                 }
+                .growing(to: .markColumn)
                 .frame(width: symbolWidth, alignment: .center)
                 .accessibilityHidden(true)
                 // One element, its sentence the label: the note follows it.
@@ -61,13 +62,9 @@ struct FailureView: View {
                         Image(systemName: edits ? "square.and.pencil" : "xmark")
                             .font(ChatType.noteStrong)
                             .foregroundStyle(Color(palette.soft))
-                            .frame(minWidth: ChatSize.target, minHeight: ChatSize.target, alignment: .topTrailing)
-                            .contentShape(.rect)
+                            .touchTarget()
                     }
                     .buttonStyle(.plain)
-                    // The mark stands at the card's corner; its room to
-                    // touch reaches down and in from it.
-                    .frame(width: symbolWidth, height: symbolWidth, alignment: .topTrailing)
                     .accessibilityLabel(edits ? "Edit Message" : "Dismiss")
                     .help(edits ? "Edit Message" : "Dismiss")
                 }
@@ -122,8 +119,7 @@ struct FailureView: View {
                 }
                 .font(ChatType.noteStrong)
                 .foregroundStyle(Color(palette.accent))
-                .frame(minHeight: ChatSize.target)
-                .contentShape(.rect)
+                .touchTarget()
             }
             .buttonStyle(.plain)
             .accessibilityLabel(details.title)
@@ -179,8 +175,7 @@ private struct FailureButtonView: View {
             .background(Color(enabled ? palette.accent : palette.idle), in: .capsule)
             // The capsule is as tall as its words; its room to touch is a
             // whole target.
-            .frame(minHeight: ChatSize.target)
-            .contentShape(.rect)
+            .touchTarget()
         }
         .buttonStyle(FailureButtonStyle())
         .disabled(!enabled)
