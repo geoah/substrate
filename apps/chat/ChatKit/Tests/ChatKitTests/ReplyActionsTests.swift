@@ -204,6 +204,169 @@ struct ReplyActionsTests {
         #expect(ReplyActions(under: Self.turns([Self.asked, Self.answered]), failures: unanswered)?.resume == nil)
     }
 
+    // MARK: While a run goes on, a card waits or a message is queued
+
+    @Test func whileARunGoesOnTheRowStaysWhereTheLastWordsAre() throws {
+        let again = Turn(id: "m3", role: .user, content: "And the basil?")
+        let turns = Self.turns([Self.asked, Self.answered, again])
+        // A message started a run, or joined one: the reply before it is
+        // still the last said, and keeps its row until the next has words.
+        #expect(ReplyActions(under: turns, failures: ScreenFailures(), working: true) == ReplyActions(turn: "m2", copies: true, whole: true))
+        var writing = Self.answered
+        writing.id = "turn-1"
+        let queued = Self.turns([Self.asked, writing, again], live: "turn-1")
+        #expect(ReplyActions(under: queued, failures: ScreenFailures(), working: true) == ReplyActions(turn: "turn-1", copies: true, whole: false))
+        // The next call thinks, then speaks: the row is its own from its
+        // first words, in the same step.
+        let thinking = Turn(id: "turn-4", role: .assistant, content: "", reasoning: "Hm")
+        #expect(
+            ReplyActions(under: Self.turns([Self.asked, Self.answered, again, thinking], live: "turn-4"), failures: ScreenFailures(), working: true)?.turn
+                == "m2")
+        let speaking = Turn(id: "turn-4", role: .assistant, content: "It wants")
+        #expect(
+            ReplyActions(under: Self.turns([Self.asked, Self.answered, again, speaking], live: "turn-4"), failures: ScreenFailures(), working: true)
+                == ReplyActions(turn: "turn-4", copies: true, whole: false))
+        // The run over with nothing after the message (stopped, failed,
+        // never answered): the reply before it is an older one.
+        #expect(ReplyActions(under: turns, failures: ScreenFailures()) == nil)
+        // Over, with something of the assistant's after the message that
+        // has no words (a question left to wait, a call that only ran
+        // tools): the row stays where the last words are.
+        let asking = Turn(id: "m4", role: .assistant, content: "", tools: [ToolCall(id: "c1", name: "ask", callable: nil, arguments: "{}")])
+        #expect(ReplyActions(under: Self.turns([Self.asked, Self.answered, again, asking]), failures: ScreenFailures())?.turn == "m2")
+    }
+
+    @Test func aRunThatLeftAMessageUnreadOffersToGoOnOnItsCardAndNowhereElse() throws {
+        let again = Turn(id: "m3", role: .user, content: "And the basil?")
+        let turns = Self.turns([Self.asked, Self.answered, again])
+        let unread = Self.context { $0.unread = 1 }
+        // Stopped with a message unread: the card says so and has Continue.
+        let stopped = FailurePresenter.present(Failure(.reply, .run(status: "stopped", cause: "requested")), unread)
+        #expect(stopped.note == "It hadn't read your last message. Continue has it read.")
+        #expect(stopped.button?.title == "Continue" && stopped.button?.action == .resume && stopped.resume == nil)
+        #expect(ReplyActions(under: turns, failures: ScreenFailures(turns: ["m3": stopped])) == nil)
+        // Restarted under it: Try Again, on the card.
+        let restarted = FailurePresenter.present(Failure(.reply, .run(status: "error", cause: "interrupted")), unread)
+        #expect(restarted.button?.title == "Try Again" && restarted.resume == nil)
+        #expect(ReplyActions(under: turns, failures: ScreenFailures(turns: ["m3": restarted])) == nil)
+        // Never answered at all: Continue, on the card.
+        let unanswered = FailurePresenter.present(Failure(.reply, .unanswered), Self.context())
+        #expect(unanswered.button?.title == "Continue" && unanswered.resume == nil)
+        #expect(ReplyActions(under: turns, failures: ScreenFailures(turns: ["m3": unanswered])) == nil)
+        // An older message nothing answered says so and offers nothing.
+        let older = FailurePresenter.present(Failure(.reply, .unanswered), Self.context { $0.acts = false })
+        #expect(older.button == nil && older.resume == nil)
+        // The key refused under a message left unread: the card leads to
+        // the key, and Try Again, which has the message read, stands alone
+        // under that message.
+        let refused = FailurePresenter.present(Self.run(RunCause.providerKeyRefused.rawValue), unread)
+        #expect(refused.button?.title == "Replace Key")
+        #expect(
+            ReplyActions(under: turns, failures: ScreenFailures(turns: ["m3": refused]))
+                == ReplyActions(turn: "m3", copies: false, whole: false, resume: refused.resume))
+    }
+
+    @Test func aMessageQueuedWhileAReplyIsWrittenLeavesItsRowWithCopyAlone() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1), .tool(.query), .call, .piece(0)])
+        app.work()
+        try await app.until { screen, _ in screen.turns.count == 2 && screen.streaming }
+        let reply = try await app.screen(key).turns[1].id
+        #expect(try await app.screen(key).replyActions == ReplyActions(turn: reply, copies: true, whole: false))
+
+        // A message joins the run: the reply being written keeps its row.
+        try await app.say("And the mint?", key)
+        try await app.until { screen, live in live.queued.count == 1 && screen.turns.count == 3 }
+        #expect(await app.said(key).last == "And the mint? (queued)")
+        #expect(try await app.screen(key).replyActions == ReplyActions(turn: reply, copies: true, whole: false))
+        app.work(2)
+        try await app.until { screen, _ in
+            if case let .assistant(reply) = screen.turns[1].body { reply.tools.count == 1 } else { false }
+        }
+        #expect(try await app.screen(key).replyActions?.turn == reply)
+
+        // A call reads it: an ordinary message now, with the run going on,
+        // and the row still where the last words are.
+        app.work()
+        try await app.until { _, live in live.queued.isEmpty }
+        #expect(await app.said(key).last == "And the mint?")
+        #expect(try await app.screen(key).replyActions == ReplyActions(turn: reply, copies: true, whole: false))
+
+        // The next reply's first words take the row.
+        app.work()
+        try await app.until { screen, _ in screen.turns.count == 4 }
+        var screen = try await app.screen(key)
+        #expect(screen.replyActions == ReplyActions(turn: screen.turns[3].id, copies: true, whole: false))
+        app.server.finishTurns()
+        try await app.settled(key)
+        screen = try await app.screen(key)
+        #expect(screen.replyActions == ReplyActions(turn: screen.turns[3].id, copies: true, whole: true))
+        #expect(screen.failures.turns.isEmpty)
+    }
+
+    @Test func aStopWithAMessageUnreadOffersContinueOnceOnItsCard() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1), .piece(2)])
+        app.work()
+        try await app.until { screen, _ in screen.turns.count == 2 }
+        try await app.say("And the mint?", key)
+        try await app.until { _, live in live.queued.count == 1 }
+        try await app.rig.send(.stop, to: key)
+        try await app.settled(key)
+        let screen = try await app.screen(key)
+        let card = try #require(screen.turns.last.flatMap { screen.failures.turns[$0.id] })
+        #expect(card.button?.title == "Continue" && card.note == "It hadn't read your last message. Continue has it read.")
+        // The card is the one place: nothing stands under the reply that
+        // was stopped, which has a message after it nothing answered.
+        #expect(card.resume == nil && screen.replyActions == nil)
+
+        // Continue runs it: while it does, the row is back under the last
+        // words, and the next reply takes it.
+        app.server.plan([.piece(0)])
+        try await app.rig.send(.continueTurn, to: key)
+        try await app.rig.harness.until { _ in app.server.running("t1") }
+        try await app.until { screen, _ in screen.streaming }
+        #expect(try await app.screen(key).replyActions?.resume == nil)
+        app.server.finishTurns()
+        try await app.settled(key)
+        let after = try await app.screen(key)
+        #expect(after.failures.turns.isEmpty)
+        #expect(after.replyActions == ReplyActions(turn: try #require(after.turns.last?.id), copies: true, whole: true))
+    }
+
+    @Test func aCardThatWaitsLeavesTheRowUnderTheReplyThatAskedAndOffersNoRunAgain() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let id = try #require(app.server.allCards.first).id
+        await app.show(.question(id))
+        try await app.until { screen, _ in screen.cards[id]?.waits == true }
+        var screen = try await app.screen(key)
+        // The question waits under its call; the reply that asked is the
+        // last said, whole, and nothing is offered to run again: answering
+        // is the card's.
+        let asked = try #require(screen.turns.last { if case let .assistant(reply) = $0.body { reply.text != nil } else { false } }?.id)
+        #expect(screen.replyActions == ReplyActions(turn: asked, copies: true, whole: true))
+        #expect(screen.failures.turns.isEmpty)
+
+        // Answered: the card folds into its call, and the run it resumes
+        // leaves the row where the last words are until it has its own.
+        let question = try #require(screen.cards[id]?.question?.questions.first)
+        await app.rig.harness.send(.answer(question: id, picks: [question.id: [question.options[0].value]]))
+        try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
+        #expect(try await app.screen(key).replyActions?.turn == asked)
+        #expect(try await app.screen(key).replyActions?.resume == nil)
+        app.server.finishTurns()
+        try await app.settled(key)
+        screen = try await app.screen(key)
+        let last = try #require(screen.turns.last { if case let .assistant(reply) = $0.body { reply.text != nil } else { false } }?.id)
+        #expect(screen.replyActions == ReplyActions(turn: last, copies: true, whole: true))
+    }
+
     // MARK: On the runtime
 
     @Test func theScreenOffersWhatItsTurnsAndItsCardsSay() async throws {
