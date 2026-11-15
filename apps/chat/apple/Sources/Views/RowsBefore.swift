@@ -42,26 +42,43 @@ final class RowsBefore {
         abs(room - height) < 1 ? nil : top / (room - height)
     }
 
-    /// Where a row is put once rows have arrived above it: where it stood,
-    /// to the point, on an iPhone and an iPad. On a Mac at its top, since
-    /// there the scroll view put at another point of a row was seen to
-    /// refuse the test window's wheel after, and no wheel could be turned
-    /// over the real one to tell that from a fault (`apps/chat/DESIGN.md`,
-    /// "Rows that arrive above").
-    func anchor(of row: String, room: Double) -> UnitPoint {
+    /// The row that is put back, and the point of it: `row` where its own
+    /// point says where it stood. A row as tall as the room has no such
+    /// point, and one part way up the screen then would be put at its
+    /// top: the next row on screen below says the same place, so that one
+    /// is put back in its stead. Nil where no row on screen can say it.
+    static func place(of row: String, among frames: [String: CGRect], room: Double) -> (row: String, y: Double)? {
+        guard let frame = frames[row] else { return nil }
+        if let y = fraction(top: frame.minY, height: frame.height, room: room) { return (row, y) }
+        let others = frames.filter { $0.key != row }.sorted { ($0.value.minY, $0.key) < ($1.value.minY, $1.key) }
+        for (other, stood) in others {
+            if let y = fraction(top: stood.minY, height: stood.height, room: room) { return (other, y) }
+        }
+        return nil
+    }
+
+    /// What is put where once rows have arrived above `row`: the row where
+    /// it stood, to the point, on an iPhone and an iPad. On a Mac the row
+    /// at its top, since there the scroll view put at another point of a
+    /// row was seen to refuse the test window's wheel after, and no wheel
+    /// could be turned over the real one to tell that from a fault
+    /// (`apps/chat/DESIGN.md`, "Rows that arrive above").
+    func anchor(of row: String, room: Double) -> (row: String, anchor: UnitPoint) {
         #if os(iOS)
-        guard let frame = frames[row], let y = Self.fraction(top: frame.minY, height: frame.height, room: room) else { return .top }
-        return UnitPoint(x: UnitPoint.top.x, y: y)
+        guard let place = Self.place(of: row, among: frames, room: room) else { return (row, .top) }
+        return (place.row, UnitPoint(x: UnitPoint.top.x, y: place.y))
         #else
-        return .top
+        return (row, .top)
         #endif
     }
 }
 
 /// Where each drawn row of a transcript stands in its scroll view, top and
 /// height, as the row last said (`placed(_:)`): what a row is put back at
-/// when rows arrive above it. A reference the scroll view holds, written
-/// as rows move and drawing nothing.
+/// when rows arrive above it. Of the rows drawn alone: a row that leaves
+/// the screen takes its place with it, so the rows a transcript let go
+/// are not kept. A reference the scroll view holds, written as rows move
+/// and drawing nothing.
 @MainActor
 final class RowPlaces {
     var frames: [String: CGRect] = [:]
@@ -97,6 +114,7 @@ private struct PlacedRow: ViewModifier {
         } action: {
             places?.frames[id] = $0
         }
+        .onDisappear { places?.frames[id] = nil }
     }
 }
 #endif
