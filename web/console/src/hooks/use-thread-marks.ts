@@ -71,6 +71,10 @@ export interface ThreadMarks {
   archived: ReadonlySet<string>
   /** Whether the server keeps marks; false hides every action. */
   supported: boolean
+  /** Whether the mark of every listed chat has been read. Until it has, and
+   * when that read fails, `pinned` and `archived` hold only what is known,
+   * and which list a chat came from says the rest. */
+  known: boolean
   markUnread: (thread: string) => void
   markRead: (thread: string) => void
   /** Pins or unpins a chat, archives or unarchives one. Each settles true
@@ -104,7 +108,12 @@ export function useThreadMarks(
    * after them, so a mark another device wrote in between is in the marks'
    * own head already: resumed from there, the watch would never say that a
    * chat left out of those lists was unarchived or pinned. */
-  listed?: LiveFrom
+  listed?: LiveFrom,
+  /** The server keeps marks, by its own word. The watch then opens whether
+   * or not a mark was read: with every chat archived no chat is listed and
+   * no mark is asked for, and one unarchived on another device still has
+   * to come back. */
+  keeps = false
 ): ThreadMarks {
   const queryClient = useQueryClient()
   const ids = useMemo(() => {
@@ -114,8 +123,16 @@ export function useThreadMarks(
   }, [threads, open])
   const query = useQuery(myThreadMarksQueryOptions(ids))
   const supported = query.isSuccess
+  // Every listed chat's mark is in hand: the answer is for these very chats,
+  // not the one kept on screen while a longer list's marks are read.
+  const known = ids.length > 0 && query.isSuccess && !query.isPlaceholderData
   useLiveRecords(
-    supported ? [THREAD_MARK_KIND] : [],
+    // With no chat listed, it opens once the lists have said so, from their
+    // head: sooner, it would start wherever the server stood when the
+    // stream reached it.
+    supported || (keeps && ids.length === 0 && listed)
+      ? [THREAD_MARK_KIND]
+      : [],
     [[...THREAD_MARKS_KEY], [...THREAD_LISTS_KEY]],
     undefined,
     earliestRead(query.data, listed)
@@ -287,6 +304,7 @@ export function useThreadMarks(
     pinned,
     archived,
     supported,
+    known,
     markUnread,
     markRead,
     setPinned,

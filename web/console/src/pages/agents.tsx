@@ -203,12 +203,26 @@ export function AgentsPage() {
   // Where a chat can be archived the watch stays open: a run the person put
   // away is in none of the lists read, and when it comes to wait on them it
   // has to come back.
+  //
+  // It opens once every list has answered, from the oldest of their heads:
+  // opened sooner it would start at the server's head, and a chat that came
+  // to wait after a list was read and before that would never be heard.
   const anyRunning = threads.some((t) => t.properties.status === "running")
+  const listsRead =
+    Boolean(conversations.data) &&
+    (!flags || Boolean(pinnedChats.data)) &&
+    (!counts || Boolean(waitingChats.data))
+  const listsFrom = earliestRead(
+    conversations.data,
+    pinnedChats.data,
+    waitingChats.data,
+    view === "archived" ? archivedChats.data : undefined
+  )
   useLiveRecords(
-    anyRunning || flags ? [`${LLM_PACKAGE}/thread`] : [],
+    listsRead && (anyRunning || flags) ? [`${LLM_PACKAGE}/thread`] : [],
     [[...THREAD_LISTS_KEY]],
     undefined,
-    conversations.data
+    listsFrom
   )
   const threadIds = useMemo(() => threads.map((t) => t.id), [threads])
   const openings = useQuery(openingMessagesQueryOptions(threadIds))
@@ -234,16 +248,23 @@ export function AgentsPage() {
   const threadRecord = listed ?? single.data
   // How far the person has read each chat: the dots in the list, and the
   // write that follows reading the one that is open.
-  const marks = useThreadMarks(
-    threads,
-    threadRecord,
-    earliestRead(
-      conversations.data,
-      pinnedChats.data,
-      waitingChats.data,
-      view === "archived" ? archivedChats.data : undefined
-    )
-  )
+  const marks = useThreadMarks(threads, threadRecord, listsFrom, counts)
+  // Which chats are pinned and archived. The marks say, once the mark of
+  // every listed chat is read. Until then, and when that read fails, a chat
+  // the server answered in the pinned or the archived list is one: the
+  // server narrowed those lists by the same marks.
+  const pinnedIds = useMemo(() => {
+    if (marks.known) return marks.pinned
+    const out = new Set(marks.pinned)
+    for (const t of pinnedChats.data?.records ?? []) out.add(t.id)
+    return out
+  }, [marks.known, marks.pinned, pinnedChats.data])
+  const archivedIds = useMemo(() => {
+    if (marks.known || view !== "archived") return marks.archived
+    const out = new Set(marks.archived)
+    for (const t of archivedChats.data?.records ?? []) out.add(t.id)
+    return out
+  }, [marks.known, marks.archived, archivedChats.data, view])
   const threadAgent = threadRecord ? threadAgentId(threadRecord) : undefined
   // A new chat's agent: the one asked for, else whoever you talked to last
   // (when you still can), else the first you can talk to.
@@ -372,8 +393,8 @@ export function AgentsPage() {
       unread={marks.unread}
       onMarkUnread={marks.supported ? marks.markUnread : undefined}
       onMarkRead={marks.supported ? marks.markRead : undefined}
-      pinned={marks.pinned}
-      archived={marks.archived}
+      pinned={pinnedIds}
+      archived={archivedIds}
       // By the server's revision, not by a read of marks: with every chat
       // archived the list is empty, no mark is read, and the Archived view
       // is the one way back to them.
@@ -467,12 +488,12 @@ export function AgentsPage() {
           // The message is not held for it; an unarchive that fails is
           // said, and the header still offers it.
           onSpoke={() => {
-            if (threadId && flags && marks.archived.has(threadId))
+            if (threadId && flags && archivedIds.has(threadId))
               void archive(threadId, false)
           }}
           actions={
             <>
-              {threadId && flags && marks.archived.has(threadId) && (
+              {threadId && flags && archivedIds.has(threadId) && (
                 <Button
                   size="sm"
                   variant="outline"
