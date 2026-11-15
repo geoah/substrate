@@ -244,6 +244,16 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// ones on their way: each reads as written here at once.
     var marking: [String: MarkChange] = [:]
     var markSending: [String: MarkChange] = [:]
+    /// The threads a reply was notified of since the app was launched:
+    /// where the server keeps marks, each is taken back once its mark says
+    /// the reply was read, however the row and the mark came to agree, and
+    /// whether or not the marks were known when it was notified.
+    var announced: Set<String> = []
+    /// The threads whose mark was learned without their row and is ahead
+    /// of the row held (`ThreadMark.ahead`): another device read a reply
+    /// this one has not read the thread's row for. Each reads as it did
+    /// until its row is read again, which is asked for at once.
+    var rowsBehind: Set<String> = []
     /// When the wait before the next write ends.
     var marksDue: Date?
     /// The chats whose end somebody is looking at, or looked at since they

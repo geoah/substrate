@@ -13,20 +13,35 @@ struct ThreadMark: Codable, Equatable, Sendable {
     /// The record's version, 0 where the server holds none: an answer that
     /// left the server earlier never replaces a later one.
     var version = 0
+    /// When the server took the position.
+    var readAt: Date?
 
     /// No mark: the person never opened the thread.
     static let none = ThreadMark()
 
-    init(readThrough: String? = nil, markedUnread: Bool = false, version: Int = 0) {
+    init(readThrough: String? = nil, markedUnread: Bool = false, version: Int = 0, readAt: Date? = nil) {
         self.readThrough = readThrough
         self.markedUnread = markedUnread
         self.version = version
+        self.readAt = readAt
     }
 
     init(record: Record) {
         readThrough = record["readThrough"]?.referenceID
         markedUnread = record["markedUnread"]?.bool == true
         version = record.version
+        readAt = record["readAt"]?.string.flatMap(Timestamp.parse)
+    }
+
+    /// Whether the position was taken after `thread`'s row settled and
+    /// names another message than the row's newest. Such a position is,
+    /// but for a device that read from an older row itself, of a reply the
+    /// row does not hold yet: the row is the older of the two.
+    func ahead(of thread: ChatThread) -> Bool {
+        guard let readThrough, let last = thread.lastMessage, readThrough != last, let readAt,
+            let settled = thread.record["finishedAt"]?.string.flatMap(Timestamp.parse)
+        else { return false }
+        return readAt > settled
     }
 
     /// The server's rule, for a thread that has settled: marked unread, or

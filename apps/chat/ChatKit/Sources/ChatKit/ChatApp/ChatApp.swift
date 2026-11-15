@@ -277,8 +277,10 @@ public struct ChatApp: LinkedApp {
         if state.unreadCount != previous.unreadCount { asks.append(.badge(state.unreadCount)) }
         var taken = state.visibleThreads.subtracting(previous.visibleThreads)
         // Read, not merely running again: a chat at work is not unread,
-        // and what it notified before is still to be read.
-        if state.marks != nil, previous.marks != nil, state.readState != previous.readState {
+        // and what it notified before is still to be read. The first marks
+        // a launch learns count too: what the device's own map notified
+        // before them is taken back where they say it was read.
+        if state.marks != nil, state.readState != previous.readState {
             taken.formUnion(previous.unreadThreads.subtracting(state.unreadThreads).filter { state.thread($0)?.running == false })
         }
         for thread in taken.sorted() { asks.append(.cancelGroup(thread)) }
