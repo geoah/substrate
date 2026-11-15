@@ -23,7 +23,7 @@ extension ChatApp {
             }
         case let .refreshFailed(failure), let .readFailed(failure), let .keyFailed(failure):
             lines.append(Diagnostic("failure").with(failure))
-        case let .rowsFailed(thread, _, failure), let .renameFailed(thread, _, failure):
+        case let .rowsFailed(thread, _, failure), let .renameFailed(thread, _, failure), let .threadUnfetched(thread, failure?):
             lines.append(Diagnostic("failure", chat: thread).with(failure))
         case let .cardFailed(_, failure), let .cardWriteFailed(_, failure): lines.append(Diagnostic("failure").with(failure))
         case let .pageFailed(_, _, failure, compacted): lines.append(Diagnostic("failure").with(failure).with("compacted", compacted))

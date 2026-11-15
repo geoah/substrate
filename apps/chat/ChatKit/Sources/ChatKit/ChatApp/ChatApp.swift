@@ -297,7 +297,7 @@ public struct ChatApp: LinkedApp {
             let .cardFailed(_, failure),
             let .cardWriteFailed(_, failure), let .renameFailed(_, _, failure):
             failure.report
-        case let .watchEnded(_, failure?): failure.report
+        case let .watchEnded(_, failure?), let .threadUnfetched(_, failure?): failure.report
         case .markWriteFailed(_, _, .signedOut, _): .accessEnded
         case let .pageFailed(_, _, failure, _), let .searchFailed(_, _, failure, _): failure.report
         case let .feedApplied(feed): feed.failure?.report

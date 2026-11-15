@@ -336,9 +336,10 @@ extension ChatApp {
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {
-                    return try await client.record(Kinds.thread, thread).map { Event(.threadFetched($0)) }
+                    guard let record = try await client.record(Kinds.thread, thread) else { return Event(.threadUnfetched(thread: thread, nil)) }
+                    return Event(.threadFetched(record))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.readFailed(failed(.refresh, error, client)))
+                    return Task.isCancelled ? nil : Event(.threadUnfetched(thread: thread, failed(.refresh, error, client)))
                 }
             }
         case let .rereadBehind(thread, mark):

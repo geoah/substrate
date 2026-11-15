@@ -209,8 +209,17 @@ extension ChatApp {
             // brought is the one the mark is told against, by the rule. A
             // mark learned since has asked for its own.
             if record == nil || next.marks?[thread]?.version == mark { next.rowsBehind.remove(thread) }
+        case let .threadUnfetched(thread, _):
+            // No row to wait for: the rows are read as they stand.
+            next.rowAwaited.remove(thread)
+            if next.key(of: thread) != nil { load(&next, thread) }
         case let .threadFetched(record):
+            next.rowAwaited.remove(record.id)
             upsert(&next, record)
+            // A thread that runs is its conversation's to read; one that
+            // has settled was read by the row's arrival, unless the row
+            // held was newer than this one.
+            if next.key(of: record.id) != nil { load(&next, record.id) }
             // A reply from a notification that waited for this row.
             if !next.deferred.isEmpty { resume(&next) }
             if next.readsMarks, next.marks?[record.id] == nil { next.asks.append(.readMarks([record.id])) }
@@ -883,6 +892,9 @@ extension ChatApp {
     /// than the list now holds is replaced.
     private func load(_ state: inout State, _ thread: String, force: Bool = false) {
         guard state.session != nil, !state.owned(thread), state.online else { return }
+        // Its row is on its way: read under no version, the rows would be
+        // read again the moment the row says which it is.
+        if state.thread(thread) == nil, state.rowAwaited.contains(thread) { return }
         if state.thread(thread)?.running == true, state.key(of: thread) != nil { return }
         let version = state.thread(thread)?.record.version ?? 0
         if let reading = state.reading[thread] {
@@ -990,7 +1002,10 @@ extension ChatApp {
         }
         // A chat the list does not hold (a notification, a shortcut, an old
         // chat): its row names the agent, so it is read.
-        if state.thread(thread) == nil { state.asks.append(.fetchThread(thread)) }
+        if state.thread(thread) == nil {
+            state.rowAwaited.insert(thread)
+            state.asks.append(.fetchThread(thread))
+        }
         if state.transcripts[thread] != nil { load(&state, thread) }
         // Its "New" line may stand above the rows held.
         seek(&state, thread)

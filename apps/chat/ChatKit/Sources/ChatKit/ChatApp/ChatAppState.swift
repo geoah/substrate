@@ -444,6 +444,11 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// archived says what it was when they spoke, as the read's own
     /// answer would (`ChatApp.followAgain`).
     var confirming: Set<String> = []
+    /// The threads shown with no row held, whose row is being read by
+    /// name (`ChatAppAsk.fetchThread`): their rows are read once it is,
+    /// under the version it says, and not before under none, a read that
+    /// the row's arrival would only replace.
+    var rowAwaited: Set<String> = []
     /// When the wait before the next write ends.
     var marksDue: Date?
     /// The chats whose end somebody is looking at, or looked at since they
