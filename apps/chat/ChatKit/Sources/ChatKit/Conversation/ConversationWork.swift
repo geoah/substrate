@@ -13,13 +13,14 @@ extension Conversation {
         let timeZone = environment.timeZone.identifier
         let quiet = quiet
         switch effect.ask {
-        case let .chat(agent, thread, message, id):
+        case let .chat(agent, thread, message, id, repliesTo):
             return .sequence {
                 Self.relay { yield in
                     guard let client = await source.current() else { return }
                     do {
                         let events = ChatAPI.chat(
-                            client, agent: agent, thread: thread, message: message, messageID: id, timezone: timeZone, quiet: quiet)
+                            client, agent: agent, thread: thread, message: message, messageID: id, repliesTo: repliesTo, timezone: timeZone,
+                            quiet: quiet)
                         for try await event in events {
                             if event.kind == .thread, let named = event.thread {
                                 yield(.named(named))

@@ -393,6 +393,13 @@ extension ChatApp {
                     return Event(.keyFailed(failed(.addKey, error, client)))
                 }
             }
+        case let .readOwn(thread, cards):
+            return .once {
+                guard let client = await source.current() else { return Event(.ownRead(thread: thread, asked: cards, mine: nil, whole: false)) }
+                let own = await Self.own(client, thread: thread)
+                if Task.isCancelled { return nil }
+                return Event(.ownRead(thread: thread, asked: cards, mine: own?.mine, whole: own?.whole ?? false))
+            }
         case let .readCard(reference, target):
             return .once {
                 guard let client = await source.current() else { return nil }

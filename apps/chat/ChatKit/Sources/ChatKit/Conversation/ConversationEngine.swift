@@ -516,7 +516,7 @@ extension Conversation {
     private func answerDelivered(_ state: inout State, _ id: String?) {
         guard let answer = state.answer, answer.message == id else { return }
         state.answer = nil
-        state.answered = answer.interaction
+        state.answered = WordsAnswer(interaction: answer.interaction, message: answer.message, linked: answer.linked)
         if state.answering == answer.interaction { state.answering = nil }
     }
 
@@ -548,7 +548,8 @@ extension Conversation {
         guard let pending = state.pending else { return }
         state.copies += 1
         state.tries += 1
-        state.asks.append(.chat(agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id))
+        state.asks.append(
+            .chat(agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo))
     }
 
     /// Send Again: the same request once more. The id is the one the
@@ -697,7 +698,12 @@ extension Conversation {
         (run.joins, run.held, run.replied) = (joining, known.0, known.1)
         // Sent from the composer while a question's card is aside for it:
         // this is the answer, in the person's own words.
-        state.answer = fromDraft ? state.answering.map { State.OwnAnswer(message: id, interaction: $0) } : nil
+        // Where the server takes it, the message names them and the
+        // server resolves them with it; else they are dismissed once the
+        // server holds the message.
+        let words = fromDraft ? state.answering : nil
+        let linked = words != nil && id != nil && linksWords && state.thread != nil
+        state.answer = words.map { State.OwnAnswer(message: id, interaction: $0, linked: linked) }
         state.reloadFailed = nil
         state.unread = 0
         state.seq += 1
@@ -723,7 +729,7 @@ extension Conversation {
         // so a kill at any moment after leaves the id to send it under.
         run.unkept = true
         state.run = .send(run)
-        state.pending = UnsentMessage(id: id, message: message, agent: agent, thread: state.thread, sentAt: at)
+        state.pending = UnsentMessage(id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil)
         state.copies = 0
         state.tries = 0
         state.unsentFailure = nil

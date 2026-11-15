@@ -25,8 +25,12 @@ enum CardPresenter {
     ///   - aside: the person is answering them in their own words.
     ///   - pending: the record as the list of what waits holds it, where
     ///     the card's own read has not answered yet.
+    ///   - words: an answer in the person's own words is offered: not on
+    ///     questions of another thread than the chat's (a sub-agent's are
+    ///     answered in its own), where the message would name them.
     static func question(
-        _ id: String, card: ChatAppState.Card?, pending: Record? = nil, outcome: InteractionNotice? = nil, aside: Bool = false
+        _ id: String, card: ChatAppState.Card?, pending: Record? = nil, outcome: InteractionNotice? = nil, aside: Bool = false,
+        words: Bool = true
     ) -> QuestionCard {
         // The thread's own rows say it ended: a list read before that is
         // older than they are.
@@ -54,33 +58,52 @@ enum CardPresenter {
             ? "Questions"
             : pending
                 ? "A few questions before it goes on"
-                : state == "answered" ? "You answered" : "You dismissed these"
+                : state == "answered" ? "Answered" : state == "replied" ? "Answered in a message" : "Dismissed"
         // The dismissal an answer in the person's own words makes is out:
         // the card stays aside until the server answers it.
         return QuestionCard(
             title: title, loading: record == nil && outcome == nil, pending: pending, questions: questions,
             failure: pending ? failure(card, .question(id)) : nil, busy: card?.busy, answer: "Answer", dismiss: "Dismiss",
-            words: "Answer in Your Own Words", aside: pending && (aside || card?.busy == ChatAppState.Card.words))
+            words: words ? "Answer in Your Own Words" : nil, aside: pending && (aside || card?.busy == ChatAppState.Card.words))
     }
 
     /// How a question's card ended, for its call's row: who answered and
     /// when, and, once the record is read, each question with what was
-    /// chosen.
-    static func resolved(question id: String, card: ChatAppState.Card?, pending: Record? = nil, outcome: InteractionNotice?) -> CardResolution? {
+    /// chosen. One answered in a message (`replied`, `agents` 7) has no
+    /// choices: each question is shown with the message, where the rows
+    /// read hold it, and `repliedIn` names it for the row to point at.
+    ///
+    /// - Parameter said: the words of the message a question was replied
+    ///   in, by the message's id, as the chat's rows hold it.
+    static func resolved(
+        question id: String, card: ChatAppState.Card?, pending: Record? = nil, outcome: InteractionNotice?, by hand: Hand = .unsaid,
+        said: (String) -> String? = { _ in nil }
+    ) -> CardResolution? {
         let record = card?.record ?? (outcome == nil ? pending : nil)
         guard let state = record?["state"]?.string ?? outcome.map({ $0.answered ? "answered" : "dismissed" }), state != "pending"
         else { return nil }
-        let answered = state == "answered"
         let made = question(id, card: card, pending: pending, outcome: outcome)
+        let count = max(made.questions.count, outcome?.answers.count ?? 0)
+        let at = record?["resolvedAt"]?.string.flatMap(Timestamp.parse)
+        if state == "replied" {
+            let message = record?["repliedIn"]?.referenceID
+            let words = message.flatMap(said)
+            let facts = made.questions.map { CardResolution.Fact(label: $0.prompt, value: words ?? "Answered in a message") }
+            return CardResolution(
+                card: .question(id), mark: .done,
+                label: OutcomeWords.say(
+                    hand, you: "You answered in your own words", other: "Someone else answered in their own words",
+                    plain: "Answered in a message"),
+                at: at, facts: facts, panel: nil, loading: record == nil, repliedIn: message)
+        }
+        let answered = state == "answered"
         let facts = made.questions.map { question in
             let chosen = question.options.filter(\.chosen).map(\.label)
             return CardResolution.Fact(label: question.prompt, value: chosen.isEmpty ? "No answer" : chosen.joined(separator: ", "))
         }
-        let count = max(made.questions.count, outcome?.answers.count ?? 0)
         return CardResolution(
-            card: .question(id), mark: answered ? .done : .declined,
-            label: answered ? "You answered" : count > 1 ? "You dismissed the questions" : "You dismissed the question",
-            at: record?["resolvedAt"]?.string.flatMap(Timestamp.parse), facts: facts, panel: nil, loading: record == nil)
+            card: .question(id), mark: answered ? .done : .declined, label: OutcomeWords.questions(answered: answered, count: count, hand),
+            at: at, facts: facts, panel: nil, loading: record == nil)
     }
 
     static func suggestion(
@@ -127,14 +150,16 @@ enum CardPresenter {
 
     /// How a suggestion's card ended, for its call's row: the change as it
     /// was applied or not taken.
-    static func resolved(suggestion id: String, made: SuggestionCard, card: ChatAppState.Card?, outcome: DecisionNotice?) -> CardResolution? {
+    static func resolved(
+        suggestion id: String, made: SuggestionCard, card: ChatAppState.Card?, outcome: DecisionNotice?, by hand: Hand = .unsaid
+    ) -> CardResolution? {
         guard made.decided else { return nil }
         let applied = made.panel.heading.badge == .applied
         // The request's own last write is its decision: it is frozen after.
         let at = card?.record.flatMap { $0["decision"]?.string == "proposed" ? nil : $0.updatedDate }
         return CardResolution(
             card: .suggestion(id), mark: applied ? .done : .declined,
-            label: applied ? (outcome?.adjusted == true ? "You applied it, with your changes" : "You applied it") : "You dismissed it",
+            label: OutcomeWords.suggestion(applied: applied, adjusted: outcome?.adjusted == true, it: "it", hand),
             at: at, facts: [], panel: made.panel, loading: false)
     }
 
@@ -176,15 +201,17 @@ enum CardPresenter {
 
     /// How an approval's card ended, for its call's row: the decision, how
     /// an approved call went, and exactly what it was asked to run with.
-    static func resolved(approval id: String, made: ApprovalCard, card: ChatAppState.Card?, pending: Record?) -> CardResolution? {
+    static func resolved(
+        approval id: String, made: ApprovalCard, card: ChatAppState.Card?, pending: Record?, by hand: Hand = .unsaid
+    ) -> CardResolution? {
         guard !made.loading, !made.pending else { return nil }
         let tool = made.tool.isEmpty ? "it" : made.tool
         let (mark, label): (CardResolution.Mark, String) =
             switch made.tone {
-            case .running: (.running, "You approved \(tool), and it is running")
-            case .done: (.done, "You approved \(tool), and it ran")
-            case .failed: (.failed, "You approved \(tool), but it didn't work")
-            case .declined, .waiting: (.declined, "You declined \(tool)")
+            case .running: (.running, OutcomeWords.approval(tool: tool, .running, hand))
+            case .done: (.done, OutcomeWords.approval(tool: tool, .ran, hand))
+            case .failed: (.failed, OutcomeWords.approval(tool: tool, .failed, hand))
+            case .declined, .waiting: (.declined, OutcomeWords.approval(tool: tool, .declined, hand))
             }
         var facts = made.arguments.map { CardResolution.Fact(label: $0.label, value: $0.value) }
         if let error = made.error { facts.append(CardResolution.Fact(label: "What went wrong", value: error)) }
@@ -256,6 +283,67 @@ enum CardPresenter {
             for call in turn.tools {
                 if let id = requestID(of: call) { out[id] = call }
             }
+        }
+        return out
+    }
+}
+
+/// How a card ended, in words, by whose hand it was. Said with "You" only
+/// where the server said the card is the person's own; with "Someone else"
+/// where it links another person; and with neither where nothing tells.
+enum OutcomeWords {
+    static func say(_ hand: Hand, you: String, other: String, plain: String) -> String {
+        switch hand {
+        case .you: you
+        case .other: other
+        case .unsaid: plain
+        }
+    }
+
+    static func questions(answered: Bool, count: Int, _ hand: Hand) -> String {
+        if answered { return say(hand, you: "You answered", other: "Someone else answered", plain: "Answered") }
+        let what = count > 1 ? "the questions" : "the question"
+        return say(hand, you: "You dismissed \(what)", other: "Someone else dismissed \(what)", plain: "Dismissed")
+    }
+
+    enum Approval { case running, ran, failed, declined }
+
+    static func approval(tool: String, _ ended: Approval, _ hand: Hand) -> String {
+        switch ended {
+        case .declined: return say(hand, you: "You declined \(tool)", other: "Someone else declined \(tool)", plain: "\(tool) was declined")
+        case .running, .ran, .failed:
+            let then = ended == .running ? ", and it is running" : ended == .ran ? ", and it ran" : ", but it didn't work"
+            return say(
+                hand, you: "You approved \(tool)\(then)", other: "Someone else approved \(tool)\(then)", plain: "\(tool) was approved\(then)")
+        }
+    }
+
+    /// - Parameter it: "it" on the call's row, "the suggestion" on a line
+    ///   of its own.
+    static func suggestion(applied: Bool, adjusted: Bool, it: String, _ hand: Hand) -> String {
+        guard applied else {
+            return say(
+                hand, you: "You dismissed \(it)", other: "Someone else dismissed \(it)", plain: it == "it" ? "Dismissed" : "The suggestion was dismissed")
+        }
+        return say(
+            hand, you: "You applied \(it)" + (adjusted ? ", with your changes" : ""),
+            other: "Someone else applied \(it)" + (adjusted ? ", with their changes" : ""),
+            plain: (it == "it" ? "Applied" : "The suggestion was applied") + (adjusted ? ", with changes" : ""))
+    }
+
+    /// The line the thread's rows hold for an outcome, said by whose hand
+    /// it was: the words `TurnPresenter` gives it are the person's own.
+    static func line(_ line: OutcomeLine, answer: InteractionNotice?, approval: ApprovalNotice?, decision: DecisionNotice?, _ hand: Hand) -> OutcomeLine {
+        guard hand != .you else { return line }
+        var out = line
+        if let answer {
+            out.text = questions(answered: answer.answered, count: 2, hand)
+            if !answer.answered, hand == .unsaid { out.text = "The questions were dismissed" }
+        } else if let approval {
+            let ended: Approval = !approval.approved ? .declined : approval.ok == false ? .failed : .ran
+            out.text = self.approval(tool: approval.tool, ended, hand) + (ended == .failed ? approval.error.map { ": \($0)" } ?? "" : "")
+        } else if let decision {
+            out.text = suggestion(applied: decision.accepted, adjusted: decision.adjusted, it: "the suggestion", hand)
         }
         return out
     }

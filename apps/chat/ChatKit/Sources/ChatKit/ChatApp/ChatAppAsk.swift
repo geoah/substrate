@@ -70,6 +70,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case rename(thread: String, subject: String, before: Record?)
     case setKey(provider: String, key: String)
     case readCard(CardReference, target: Bool)
+    /// Which of a thread's resolved cards are the person's own (`me` in
+    /// the filter): `cards` are the ones asked about.
+    case readOwn(thread: String, cards: [String])
     case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 

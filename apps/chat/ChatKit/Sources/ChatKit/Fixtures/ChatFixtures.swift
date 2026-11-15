@@ -280,6 +280,10 @@ public enum ChatFixtures {
         public var rowsResolved: String
     }
 
+    /// The link a resolved card carries to who resolved it (`agents` 7):
+    /// the fixture's one person, whose own it then is.
+    private static let person = #"{"ref":"substrate.reamde.dev/core/actor/ada"}"#
+
     private static func row(_ thread: String, _ ordinal: Int, _ properties: String) -> String {
         record(
             id: "\(thread)-m\(ordinal)", kind: Kinds.message, version: 1, at: -(60 - ordinal * 5),
@@ -312,7 +316,8 @@ public enum ChatFixtures {
         }
         return Asked(
             thread: thread, card: .question(id), path: "\(Kinds.interaction)/\(id)", pending: card("pending", "", version: 1),
-            resolved: card("answered", #","answers":[{"question":"day","selected":["thu"]}],"resolvedAt":"\#(stamp(-20))""#, version: 2),
+            resolved: card(
+                "answered", #","answers":[{"question":"day","selected":["thu"]}],"resolvedAt":"\#(stamp(-20))","resolvedBy":\#(person)"#, version: 2),
             rows: page([landed, asked, sent]), rowsResolved: page([booked, said, landed, asked, sent]))
     }
 
@@ -344,7 +349,7 @@ public enum ChatFixtures {
         }
         return Asked(
             thread: thread, card: .approval(id), path: "\(Kinds.approval)/\(id)", pending: card("pending", "", version: 1),
-            resolved: card("done", #","decidedAt":"\#(stamp(-20))""#, version: 3),
+            resolved: card("done", #","decidedAt":"\#(stamp(-20))","decidedBy":\#(person)"#, version: 3),
             rows: page([landed, asked, sent]), rowsResolved: page([done, said, landed, asked, sent]))
     }
 

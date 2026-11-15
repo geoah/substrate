@@ -510,7 +510,7 @@ extension ChatApp {
         if hero?.empty == nil { hero?.keyless = callout }
         let blocked = live.blocked
         let asked = live.thread.map(state.subagentApprovals) ?? []
-        var shown = cards(state, scan, titles: titles, answering: live.answering)
+        var shown = cards(state, scan, titles: titles, live: live, all: all)
         for id in asked where shown[id] == nil {
             shown[id] = CardPresentation(
                 approval: CardPresenter.approval(id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: nil))
@@ -523,6 +523,21 @@ extension ChatApp {
         let ended = CardPresenter.ended(folded)
         let said = Set(scan.said.filter { ended.contains($0.value) }.keys)
         if !said.isEmpty { folded.removeAll { said.contains($0.id) } }
+        // The lines that stand say whose hand it was, as their cards do.
+        for index in folded.indices {
+            guard let card = scan.said[folded[index].id] else { continue }
+            let hand = state.hand(card, record: state.cards[card]?.record)
+            let words = { (line: OutcomeLine) in
+                OutcomeWords.line(line, answer: scan.answers[card], approval: scan.approvals[card], decision: scan.decisions[card], hand)
+            }
+            switch folded[index].body {
+            case let .answer(line): folded[index] = TurnPresentation(id: folded[index].id, body: .answer(words(line)))
+            case let .approvalEnded(line): folded[index] = TurnPresentation(id: folded[index].id, body: .approvalEnded(words(line)))
+            case let .decision(line, suggestion):
+                folded[index] = TurnPresentation(id: folded[index].id, body: .decision(words(line), suggestion: suggestion))
+            default: break
+            }
+        }
         // A decided suggestion whose call the transcript holds is drawn
         // there: the decision's own line stands without a second card.
         for (id, card) in shown where card.suggestion?.decided == true && scan.proposals[id] != nil { shown[id] = nil }
@@ -713,21 +728,34 @@ extension ChatApp {
 
     /// - Parameter answering: the questions the person is answering in
     ///   their own words, whose card is aside.
-    private func cards(_ state: State, _ scan: CardScan, titles: [String: String], answering: String?) -> [String: CardPresentation] {
+    /// - Parameter all: the chat's turns: a question replied to in a
+    ///   message is shown with that message's words.
+    private func cards(_ state: State, _ scan: CardScan, titles: [String: String], live: ConversationLive, all: [Turn]) -> [String: CardPresentation] {
         var out: [String: CardPresentation] = [:]
+        let said = { (message: String) in all.first { $0.row == message || $0.id == message }?.content }
         for interaction in scan.interactions {
             let card = state.cards[interaction]
             let pending = state.interactions.first { $0.id == interaction }
             let outcome = scan.answers[interaction]
+            // Where the message names the questions it answers, only the
+            // chat's own: a sub-agent's are another thread's, and are
+            // answered there.
+            let asked = (card?.record ?? pending)?["thread"]?.referenceID
+            let words = !live.linksWords || (asked != nil && asked == live.thread)
             out[interaction] = CardPresentation(
-                question: CardPresenter.question(interaction, card: card, pending: pending, outcome: outcome, aside: answering == interaction),
-                resolution: CardPresenter.resolved(question: interaction, card: card, pending: pending, outcome: outcome))
+                question: CardPresenter.question(
+                    interaction, card: card, pending: pending, outcome: outcome, aside: live.answering == interaction, words: words),
+                resolution: CardPresenter.resolved(
+                    question: interaction, card: card, pending: pending, outcome: outcome, by: state.hand(interaction, record: card?.record),
+                    said: said))
         }
         for id in scan.asked {
             let pending = state.approvals.first { $0.id == id }
             let made = CardPresenter.approval(id, card: state.cards[id], pending: pending, outcome: scan.approvals[id])
             out[id] = CardPresentation(
-                approval: made, resolution: CardPresenter.resolved(approval: id, made: made, card: state.cards[id], pending: pending))
+                approval: made,
+                resolution: CardPresenter.resolved(
+                    approval: id, made: made, card: state.cards[id], pending: pending, by: state.hand(id, record: state.cards[id]?.record)))
         }
         for id in Set(scan.proposals.keys).union(scan.decisions.keys) {
             let made = CardPresenter.suggestion(
@@ -735,7 +763,9 @@ extension ChatApp {
                 outcome: scan.decisions[id], session: state.session, titles: titles)
             out[id] = CardPresentation(
                 suggestion: made,
-                resolution: CardPresenter.resolved(suggestion: id, made: made, card: state.cards[id], outcome: scan.decisions[id]))
+                resolution: CardPresenter.resolved(
+                    suggestion: id, made: made, card: state.cards[id], outcome: scan.decisions[id],
+                    by: state.hand(id, record: state.cards[id]?.record)))
         }
         return out
     }

@@ -224,6 +224,12 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 lines: turn(thread: body?["thread"]?.string ?? "", message: body?["message"]?.string ?? ""))
         }
         if method == "GET", path.hasSuffix("/api/v1/records") {
+            // The person's own resolved cards (`me` in the filter): the
+            // fixture has one person, so every card that ended is theirs.
+            if query.contains(#""eq":"me""#) {
+                let own = lock.withLock { records.filter { query.contains($0.key.split(separator: "/").dropLast().joined(separator: "/")) }.map(\.value) }
+                return json(ChatFixtures.page(own.filter { !$0.contains(#""state":"pending""#) }))
+            }
             if query.contains("llm/message") {
                 // Every chat has a subject, so no read asks for opening lines.
                 guard !query.contains(#""in""#), let thread = Self.named(in: query) else { return json(ChatFixtures.page([])) }

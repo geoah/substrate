@@ -469,6 +469,17 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var acting: [String: Act] = [:]
     var acted: Set<String> = []
     var deferred: [Deferred] = []
+    /// The resolved cards the server said are the person's own, and the
+    /// ones a whole answer of theirs did not hold (`ChatAppHands.swift`).
+    var ownCards: Set<String> = []
+    var othersCards: Set<String> = []
+    /// The threads whose read of the person's own cards is out, and the
+    /// cards the last one answered was asked about, by thread.
+    var ownReading: Set<String> = []
+    var ownAsked: [String: Set<String>] = [:]
+    /// The message each question was answered by in the person's own
+    /// words, by the question's id: a card read as replied in it is theirs.
+    var wordsSent: [String: String] = [:]
     /// The cards whose notification waits for their turn to settle, by id
     /// (`ChatAppAttention.swift`).
     var heldCards: [String: Record] = [:]

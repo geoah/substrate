@@ -30,6 +30,10 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case actionDue(String)
     /// A card's notification was held as long as it may be.
     case cardHoldDue(String)
+    /// The person's own resolved cards of a thread, of the ones asked
+    /// about; `whole` where the answer is all of them. Nil where no read
+    /// was answered.
+    case ownRead(thread: String, asked: [String], mine: [String]?, whole: Bool)
     case phase(AppPhase)
     case paced(Bool)
 
@@ -283,7 +287,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var spoke = false
         /// The questions the server now holds an answer to in the person's
         /// own words: dismissed, so they do not wait for good.
-        var answered: String?
+        var answered: Conversation.WordsAnswer?
         /// What became of a reply typed into a notification.
         var replied: Conversation.ReplyOutcome?
     }

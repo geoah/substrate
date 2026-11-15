@@ -51,7 +51,8 @@ enum Demo {
         guard let asked else { return nil }
         // A message joins a run where the server's `agents` is at 6.
         let queues = asked == "queued" || asked == "taken"
-        let server = FixtureServer(reply: "", agents: queues ? 6 : 0)
+        // And a card says whose hand ended it where it is at 7.
+        let server = FixtureServer(reply: "", agents: queues ? 6 : card(asked) != nil ? 7 : 0)
         if queues {
             server.script(thread, lines: joined.lines, rows: joined.rows)
         } else {

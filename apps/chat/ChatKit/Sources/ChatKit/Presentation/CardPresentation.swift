@@ -71,6 +71,9 @@ public struct CardResolution: Codable, Hashable, Sendable {
     /// What was asked is on a record not read yet: read when the row is
     /// opened.
     public var loading: Bool
+    /// Questions answered in a message: the message's id, which is its
+    /// turn's, for the row to point at.
+    public var repliedIn: String?
 }
 
 /// The agent's questions. Prompts and labels are the model's and are drawn
@@ -105,7 +108,7 @@ public struct QuestionCard: Codable, Equatable, Sendable {
     public var dismiss: String
     /// "Answer in your own words": the card leaves the transcript and the
     /// composer takes the cursor.
-    public var words: String
+    public var words: String?
     /// Being answered in the person's own words: off the transcript until
     /// the answer is sent or the choice is taken back.
     public var aside: Bool

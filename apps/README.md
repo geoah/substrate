@@ -952,8 +952,11 @@ places, never an alert ([its design](chat/DESIGN.md#failures)).
 **How a person answers.** A question, a suggestion and a call to approve are
 cards that stand only while they wait: once one ended, here or on another
 device, it is a check or a cross on the tool call that asked, which opens to
-what was asked and what was answered. A question can be answered in the
-person's own words, as an ordinary message, after which the app dismisses it.
+what was asked and what was answered, and says whose hand ended it where
+the server links one (`agents` 7). A question can be answered in the
+person's own words: at `agents` 7 by a message that names it, which the
+server resolves in the same write, and below that as an ordinary message,
+after which the app dismisses it.
 On a server at `agents` 6 a message can be sent while the assistant works: it
 is drawn queued until a model call reads it, and a run that is stopped first
 says the message was not read and offers Continue

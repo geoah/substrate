@@ -133,6 +133,17 @@ public struct Conversation: Controller, Equatable {
 
     /// What became of it: sent, or why not, with the text kept in the
     /// composer or on a message that stands.
+    /// Questions answered in the person's own words, by a message the
+    /// server now holds.
+    struct WordsAnswer: Codable, Equatable, Sendable {
+        var interaction: String
+        /// The message's id, where it was sent under one.
+        var message: String?
+        /// The message named them, and the server resolved them with it:
+        /// nothing is left to dismiss.
+        var linked: Bool
+    }
+
     struct ReplyOutcome: Codable, Equatable, Sendable {
         var id: String
         var failure: Failure?
@@ -243,6 +254,17 @@ public struct Conversation: Controller, Equatable {
     /// turn runs joins that turn (decision 0318). Below it the same send
     /// is refused as busy, so the composer holds it until the turn ends.
     static let queueRevision = 6
+
+    /// The revision from which a message names the questions it answers
+    /// in the person's own words (`repliesTo`, decision 0327). Below it the
+    /// message is sent and the questions are then dismissed.
+    static let wordsRevision = 7
+
+    /// An answer in the person's own words rides its message: the
+    /// server's document says it takes that, and the message goes under
+    /// an id. Asked of the document, never found out by sending: a server
+    /// below the revision refuses the field.
+    var linksWords: Bool { agents >= Self.wordsRevision && sendsIDs }
 
     /// A message may be sent while a turn runs: the server's document says
     /// it takes one, the message goes under an id, and the thread is a
