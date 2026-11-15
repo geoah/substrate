@@ -434,6 +434,12 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// until its row catches up, or a read of the row that started after
     /// the mark was learned has answered.
     var rowsBehind: Set<String> = []
+    /// The threads whose mark is being read beside a message their person
+    /// just sent (`ChatAppAsk.confirmMark`): until that read is answered
+    /// or given up, a mark learned by any read that says the chat is
+    /// archived says what it was when they spoke, as the read's own
+    /// answer would (`ChatApp.followAgain`).
+    var confirming: Set<String> = []
     /// When the wait before the next write ends.
     var marksDue: Date?
     /// The chats whose end somebody is looking at, or looked at since they

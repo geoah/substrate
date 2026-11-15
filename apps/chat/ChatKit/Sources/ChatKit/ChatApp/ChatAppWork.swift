@@ -253,10 +253,12 @@ extension ChatApp {
             return .once {
                 for attempt in 0 ..< Self.confirmTries {
                     if attempt > 0 { guard await pause(Self.confirmPause) else { return nil } }
-                    guard let client = await source.current() else { return nil }
+                    guard let client = await source.current() else { break }
                     if let marks = await Self.marks(client, threads: [thread], full: false) { return Event(.markConfirmed(thread: thread, marks)) }
                 }
-                return nil
+                // Given up: what is learned of the chat from here is no
+                // longer what it was when its person spoke.
+                return Event(.markUnconfirmed(thread: thread))
             }
         case let .sight(thread, message):
             return .once {

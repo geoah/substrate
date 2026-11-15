@@ -435,6 +435,7 @@ extension ChatApp {
         // Archived after its person spoke in it: the mark read beside
         // that message has nothing left to say.
         state.asks.append(.cancel("confirmMark:\(id)"))
+        state.confirming.remove(id)
         flag(&state, id, archived: true)
         if !state.archive.rows.contains(where: { $0.id == id }) { state.archive.rows.insert(thread.record, at: 0) }
         state.undo = State.Undo(thread: id, until: at.addingTimeInterval(Self.undoSeconds))
@@ -469,7 +470,22 @@ extension ChatApp {
         if state.archived(thread) {
             unarchive(&state, thread)
         } else if state.flags {
+            state.confirming.insert(thread)
             state.asks.append(.confirmMark(thread))
+        }
+    }
+
+    /// While the mark of a chat its person spoke in is still being read,
+    /// another read may say first that the chat is archived: the change
+    /// feed, a list read, the answer to a write. It says what the read
+    /// beside the message would, so the archive ends on its word, and does
+    /// not stand until that read is answered, or for good where it fails.
+    /// Not where this device moved the chat's archive since: that is the
+    /// person's own word, after they spoke.
+    func followAgain(_ state: inout State) {
+        for thread in state.confirming.sorted()
+        where state.archived(thread) && !state.moved(thread).contains(where: { $0.archived != nil }) {
+            unarchive(&state, thread)
         }
     }
 

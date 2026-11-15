@@ -1770,9 +1770,14 @@ newest version any of them holds.
   typed into a notification, and since the app may have been away when
   the chat was archived on another device, the chat's mark is read beside
   that send (`confirmMark`), and the archive ends when the read says it
-  was archived. Only that read's word counts, and only while this device
-  has moved no flag of the chat since: a chat its person archives here
-  after they spoke stays archived, and the read is let go. Answering a card (an option, Approve, Decline) is no
+  was archived. While that read is out (it is asked three times, a second
+  apart) any other read that says so first ends the archive too, the
+  change feed's or a list's (`followAgain`): the chat is not held
+  archived until the next try, or for good where every try fails. Once
+  the read is answered or given up, an archive learned is one made since,
+  and stands. And only while this device has moved no flag of the chat
+  since: a chat its person archives here after they spoke stays archived,
+  and the read is let go. Answering a card (an option, Approve, Decline) is no
   message: the chat stays archived, and leaves the list once nothing
   waits in it.
 - Until the person's mark of a chat is read, and where that read failed,
@@ -2304,7 +2309,10 @@ no outcome depends on how long they took.
   drawn so under the next turn's stream (seed 6008 at 22 steps; all three
   in `AnsweringTests`), and a reply's notification standing for an
   archived chat with nothing waiting (seeds 30167 at 45 steps and 20442
-  at 101; `AnsweringTests`). A message drawn queued by a conversation
+  at 101; `AnsweringTests`), and a chat held archived after its person
+  spoke in it, because the feed said so before the read beside the
+  message did (seed 7190 at 96 steps; `AnsweringTests`). A message drawn
+  queued by a conversation
   with no stream open, or one a call has read, breaks the run. A kill
   may take a draft typed inside its save's pause and a send without an id
   still on its way, and nothing else.
