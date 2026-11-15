@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var keySheet: KeySheet?
     @State private var locales: [Locale] = []
     @State private var changingAccess = false
+    @State private var sharingDiagnostics = false
 
     var body: some View {
         let link = host.link
@@ -52,6 +53,7 @@ struct SettingsView: View {
             #endif
             .sheet(item: $keySheet) { ProviderKeySheet(sheet: $0).environment(host) }
             .sheet(isPresented: $changingAccess) { ReviewSheet(isPresented: $changingAccess, changingAccess: true).environment(host) }
+            .sheet(isPresented: $sharingDiagnostics) { DiagnosticsSheet(version: updates.build.version).environment(host) }
             .task {
                 host.send(.readSettings)
                 let supported = await SpeechTranscriber.supportedLocales
@@ -82,6 +84,7 @@ struct SettingsView: View {
         case let .perform(.status(.action(action))): perform(action)
         case .perform(.app("allowNotifications")): openNotificationSettings()
         case .perform(.app("askNotifications")): host.send(.notifications(allow: true))
+        case .perform(.app("shareDiagnostics")): sharingDiagnostics = true
         default: host.send(.settings(command))
         }
     }

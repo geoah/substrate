@@ -151,6 +151,9 @@ extension ChatApp {
             offered: framed.offered, defaultAgent: framed.defaultAgent, settings: settings, unread: listed.unread,
             notificationOffer: state.notificationOffer == .offered ? Self.notificationOffer(platform) : nil,
             keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
+            diagnostics: state.diagnostics.map {
+                DiagnosticsReport(lines: $0, platform: platform, agents: state.agentsRevision, records: state.recordsRevision)
+            },
             redrawAt: redrawAt)
     }
 

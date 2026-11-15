@@ -42,7 +42,8 @@ struct ConversationView: View {
         return TranscriptScroll(
             opens: screen.opens, anchor: opening(screen), sends: screen.sends, visit: screen.visit, above: screen.above,
             first: { TranscriptPiece.firstRow(among: $0, of: screen.turns) },
-            looked: { atBottom = $0 }
+            looked: { atBottom = $0 },
+            released: { host.send(.followEnded(key: key, by: $0)) }
         ) {
             LazyVStack(alignment: .leading, spacing: 22) {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
@@ -224,6 +225,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// opened further up, or scrolled up, is not at its end whatever
     /// arrives below.
     let looked: (Bool) -> Void
+    /// The reader took the transcript from its end, and by what: said once
+    /// each time, for the diagnostics file.
+    let released: (TranscriptFollow.Release) -> Void
     let rows: Rows
     /// What floats over the transcript's end: handed whether the end is
     /// near, the ids of the rows on screen, and what Jump to Latest does.
@@ -249,6 +253,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         opens: TranscriptOpening, anchor: String? = nil, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
         first: @escaping ([String]) -> String? = { $0.first },
         looked: @escaping (Bool) -> Void = { _ in },
+        released: @escaping (TranscriptFollow.Release) -> Void = { _ in },
         @ViewBuilder rows: () -> Rows,
         @ViewBuilder bar: @escaping (_ atEnd: Bool, _ seen: [String], _ jump: @escaping () -> Void) -> Bar
     ) {
@@ -259,6 +264,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         self.above = above
         self.first = first
         self.looked = looked
+        self.released = released
         self.rows = rows()
         self.bar = bar
         _follow = State(initialValue: TranscriptFollow(opening: opens))
@@ -337,7 +343,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                     // no longer the app's to say.
                     reach.touched = true
                     placed = true
-                    if follow.following { leave() }
+                    if follow.following { leave(by: .touch) }
                 case .idle:
                     // Come to rest: where a finger left it, that is the
                     // reader's word on following; where the app moved it,
@@ -375,7 +381,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                     // finger on it: up, away from the end, with the content
                     // and the room as they were. Content that grew is never
                     // read as the reader leaving.
-                    leave()
+                    leave(by: .bar)
                 } else if near, !follow.following, !reach.touched {
                     // Brought back to the end with no finger on it, which
                     // never comes to rest as a touch does.
@@ -419,7 +425,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         .background {
             WheelWatcher { wheel in
                 placed = true
-                if wheel.up, !wheel.gliding, follow.following { leave() }
+                if wheel.up, !wheel.gliding, follow.following { leave(by: .wheel) }
                 guard !follow.following else { return }
                 reach.touched = true
                 reach.wheel += 1
@@ -456,10 +462,11 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// The reader took the transcript away from its end. The position is
     /// let go of with it: one still bound to a place would be put back
     /// there at the next change.
-    private func leave() {
+    private func leave(by hand: TranscriptFollow.Release) {
         placed = true
         follow.touched()
         position = ScrollPosition(idType: String.self)
+        released(hand)
     }
 
     /// A send and Jump to Latest take the transcript from whatever hand

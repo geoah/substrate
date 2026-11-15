@@ -87,6 +87,12 @@ public struct ChatApp: LinkedApp {
         /// Whether a reply being written is revealed at a steady rate: the
         /// device's to say, and false where it asks for less motion.
         case pace(Bool)
+        /// A reader took a transcript from its end, for the diagnostics
+        /// file: by what.
+        case followEnded(key: ChildKey, by: TranscriptFollow.Release)
+        /// Share Diagnostics was opened, and the file is read to be shown;
+        /// or closed.
+        case diagnostics(shown: Bool)
     }
 
     /// An event, opaque outside ChatKit.
@@ -124,6 +130,8 @@ public struct ChatApp: LinkedApp {
         self.platform = platform
         self.page = page
         kept = PresenterParts(verifies: verifiesParts)
+        // What a flush and a parse cost is kept for the diagnostics file.
+        Meter.shared.keep()
     }
 
     /// The watch stops while no window is in front on a phone, and runs
@@ -220,6 +228,8 @@ public struct ChatApp: LinkedApp {
         case let .forgetOnSignOut(forget): return [Event(.forget(forget))]
         case let .phase(phase): return [Event(.phase(phase))]
         case let .pace(paces): return paces == state.paces ? [] : [Event(.paced(paces))]
+        case let .followEnded(key, why): return [Event(.followEnded(key: key, why))]
+        case let .diagnostics(shown): return [Event(.diagnosticsAsked(shown))]
         }
     }
 
@@ -277,7 +287,7 @@ public struct ChatApp: LinkedApp {
                     outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
                     read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved,
                     unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack, spoke: spoke,
-                    answered: state.answered, replied: state.replyOutcome)))
+                    answered: state.answered, replied: state.replyOutcome, notes: Conversation.notes(of: event, after: state, key: key))))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -358,6 +368,16 @@ public struct ChatApp: LinkedApp {
         if state.disk != nil, previous.disk == nil || answerable(state) != answerable(previous) {
             asks.append(.categories(ChatNotifications.categories(for: state.interactions)))
         }
+        // What the step says of itself, for the file a person can share:
+        // decisions and counts, never a word (`Diagnostic`).
+        if let disk = state.disk {
+            let lines = diagnostics(of: event, asks: asks, on: state, from: previous)
+            if !lines.isEmpty { asks.append(.diagnose(disk, lines)) }
+            // A run settled: what its flushes and its parses cost.
+            if case let .conversation(key, report) = event.step, report.settles != (previous.conversations[key]?.settles ?? 0) {
+                asks.append(.timings(disk))
+            }
+        }
         return asks.map(Effect.init)
     }
 
@@ -405,10 +425,12 @@ public struct ChatApp: LinkedApp {
         case .backgroundRefresh: "background"
         case let .continueRun(key, _): "continued:\(key.rawValue)"
         case .readUsage: "usage"
+        case .readDiagnostics: "diagnostics"
         case .readPermission: "permission"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
-            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification, .noteRow:
+            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification, .diagnose, .timings,
+            .noteRow:
             nil
         }
     }

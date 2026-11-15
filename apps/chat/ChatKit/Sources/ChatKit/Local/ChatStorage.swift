@@ -75,6 +75,11 @@ public final class ChatStorage: @unchecked Sendable {
         /// The unsent messages as the folder holds them, once read or
         /// written; guarded by `files`.
         var unsent: [String: UnsentMessage]?
+        /// The diagnostics' lines still to be appended, in the order they
+        /// were noted, and the number each chat goes by in them, in the
+        /// order this open met them; both guarded by `lock`.
+        var staged: [String] = []
+        var chats: [String: Int] = [:]
 
         init(lease: Lease, folder: RepositoryFolder?, records: RecordCache?, adoption: TranscriptAdoption) {
             self.lease = lease
@@ -473,6 +478,46 @@ public final class ChatStorage: @unchecked Sendable {
     private func write(_ value: some Encodable, _ name: String, _ area: FolderArea, _ lease: Lease) {
         guard let data = try? JSONEncoder().encode(value) else { return }
         _ = whileHeld(lease) { holding in try holding.folder?.write(data, to: name, in: area) }
+    }
+
+    // MARK: Diagnostics
+
+    /// Notes lines for the diagnostics file, in the order they are noted:
+    /// each is stamped and its chat numbered here, at once, and appended
+    /// by the `writeDiagnostics` that follows, whichever thread that runs
+    /// on. A chat is named by the order this open met it in, never by its
+    /// id.
+    func note(_ entries: [Diagnostic], _ lease: Lease, at now: Date) {
+        lock.withLock {
+            guard let holding = held[lease.identity], holding.lease == lease, holding.folder != nil else { return }
+            let when = Timestamp.format(now, precision: .milliseconds)
+            for entry in entries {
+                var number: Int?
+                if let chat = entry.chat {
+                    number = holding.chats[chat] ?? entry.formerly.flatMap { holding.chats[$0] } ?? holding.chats.count + 1
+                    holding.chats[chat] = number
+                }
+                holding.staged.append(when + (number.map { " chat \($0) " } ?? " ") + entry.text)
+            }
+        }
+    }
+
+    /// Appends what was noted to the folder's diagnostics.
+    func writeDiagnostics(_ lease: Lease) {
+        _ = whileHeld(lease) { holding in
+            let lines = lock.withLock {
+                let staged = holding.staged
+                holding.staged = []
+                return staged
+            }
+            guard let folder = holding.folder else { return }
+            try DiagnosticsFile(root: folder.root, writingOptions: writingOptions).append(lines)
+        }
+    }
+
+    /// Every line of the folder's diagnostics, oldest first.
+    func diagnostics(_ lease: Lease) -> [String] {
+        whileHeld(lease) { holding in holding.folder.map { DiagnosticsFile(root: $0.root, writingOptions: writingOptions).lines() } } ?? []
     }
 
     // MARK: The budget

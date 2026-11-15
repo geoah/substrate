@@ -279,6 +279,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var opened: Bool { disk != nil }
     /// Something to draw: the cache, or a first read.
     var loaded = false
+    /// The diagnostics file's lines while Share Diagnostics shows them; nil
+    /// while it is closed.
+    var diagnostics: [String]?
     /// The server answered a refresh in this launch: the chats' rows are
     /// its own, and no longer only the folder's.
     var refreshed = false

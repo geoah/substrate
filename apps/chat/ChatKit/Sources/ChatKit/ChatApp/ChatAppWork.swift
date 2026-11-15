@@ -84,6 +84,25 @@ extension ChatApp {
             }
         case let .readUsage(lease):
             return .once { Event(.usageRead(storage.usage(lease))) }
+        case let .diagnose(lease, lines):
+            // Stamped and numbered now, in the order the effects were
+            // asked; appended by the work, off whatever thread drew.
+            storage.note(lines, lease, at: clock.now)
+            return .once {
+                storage.writeDiagnostics(lease)
+                return nil
+            }
+        case let .timings(lease):
+            return .once {
+                storage.note(Self.timings(Meter.shared.takeKept()), lease, at: clock.now)
+                storage.writeDiagnostics(lease)
+                return nil
+            }
+        case let .readDiagnostics(lease):
+            return .once {
+                storage.writeDiagnostics(lease)
+                return Event(.diagnosticsRead(storage.diagnostics(lease)))
+            }
         case let .clearTranscripts(lease):
             return .once {
                 storage.clearTranscripts(lease)

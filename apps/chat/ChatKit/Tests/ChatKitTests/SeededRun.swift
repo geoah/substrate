@@ -143,37 +143,19 @@ struct SeededRun {
         /// with words, and with the run again a card names beside its
         /// button.
         case offered = "what stands under a reply is under the last one, and offers the run again once or not at all"
+        /// The diagnostics file (`Diagnostic`): decisions and timings, and
+        /// never a word of a message, a title, a record's name, a server's
+        /// address or a token. Read from the folder, every line every
+        /// launch of the run wrote, against the canaries the seeded server
+        /// says and the person types, and against the shape a line has.
+        case discreet = "the diagnostics file holds no word a person typed or a server said"
     }
 
     /// Rules the app is known to break today, each with what breaks it. A
     /// run notes one where it meets it and goes on, so the rest of the seed
     /// is still held to every other rule. An entry that no longer fails
     /// must not stay.
-    static let known: [Rule: String] = [
-        .mispaired:
-            "seed 6523 at 76 steps (CHATKIT_SEED=6523 CHATKIT_STEPS=76): after a relaunch, before the chat's rows and the server's document are read, "
-            + "\"say 3.\" is sent under no id into a thread whose rows already hold a \"say 3.\" sent under an id in the launch before. The fold "
-            + "(TurnFold, pairing a message sent under no id by its words) gives the new bubble's id to the older row. The transcript drawn is the "
-            + "server's rows, each once; only which of the two equal bubbles keeps the id `sent-1` is wrong. Found by the list's new steps, not "
-            + "caused by them: the pairing is the send-id group's. That seed is of the list's branch (#1464): with the answering steps "
-            + "beside them (#1465) a seed's run is another, and the one that reaches it is seed 1171 at 101 steps on a server at agents 7 "
-            + "(CHATKIT_REVISION=7 CHATKIT_SEED=1171 CHATKIT_STEPS=101).",
-        .queued:
-            "seed 9435 at 39 steps on a server at agents 7 (CHATKIT_REVISION=7 CHATKIT_SEED=9435 CHATKIT_STEPS=39): after the person signs in "
-            + "again twice while a run goes on, a message a call had read, and that the chat drew as read, is drawn queued once more when the "
-            + "next send joins the run. A conversation made anew by the sign-in holds none of what it knew was taken (`ConversationState.taken`), "
-            + "and the run's stream, said again from its start, says `messageQueued` of it before it says `messageTaken`. It is the answering "
-            + "group's (#1465, `ConversationQueue.hear`): the same seed breaks the rule on that branch's head (04537b747) with nothing of the "
-            + "reply's actions in it. Found by 160,000 steps over the joined line (group A8, #1466).",
-        .archived:
-            "seed 30167 at 45 steps on a server at agents 7 (CHATKIT_REVISION=7 CHATKIT_SEED=30167 CHATKIT_STEPS=45), and seed 20442 at 101 "
-            + "steps at its own revision (CHATKIT_SEED=20442 CHATKIT_STEPS=101): another device archives a chat, and a notification of that "
-            + "chat's reply stands on this device afterwards with nothing in the chat waiting on a person. In the first the app is killed and "
-            + "launched again several times between the archive and the reply; in the second the other device marks the chat unread after "
-            + "archiving it. Only the notification is held as known: an archived chat drawn in the list or counted in the badge still breaks "
-            + "the rule. It is the list's and the answering work's (#1464, #1465): both seeds break the rule on the answering branch's head "
-            + "(04537b747) with nothing of the reply's actions in it. Found by 160,000 more steps over the joined line (group A8, #1466).",
-    ]
+    static let known: [Rule: String] = [:]
 
     let seed: UInt64
     let scene = "s"
@@ -273,6 +255,10 @@ struct SeededRun {
     /// The actions of notifications this launch was handed, each with
     /// when: the device must be told each is over.
     private var acts: [(response: NotificationResponse, at: Date)] = []
+    /// The lines of the diagnostics file read so far, and how many of
+    /// each kind the run wrote.
+    private var diagnosed = 0
+    private(set) var written: [String: Int] = [:]
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -393,6 +379,7 @@ struct SeededRun {
     /// What the run did, by name: the server's tally and the person's.
     var tally: [String: Int] {
         var out = server.tally
+        for (line, count) in written { out["diagnostics: \(line)", default: 0] += count }
         for step in steps {
             let name: String? =
                 step.hasPrefix("sends ")
@@ -923,6 +910,8 @@ struct SeededRun {
             if let message = await rig.live(key)?.pending?.message { pending.insert(message) }
         }
         await rig.runtime.close()
+        if broken == nil { broken = discreet() }
+        diagnosed = 0
         let kept = Self.onDisk(rig)
         for text in Array(sent.keys) where server.userRows(saying: text) == 0 && !kept.contains(where: { $0.contains(text) }) {
             // What the folder must hold, and so stays tracked for the next
@@ -1901,7 +1890,78 @@ struct SeededRun {
         clock.advance(by: 1)
         await drain()
         if let broken = await confirmed(settled: false) { return broken }
-        return await confirmed(settled: true)
+        if let broken = await confirmed(settled: true) { return broken }
+        // Share Diagnostics, as Settings opens it: what would be shared
+        // is every line the folder holds, read once what was noted is
+        // written.
+        await rig.harness.send(.diagnostics(shown: true))
+        await drain()
+        if let broken = discreet() { return broken }
+        let shared = await rig.harness.presentation.diagnostics?.text ?? ""
+        if ProcessInfo.processInfo.environment["CHATKIT_DIAGNOSTICS"] != nil { print(shared) }
+        let held = DiagnosticsFile(root: rig.root, writingOptions: []).lines()
+        if !shared.hasSuffix(held.joined(separator: "\n")) || held.isEmpty {
+            return broke(.discreet, "Share Diagnostics shows \(shared.split(separator: "\n").count) lines, and the folder holds \(held.count)")
+        }
+        return nil
+    }
+
+    /// Every line of the diagnostics file this launch's folder holds that
+    /// was not read yet: none may hold a canary, and each has the shape of
+    /// a line, which no sentence has.
+    private mutating func discreet() -> Violation? {
+        let lines = DiagnosticsFile(root: rig.root, writingOptions: []).lines()
+        defer { diagnosed = lines.count }
+        // What the person typed, what the server wrote and said, and what
+        // names a record, a server or a sign-in.
+        var canaries = SeededServer.said + ["example.com", "secret", "Helper", "helper", "Subject", "say ", "Continue where"]
+        var names: Set<String> = []
+        canaries += ever.keys
+        for thread in server.threadIDs {
+            names.insert(thread)
+            for row in server.rows(of: thread) {
+                names.insert(row.id)
+                let words = row.content.trimmingCharacters(in: .whitespaces)
+                if row.spoken, words.count > 1 { canaries.append(words) }
+            }
+        }
+        for card in server.allCards { names.insert(card.id) }
+        for line in lines.dropFirst(min(diagnosed, lines.count)) {
+            if let canary = canaries.first(where: { line.contains($0) }) {
+                return broke(.discreet, "the diagnostics file holds \"\(canary)\" in the line: \(line)")
+            }
+            let words = line.split(whereSeparator: { $0 == " " || $0 == "=" }).map(String.init)
+            if let name = words.dropFirst().first(where: { names.contains($0) }) {
+                return broke(.discreet, "the diagnostics file names \(name) in the line: \(line)")
+            }
+            guard Self.shaped(line) else { return broke(.discreet, "a line of the diagnostics file is no line of its shape: \(line)") }
+            // Counted by what happened: the words before the first fact.
+            let said = line.split(separator: " ").dropFirst().drop { $0 == "chat" || Int($0) != nil }.prefix { !$0.contains("=") }
+            written[said.joined(separator: " "), default: 0] += 1
+        }
+        return nil
+    }
+
+    /// A line of the diagnostics file: when, the chat by its number where
+    /// it is about one, what happened in lower-case words, then facts as
+    /// `name=value`, each value a number or one word.
+    static func shaped(_ line: String) -> Bool {
+        var words = line.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        guard words.count >= 2, Timestamp.parse(words.removeFirst()) != nil else { return false }
+        if words.first == "chat" {
+            guard words.count >= 3, Int(words[1]) != nil else { return false }
+            words.removeFirst(2)
+        }
+        let plain = { (word: String) in !word.isEmpty && word.unicodeScalars.allSatisfy { ("a" ... "z").contains($0) || $0 == "_" } }
+        let what = words.prefix { !$0.contains("=") }
+        guard !what.isEmpty, what.allSatisfy(plain) else { return false }
+        return words.dropFirst(what.count).allSatisfy { fact in
+            let parts = fact.split(separator: "=", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 2, plain(parts[0]) else { return false }
+            // One word of a closed set, as its case spells it.
+            let word = !parts[1].isEmpty && parts[1].unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || $0 == "_") }
+            return word || Double(parts[1]) != nil
+        }
     }
 
     /// A broken rule, with the app's state where `CHATKIT_VERBOSE` asks

@@ -36,6 +36,13 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case ownRead(thread: String, asked: [String], mine: [String]?, whole: Bool)
     case phase(AppPhase)
     case paced(Bool)
+    /// A reader took a transcript from its end: said in the diagnostics
+    /// file, and nothing else.
+    case followEnded(key: ChildKey, TranscriptFollow.Release)
+    /// Share Diagnostics was opened or closed.
+    case diagnosticsAsked(Bool)
+    /// The diagnostics file's lines, oldest first.
+    case diagnosticsRead([String])
 
     // Reads
     case refreshAsked
@@ -293,6 +300,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var answered: Conversation.WordsAnswer?
         /// What became of a reply typed into a notification.
         var replied: Conversation.ReplyOutcome?
+        /// What the conversation's step says of itself, for the
+        /// diagnostics file.
+        var notes: [Diagnostic] = []
     }
 
     struct Read: Codable, Equatable, Sendable {

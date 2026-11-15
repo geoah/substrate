@@ -18,6 +18,13 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case closeDisk(String, deleting: Bool)
     case prune(Lease)
     case readUsage(Lease)
+    /// Lines for the diagnostics file: stamped and numbered in the order
+    /// they are asked, then appended.
+    case diagnose(Lease, [Diagnostic])
+    /// What the process's kept meter points cost since they were last
+    /// taken, as lines of the same file.
+    case timings(Lease)
+    case readDiagnostics(Lease)
     case clearTranscripts(Lease)
     case saveState(Lease, CachedState)
     /// `atOnce` writes with no wait for more: the app is leaving the front,

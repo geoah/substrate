@@ -21,6 +21,13 @@ public struct TranscriptFollow: Equatable, Sendable {
         case end(animated: Bool)
     }
 
+    /// What took a transcript from its end, for the diagnostics file: a
+    /// finger, a wheel or a trackpad, or a scroll bar or a key, which a
+    /// scroll view says nothing of and the view tells by where it stands.
+    public enum Release: String, Codable, Sendable {
+        case touch, wheel, bar
+    }
+
     /// The transcript goes where its end goes.
     public private(set) var following: Bool
 

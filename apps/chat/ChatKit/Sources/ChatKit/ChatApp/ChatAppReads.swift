@@ -30,6 +30,7 @@ extension ChatAppState {
         state.disk = nil
         state.refreshing = false
         state.refreshed = false
+        state.diagnostics = nil
         state.watching = false
         state.baselined = false
         state.forgetOnSignOut = true
