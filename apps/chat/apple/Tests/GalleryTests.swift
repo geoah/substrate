@@ -51,6 +51,21 @@ import Testing
         | [Q4 budget](substrate://ada.example.com/tasks/task/q4) | [Ada Lovelace](substrate://ada.example.com/people/person/ada) |
         """
 
+    /// A table wider than the reading measure: on a phone it scrolls with
+    /// its first column held, and in a Mac's window it reaches past the
+    /// measure on both sides.
+    static let wideTable = """
+        The quarter, by team:
+
+        | Team | Lead | Headcount | Budget | Spent | Remaining | Forecast | Status |
+        | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+        | Platform engineering | Ada Lovelace | 12 | 480,000 | 391,250 | 88,750 | 472,000 | on track |
+        | Research and prototypes | Grace Hopper | 7 | 310,000 | 298,400 | 11,600 | 331,000 | over by 21,000 |
+        | Support and operations | Katherine Johnson | 9 | 265,000 | 187,900 | 77,100 | 259,000 | on track |
+
+        Research is the one to look at.
+        """
+
     /// The names, the reply, and where the stream stops for each; nil is
     /// the settled reply.
     static let pictures: [(name: String, reply: String, stop: Int?)] = [
@@ -100,6 +115,7 @@ import Testing
             Part(name: "code-long-lines", reply: ChatFixtures.longLines, window: true),
             Part(name: "code-long-lines-wrapped", reply: ChatFixtures.longLines, wraps: true),
             Part(name: "tables", reply: ChatFixtures.tables, window: true),
+            Part(name: "table-wide", reply: Self.wideTable, window: true),
             Part(name: "tables-cards", reply: ChatFixtures.tables, large: true),
         ] + code
     }

@@ -106,11 +106,21 @@ struct ComposerBar: View {
                         .accessibilityLabel(jump.label)
                         .arrives(.grow)
                     }
-                    HStack(alignment: .bottom, spacing: ChatSpace.apart) {
+                    // Send beside Stop leaves the field a word's width at
+                    // the accessibility text sizes: the two stand under it
+                    // there.
+                    // One field in either form: it keeps what is typed and
+                    // the keyboard when the form changes under it.
+                    let under = size.isAccessibilitySize && screen.streaming && composer.queues && !empty && !dictation.active
+                    let form =
+                        under
+                        ? AnyLayout(VStackLayout(alignment: .trailing, spacing: ChatSpace.apart))
+                        : AnyLayout(HStackLayout(alignment: .bottom, spacing: ChatSpace.apart))
+                    form {
                         field
                             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: control / 2))
                             .glassEffectID("field", in: glass)
-                        trailing
+                        HStack(spacing: ChatSpace.apart) { trailing }
                     }
                 }
             }
@@ -437,7 +447,7 @@ struct ComposerStatusLine: View {
                 .growing(to: .actionMark)
                 .frame(width: mark)
             Text(status.words)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .shimmer()
                 .changes(.words)
         }

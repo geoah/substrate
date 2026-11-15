@@ -192,12 +192,9 @@ private struct AssistantRowView: View {
                 }
                 WrapLayout(spacing: ChatSpace.words) {
                     ForEach(row.runsOn, id: \.self) { fact in
-                        HStack(spacing: ChatSpace.mark) {
-                            Text(fact.label).fontWeight(ChatType.strong)
-                            Text(fact.value).monospaced(fact.verbatim)
-                        }
-                        .font(ChatType.small)
-                        .ink(.quiet, on: .form)
+                        FactText(label: fact.label, value: fact.value, verbatim: fact.verbatim)
+                            .font(ChatType.small)
+                            .ink(.quiet, on: .form)
                     }
                     if let keyless = row.keyless {
                         Button(keyless.action) { addKey(keyless.id) }
