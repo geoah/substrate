@@ -50,6 +50,13 @@ public enum FailureFixtures {
         return context
     }
 
+    /// A run whose card leads somewhere else than to the run again
+    /// (Replace Key): Try Again then stands under the reply
+    /// (`FailurePresentation.resume`, `ReplyActions`).
+    public static var keyRefused: FailurePresentation {
+        FailurePresenter.present(Failure(.reply, .run(status: "error", cause: "provider_key_refused"), said: "llm: 401 invalid x-api-key"), context)
+    }
+
     /// Each place a failure stands, in the states the pull request shows.
     public static func places(now: Date) -> [Fixture] {
         var older = context

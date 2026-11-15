@@ -133,6 +133,12 @@ struct SeededRun {
         /// told it is over within the time an action has, whatever the
         /// server does, and what it asked for happens at most once.
         case acted = "an action from a notification is over within its time"
+        /// What stands under the last reply (`ReplyActions`): under a
+        /// reply that is drawn and has nothing of the person's after it,
+        /// with the run again never offered both there and on the turn's
+        /// card, never while a run goes on, and nothing to share of a
+        /// reply still being written.
+        case offered = "what stands under a reply is under the last one, and offers the run again once or not at all"
     }
 
     /// Rules the app is known to break today, each with what breaks it. A
@@ -1211,6 +1217,27 @@ struct SeededRun {
                 let twins = cards.sorted { $0.key < $1.key }.map(\.value)
                 if let twin = twins.first(where: { $0.id == strip.id || ($0.sentence == strip.sentence && $0.note == strip.note) }) {
                     return broke(.places, "\(name) says \"\(twin.sentence)\" at a turn and above the composer")
+                }
+            }
+            // What stands under the last reply is offered once.
+            if let actions = screen.replyActions {
+                guard let at = screen.turns.firstIndex(where: { $0.id == actions.turn }), case let .assistant(reply) = screen.turns[at].body else {
+                    return broke(.offered, "\(name) offers actions under \(actions.turn), which is no reply drawn")
+                }
+                let after = screen.turns[(at + 1)...]
+                let own = after.contains { turn in
+                    if case .user = turn.body { true } else { false }
+                }
+                if own { return broke(.offered, "\(name) offers actions under \(actions.turn), with a message of the person's after it") }
+                if actions.copies != (reply.text != nil) || (actions.whole && reply.live) {
+                    return broke(
+                        .offered, "\(name) offers to copy or share \(actions.turn), which has \(reply.text == nil ? "no words" : "words still being written")")
+                }
+                if let resume = actions.resume {
+                    if screen.turns.last.flatMap({ cards[$0.id] })?.button?.action == .resume {
+                        return broke(.offered, "\(name) offers \(resume.title) under the reply and on its card")
+                    }
+                    if !resume.busy, live.phase != .idle { return broke(.offered, "\(name) offers \(resume.title) while a run goes on") }
                 }
             }
             let draft = live.draft

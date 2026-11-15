@@ -20,6 +20,12 @@ public struct FailurePresentation: Codable, Hashable, Sendable, Identifiable {
     public var sentence: String
     public var note: String?
     public var button: FailureButton?
+    /// Try Again, where the run can still be tried again and the one
+    /// button is another (Replace Key, Open in Console): the way on once
+    /// that is done. Never drawn in the card, which has one button: it
+    /// stands under the reply (`ReplyActions`), so the two never offer the
+    /// same thing.
+    public var resume: FailureButton?
     public var details: FailureDetails?
     /// A check is under way and nothing is asked of the person yet.
     public var working: Bool
@@ -28,14 +34,15 @@ public struct FailurePresentation: Codable, Hashable, Sendable, Identifiable {
     public var dismiss: FailureAction?
 
     public init(
-        id: String, tone: Tone, sentence: String, note: String? = nil, button: FailureButton? = nil, details: FailureDetails? = nil,
-        working: Bool = false, dismiss: FailureAction? = nil
+        id: String, tone: Tone, sentence: String, note: String? = nil, button: FailureButton? = nil, resume: FailureButton? = nil,
+        details: FailureDetails? = nil, working: Bool = false, dismiss: FailureAction? = nil
     ) {
         self.id = id
         self.tone = tone
         self.sentence = sentence
         self.note = note
         self.button = button
+        self.resume = resume
         self.details = details
         self.working = working
         self.dismiss = dismiss
