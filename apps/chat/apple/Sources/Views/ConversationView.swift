@@ -334,13 +334,33 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 if front { move(follow.returned()) }
             }
             #if os(macOS)
-        // A wheel turned up over the transcript is the reader leaving
-        // its end, said before the scroll view has moved: by the time it
+        // A wheel, or two fingers on a trackpad, is a Mac reader's hand
+        // on the transcript, and a Mac's scroll view says nothing of it
+        // as a touch's phases do. Turned up, it is the reader leaving
+        // the end, said before the scroll view has moved: by the time it
         // has, rows coming into view have changed the content's height
         // in the same breath, and a change of height alone takes a
-        // transcript that follows back to its end.
+        // transcript that follows back to its end. From then, while it
+        // turns, the transcript is the reader's, however little it has
+        // moved, and a quarter of a second after its last event it has
+        // come to rest, which is when the rule is asked. Turned down at
+        // an end that is followed it changes nothing: the glide of a
+        // flick goes on for seconds, and a reply that grew meanwhile
+        // would read as the reader having left.
         .background {
-            WheelWatcher { if follow.following { leave() } }
+            WheelWatcher { up in
+                if up, follow.following { leave() }
+                guard !follow.following else { return }
+                reach.touched = true
+                reach.wheel += 1
+                let turn = reach.wheel
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard reach.wheel == turn else { return }
+                    reach.touched = false
+                    move(follow.rested(distance: reach.measure.distance))
+                }
+            }
         }
             #endif
             .scrollDismissesKeyboard(.interactively)
@@ -389,13 +409,6 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         }
     }
 
-    /// Holds a transcript that follows its end to it, wherever the scroll
-    /// view stands: short of it after the content grew, or past it after
-    /// the room for it did or the content shrank. Whether it is there is
-    /// worked out from what the scroll view last said of itself, and the
-    /// end is asked for again a moment later where it did not get there,
-    /// so a move lost to a change under way is made good: a few times for
-    /// one reason, never in a loop.
     /// Sends the scroll view to its content's end: `end` is the point of
     /// the content that then stands at the top of what shows.
     ///
@@ -412,6 +425,13 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         #endif
     }
 
+    /// Holds a transcript that follows its end to it, wherever the scroll
+    /// view stands: short of it after the content grew, or past it after
+    /// the room for it did or the content shrank. Whether it is there is
+    /// worked out from what the scroll view last said of itself, and the
+    /// end is asked for again a moment later where it did not get there,
+    /// so a move lost to a change under way is made good: a few times for
+    /// one reason, never in a loop.
     private func hold() {
         guard follow.following, !reach.touched, !reach.inMotion, let end = reach.measure.away else {
             reach.asked = 0
@@ -431,24 +451,24 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
 }
 
 #if os(macOS)
-/// Tells of a wheel, or two fingers on a trackpad, turned up over the view
-/// it stands behind: the scroll view over it takes the event itself, so it
-/// is watched for on its way there and passed on as it came.
+/// Tells of a wheel, or two fingers on a trackpad, turned over the view it
+/// stands behind, and whether up: the scroll view over it takes the event
+/// itself, so it is watched for on its way there and passed on as it came.
 struct WheelWatcher: NSViewRepresentable {
-    let up: () -> Void
+    let turned: (_ up: Bool) -> Void
 
     func makeNSView(context: Context) -> Watching {
         let view = Watching()
-        view.up = up
+        view.turned = turned
         return view
     }
 
     func updateNSView(_ view: Watching, context: Context) {
-        view.up = up
+        view.turned = turned
     }
 
     final class Watching: NSView {
-        var up: () -> Void = {}
+        var turned: (_ up: Bool) -> Void = { _ in }
         private var monitor: Any?
 
         override func viewDidMoveToWindow() {
@@ -465,7 +485,7 @@ struct WheelWatcher: NSViewRepresentable {
         /// A wheel turned by `delta` (up is more than none) at a point of
         /// the window.
         func turned(by delta: CGFloat, at point: CGPoint) {
-            if delta > 0, convert(bounds, to: nil).contains(point) { up() }
+            if delta != 0, convert(bounds, to: nil).contains(point) { turned(delta > 0) }
         }
 
         isolated deinit {
@@ -513,8 +533,11 @@ final class TranscriptReach {
     }
 
     var measure = Measure()
-    /// A finger is on the transcript, or was when it last moved.
+    /// A finger is on the transcript, or was when it last moved; on a Mac,
+    /// a wheel is turning over it.
     var touched = false
+    /// Counts a Mac's wheel events, so the last one is known for what it is.
+    var wheel = 0
     /// The app is moving the transcript to its end, with motion, until
     /// then at the latest.
     var moving: Date?

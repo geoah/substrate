@@ -468,6 +468,52 @@ import Testing
         #expect(abs(try #require(stage.reach).below) < 1)
     }
 
+    /// A trackpad moves a transcript a few points at an event: each is
+    /// nearer the end than where following takes up again, and none of
+    /// them is the reader coming to rest.
+    @Test(.timeLimit(.minutes(5)))
+    func aWheelTurnedALittleAtATimeIsTheReadersUntilItRests() async throws {
+        let (server, _, stage) = try await staged()
+        server.step(Self.thread, 12)
+        try await until { text(stage).contains("The tomatoes can wait") ? true : nil }
+        try await stage.settle()
+        let first = try #require(stage.reach)
+        try #require(abs(first.below) < 1 && first.offset > 115, "not at the end of something to scroll: \(first)")
+        // To the top and back to the end, so every row has been laid out
+        // and the content's height is its own: a lazy stack's guess at the
+        // rows above would move the end under the small moves below.
+        stage.wheel(up: first.offset + 60)
+        try await Task.sleep(for: .milliseconds(450))
+        try await stage.settle()
+        stage.wheel(up: -(try #require(stage.reach).content))
+        try await Task.sleep(for: .milliseconds(450))
+        try await stage.settle()
+        let end = try #require(stage.reach)
+        try #require(abs(end.below) < 1 && end.offset > 115, "not back at the end: \(end)")
+        // Up by 100 points, 20 at a time, with no rest between.
+        for _ in 0 ..< 5 {
+            stage.wheel(up: 20)
+            stage.window.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        let turning = try #require(stage.reach)
+        #expect(abs(turning.offset - (end.offset - 100)) < 2, "taken back while the wheel turned: \(end) then \(turning)")
+        // At rest past where following takes up again: it stays.
+        try await Task.sleep(for: .milliseconds(450))
+        try await stage.settle()
+        let rested = try #require(stage.reach)
+        #expect(abs(rested.offset - turning.offset) < 2 && rested.below > TranscriptFollow.near, "moved at rest: \(turning) then \(rested)")
+        // Down again to within reach of the end, and at rest there: it
+        // follows the end again. (Jump to Latest stands over the end
+        // while it is away, so the end is further off than it was moved.)
+        stage.wheel(up: -100)
+        let near = try #require(stage.reach)
+        try await Task.sleep(for: .milliseconds(450))
+        try await stage.settle()
+        let back = try #require(stage.reach)
+        #expect(abs(back.below) < 1, "not taken up again at rest near the end: \(rested) then \(near) then \(back)")
+    }
+
     @discardableResult
     func until<T>(_ read: () -> T?) async throws -> T {
         for _ in 0 ..< 1200 {
