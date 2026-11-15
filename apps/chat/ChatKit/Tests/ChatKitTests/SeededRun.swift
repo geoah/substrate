@@ -75,46 +75,18 @@ struct SeededRun {
         /// where the run can look (`SeededServer.watch`): a job that left
         /// the thread and passed none of those places is not seen.
         case strayed = "the run is on its own thread wherever it is met"
-        /// Broken today, in code another group is rebuilding (`known`).
-        case overlay = "no run's overlay is left drawn once the run is over"
-        /// Broken today, in the same code.
-        case kept = "an overlay kept for a failed reload is not drawn beside rows that hold its turns"
-        /// Broken today, in the same code.
-        case carried = "an overlay kept for a failed reload is not carried into the next send"
-        /// Broken today, in the same code.
-        case attached = "an attach does not draw again a message its rows hold under its id"
+        /// One turn, one model (`TurnFold`): the stream's turn and its
+        /// stored row are one row, from the first event to the last read.
+        case shorter = "the text drawn for a turn is never shorter than it was a step ago"
+        case renamed = "a row keeps the id its turn was first drawn by"
+        case emptied = "nothing drawn of a run goes while the run goes on, an attach least of all"
     }
 
-    /// Rules the app is known to break today, each in code another group
-    /// is rebuilding, with what breaks it. A run notes one where it meets
-    /// it, sets that conversation aside until it is whole again, and goes
-    /// on, so the rest of the seed is still held to every other rule.
-    static let known: [Rule: String] = [
-        .overlay: """
-        A 401 on an attach (or on the read before it) ends the run through `stopRunning`, which leaves the overlay's turns in \
-        place with the conversation idle and its thread handed back: the next read of the rows draws the partial reply under \
-        the stored one. For the group that makes the two models of a turn one (A4).
-        """,
-        .kept: """
-        After a handover's read fails the overlay is kept as the only view of that run. A send from there that ends with no \
-        answer is read for by the delivery check (a server without message ids), and what the check finds is published as \
-        the thread's rows while the kept overlay still stands: the run is drawn twice until Try Again on the reload. Also \
-        the two models of a turn (A4).
-        """,
-        .carried: """
-        The same kept overlay, once Try Again on the reload has read the rows: its turns stay in the overlay, and the next \
-        send streams under them, so the turns the rows now hold are drawn a second time above the new message until that \
-        run hands over. Found by seed 1048 at 90 steps (agents 3, records 8), where t6 drew "say 4." and "say 5." twice. \
-        Also the two models of a turn (A4).
-        """,
-        .attached: """
-        A first message sent under its id, the app left and brought back to the front while its turn runs: the conversation \
-        attaches with the message still in its overlay, and the list reads the thread's rows beside it (`read(thread:)` right \
-        after the attach is asked for), so the message is drawn twice under one id, as a bubble and as a stored row, until \
-        the run hands over. Found by seed 9059 at 16 steps (agents 3, records 8); no mark moved in that run. The rows a \
-        conversation owns while it runs, and the two models of a turn (A4).
-        """,
-    ]
+    /// Rules the app is known to break today, each with what breaks it. A
+    /// run notes one where it meets it and goes on, so the rest of the seed
+    /// is still held to every other rule. None is known today: an entry
+    /// that no longer fails must not stay.
+    static let known: [Rule: String] = [:]
 
     let seed: UInt64
     let scene = "s"
@@ -175,6 +147,10 @@ struct SeededRun {
     /// Each chat drawn with no dot while the server held it read, with the
     /// message it was read through: where a dot must not come back.
     private var cleared: [String: String] = [:]
+    /// What each conversation drew at the last step: its thread, how many
+    /// runs it had settled, whether one went on, and every turn's id, role
+    /// and text. What the fold's rules compare a step with.
+    private var drew: [ChildKey: Frame] = [:]
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -200,7 +176,11 @@ struct SeededRun {
         // Of its own stream, so what the seed drew before marks it draws
         // still: mostly a server that keeps them.
         var marks = SeededNumbers(seed: seed ^ SeededNumbers.hash("marks"))
-        let server = SeededServer(seed: seed, clock: clock, revision: revision ?? drawn, records: marks.below(6) == 0 ? 7 : 8)
+        // And of its own again: half of the servers that take a message's
+        // id also say where a stream's text belongs (`agents` 5).
+        var positions = SeededNumbers(seed: seed ^ SeededNumbers.hash("positions"))
+        let agents = revision ?? (drawn == 3 && positions.below(2) == 0 ? 5 : drawn)
+        let server = SeededServer(seed: seed, clock: clock, revision: agents, records: marks.below(6) == 0 ? 7 : 8)
         self.clock = clock
         self.ids = ids
         self.base = base
@@ -593,6 +573,7 @@ struct SeededRun {
         scanned = 0
         stuck = [:]
         composed = []
+        drew = [:]
         // The view is gone with the process, and what the launch draws
         // first is the folder's: a dot it kept may be older than the read.
         viewed = nil
@@ -683,6 +664,16 @@ struct SeededRun {
             if sleepers.filter({ same($0, deadline) }).count > known.filter({ same($0, deadline) }).count { return true }
         }
         return false
+    }
+
+    /// One conversation as a step left it drawn.
+    private struct Frame {
+        var thread: String?
+        var settles: Int
+        /// A run of the server's went on: a send the server had named, or
+        /// an attach.
+        var running: Bool
+        var turns: [(id: String, role: String, text: String)]
     }
 
     /// A wait on the clock an effect asked for: when it ends, and the key
@@ -804,71 +795,53 @@ struct SeededRun {
             if let pending = live.pending { home(pending.message) }
             if let lost = live.lost { home(lost.message) }
 
-            // Known: a run that is over left its overlay behind, or kept it
-            // for a reload and then let the rows that hold the same turns
-            // be drawn above it. Noted once each, and this conversation is
-            // not held to what the leftover breaks.
-            // Set aside: only what a leftover overlay breaks, the drawing
-            // of its turns twice and beside the rows. Every other rule
-            // still holds this conversation, the last one included.
-            var leftover = false
-            if live.phase == .idle, !live.ownsTranscript, !live.provisional.turns.isEmpty {
-                if noted[.overlay] == nil {
-                    noted[.overlay] = broke(.overlay, "\(name) is idle and still draws \(live.provisional.turns.map(\.content)) from a run that ended")
-                }
-                leftover = true
-            }
-            var keeps = live.reloadFailed != nil || live.reloading != nil
-            if case let .send(run)? = live.run, !run.kept.isEmpty { keeps = true }
-            if keeps {
-                let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
-                let again = live.provisional.turns.filter { $0.role == .user && !$0.pending && stored.contains($0.content) }.map(\.content)
-                if !again.isEmpty {
-                    if noted[.kept] == nil {
-                        noted[.kept] = broke(.kept, "\(name) keeps \(again) from a run whose reload failed, and draws it under the rows that hold it")
-                    }
-                    leftover = true
-                }
-            }
-
-            if live.run != nil, !keeps {
-                // A turn an attach replayed, which is how a kept overlay
-                // names its turns: a message this device sent is drawn
-                // under its own id, and is held by every other rule.
-                let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
-                let carried = live.provisional.turns.filter { turn in
-                    // Of the person's own messages: the app's words for
-                    // Continue on a server without the route may stand twice.
-                    guard let meant = ever[turn.content] else { return false }
-                    return turn.role == .user && !turn.pending && turn.id.hasPrefix("live-") && stored.contains(turn.content)
-                        && said.filter { $0.role == "user" && $0.text == turn.content }.count > meant
-                }
-                if !carried.isEmpty {
-                    if noted[.carried] == nil {
-                        noted[.carried] = broke(.carried, "\(name) sends under \(carried.map(\.content)), kept from a run before, which its rows hold")
-                    }
-                    leftover = true
-                }
-            }
-
             let turnIDs = screen.turns.map(\.id)
-            if case .attach? = live.run {
-                let rows = Set((live.thread.flatMap { state.transcripts[$0] }?.records ?? []).map(\.id))
-                let again = live.provisional.turns.filter { $0.role == .user && !$0.pending && rows.contains($0.id) }
-                if !again.isEmpty, Set(turnIDs).count != turnIDs.count {
-                    if noted[.attached] == nil {
-                        noted[.attached] = broke(.attached, "\(name) is attached and draws \(again.map(\.content)) from its overlay and from its rows")
+
+            // One turn, one model: against what this conversation drew a
+            // step ago. A kill, a sign-out and a chat that turned out to
+            // be another thread start it over.
+            var streams = false
+            switch live.run {
+            case let .send(run)?: streams = run.named && !run.resumes || run.started
+            case .attach?: streams = true
+            case nil: break
+            }
+            let frame = Frame(thread: live.thread, settles: live.settles, running: streams && live.phase == .streaming, turns: said)
+            if let before = drew[key], before.thread == live.thread || before.thread == nil, !live.deleted {
+                let now = Dictionary(said.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                let had = Set(before.turns.map(\.id))
+                for turn in before.turns {
+                    if let same = now[turn.id] {
+                        // A piece sent twice by a server that says no
+                        // position cannot be told from a word said twice:
+                        // the row then holds less than was drawn.
+                        let twice = server.revision < 5 && live.thread.map(server.repeated) ?? false
+                        if !same.text.hasPrefix(turn.text), !twice {
+                            return broke(.shorter, "\(name) drew \(turn.id) as \"\(turn.text)\" and draws it as \"\(same.text)\"")
+                        }
+                        continue
                     }
-                    leftover = true
+                    guard turn.role == "assistant", !turn.text.isEmpty else { continue }
+                    if let other = said.first(where: { $0.role == turn.role && !had.contains($0.id) && $0.text.hasPrefix(turn.text) }) {
+                        return broke(.renamed, "\(name) drew \"\(turn.text)\" as \(turn.id) and draws it as \(other.id)")
+                    }
+                    if before.running, frame.running, before.settles == live.settles {
+                        return broke(.emptied, "\(name) drew \(turn.id) as \"\(turn.text)\", and it is gone while its run goes on: \(said.map(\.id))")
+                    }
                 }
             }
+            drew[key] = frame
 
             // No row is drawn twice: not by its id, and no message of the
             // person's as a bubble and a stored row both.
-            if !leftover, Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
-            for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where !leftover && said.filter({ $0.role == "user" && $0.text == text }).count > meant {
+            if Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
+            for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where said.filter({ $0.role == "user" && $0.text == text }).count > meant {
                 return broke(.drawnTwice, "\(name) draws \"\(text)\" twice: \(said.map(\.text))")
             }
+
+            // Nor a reply: each of the server's is its own words.
+            let replies = said.filter { $0.role == "assistant" && !$0.text.isEmpty }.map(\.text)
+            if Set(replies).count != replies.count { return broke(.drawnTwice, "\(name) draws a reply twice: \(said.map(\.text))") }
 
             // No failure is drawn in two places.
             let cards = screen.failures.turns
@@ -929,7 +902,7 @@ struct SeededRun {
 
             // The transcript equals the fold of the server's rows, once the
             // app holds the thread as the server does.
-            guard !leftover, let thread = live.thread, !waits, !live.ownsTranscript, state.reading[thread] == nil, !server.running(thread)
+            guard let thread = live.thread, !waits, !live.ownsTranscript, state.reading[thread] == nil, !server.running(thread)
             else { continue }
             guard let held = state.transcripts[thread], held.version == server.version(of: thread) else {
                 if settled, server.version(of: thread) != nil {
@@ -950,9 +923,14 @@ struct SeededRun {
             let got = drawn.map { "\($0.role): \($0.text)" }
             if got != want { return broke(.fold, "\(name) draws \(got), and the server holds \(want)") }
             // Each under its row's id, but a turn that was streamed in
-            // this conversation, which keeps the id the stream gave it.
-            let rowIDs = server.rows(of: thread).map { live.aliases[$0.id] ?? $0.id }
-            if drawn.map(\.id) != rowIDs { return broke(.fold, "\(name) draws its rows under \(drawn.map(\.id)), and the server holds \(rowIDs)") }
+            // this conversation, which keeps the id the stream gave it: a
+            // reply its turn's ordinal, and a message sent under no id the
+            // number of its send. A message sent under an id is drawn
+            // under it from the press, and so is its row.
+            for (turn, row) in zip(drawn, server.rows(of: thread)) where turn.id != row.id {
+                let kept = row.role == "assistant" ? turn.id == "turn-\(row.turn)" : turn.id.hasPrefix("sent-") && row.id.hasPrefix("u")
+                if !kept { return broke(.fold, "\(name) draws the row \(row.id) (\(row.role), turn \(row.turn)) under \(turn.id)") }
+            }
         }
 
         composed = inComposer
@@ -969,7 +947,7 @@ struct SeededRun {
                 if live.pending?.message == watched {
                     places.append("pending in \(key.rawValue.suffix(2))/\(live.thread ?? "new") standing=\(live.standing) finding=\(live.finding)")
                 }
-                if live.provisional.turns.contains(where: { $0.content == watched }) { places.append("overlay of \(key.rawValue.suffix(2))") }
+                if live.provisional.turns.contains(where: { $0.content == watched }) { places.append("the stream's rows of \(key.rawValue.suffix(2))") }
             }
             print("WATCH step \(steps.count) [\(steps.last ?? "")]: \(places)")
         }
