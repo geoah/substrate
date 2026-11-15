@@ -271,6 +271,7 @@ var retakePasses = map[string]string{
 	"temporary retry":                "one delivery's retry, read when it starts",
 	"judge":                          "one judgment over one request, read when it starts",
 	"chat turn":                      "one agent turn over its thread, read when it starts",
+	"queued chat turn":               "the turn a message the last run never read starts, over the thread's stored rows, read when it starts",
 	"settle approval":                "one approval, read when it starts",
 	"title thread":                   "one thread's title, read when it starts",
 	"resume notified thread":         "one thread's resume, read when it starts",
