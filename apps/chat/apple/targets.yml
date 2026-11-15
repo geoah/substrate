@@ -51,8 +51,21 @@ targets:
     type: bundle.unit-test
     platform: auto
     supportedDestinations: [macOS, iOS]
+    # The views' own source goes into the bundle as files to read: the
+    # rules `SourceRules` holds them to (a size, a colour or a motion is a
+    # token's, never a view's) are read from the text, and a test hosted
+    # in the sandboxed app can read nothing outside its bundle.
     sources:
       - Tests
+      - path: Sources/App
+        type: folder
+        buildPhase: resources
+      - path: Sources/Views
+        type: folder
+        buildPhase: resources
+      - path: Sources/Markdown
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: SubstrateChat
     settings:
