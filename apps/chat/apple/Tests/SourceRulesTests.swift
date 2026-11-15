@@ -149,7 +149,49 @@ import Testing
 
     final class InBundle {}
 
+    /// The source as statements: a call written over several lines is
+    /// read as the one call it is, at the line it starts on, so a number
+    /// or an ink on a line of its own inside a call's parentheses is read
+    /// with the call.
     static func lines() throws -> [Line] {
+        var out: [Line] = []
+        var file: [Line] = []
+        for line in try physicalLines() {
+            if let last = file.last, last.file != line.file {
+                out += statements(file)
+                file = []
+            }
+            file.append(line)
+        }
+        return out + statements(file)
+    }
+
+    /// Joins each line that ends inside a call's parentheses with the
+    /// lines that close it.
+    static func statements(_ lines: [Line]) -> [Line] {
+        var out: [Line] = []
+        var open: Line?
+        var depth = 0
+        for line in lines {
+            let code = code(line.text)
+            if var joined = open {
+                joined.text += " " + code.trimmingCharacters(in: .whitespaces)
+                open = joined
+            } else {
+                open = Line(file: line.file, number: line.number, text: code)
+            }
+            depth += code.count { $0 == "(" } - code.count { $0 == ")" }
+            // A new file starts over, whatever the last one left open.
+            if depth <= 0, let joined = open {
+                out.append(joined)
+                (open, depth) = (nil, 0)
+            }
+        }
+        if let open { out.append(open) }
+        return out
+    }
+
+    static func physicalLines() throws -> [Line] {
         let bundle = Bundle(for: InBundle.self)
         var out: [Line] = []
         for folder in ["App", "Views", "Markdown"] {
@@ -157,9 +199,13 @@ import Testing
             let files = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }
             for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 let text = try String(contentsOf: file, encoding: .utf8)
+                var lines: [Line] = []
                 for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-                    out.append(Line(file: file.lastPathComponent, number: index + 1, text: String(line)))
+                    lines.append(Line(file: file.lastPathComponent, number: index + 1, text: String(line)))
                 }
+                // Joined a file at a time: a call never runs from one
+                // file into the next.
+                out += lines
             }
         }
         return out
@@ -274,7 +320,12 @@ import Testing
         var agents: [(Line, ChatColours.Surface)] = []
         let call = /\.(ink|tinted|inAgentInk)\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/
         for line in lines {
-            for match in code(line.text).matches(of: call) {
+            let code = code(line.text)
+            // Every call that names an ink is read, or the line is
+            // reported: one this pattern cannot take apart is no pairing
+            // anybody checked.
+            if code.matches(of: /\.(?:ink|tinted|inAgentInk)\(/).count != code.matches(of: call).count { unread.append(line) }
+            for match in code.matches(of: call) {
                 let arguments = String(match.2)
                 guard let split = arguments.range(of: ", on: ") else {
                     unread.append(line)
@@ -370,6 +421,19 @@ import Testing
         // White on the page is no pairing anybody listed.
         #expect(!ChatColours.uses.contains(ChatColours.Use(.onFill, on: .page)))
         #expect(try !Self.uses(in: [Line(file: "x", number: 1, text: ".ink(colour, on: .page)")]).unread.isEmpty)
+        // A call over several lines is the call it is: white on the page,
+        // written a word to a line, is read and is not a listed pairing.
+        let spread = Self.statements(
+            ["Text(words)", "    .ink(", "        .onFill, on: .page", "    )", "    .padding(", "        12)"].enumerated().map {
+                Line(file: "x", number: $0.offset + 1, text: $0.element)
+            })
+        let read = try Self.uses(in: spread)
+        #expect(read.found == [ChatColours.Use(.onFill, on: .page)] && read.unread.isEmpty)
+        #expect(!ChatColours.uses.contains(ChatColours.Use(.onFill, on: .page)))
+        var used: Set<Int> = []
+        #expect(try Self.findings(Self.sizes, in: spread, used: &used).map(\.line.number) == [5], "a size on the line after its call is read with it")
+        // And one whose parentheses never close on the line is reported.
+        #expect(try !Self.uses(in: [Line(file: "x", number: 1, text: "Text(a).ink(.quiet, on: .page")]).unread.isEmpty)
     }
 
     // MARK: The policy itself
