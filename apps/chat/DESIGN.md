@@ -2509,7 +2509,10 @@ A debug build started with `SUBSTRATE_CHAT_DEMO=<state>` signs in to
 nothing, as a measured one does, and shows one chat of the fixture's server
 held at that state: `connecting`, `thinking`, `writing`, `tool`,
 `answering`, `reconnecting`, `done`, `long` (the fixture's chat of 200
-turns, to scroll up in for Jump to Latest), `play` (the whole run, at
+turns, to scroll up in for Jump to Latest), `deep` (a chat of 1,100 rows:
+the fixture's server answers the window a read asks for, so its older
+rows are read in above the newest 500 when its top is reached, with no
+server), `play` (the whole run, at
 the fixture's pace) or `reply:<name>` (a chat that holds one settled
 reply of the fixtures: `week`, `short`, `lines`, `tables`, `table`, or a
 language's name for its code sample). And how a person answers:

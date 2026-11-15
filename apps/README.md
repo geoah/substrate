@@ -1060,6 +1060,16 @@ messages the server ranks for the words, by chat. A window opens to the
 chat left a short while ago, a running one, or a new chat
 ([its design](chat/DESIGN.md#the-lists-window)).
 
+**Diagnostics.** Settings → Share Diagnostics shows, whole, a file of what
+the app decided and how long things took (which stream dropped and why, a
+send's repeats, each failure by its kind, a mark's writes, a notification
+posted or taken back, what a flush and a parse cost), and then shares
+exactly that text. It holds no word of a message, a title, a record's
+name, a server's address or a token: a line is made only of the app's own
+words, numbers and words of closed sets. It is a bounded ring in the
+repository's folder, kept across launches and gone at a sign-out
+([its design](chat/DESIGN.md#diagnostics)).
+
 **Notifications.** The server has no push channel, so the app notifies what it
 sees: a reply that settles in a chat not on screen, and a new question or
 suggestion waiting on the owner, each once; a reply waits five seconds for
