@@ -13,6 +13,10 @@ public enum ChatFixtures {
     public static let long = "t-long"
     /// The chat at the window's edge: 500 rows.
     public static let full = "t-full"
+    /// A chat that holds more rows than one read of a transcript takes,
+    /// 1,100: its older rows are read in above the newest 500, a page at a
+    /// time. It is in no list, and is opened by name.
+    public static let deep = "t-deep"
 
     // MARK: Replies
 
@@ -138,9 +142,16 @@ public enum ChatFixtures {
 
     /// A thread's rows as the transcript read answers: newest first, `rows`
     /// of them, a question and its answer in turn.
-    public static func transcript(_ thread: String, rows: Int) -> String {
+    ///
+    /// - Parameters:
+    ///   - first: how many rows the read asked for; nil answers them all.
+    ///   - through: the ordinal the read asked for rows at or before (the
+    ///     rows before the ones held, `turn` `lte`); nil is from the newest.
+    public static func transcript(_ thread: String, rows: Int, first: Int? = nil, through: Int? = nil) -> String {
         var out: [String] = []
-        for turn in 0 ..< rows {
+        let newest = min(rows - 1, through ?? rows - 1)
+        let oldest = max(0, newest - (first ?? rows) + 1)
+        for turn in stride(from: oldest, through: newest, by: 1) {
             let user = turn % 2 == 0
             let content = user ? "What about item \(turn / 2 + 1)? Keep it short." : answer(turn / 2)
             out.append(

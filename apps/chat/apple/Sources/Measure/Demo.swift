@@ -13,7 +13,9 @@ import SubstrateKit
 /// `tool`, `answering` and `done` stop there; `reconnecting` drops the
 /// stream part way and keeps the next from opening; `play` writes the whole
 /// run a line every 0.7 seconds; `long` shows the chat of 200 turns, with
-/// nothing running, for a transcript to scroll. `reply:<name>` shows a chat
+/// nothing running, for a transcript to scroll, and `deep` a chat of 1,100
+rows, whose older rows are read in above the newest 500 when its top is
+reached. `reply:<name>` shows a chat
 /// that holds one settled reply of the fixtures: `week` (every block),
 /// `short`, `lines` (code with long lines), `tables`, `table` (a small
 /// one), `links` (records and pages linked in one paragraph), or a
@@ -112,6 +114,7 @@ enum Demo {
             _ = await until { host.chats?.list.loading == false ? true : nil }
             if let only = notified(asked) { return await notify(only) }
             let card = card(asked)
+            if asked == "deep" { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
             host.send(.show(thread: asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread, scene: scene))
             if asked == "long" || reply != nil { return }
             guard let key = await until({ host.chats?.scenes[scene]?.current }) else { return }

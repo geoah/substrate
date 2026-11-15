@@ -36,6 +36,27 @@ import Testing
         #expect(try records(ChatFixtures.transcript("t-new", rows: 0, message: "Hi", reply: "Hello")).count == 2)
     }
 
+    /// The fixture's server answers a transcript's read as a server does:
+    /// the newest rows it asked for, and the rows before the ones held
+    /// where it names an ordinal, so the app's older rows can be drawn on
+    /// a device with no server.
+    @Test func aTranscriptIsAnsweredByTheWindowItsReadAskedFor() throws {
+        func ordinals(_ page: String) throws -> [Int] {
+            try JSONDecoder().decode(RecordPage.self, from: Data(page.utf8)).records.compactMap { $0["turn"]?.int }
+        }
+        // Whole, as before.
+        #expect(try ordinals(ChatFixtures.transcript("t", rows: 6)) == [5, 4, 3, 2, 1, 0])
+        // The newest 500 of 1,100, newest first.
+        let newest = try ordinals(ChatFixtures.transcript(ChatFixtures.deep, rows: 1100, first: 500))
+        #expect(newest.first == 1099 && newest.last == 600 && newest.count == 500)
+        // The 200 at or before the first one held: it comes again, and the
+        // app drops it by its id.
+        let older = try ordinals(ChatFixtures.transcript(ChatFixtures.deep, rows: 1100, first: 200, through: 600))
+        #expect(older.first == 600 && older.last == 401 && older.count == 200)
+        // At the thread's start the read is short, which says there is no more.
+        #expect(try ordinals(ChatFixtures.transcript(ChatFixtures.deep, rows: 1100, first: 200, through: 3)) == [3, 2, 1, 0])
+    }
+
     @Test func theLongReplyIsSixteenKilobytesOfEveryBlock() {
         let reply = ChatFixtures.reply(bytes: 16 * 1024)
         #expect(reply.utf8.count >= 16 * 1024)
