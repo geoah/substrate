@@ -252,8 +252,8 @@ struct ComposerBar: View {
                 stopped += 1
                 host.send(.stop, to: key)
             }
-                .disabled(screen.stopping)
-                .accessibilityHint(composer.queued ?? "")
+            .disabled(screen.stopping)
+            .accessibilityHint(composer.queued ?? "")
         } else if dictation.active {
             round("checkmark", tint: .accentColor, label: "Done Listening") {
                 Task { await toggleListening() }
