@@ -116,6 +116,34 @@ public enum DesignTokens {
         }
     }
 
+    /// A tone as a mark that says something alone (done, failed, held): a
+    /// symbol is seen at 3:1 (WCAG 1.4.11), which the tone's own colour is
+    /// not on a white page (green is 2.2:1), and it need not be as dark
+    /// as words. On the page, on a grouped background and on the tone's
+    /// own pale fill over either.
+    public static func toneMark(_ tone: ScreenTone) -> Colour {
+        switch tone {
+        case .quiet: quietText
+        case .positive: Colour(light: 0x248A3D, dark: 0x30D158)
+        case .informative: Colour(light: 0x0A6CFF, dark: 0x0A84FF)
+        case .supporting: Colour(light: 0x0E7C8E, dark: 0x40CBE0)
+        case .caution: Colour(light: 0xC25E00, dark: 0xFF9F0A)
+        case .critical: Colour(light: 0xE0281E, dark: 0xFF453A)
+        }
+    }
+
+    /// A tone as a fill with white words on it: a prominent button's, a
+    /// swipe's. The tone's own colour is too light for white (orange is
+    /// 2.2:1, grey 3.3:1), so it is the tone as words on a white page, in
+    /// both modes: 4.5:1 there is 4.5:1 here.
+    public static func toneFill(_ tone: ScreenTone) -> Colour {
+        let text = toneText(tone)
+        return Colour(light: text.light, dark: text.light)
+    }
+
+    /// The words on such a fill, and on an app's accent as a fill.
+    public static let onFill = Colour(light: 0xFFFFFF, dark: 0xFFFFFF)
+
     /// The most a tone's colour is laid over a background as a pale fill
     /// with words on it: a badge's, above a card's.
     public static let fillOpacity = 0.18
@@ -281,18 +309,28 @@ public enum DesignTokens {
 
     // MARK: Space
 
-    /// Points on Apple systems, density-independent pixels on Android.
+    /// The space between things, as steps of one scale: each is a whole
+    /// number of `unit`, so the scale is made roomier or tighter in one
+    /// place. Points on Apple systems, density-independent pixels on
+    /// Android.
     public enum Spacing: Int, CaseIterable, Sendable {
-        case hairline = 2
-        case tight = 4
-        case small = 6
-        case medium = 8
-        case row = 10
-        case card = 14
-        case content = 16
-        case section = 20
-        case screen = 24
-        case block = 28
+        case hairline = 1
+        case tight = 2
+        case small = 3
+        case medium = 4
+        case row = 5
+        /// Between the blocks of one text, and around a group's content.
+        case group = 6
+        case card = 7
+        case content = 8
+        case section = 10
+        case screen = 12
+        case block = 14
+
+        /// One step of the scale.
+        public static let unit = 2.0
+
+        public var value: Double { Double(rawValue) * Self.unit }
     }
 
     public enum Radius: Int, CaseIterable, Sendable {
@@ -329,6 +367,10 @@ public extension ScreenTone {
 public extension ScreenTone {
     /// The tone as words (`DesignTokens.toneText`).
     var textColor: Color { DesignTokens.toneText(self).color }
+    /// The tone as a mark that says something alone (`DesignTokens.toneMark`).
+    var markColor: Color { DesignTokens.toneMark(self).color }
+    /// The tone as a fill with white words on it (`DesignTokens.toneFill`).
+    var fillColor: Color { DesignTokens.toneFill(self).color }
 }
 
 public extension DesignTokens.Colour {
@@ -367,11 +409,68 @@ public extension DesignTokens.Control {
     var systemName: String { DesignTokens.control(self).sfSymbol }
 }
 
-extension DesignTokens.Spacing {
+public extension DesignTokens.Spacing {
+    var points: CGFloat { CGFloat(value) }
+}
+
+public extension DesignTokens.Radius {
     var points: CGFloat { CGFloat(rawValue) }
 }
 
-extension DesignTokens.Radius {
-    var points: CGFloat { CGFloat(rawValue) }
+public extension DesignTokens {
+    /// The least a control may be to touch, whatever it looks (HIG): its
+    /// mark may be smaller, its room to touch may not.
+    static let touchTarget: CGFloat = 44
+}
+
+public extension DesignTokens.TextRole {
+    /// The role in SwiftUI's type scale: a Dynamic Type style and a weight,
+    /// so it grows with the text size.
+    var font: Font {
+        let style = DesignTokens.text(self)
+        return Font.system(Self.styles[style.apple] ?? .body).weight(Self.weights[style.appleWeight] ?? .regular)
+    }
+
+    private static let styles: [String: Font.TextStyle] = [
+        "largeTitle": .largeTitle, "title": .title, "title2": .title2, "title3": .title3, "headline": .headline, "body": .body,
+        "callout": .callout, "subheadline": .subheadline, "footnote": .footnote, "caption": .caption, "caption2": .caption2,
+    ]
+    private static let weights: [String: Font.Weight] = ["regular": .regular, "medium": .medium, "semibold": .semibold, "bold": .bold]
+}
+
+public extension Color {
+    /// The app's accent as a fill with white words on it, a prominent
+    /// button's: the accent's text tone as light mode has it, in both
+    /// modes. `accentColor` in dark mode is a tone light enough to read on
+    /// black, and white on it is under 3:1; the light tone reads on white
+    /// at 4.5:1 (`lint:apps` holds every app's to that), which is white on
+    /// it. An app with no accent of its own draws the system's blue, which
+    /// white is 4.0:1 on: there it is the informative tone as a fill.
+    static let accentFill: Color = {
+        let fallback = DesignTokens.toneFill(.informative).color
+        #if canImport(UIKit)
+        guard let accent = UIColor(named: "AccentColor") else { return fallback }
+        return Color(uiColor: accent.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)))
+        #else
+        var light: NSColor?
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            light = NSColor(named: "AccentColor")?.usingColorSpace(.sRGB)
+        }
+        guard let light else { return fallback }
+        return Color(nsColor: NSColor(srgbRed: light.redComponent, green: light.greenComponent, blue: light.blueComponent, alpha: 1))
+        #endif
+    }()
+}
+
+public extension ShapeStyle where Self == Color {
+    /// The accent as a fill with white words on it (`Color.accentFill`).
+    static var accentFill: Color { Color.accentFill }
+}
+
+public extension View {
+    /// A prominent button's fill: the accent as a fill, which its white
+    /// words read on in light and in dark. Every prominent button of the
+    /// kit's screens and of an app's own is tinted through here.
+    func prominentTint() -> some View { tint(Color.accentFill) }
 }
 #endif

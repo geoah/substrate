@@ -35,6 +35,7 @@ public struct AboutScreen: View {
                     Text(update.message).font(.subheadline).foregroundStyle(.secondary)
                     Button(update.install, action: onInstall)
                         .buttonStyle(.borderedProminent)
+                        .prominentTint()
                         .controlSize(.small)
                 }
             }

@@ -40,6 +40,7 @@ public struct ReviewScreen: View {
                         Text(presentation.continueTitle).frame(maxWidth: .infinity, minHeight: 30)
                     }
                     .buttonStyle(.borderedProminent)
+                    .prominentTint()
                     .buttonBorderShape(.capsule)
                     .controlSize(.large)
                     .listRowBackground(Color.clear)

@@ -42,6 +42,9 @@ struct DesignTokensKotlinTests {
         material.hasPrefix("AutoMirrored.") ? "Icons.AutoMirrored.Rounded.\(material.dropFirst("AutoMirrored.".count))" : "Icons.Rounded.\(material)"
     }
 
+    /// A whole number without its fraction, as Kotlin's `dp` takes either.
+    static func number(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(value) }
+
     static func colours(_ colour: DesignTokens.Colour) -> String {
         "if (dark) \(Self.colour(colour.dark)) else \(Self.colour(colour.light))"
     }
@@ -114,7 +117,7 @@ struct DesignTokensKotlinTests {
         }
         out += "    }\n\n/** Space between things, in dp as SwiftUI's are in points. */\npublic object KitSpacing {\n"
         for spacing in DesignTokens.Spacing.allCases {
-            out += "    public val \(spacing): Dp = \(spacing.rawValue).dp\n"
+            out += "    public val \(spacing): Dp = \(number(spacing.value)).dp\n"
         }
         out += "}\n\npublic object KitRadius {\n"
         for radius in DesignTokens.Radius.allCases {

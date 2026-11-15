@@ -92,20 +92,9 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
                         ProblemBox(problem).modifier(KitCard(tint: problem.tone.color))
                     }
                     if let button = presentation.button {
-                        Button {
-                            send(.proceed)
-                        } label: {
-                            HStack(spacing: 8) {
-                                if button.busy { ProgressView().controlSize(.small) }
-                                Text(button.title)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.large)
-                        .disabled(!button.enabled)
-                        .keyboardShortcut(.defaultAction)
+                        ConnectButton(button.title, busy: button.busy) { send(.proceed) }
+                            .disabled(!button.enabled)
+                            .keyboardShortcut(.defaultAction)
                     }
                     if let cancel = presentation.cancel {
                         Button(cancel) { send(.cancelSignIn) }
@@ -130,12 +119,8 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
     }
 
     private var addressField: some View {
-        HStack(spacing: 12) {
-            Image(systemName: ScreenSymbol.server.systemName)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+        ConnectField(presentation.field.label, systemImage: ScreenSymbol.server.systemName) {
             TextField(presentation.field.placeholder, text: $text)
-                .textFieldStyle(.plain)
                 .textContentType(.URL)
                 #if os(iOS)
             .keyboardType(.URL)
@@ -149,11 +134,6 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
                 }
                 .disabled(presentation.field.disabled)
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 50)
-        .background(.fill.tertiary, in: .rect(cornerRadius: 14))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(presentation.field.label)
     }
 
     /// A label and its value, the value as the identifier it is.

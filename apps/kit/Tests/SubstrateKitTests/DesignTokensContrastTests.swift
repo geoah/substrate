@@ -44,11 +44,52 @@ struct DesignTokensContrastTests {
         }
     }
 
+    /// A mark is seen at 3:1, on the same fills its tone's words are read
+    /// on.
+    @Test(arguments: ScreenTone.allCases)
+    func aTonesMarkIsSeenOnThePageAndOnItsOwnFill(_ tone: ScreenTone) {
+        let mark = DesignTokens.toneMark(tone)
+        for background in Self.backgrounds {
+            #expect(mark.contrast(on: background.colour) >= 3, "on \(background.name)")
+            for opacity in Self.fills {
+                let fill = DesignTokens.tone(tone).over(background.colour, opacity: opacity)
+                #expect(mark.contrast(on: fill) >= 3, "on its fill at \(opacity) over \(background.name)")
+            }
+        }
+    }
+
     /// Why the tokens exist: the tones themselves, and the secondary text
     /// the kit's Android side draws, are not text colours on a white page.
     @Test func theTonesOwnColoursAreNotWords() {
         #expect(DesignTokens.contrast(DesignTokens.orange.light, DesignTokens.page.light) < 3)
         #expect(DesignTokens.contrast(DesignTokens.red.light, DesignTokens.page.light) < 4.5)
         #expect(DesignTokens.contrast(DesignTokens.secondary.light, DesignTokens.page.light) < 4.5)
+        // Nor marks: a green check on a white page.
+        #expect(DesignTokens.contrast(DesignTokens.green.light, DesignTokens.page.light) < 3)
+    }
+}
+
+/// White words on a fill: every tone as a fill, and the fill an app with no
+/// accent of its own draws a prominent button in.
+@Suite("White on a fill")
+struct DesignTokensFillTests {
+    @Test(arguments: ScreenTone.allCases)
+    func whiteReadsOnATonesFill(_ tone: ScreenTone) {
+        #expect(DesignTokens.onFill.contrast(on: DesignTokens.toneFill(tone)) >= 4.5)
+    }
+
+    /// Why the fills exist: white on the system's own blue, orange and grey
+    /// is under 4.5:1, which is what a prominent button and a swipe drew.
+    @Test func whiteDoesNotReadOnTheTonesThemselves() {
+        #expect(DesignTokens.contrast(0xFFFFFF, DesignTokens.blue.light) < 4.5)
+        #expect(DesignTokens.contrast(0xFFFFFF, DesignTokens.orange.light) < 3)
+        #expect(DesignTokens.contrast(0xFFFFFF, DesignTokens.gray.light) < 4.5)
+    }
+
+    /// The scale's steps as they have always been in points: a step is a
+    /// whole number of the unit.
+    @Test func theSpacingScaleIsItsUnitsMultiples() {
+        #expect(DesignTokens.Spacing.unit == 2)
+        #expect(DesignTokens.Spacing.allCases.map(\.value) == [2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28])
     }
 }

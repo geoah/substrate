@@ -54,6 +54,7 @@ public struct ServerTooOldScreen: View {
                             Text(title).frame(maxWidth: .infinity, minHeight: 30)
                         }
                         .buttonStyle(.borderedProminent)
+                        .prominentTint()
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                     }
