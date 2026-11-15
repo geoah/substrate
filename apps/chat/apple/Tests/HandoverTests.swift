@@ -91,12 +91,13 @@ import Testing
         func look() {
             guard let screen = host.conversation(key) else { return }
             hosting.layoutSubtreeIfNeeded()
-            let rows = TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns).map { piece in
+            let rows = TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine).map { piece in
                 switch piece.part {
                 case .turn: "\(piece.id) turn"
                 case let .page(page): "\(piece.id) page \(page)"
                 case .tail: "\(piece.id) tail"
                 case .failure: "\(piece.id) failure"
+                case .newLine: "\(piece.id) new line"
                 }
             }
             let frame = Frame(screen: screen, height: measured.height, rows: rows)
@@ -305,6 +306,62 @@ import Testing
 #endif
 
 #if os(macOS)
+/// A transcript in a window of its own, which no screen draws: the scroll
+/// view under it is asked where it stands, and moved as a wheel moves it.
+@MainActor
+protocol OffscreenTranscript {
+    var window: NSWindow { get }
+}
+
+extension OffscreenTranscript {
+    func settle() async throws {
+        for _ in 0 ..< 6 {
+            window.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// The transcript's scroll view: the tallest one in the window.
+    var scroll: NSScrollView? {
+        func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+        return window.contentView.map(all)?.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
+    }
+
+    /// How far the content goes on below what the scroll view shows
+    /// above the composer, how tall the content is, and how far down
+    /// it the scroll view stands.
+    var reach: (below: CGFloat, content: CGFloat, offset: CGFloat)? {
+        guard let scroll, let document = scroll.documentView else { return nil }
+        let visible = scroll.documentVisibleRect
+        let insets = scroll.contentView.contentInsets
+        let below = document.isFlipped ? document.frame.height - visible.maxY + insets.bottom : visible.minY + insets.bottom
+        return (below, document.frame.height, document.isFlipped ? visible.minY : document.frame.height - visible.maxY)
+    }
+
+    /// Turns a mouse's wheel up over the transcript by `points`: the
+    /// watcher behind the scroll view is told as the event's monitor
+    /// tells it, and the scroll view moves as the wheel moves it. (A
+    /// wheel's event cannot be made for a window no screen shows.)
+    func wheel(up points: CGFloat, held: Bool = false) {
+        guard let content = window.contentView, let scroll, let document = scroll.documentView else { return }
+        func all(_ view: NSView) -> [WheelWatcher.Watching] {
+            ((view as? WheelWatcher.Watching).map { [$0] } ?? []) + view.subviews.flatMap(all)
+        }
+        for watcher in all(content) {
+            watcher.turned(by: points, at: CGPoint(x: content.bounds.midX, y: content.bounds.midY), held: held)
+        }
+        var origin = scroll.contentView.bounds.origin
+        origin.y += document.isFlipped ? -points : points
+        // No further than the content goes, as a wheel moves it.
+        let insets = scroll.contentView.contentInsets
+        let (before, after) = document.isFlipped ? (insets.top, insets.bottom) : (insets.bottom, insets.top)
+        let last = max(-before, document.frame.height - scroll.contentView.bounds.height + after)
+        origin.y = min(max(origin.y, -before), last)
+        scroll.contentView.scroll(to: origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
+}
+
 /// A chat that is at its end when the app leaves the front is at its end
 /// when it returns, whatever arrived meanwhile; one its reader scrolled up
 /// stays where it was. Through the conversation's own view in a window of
@@ -316,7 +373,7 @@ import Testing
     static let thread = "t-live"
 
     @MainActor
-    final class Stage {
+    final class Stage: OffscreenTranscript {
         /// A window short enough that a few turns outgrow it.
         static let size = CGSize(width: 280, height: 150)
         let host: ChatHost
@@ -342,48 +399,6 @@ import Testing
             // Far off every screen: ordered in so its views are laid out.
             window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
             window.orderFrontRegardless()
-        }
-
-        func settle() async throws {
-            for _ in 0 ..< 6 {
-                window.contentView?.layoutSubtreeIfNeeded()
-                try await Task.sleep(for: .milliseconds(20))
-            }
-        }
-
-        /// The transcript's scroll view: the tallest one in the window.
-        var scroll: NSScrollView? {
-            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
-            return window.contentView.map(all)?.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
-        }
-
-        /// How far the content goes on below what the scroll view shows
-        /// above the composer, how tall the content is, and how far down
-        /// it the scroll view stands.
-        var reach: (below: CGFloat, content: CGFloat, offset: CGFloat)? {
-            guard let scroll, let document = scroll.documentView else { return nil }
-            let visible = scroll.documentVisibleRect
-            let insets = scroll.contentView.contentInsets
-            let below = document.isFlipped ? document.frame.height - visible.maxY + insets.bottom : visible.minY + insets.bottom
-            return (below, document.frame.height, document.isFlipped ? visible.minY : document.frame.height - visible.maxY)
-        }
-
-        /// Turns a mouse's wheel up over the transcript by `points`: the
-        /// watcher behind the scroll view is told as the event's monitor
-        /// tells it, and the scroll view moves as the wheel moves it. (A
-        /// wheel's event cannot be made for a window no screen shows.)
-        func wheel(up points: CGFloat, held: Bool = false) {
-            guard let content = window.contentView, let scroll, let document = scroll.documentView else { return }
-            func all(_ view: NSView) -> [WheelWatcher.Watching] {
-                ((view as? WheelWatcher.Watching).map { [$0] } ?? []) + view.subviews.flatMap(all)
-            }
-            for watcher in all(content) {
-                watcher.turned(by: points, at: CGPoint(x: content.bounds.midX, y: content.bounds.midY), held: held)
-            }
-            var origin = scroll.contentView.bounds.origin
-            origin.y += document.isFlipped ? -points : points
-            scroll.contentView.scroll(to: origin)
-            scroll.reflectScrolledClipView(scroll.contentView)
         }
 
         isolated deinit {
@@ -532,6 +547,157 @@ import Testing
             try await Task.sleep(for: .milliseconds(25))
         }
         throw HandoverTests.NotReached()
+    }
+}
+
+/// A chat with more than its reader had seen opens at a row, the "New" line
+/// above the first of it, and is at its end only once they have come down to
+/// it: the seam the line and the read mark stand on (`TranscriptScroll`'s
+/// `anchor` and `looked`). Rows of a known height in the scroll view itself,
+/// in a window no screen draws.
+@MainActor
+@Suite(.serialized) struct OpeningTests {
+    static let row: CGFloat = 30
+
+    @MainActor
+    @Observable final class Chat {
+        var rows: Int
+        /// The row the line stands above.
+        var line: Int?
+        /// Every word of the scroll view on whether its end is looked at.
+        @ObservationIgnored var looked: [Bool] = []
+
+        init(rows: Int, line: Int?) {
+            self.rows = rows
+            self.line = line
+        }
+    }
+
+    struct Rows: View {
+        let chat: Chat
+
+        var body: some View {
+            let ids = (0 ..< chat.rows).flatMap { ($0 == chat.line ? ["r\($0)/new"] : []) + ["r\($0)"] }
+            TranscriptScroll(
+                opens: chat.line.map { .turn("r\($0)") } ?? .end, anchor: chat.line.map { "r\($0)/new" }, sends: 0,
+                looked: { chat.looked.append($0) }
+            ) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(ids, id: \.self) { id in
+                        Text(id).frame(maxWidth: .infinity, minHeight: OpeningTests.row, maxHeight: OpeningTests.row)
+                    }
+                }
+                .scrollTargetLayout()
+            } bar: { _, _, _ in
+                Color.clear.frame(height: 20)
+            }
+        }
+    }
+
+    @MainActor
+    final class Stage: OffscreenTranscript {
+        let window: NSWindow
+
+        init(_ chat: Chat) {
+            _ = NSApplication.shared
+            let controller = NSHostingController(rootView: Rows(chat: chat).transaction { $0.animation = nil })
+            controller.sizingOptions = []
+            let size = CGSize(width: 280, height: 150)
+            window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentViewController = controller
+            window.setContentSize(size)
+            window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+            window.orderFrontRegardless()
+        }
+
+        /// The app's moves, and a wheel's rest, have come to theirs.
+        func rest() async throws {
+            try await Task.sleep(for: .milliseconds(600))
+            try await settle()
+        }
+
+        isolated deinit {
+            window.orderOut(nil)
+            window.contentViewController = nil
+        }
+    }
+
+    @Test(.timeLimit(.minutes(5)))
+    func aChatOpensAtItsLineAndIsAtItsEndOnlyOnceItsReaderComesDown() async throws {
+        let chat = Chat(rows: 40, line: 20)
+        let stage = Stage(chat)
+        try await stage.rest()
+        let opened = try #require(stage.reach)
+        // The line is the row at the top of what shows.
+        #expect(abs(opened.offset - 20 * Self.row) < 2, "not opened at its line: \(opened)")
+        #expect(chat.looked.last == false && !chat.looked.contains(true), "said to be at its end on the way: \(chat.looked)")
+
+        // More arrives below: it stays, and is still not at its end.
+        chat.rows = 44
+        try await stage.rest()
+        let more = try #require(stage.reach)
+        #expect(abs(more.offset - opened.offset) < 2 && more.below > TranscriptFollow.near, "moved by what arrived: \(opened) then \(more)")
+        #expect(!chat.looked.contains(true))
+
+        // Its reader comes down to the end and rests: from there it is.
+        stage.wheel(up: -more.content)
+        try await stage.rest()
+        let down = try #require(stage.reach)
+        #expect(abs(down.below) < 1, "not at its end: \(more) then \(down)")
+        #expect(chat.looked.last == true)
+
+        // And what arrives then is followed, and looked at, with no scroll.
+        chat.rows = 48
+        try await stage.rest()
+        let followed = try #require(stage.reach)
+        #expect(abs(followed.below) < 1 && followed.content > more.content, "not followed: \(more) then \(followed)")
+        #expect(chat.looked.last == true)
+
+        // Scrolled up, it is not, whatever arrives below.
+        stage.wheel(up: 300)
+        try await stage.rest()
+        chat.rows = 52
+        try await stage.rest()
+        #expect(try #require(stage.reach).below > TranscriptFollow.near)
+        #expect(chat.looked.last == false)
+    }
+
+    /// The rows a device held may be older than the thread: the chat is
+    /// shown at their end, and the rows that bring the line come after.
+    @Test(.timeLimit(.minutes(5)))
+    func aLineThatComesAfterTheRowsTakesTheChatToIt() async throws {
+        let chat = Chat(rows: 20, line: nil)
+        let stage = Stage(chat)
+        try await stage.rest()
+        #expect(abs(try #require(stage.reach).below) < 1 && chat.looked.last == true)
+        chat.rows = 40
+        chat.line = 20
+        try await stage.rest()
+        let placed = try #require(stage.reach)
+        #expect(abs(placed.offset - 20 * Self.row) < 2, "not put at its line: \(placed)")
+        #expect(chat.looked.last == false)
+        // Once: what arrives later does not take it there again.
+        stage.wheel(up: 200)
+        try await stage.rest()
+        let read = try #require(stage.reach)
+        chat.rows = 41
+        try await stage.rest()
+        #expect(abs(try #require(stage.reach).offset - read.offset) < 2)
+    }
+
+    /// Where what is new fits on one screen the scroll stops at the end,
+    /// and the chat is at its end as one with nothing new is.
+    @Test(.timeLimit(.minutes(5)))
+    func aLineNearTheEndLeavesTheChatAtItsEnd() async throws {
+        let chat = Chat(rows: 40, line: 39)
+        let stage = Stage(chat)
+        try await stage.rest()
+        #expect(abs(try #require(stage.reach).below) < 1)
+        #expect(chat.looked.last == true)
+        chat.rows = 41
+        try await stage.rest()
+        #expect(abs(try #require(stage.reach).below) < 1 && chat.looked.last == true)
     }
 }
 #endif
