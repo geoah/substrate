@@ -15,41 +15,51 @@ struct DiagnosticsSheet: View {
         let report = host.chats?.diagnostics
         let text = report?.shared(version: version) ?? ""
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: space(.content)) {
-                    if let note = report?.note {
-                        Text(note).font(.subheadline).foregroundStyle(.quietText)
-                    }
-                    if let empty = report?.empty {
-                        Text(empty).foregroundStyle(.quietText)
-                    }
-                    // Every line, to read and to select before it goes
-                    // anywhere: what is shared is this text.
-                    Text(verbatim: text)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("The diagnostics, \(text.split(separator: "\n").count) lines")
-                }
-                .padding(space(.content))
-            }
-            .navigationTitle(report?.title ?? "Diagnostics")
-            #if os(iOS)
+            DiagnosticsPage(report: report, text: text)
+                .navigationTitle(report?.title ?? "Diagnostics")
+                #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(report?.done ?? "Done") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    ShareLink(item: text) { Text(report?.share ?? "Share") }
-                        .disabled(report == nil)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(report?.done ?? "Done") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        ShareLink(item: text) { Text(report?.share ?? "Share") }
+                            .disabled(report == nil)
+                    }
                 }
-            }
         }
         #if os(macOS)
         .frame(minWidth: DiagnosticsMetrics.width, minHeight: DiagnosticsMetrics.height)
         #endif
         .onAppear { host.send(.diagnostics(shown: true)) }
         .onDisappear { host.send(.diagnostics(shown: false)) }
+    }
+}
+
+/// What the sheet shows: what the file holds and never holds, then every
+/// line of it, to read and to select before it goes anywhere. What is
+/// shared is this text.
+struct DiagnosticsPage: View {
+    let report: DiagnosticsReport?
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: space(.content)) {
+                if let note = report?.note {
+                    Text(note).font(.subheadline).foregroundStyle(.quietText)
+                }
+                if let empty = report?.empty {
+                    Text(empty).foregroundStyle(.quietText)
+                }
+                Text(verbatim: text)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .accessibilityLabel("The diagnostics, \(text.split(separator: "\n").count) lines")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(space(.content))
+        }
     }
 
     private func space(_ token: DesignTokens.Spacing) -> CGFloat { CGFloat(token.rawValue) }
