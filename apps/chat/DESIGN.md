@@ -1364,8 +1364,13 @@ bubble is a tinted fill. The transcript softens under the composer with
     turns, `few`). Every height is then the row's own. It is said when
     the scroll view is made with its first rows and kept while it lives:
     a stack that changed its kind would make every row anew under its
-    reader, so a chat that grows past twelve turns while it is open
-    stays whole until it is opened again.
+    reader. So a chat that grows past twelve turns while it is open
+    stays whole, up to sixty: past that it is made anew with a lazy
+    stack where its reader is at its end or is taken there, at a send
+    and when rows land under a transcript that follows (`unwhole`). And
+    never whole where the thread holds rows before the ones read: the
+    row that asks for them asks when it comes on screen, which in a
+    stack laid out whole every row has.
   - **The scroll view is made anew when its first rows arrive**
     (`TranscriptStart`). One made with its rows stands at its end by its
     own anchor (`defaultScrollAnchor(.bottom, for: .initialOffset)`),

@@ -42,7 +42,9 @@ struct ConversationView: View {
         return TranscriptScroll(
             opens: screen.opens, anchor: opening(screen), seeks: screen.seeks, sends: screen.sends, visit: screen.visit, above: screen.above,
             last: screen.approvals.last ?? TranscriptPiece.lastRow(of: screen.turns, failures: screen.failures.turns),
-            count: screen.turns.count,
+            // Rows before the ones held are asked for by a row that comes
+            // on screen, which in a stack laid out whole every row has.
+            count: screen.older == nil ? screen.turns.count : .max,
             first: { TranscriptPiece.firstRow(among: $0, of: screen.turns) },
             looked: { atBottom = $0 },
             released: { host.send(.followEnded(key: key, by: $0)) }
@@ -225,7 +227,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// there is none, and the end is then a place.
     var last: String?
     /// How many turns the transcript holds: few are laid out whole
-    /// (`whole`).
+    /// (`whole`). More than any where its rows must be lazy whatever
+    /// their number.
     var count = 0
     /// The first, in the transcript's order, of the rows named: the rows on
     /// screen come in no order this view knows.
@@ -265,7 +268,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// The rows are laid out whole, in a stack that is not lazy: said when
     /// the scroll view is made with its first rows and kept while it
     /// lives, since a stack that changed its kind would make every row
-    /// anew under its reader. Nil until there are rows.
+    /// anew under its reader. Nil until there are rows. One that has
+    /// grown long is made lazy again where its reader is at its end or is
+    /// taken there: at a send, and when the count moves under a transcript
+    /// that follows (`unwhole`).
     ///
     /// A lazy stack guesses the height of the rows it has not laid out
     /// from the ones it has. With a few rows of very unlike heights (a
@@ -338,6 +344,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 .onChange(of: last != nil, initial: true) { _, rows in
                     if rows, whole == nil { whole = count <= Self.few }
                 }
+                .onChange(of: count) { _, _ in
+                    if follow.following { unwhole() }
+                }
                 .onChange(of: atEnd && follow.following, initial: true) { _, at in looked(at) }
         }
     }
@@ -400,6 +409,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                     // A finger on it: the reader's, and where it opens is
                     // no longer the app's to say.
                     reach.touched = true
+                    reach.started = 0
                     placed = true
                     if follow.following { leave(by: .touch) }
                 case .idle:
@@ -461,7 +471,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 // of its place.
                 if rows.isEmpty { hold() }
             }
-            .onChange(of: sends) { _, _ in take(follow.sent()) }
+            .onChange(of: sends) { _, _ in
+                unwhole()
+                take(follow.sent())
+            }
             .onChange(of: front) { _, front in
                 // Back in front: a chat that was at its end is at its end,
                 // whatever arrived meanwhile.
@@ -581,9 +594,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// the end of the transcript's last row is further than the room from
     /// where it would stand, or the row is not laid out, the end is asked
     /// for by that row. Nearer, the place finishes the move, and not while
-    /// it is more than the room away: the row's end is at most that far
-    /// from the content's, so a place further off is a guess the stack has
-    /// yet to take back, and what the scroll view says next asks again.
+    /// it is more than twice the room away: the row's end is within the
+    /// room of where it would stand and less than the room from the
+    /// content's, so a place further off is a guess the stack has yet to
+    /// take back, and what the scroll view says next asks again.
     /// With no row on screen nothing is asked for here: the rows have yet
     /// to say where they stand, or none is laid out (`startOver`).
     ///
@@ -602,7 +616,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             // back there at the next change.
             position = ScrollPosition(idType: String.self)
             reader.scrollTo(last, anchor: .bottom)
-        } else if last == nil || abs(end - reach.measure.top) <= room {
+        } else if last == nil || abs(end - reach.measure.top) <= 2 * room {
             position.scrollTo(y: end)
         }
         #endif
@@ -621,6 +635,16 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         #else
         false
         #endif
+    }
+
+    /// A transcript laid out whole that has grown past what is cheap to
+    /// lay out so is made anew with a lazy stack. Only where it is at its
+    /// end or about to be put there, which is where one made anew stands.
+    private func unwhole() {
+        guard whole == true, count > Self.fewAtMost else { return }
+        whole = false
+        position = ScrollPosition(idType: String.self)
+        starts += 1
     }
 
     /// A transcript that follows its end and has no row on screen is made
