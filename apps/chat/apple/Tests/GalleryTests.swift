@@ -250,7 +250,8 @@ import Testing
         #expect(report.text.contains(" launch ") && !report.text.contains(Self.question) && !report.text.contains("example.com"))
         for scheme in [ColorScheme.light, .dark] {
             Attachment.record(
-                try await OffscreenDrawing.png(DiagnosticsSheet(version: "0.124.0").environment(host), size: OffscreenDrawing.phone, scheme: scheme),
+                try await OffscreenDrawing.png(
+                    DiagnosticsPage(report: report, text: report.shared(version: "0.124.0")), size: OffscreenDrawing.phone, scheme: scheme),
                 named: "chat-diagnostics-iphone-\(scheme == .dark ? "dark" : "light").png")
         }
     }

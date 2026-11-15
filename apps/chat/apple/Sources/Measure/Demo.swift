@@ -14,8 +14,8 @@ import SubstrateKit
 /// stream part way and keeps the next from opening; `play` writes the whole
 /// run a line every 0.7 seconds; `long` shows the chat of 200 turns, with
 /// nothing running, for a transcript to scroll, and `deep` a chat of 1,100
-rows, whose older rows are read in above the newest 500 when its top is
-reached. `reply:<name>` shows a chat
+/// rows, whose older rows are read in above the newest 500 when its top is
+/// reached. `reply:<name>` shows a chat
 /// that holds one settled reply of the fixtures: `week` (every block),
 /// `short`, `lines` (code with long lines), `tables`, `table` (a small
 /// one), `links` (records and pages linked in one paragraph), or a
