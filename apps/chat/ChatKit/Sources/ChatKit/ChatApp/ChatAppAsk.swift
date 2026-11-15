@@ -75,7 +75,12 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case markRefreshed(Lease, [ChatAppState.WatchKey])
     /// A row of the watch the engine took: the watch's cache marks its
     /// record to be read again and moves its bookmark past the row.
-    case noteRow(Lease, WatchRow)
+    ///
+    /// `history`: the generation the row was said in. A row noted after
+    /// the cache started over in another history (a relist, then a new
+    /// bookmark) would move that history's bookmark by this one's
+    /// sequence: it is dropped.
+    case noteRow(Lease, WatchRow, history: String? = nil)
 
     case rename(thread: String, subject: String, before: Record?)
     case setKey(provider: String, key: String)

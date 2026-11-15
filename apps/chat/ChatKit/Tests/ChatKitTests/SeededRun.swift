@@ -1914,7 +1914,7 @@ struct SeededRun {
         defer { diagnosed = lines.count }
         // What the person typed, what the server wrote and said, and what
         // names a record, a server or a sign-in.
-        var canaries = SeededServer.said + ["example.com", "secret", "Helper", "helper", "Subject", "say ", "Continue where"]
+        var canaries = server.sentences + ["example.com", "secret", "Helper", "helper", "Subject", "say ", "Continue where"]
         var names: Set<String> = []
         canaries += ever.keys
         for thread in server.threadIDs {
@@ -1943,8 +1943,9 @@ struct SeededRun {
     }
 
     /// A line of the diagnostics file: when, the chat by its number where
-    /// it is about one, what happened in lower-case words, then facts as
-    /// `name=value`, each value a number or one word.
+    /// it is about one, what happened, as one of the things the file says
+    /// happen, then facts as `name=value`, each name one the file uses and
+    /// each value a number or a word of its closed sets.
     static func shaped(_ line: String) -> Bool {
         var words = line.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         guard words.count >= 2, Timestamp.parse(words.removeFirst()) != nil else { return false }
@@ -1952,17 +1953,50 @@ struct SeededRun {
             guard words.count >= 3, Int(words[1]) != nil else { return false }
             words.removeFirst(2)
         }
-        let plain = { (word: String) in !word.isEmpty && word.unicodeScalars.allSatisfy { ("a" ... "z").contains($0) || $0 == "_" } }
+        // By the file's own vocabulary, each a closed set: a sentence of
+        // lower-case words has the shape of a line and is none of these.
         let what = words.prefix { !$0.contains("=") }
-        guard !what.isEmpty, what.allSatisfy(plain) else { return false }
+        guard happenings.contains(what.joined(separator: " ")) else { return false }
         return words.dropFirst(what.count).allSatisfy { fact in
             let parts = fact.split(separator: "=", omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 2, plain(parts[0]) else { return false }
-            // One word of a closed set, as its case spells it.
-            let word = !parts[1].isEmpty && parts[1].unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || $0 == "_") }
-            return word || Double(parts[1]) != nil
+            guard parts.count == 2, names.contains(parts[0]) else { return false }
+            return values.contains(parts[1]) || Double(parts[1]) != nil
         }
     }
+
+    /// What a line of the diagnostics file may say happened.
+    static let happenings: Set<String> = [
+        "launch", "app", "features", "failure", "feed opened", "feed compacted", "feed dropped", "feed back", "feed ended", "mark write",
+        "mark written", "mark not written", "unsent saved", "background expired", "follow stopped", "notification posted", "notification held",
+        "notification taken back", "notifications taken back", "notification action over", "list read", "rows read", "older rows read",
+        "timing", "run", "send", "send again", "send out", "send repeat", "message taken back", "message stands", "message looked for",
+        "message look", "continue", "continue sent", "stream opened", "stream done", "stream idle", "stream ended", "stream retry",
+        "stream wait", "attach read", "handover", "handover read", "stop", "stop sent", "delivery check", "delivery checked", "front again",
+        "report",
+    ]
+
+    /// The names a fact of a line goes by.
+    static let names: Set<String> = [
+        "platform", "folder_read", "unsent", "agents", "records", "flags", "attempt", "why", "status", "cause", "code", "reason", "by",
+        "retry_after", "unconfirmed", "compacted", "unserved", "fresh", "kinds", "then", "messages", "failed", "refresh", "phase", "reads",
+        "unread", "pinned", "archived", "held", "of", "answers", "seconds", "all", "done", "said", "beside", "first", "count", "mean_ms",
+        "longest_ms", "joins", "probe", "attempt", "id", "typed", "placed", "found", "standing", "rows", "gone", "settles", "stopping",
+        "copy", "try", "lines",
+    ]
+
+    /// The words a fact may hold: the cases of the app's own enums, the
+    /// closed sets a server's word is held to, and the few written in the
+    /// source.
+    static let values: Set<String> = Set(
+        Failure.Attempt.allCases.map(\.rawValue) + AppPhase.allCases.map(\.rawValue) + ChatPlatform.allCases.map(\.rawValue)
+            + MarkRefusal.allCases.map(\.rawValue) + TranscriptFollow.Release.allCases.map(\.rawValue)
+            + ConversationState.Phase.allCases.map(\.rawValue) + Diagnostic.Known.statuses + Diagnostic.Known.causes + Diagnostic.Known.reasons
+            + Diagnostic.Known.cuts + Diagnostic.Known.codes
+            + [
+                "yes", "no", "other", "run", "cut", "unanswered", "http", "offline", "unreachable", "timeout", "stream_ended", "session_ended",
+                "needs_approval", "not_the_api", "ended", "closed", "interrupted", "disk", "reply", "card", "failed", "continue", "send",
+                "attach", "flush", "parse", "republish",
+            ])
 
     /// A broken rule, with the app's state where `CHATKIT_VERBOSE` asks
     /// for it. The app stands still when this looks, so what it finds is

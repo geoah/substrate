@@ -572,7 +572,10 @@ be read again.
   advances its cursor past a row once the engine has taken the row
   (`ChatAppAsk.noteRow`), and persists it: a watch that is replaced has
   what it says dropped, and a cursor moved first would leave a row nobody
-  took on no stream again. The watch is opened again, from its cursor, to
+  took on no stream again. A row is noted only into the history it was
+  said in (the cursor's `generation`): the watch itself starts the cache
+  over and bookmarks it, and a row of the history before, noted after
+  that, would carry its sequence into the new one. The watch is opened again, from its cursor, to
   follow one more kind once a read of that kind was answered; the kind is
   then read once more when the watch that follows it is open, since the
   cursor moved on with the other kinds past whatever a record of this one
@@ -1985,7 +1988,8 @@ thread.
 `diagnostics.log` is appended to, and past 128 KB it becomes
 `diagnostics.old.log` in place of the one before. So the file is kept
 across launches, holds between one and two files' worth of the newest
-lines, and is gone with the folder at a sign-out.
+lines (of a batch larger than a file, its newest), and is gone with the
+folder at a sign-out.
 
 **Sharing it.** Settings → Diagnostics → Share Diagnostics shows the whole
 text first, under what it holds and what it never holds, with the build's
@@ -2291,11 +2295,14 @@ no outcome depends on how long they took.
   message, a thread's reason, a failed turn's error), and so is every
   message the person typed, every reply the server wrote, every id of a
   thread, a row and a card, the server's address, the repository's name,
-  the agent's name and the token. At each kill and at the end of every
-  run, every line the launch wrote is read from the folder: none may hold
-  a canary, and each must have the shape of a line (when, a chat by its
-  number, lower-case words, then `name=value` with a number or one word),
-  which no sentence has. At the end Share Diagnostics is opened, and what
+  the agent's name and the token; and every message the server refused
+  a request with in that run (`SeededServer.sentences`). At each kill and
+  at the end of every run, every line the launch wrote is read from the
+  folder: none may hold a canary, and each must be a line of the file's
+  own vocabulary (`SeededRun.shaped`): when, a chat by its number, one of
+  the things the file says happen, then `name=value` where the name is
+  one the file uses and the value a number or a word of its closed sets.
+  A sentence in lower-case words is none of those. At the end Share Diagnostics is opened, and what
   it would share must be the folder's every line. `DiagnosticsTests` holds
   the builder against words outside its sets, the ring's bound and its
   life across a launch and a sign-out, and one run's whole story.

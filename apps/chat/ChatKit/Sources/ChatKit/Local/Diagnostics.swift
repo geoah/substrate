@@ -150,6 +150,13 @@ struct DiagnosticsFile {
     /// Appends `lines`, each ending its own line.
     func append(_ lines: [String]) throws {
         guard !lines.isEmpty else { return }
+        // More than one file holds: its newest lines are the ones kept.
+        var lines = lines[...]
+        var bytes = lines.reduce(0) { $0 + $1.utf8.count + 1 }
+        while bytes > limit, let first = lines.first, lines.count > 1 {
+            bytes -= first.utf8.count + 1
+            lines = lines.dropFirst()
+        }
         let data = Data((lines.joined(separator: "\n") + "\n").utf8)
         let manager = FileManager.default
         let size = ((try? manager.attributesOfItem(atPath: current.path))?[.size] as? Int) ?? 0

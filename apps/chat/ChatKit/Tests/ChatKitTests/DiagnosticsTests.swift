@@ -40,6 +40,13 @@ struct Diagnostics {
             let line = Diagnostic("failure").with(Failure(.poll, why)).text
             #expect(SeededRun.shaped("2026-11-15T10:00:00.000Z \(line)"), "\(line)")
         }
+        // The seeded rule holds a line to the file's own vocabulary: a
+        // sentence the server says in lower-case words is no line of it
+        // (the review's finding: it passed as one).
+        #expect(!SeededRun.shaped("2026-11-15T10:00:00.000Z a turn is running on the thread"))
+        #expect(!SeededRun.shaped("2026-11-15T10:00:00.000Z failure attempt=reply why=run cause=tomatoes"))
+        #expect(!SeededRun.shaped("2026-11-15T10:00:00.000Z failure subject=other"))
+        #expect(SeededRun.shaped("2026-11-15T10:00:00.000Z chat 2 failure attempt=reply why=run status=error cause=other"))
         // A number, a yes or a no, a time.
         let facts = Diagnostic("send", chat: "t1").with("copy", 2).with("joins", false).with("seconds", seconds: 1.5).with("none", nil as Int?)
         #expect(facts.text == "send copy=2 joins=no seconds=1.500")
@@ -66,6 +73,10 @@ struct Diagnostics {
         #expect(held.count < lines.count && held.count >= 400 / 60)
         let size = { (name: String) in ((try? FileManager.default.attributesOfItem(atPath: root.appendingPathComponent(name).path))?[.size] as? Int) ?? 0 }
         #expect(size(DiagnosticsFile.name) <= 400 && size(DiagnosticsFile.older) <= 400)
+        // A batch larger than a file is held to the bound too, by its
+        // newest lines (the review's finding: it was written whole).
+        try again.append(lines + lines)
+        #expect(size(DiagnosticsFile.name) <= 400 && size(DiagnosticsFile.older) <= 400 && again.lines().last == lines.last)
     }
 
     private func lines(_ rig: ChatRig) -> [String] { DiagnosticsFile(root: rig.root, writingOptions: []).lines() }
