@@ -22,7 +22,8 @@ import SubstrateKit
 /// marks, read through the row at that ordinal and not opened since: 1200
 /// is found two reads above the newest 500, and 100 is further back than
 /// the app reads toward. `reply:<name>` shows a chat
-/// that holds one settled reply of the fixtures: `week` (every block),
+/// that holds one settled reply of the fixtures: `week` (every block), `big`
+/// (the same again and again to 16 KB, some forty screens of a phone),
 /// `short`, `lines` (code with long lines), `tables`, `table` (a small
 /// one), `links` (records and pages linked in one paragraph), or a
 /// language's name for its code sample.
@@ -55,6 +56,7 @@ enum Demo {
         guard let asked, asked.hasPrefix("reply:") else { return nil }
         switch String(asked.dropFirst("reply:".count)) {
         case "week": return ChatFixtures.reply
+        case "big": return ChatFixtures.reply(bytes: 16 * 1024)
         case "short": return ChatFixtures.short
         case "lines": return ChatFixtures.longLines
         case "tables": return ChatFixtures.tables

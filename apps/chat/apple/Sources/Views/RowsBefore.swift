@@ -82,6 +82,18 @@ final class RowsBefore {
 @MainActor
 final class RowPlaces {
     var frames: [String: CGRect] = [:]
+
+    /// Whether a row's end stands within the room's height of the end of
+    /// the scroll view's room, `room` points high from the top of what it
+    /// shows: a row the scroll view has only to finish moving to.
+    func ends(_ row: String, near room: Double) -> Bool {
+        frames[row].map { abs($0.maxY - room) <= room } ?? false
+    }
+
+    /// Whether any row stands in the room.
+    func shows(in room: Double) -> Bool {
+        frames.values.contains { $0.maxY > 0 && $0.minY < room }
+    }
 }
 
 extension EnvironmentValues {

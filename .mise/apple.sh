@@ -673,6 +673,18 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		project
 		chat -destination 'platform=macOS' test
 		;;
+	test:chat:sim)
+		# The app target's tests in the iOS app, on a simulator: what an
+		# iPhone's scroll view does and a Mac's does not (a chat that opens
+		# on its rows at every text size).
+		project
+		udid="$(simulator_udid)"
+		if [ -z "$udid" ]; then
+			echo "apple: no iOS simulator is installed; add one in Xcode > Settings > Components" >&2
+			exit 1
+		fi
+		chat -destination "platform=iOS Simulator,id=$udid" test
+		;;
 	measure:chat)
 		project
 		measure_chat "${2:-all}"

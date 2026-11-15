@@ -49,6 +49,9 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     /// How long a read of the rows before the ones held takes: time for a
     /// hand to move the transcript while they are out.
     var olderTakes: Duration?
+    /// How long a read of a chat's newest rows takes: a chat is on screen
+    /// before its rows are, as it is against a server.
+    var rowsTake: Duration?
 
     /// A run a test writes a line at a time (`step`), so every screen
     /// between its first piece and its stored rows can be looked at: the
@@ -262,6 +265,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 let first = components?.queryItems?.first { $0.name == "first" }?.value.flatMap(Int.init)
                 let through = Self.number(after: #""lte":"#, in: query)
                 if through != nil, let olderTakes { try await Task.sleep(for: olderTakes) }
+                if through == nil, let rowsTake { try await Task.sleep(for: rowsTake) }
                 return json(transcript(thread, first: first, through: through))
             }
             if query.contains("llm/thread") {

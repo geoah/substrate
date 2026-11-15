@@ -1326,7 +1326,67 @@ bubble is a tinted fill. The transcript softens under the composer with
   On iOS the move is to the content's own end (`scrollTo(y:)`): the
   system's move to the bottom edge overshoots by the composer's inset when
   the insets change. On a Mac the bottom edge is exact and is what is
-  used. A Mac's scroll view says nothing of a wheel or a trackpad as a
+  used.
+
+  **A chat opens with its rows on screen, whatever their heights.** A
+  lazy stack guesses the height of every row it has not laid out, from
+  the ones it has. A chat's rows arrive after its scroll view is on
+  screen, which then stood at the top of them with one or two laid out,
+  and the place worked out for the end (`content - room`) was the
+  guess's. With a few rows of very unlike heights (a line of the
+  person's over a reply many screens tall, which every long reply is at
+  the accessibility text sizes) the guess is off by screens and the
+  place lay past the rows there are. The stack lays out no row past its
+  rows and so takes no guess back, the scroll view says it stands at its
+  end, and the chat opened on an empty screen until a finger moved it: 4
+  of 4 opens at the first and second accessibility sizes on an iPhone
+  and an iPad, since the list's pull request made rows arrive that way
+  (#1464; not on #1450's head). Asking for the last row by its id does
+  not help, since a row the stack has not reached is put by the same
+  guess; nor does the scroll view's own anchor at the largest size,
+  which stood a lazy stack past its rows 3 times in 20. So nothing is
+  guessed where that is cheap, and a guess is never the last word:
+  - **A transcript of a few turns is laid out whole**, in a stack that
+    is not lazy (`TranscriptScroll.whole`, `TranscriptStack`; twelve
+    turns, `few`). Every height is then the row's own. It is said when
+    the scroll view is made with its first rows and kept while it lives:
+    a stack that changed its kind would make every row anew under its
+    reader, so a chat that grows past twelve turns while it is open
+    stays whole until it is opened again.
+  - **The scroll view is made anew when its first rows arrive**
+    (`TranscriptStart`). One made with its rows stands at its end by its
+    own anchor (`defaultScrollAnchor(.bottom, for: .initialOffset)`),
+    and is never sent there from the top of rows it has just been given.
+  - **A move to the end (`go(to:)`) is by the place only for the last of
+    the way**: while the last row's end is within the room's height of
+    where it would stand, and the place within the room's height of
+    where the scroll view stands. From further off it asks for the last
+    row (`TranscriptScroll.last`: the last piece, or the last card under
+    them), which the stack finds exactly where the rows between are laid
+    out, as they are when a reader comes down from among them.
+  - **A transcript that follows its end and has no row on screen is made
+    anew** (`startOver`), whole where it holds sixty turns or fewer
+    (`fewAtMost`), a few times at most. Which rows are on screen is the
+    rows' own word (`RowPlaces`, an iPhone's and an iPad's): the scroll
+    view's list of them is told once a frame, and told twice in one it
+    has stayed empty over drawn rows.
+
+  A long chat's stack stays lazy, with rows by the hundred to guess
+  from; twenty opens of the fixture's chat of 1,100 rows at the largest
+  size drew every time. What is left there is the third rule's and the
+  fourth's to catch.
+
+  `OpensDrawnTests` holds it in the iOS app on a simulator
+  (`mise run apple:test:chat:sim`): each of the gallery's tall replies
+  and the chat of 200 turns, at the usual size and three accessibility
+  sizes, three opens of each, with the rows arriving 400 ms after the
+  chat is on screen as they do against a server. The window is drawn and
+  the transcript's band looked at, and the scroll view is asked whether
+  it stands at its end. With the fix taken out it fails for the week's
+  reply at the usual size too, which the app's demo door never showed,
+  since its rows arrive within a frame. A Mac's scroll view is sent to
+  its edge, and a window no screen shows draws nothing a scroll view
+  holds, so the Mac's test host can neither meet the fault nor see it. A Mac's scroll view says nothing of a wheel or a trackpad as a
   touch's phases do, so the events themselves are watched: from the first
   one turned up the transcript is yours, however little it has moved. It
   has come to rest a quarter of a second after the last event, and never
@@ -2178,6 +2238,7 @@ runs them on a Mac, and ChatKit's on Linux too.
 | The rig: ChatKit on the kit's runtime against a scripted server, on a clock the test moves | `ChatKit/Tests/ChatKitTests` | `mise run apple:test:chat`, `mise run apps:test:linux` |
 | The seeded suite: a person and a server that misbehave by a seed, with the rules a chat keeps whatever happens | `SeededRun.swift`, `SeededServer.swift`, `SeededThread.swift` | every `swift test`, and by hand for more seeds |
 | The frame tests: the app's own views in a window, frame by frame | `apple/Tests` (`HandoverTests`, `FollowTests`, `OpeningTests`, `OlderRowsTests`, `ReplyPartsTests`) | `mise run apple:test:chat` |
+| The same in the iOS app on a simulator: what an iPhone's scroll view does and a Mac's does not | `apple/Tests/OpensDrawnTests.swift`, and every test of the target that is not a Mac's alone | `mise run apple:test:chat:sim` |
 | The gallery: every state drawn to a picture for a person to look at | `apple/Tests/GalleryTests.swift` | `mise run apps:gallery` |
 | The measure: what a streamed reply and typing cost, as a table | `apple/Sources/Measure` | `mise run apple:measure:chat` |
 
