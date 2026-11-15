@@ -355,11 +355,20 @@ func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 	// id (namescache.go).
 	ds := &dataset{
 		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
-		reg: vocabulary.NewRegistry(), watch: newBroadcaster(),
-		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
+		watch: newBroadcaster(),
+		info:  substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
-	ds.reg.SetNames(ds.answersTo)
+	ds.reg = ds.emptyRegistry()
 	return ds
+}
+
+// emptyRegistry is the registry an import folds through before it has
+// loaded any declaration: nothing declared, the local namespace spelled by
+// the names the repository answers to.
+func (ds *dataset) emptyRegistry() *vocabulary.Registry {
+	reg := vocabulary.NewRegistry()
+	reg.SetNames(ds.answersTo)
+	return reg
 }
 
 // openLocalHistory opens a 0.x directory's segments READ-ONLY. THE UPGRADE
@@ -1407,8 +1416,7 @@ func declarationRowsSum(ctx context.Context, q dbx) (string, error) {
 // forgetDeclarations puts back the empty registry an import's dataset starts
 // with (bareDataset).
 func (ds *dataset) forgetDeclarations() {
-	reg := vocabulary.NewRegistry()
-	reg.SetNames(ds.answersTo)
+	reg := ds.emptyRegistry()
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	ds.reg, ds.parked = reg, nil
