@@ -23,6 +23,7 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     private var kept: [Call] = []
     private var held: [NotificationResponse] = []
     private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
+    private var whenFinished: (@Sendable (NotificationResponse) -> Void)?
 
     /// - Parameter granting: what the owner answers when asked.
     public init(_ permission: NotificationPermission = .on, granting: NotificationPermission = .on) {
@@ -97,7 +98,17 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     }
 
     public func finished(_ response: NotificationResponse) async {
-        lock.withLock { kept.append(.finished(response)) }
+        let told = lock.withLock { () -> (@Sendable (NotificationResponse) -> Void)? in
+            kept.append(.finished(response))
+            return whenFinished
+        }
+        told?(response)
+    }
+
+    /// Called as the app says it is done with a response, for a test of
+    /// what the app holds at that instant: the system may suspend it there.
+    public func onFinished(_ told: @escaping @Sendable (NotificationResponse) -> Void) {
+        lock.withLock { whenFinished = told }
     }
 
     public func pending(prefix: String) async -> [String] {

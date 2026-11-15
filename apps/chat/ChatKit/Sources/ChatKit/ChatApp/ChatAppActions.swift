@@ -133,17 +133,27 @@ extension ChatApp {
         if let waiting = state.deferred.first(where: { ChatNotifications.stamp($0.response) == stamp }) {
             // Never acted on: the folder or the server's document did not
             // come in time. A reply's text is kept as its chat's draft.
+            // Before the folder is read there is nowhere to write it: it
+            // is held for the draft, and the notification says the text
+            // itself, since the app may not be running by the time the
+            // folder would have been read.
             state.deferred.removeAll { ChatNotifications.stamp($0.response) == stamp }
             state.acted.insert(stamp)
             guard let thread = waiting.response.userInfo[ChatNotifications.threadKey] else {
                 state.asks.append(.finishAction(waiting.response, cancel: nil, notify: nil))
                 return
             }
-            if Self.isReply(waiting.response), let text = waiting.response.text, state.opened {
-                state.drafts[thread] = Conversation.above(text, state.drafts[thread] ?? "")
+            var unsaved: String?
+            if Self.isReply(waiting.response), let text = waiting.response.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                if state.opened {
+                    state.drafts[thread] = Conversation.above(text, state.drafts[thread] ?? "")
+                } else {
+                    state.unkept[thread] = Conversation.above(text, state.unkept[thread] ?? "")
+                    unsaved = text
+                }
             }
             state.acting[stamp] = State.Act(response: waiting.response, thread: thread)
-            return finish(&state, stamp, failure: Failure(Self.isReply(waiting.response) ? .send : .decide, .timeout))
+            return finish(&state, stamp, failure: Failure(Self.isReply(waiting.response) ? .send : .decide, .timeout), unsaved: unsaved)
         }
         guard let act = state.acting[stamp] else { return }
         if let key = act.reply {
@@ -181,8 +191,13 @@ extension ChatApp {
     static func failedID(_ thread: String) -> String { ChatNotifications.prefix(thread) + "failed" }
 
     /// The action is over. Done, its notification is taken back; not done,
-    /// a notification says so. Then the device is told.
-    private func finish(_ state: inout State, _ stamp: String, failure: Failure?, keepsReply: Bool = false) {
+    /// a notification says so. Then the device is told, once the drafts
+    /// are in the folder where the action did not go through: a reply's
+    /// text may have gone back into them.
+    ///
+    /// - Parameter unsaved: a reply's text that is in no folder, which the
+    ///   notification then says whole.
+    private func finish(_ state: inout State, _ stamp: String, failure: Failure?, keepsReply: Bool = false, unsaved: String? = nil) {
         guard let act = state.acting.removeValue(forKey: stamp) else { return }
         state.asks.append(.cancel("actWait:\(stamp)"))
         if let key = act.reply, !keepsReply { state.conversations[key]?.reply = nil }
@@ -192,9 +207,11 @@ extension ChatApp {
             let words = FailurePresenter.present(failure, failureContext(state, agent: row?.agentID, thread: act.thread))
             said = ChatNotifications.failed(
                 thread: act.thread, agent: agentName(row?.agentID ?? ""), title: row.map(state.title) ?? "A chat", sentence: words.sentence,
-                kept: act.card == nil ? "Your reply is kept in the chat." : "Open the chat to answer it there.")
+                kept: unsaved.map { "Your reply was not sent or saved. You wrote: “\($0)”" }
+                    ?? (act.card == nil ? "Your reply is kept in the chat." : "Open the chat to answer it there."))
         }
-        state.asks.append(.finishAction(act.response, cancel: failure == nil ? act.response.id : nil, notify: said))
+        let keep = failure == nil ? nil : state.disk.map { KeptDrafts(lease: $0, drafts: state.drafts) }
+        state.asks.append(.finishAction(act.response, cancel: failure == nil ? act.response.id : nil, notify: said, keep: keep))
     }
 }
 

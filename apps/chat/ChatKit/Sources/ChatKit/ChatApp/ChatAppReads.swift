@@ -57,6 +57,7 @@ extension ChatAppState {
         state.acting = [:]
         state.acted = []
         state.deferred = []
+        state.unkept = [:]
         return state
     }
 

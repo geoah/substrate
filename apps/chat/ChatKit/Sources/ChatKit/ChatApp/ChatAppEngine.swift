@@ -468,6 +468,14 @@ extension ChatApp {
         state.asks.append(.prune(disk.lease))
         state.preferences = disk.preferences
         state.drafts = disk.drafts
+        // A reply typed into a notification before the folder was read,
+        // which its time ran out on: it is the head of its chat's draft,
+        // and in the folder at once.
+        if !state.unkept.isEmpty {
+            for (thread, text) in state.unkept { state.drafts[thread] = Conversation.above(text, state.drafts[thread] ?? "") }
+            state.unkept = [:]
+            state.asks.append(.saveDrafts(disk.lease, state.drafts, atOnce: true))
+        }
         // A message sent before the folder was read stays; the rest is
         // what the folder kept.
         state.unsent = disk.unsent.merging(state.unsent) { _, sent in sent }
