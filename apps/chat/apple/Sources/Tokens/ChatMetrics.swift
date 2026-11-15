@@ -165,7 +165,8 @@ struct ChatSize: Sendable {
     static let preview: CGFloat = 320
     /// A screen of one sentence and one button: no access.
     static let door: CGFloat = 440
-    /// The least a Mac's sheet is, and the sheet a reply is selected in.
+    /// The least a Mac's sheet is, and a sheet of text to read: a reply
+    /// opened for selecting, the diagnostics.
     static let sheet = CGSize(width: 420, height: 260)
     static let readingSheet = (least: CGSize(width: 520, height: 420), ideal: CGSize(width: 620, height: 560))
     /// A Mac's windows as they first open: the chats, and Settings.

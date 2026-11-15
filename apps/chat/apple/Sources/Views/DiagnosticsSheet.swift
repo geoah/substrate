@@ -29,7 +29,7 @@ struct DiagnosticsSheet: View {
                 }
         }
         #if os(macOS)
-        .frame(minWidth: DiagnosticsMetrics.width, minHeight: DiagnosticsMetrics.height)
+        .frame(minWidth: ChatSize.readingSheet.least.width, minHeight: ChatSize.readingSheet.least.height)
         #endif
         .onAppear { host.send(.diagnostics(shown: true)) }
         .onDisappear { host.send(.diagnostics(shown: false)) }
@@ -45,28 +45,20 @@ struct DiagnosticsPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: space(.content)) {
+            VStack(alignment: .leading, spacing: ChatSpace.edge) {
                 if let note = report?.note {
-                    Text(note).font(.subheadline).foregroundStyle(.quietText)
+                    Text(note).font(ChatType.detail).ink(.quiet, on: .page)
                 }
                 if let empty = report?.empty {
-                    Text(empty).foregroundStyle(.quietText)
+                    Text(empty).ink(.quiet, on: .page)
                 }
                 Text(verbatim: text)
-                    .font(.caption.monospaced())
+                    .font(ChatType.verbatim)
                     .textSelection(.enabled)
                     .accessibilityLabel("The diagnostics, \(text.split(separator: "\n").count) lines")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(space(.content))
+            .padding(ChatSpace.edge)
         }
     }
-
-    private func space(_ token: DesignTokens.Spacing) -> CGFloat { CGFloat(token.rawValue) }
-}
-
-/// The room a Mac's sheet takes, which has no size of its own.
-private enum DiagnosticsMetrics {
-    static let width: CGFloat = 520
-    static let height: CGFloat = 420
 }
