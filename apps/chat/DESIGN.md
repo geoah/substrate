@@ -831,7 +831,11 @@ bubble is a tinted fill. The transcript softens under the composer with
   On iOS the move is to the content's own end (`scrollTo(y:)`): the
   system's move to the bottom edge overshoots by the composer's inset when
   the insets change. On a Mac the bottom edge is exact and is what is
-  used. `scrollDismissesKeyboard(.interactively)`.
+  used. A Mac's scroll view says nothing of a wheel or a trackpad as a
+  touch's phases do, so the events themselves are watched: from the first
+  one turned up the transcript is yours, however little it has moved, and
+  a quarter of a second after the last it has come to rest.
+  `scrollDismissesKeyboard(.interactively)`.
 - **Where it opens**: a chat with more than the person had read opens at
   the first turn they had not, under a "New" line; where all of that fits
   on one screen the scroll stops at the end, as a chat with nothing new
