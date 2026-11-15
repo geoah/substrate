@@ -58,6 +58,11 @@ extension ChatAppState {
         state.acted = []
         state.deferred = []
         state.unkept = [:]
+        state.heldCards = [:]
+        state.attention = [:]
+        state.failedActions = []
+        state.cardSaid = [:]
+        state.replySaid = []
         return state
     }
 

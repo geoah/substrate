@@ -262,6 +262,9 @@ public struct ChatApp: LinkedApp {
         var spoke = false
         switch event.step {
         case .sent, .sentAgain, .continued: spoke = true
+        // A reply typed into a notification is the person's message too,
+        // where it went out.
+        case .replyAsked: spoke = state.replying != nil
         default: break
         }
         // Whatever put a message back into the composer, the list keeps it.
@@ -354,6 +357,7 @@ public struct ChatApp: LinkedApp {
         case .refresh: "refresh"
         case .readFeatures: "features"
         case .readMarks: "marks"
+        case let .confirmMark(thread): "confirmMark:\(thread)"
         case let .sight(thread, _): "sight:\(thread)"
         case .marksWait: "marksWait"
         case .cards: "cards"
@@ -382,6 +386,7 @@ public struct ChatApp: LinkedApp {
         case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
         case .categories: "categories"
         case let .actionWait(id, _): "actWait:\(id)"
+        case let .cardHold(id, _): "cardHold:\(id)"
         case .readGuidance: "guidance"
         case let .writeGuidance(reference, _, _), let .deleteGuidance(reference, _): "guidance:\(reference.path)"
         case .followRuns: "runs"

@@ -54,13 +54,6 @@ extension ChatAppState {
     /// Whether the person pinned a thread, read as `archived(_:)` is.
     func isPinned(_ id: String) -> Bool { Standing(self).pinned(id) }
 
-    /// Whether a reply in a thread may be notified: not in a chat its
-    /// person archived, but while it waits on a person. The one test of it,
-    /// for whatever posts a notification of a thread.
-    func notifies(_ thread: ChatThread) -> Bool {
-        !archived(thread.id) || thread.waiting > 0
-    }
-
     /// Which chats are pinned and which archived, for a pass over every
     /// row: `archived(_:)` and `isPinned(_:)` with the lists' ids read once.
     struct Standing {
@@ -446,7 +439,7 @@ extension ChatApp {
         // What it notified is put away with it; while it waits it still
         // notifies, and what it notified goes once it no longer does
         // (`settleMarks`).
-        if thread.waiting == 0 {
+        if !state.notifies(id, row: thread) {
             state.announced.remove(id)
             state.asks.append(.cancelGroup(id))
         }

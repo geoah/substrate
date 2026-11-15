@@ -540,9 +540,13 @@ extension ChatApp {
         if let row = newLine?.turn { newLine?.turn = stands(row) }
         let drawn = { (row: String) in claims[row] ?? live.aliases[row] ?? row }
         // Opened at a message, from a search: the turn of that row, once
-        // the rows held have it.
+        // the rows held have it; or the turn the stream drew of it, which
+        // a message sent into a running turn is until that turn's rows
+        // are read.
         let entry = state.conversations[key]
-        let at = entry?.opensAt.flatMap { message in held?.turns.first { $0.row == message || $0.id == message }?.id }.map(drawn).map(stands)
+        let at = entry?.opensAt.flatMap { message in
+            held?.turns.first { $0.row == message || $0.id == message }?.id ?? own.first { $0.id == message }?.id
+        }.map(drawn).map(stands)
         let above = held?.above.map { RowsAbove(turn: stands(drawn($0)), count: held?.grown ?? 0) }
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },

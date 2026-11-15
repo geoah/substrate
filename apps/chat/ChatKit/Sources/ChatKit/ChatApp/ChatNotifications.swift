@@ -153,14 +153,25 @@ public enum ChatNotifications {
     ///   only opens the chat.
     static func reply(thread: ChatThread, agent: String, title: String, failed: String? = nil, replies: Bool = false) -> NotificationRequest {
         NotificationRequest(
-            id: prefix(thread.id) + "reply", title: agent,
+            id: replyID(thread.id), title: agent,
             body: thread.status == "error" ? failed ?? "\(agent) couldn't finish this reply." : thread.preview ?? "Answered.",
             thread: thread.id, category: replies ? replyCategory : nil,
             userInfo: [threadKey: thread.id, nonceKey: thread.record["finishedAt"]?.string ?? ""], subtitle: title)
     }
 
+    /// How much of a reply a card's notification says above the card: one
+    /// longer is read in the chat.
+    static let saidLimit = 160
+
+    /// The id of a thread's reply notification, and of a card's.
+    static func replyID(_ thread: String) -> String { prefix(thread) + "reply" }
+    static func cardID(_ card: String, thread: String?) -> String { (thread.map(prefix) ?? "") + "card|\(card)" }
+
     /// A question, a suggestion or a call to approve is waiting on the owner.
-    static func attention(record: Record, thread: String?, agent: String, title: String) -> NotificationRequest {
+    ///
+    /// - Parameter said: what the reply that asked said. It is the one
+    ///   notification of that turn, so it carries the reply where it fits.
+    static func attention(record: Record, thread: String?, agent: String, title: String, said: String? = nil) -> NotificationRequest {
         var body: String
         var category: String?
         var info: [String: String] = thread.map { [threadKey: $0] } ?? [:]
@@ -191,8 +202,9 @@ public enum ChatNotifications {
         }
         // An action answers only in a chat it can be read in afterwards.
         if thread == nil { category = nil }
+        if let said = said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty, said.count <= saidLimit { body = said + "\n" + body }
         return NotificationRequest(
-            id: (thread.map(prefix) ?? "") + "card|\(record.id)", title: agent, body: body, thread: thread, category: category,
+            id: cardID(record.id, thread: thread), title: agent, body: body, thread: thread, category: category,
             timeSensitive: true, userInfo: info, subtitle: title)
     }
 
@@ -211,12 +223,4 @@ public enum ChatNotifications {
     static func stamp(_ response: NotificationResponse) -> String {
         "\(response.id)|\(response.userInfo[nonceKey] ?? "")|\(response.action)|\(response.text ?? "")"
     }
-}
-
-extension ChatAppState {
-    /// Whether a chat may be notified for at all: a reply that settled in
-    /// it, a card that waits in it. Every notification the app posts of a
-    /// chat asks this, and nothing else decides it, so a rule about which
-    /// chats stay quiet (an archived one) is written here once.
-    func mayNotify(_ thread: String?) -> Bool { true }
 }
