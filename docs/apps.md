@@ -767,7 +767,9 @@ records their chats are made of:
 - the person's marks of those threads (`…/llm/threadmark`), which say how
   far they have read each ([read state](agents.md#read-state)): list and
   read, a create (`POST /api/v1/records` naming the `thread`, or a `PUT` at
-  the mark's id) and a `PATCH`, of `readThrough` and `markedUnread` alone.
+  the mark's id) and a `PATCH`, of `readThrough`, `markedUnread`, `pinned`
+  and `archived` alone
+  ([pinned and archived chats](agents.md#pinned-and-archived-chats)).
   The server fills in `readBy` with the person the token acts for and
   refuses another person's mark, so an app needs no actor id to keep its
   person's place;
@@ -796,6 +798,14 @@ person alone; without it, everybody's marks of those threads come back, each
 naming its person in `readBy`. The engine
 then filters before it pages, so no page and no cursor passes over a row
 the token cannot read. Naming a thread the token cannot read answers `404`.
+A thread list may carry
+[`filter.referencedBy`](api.md#what-points-at-each-record-referencedby)
+naming a message, an interaction, an approval or a mark through `thread`:
+every thread listed is one the token reaches, and so is what hangs off it.
+That is how an app lists the chats its person has not archived, the
+archived ones and the pinned ones without naming a thread. Any other kind in
+the arm must be one a `read:` scope reaches whole, and a list of another
+kind may not name one of these four: both answer `403`.
 Any other property in a patch, a label, a create or a delete answers `403`.
 A search never reaches these kinds.
 
