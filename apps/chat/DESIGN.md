@@ -219,7 +219,10 @@ row was drawn by, so every view over it (an open Thinking section, an
 expanded tool row, a selection) is the same view before and after. What the stream said and the rows do not hold yet (a call
 settled past the row read, text past it) is drawn on the row until they do.
 Nothing is emptied to be filled again: not when the rows land, and not when
-the stream is joined again.
+the stream is joined again. What a run drew and no read of the
+conversation's own has paired with its rows yet (a reload that failed, a
+run a sign-in's end cut off) stays held through the next send: the fold
+draws it once with the rows whoever read them, and under the id it has.
 
 **A stream joined again** (an attach: on a return to the front, after a
 drop, after `lagged`) replays the turn from its start. Where `agents` is at
@@ -811,6 +814,14 @@ bubble is a tinted fill. The transcript softens under the composer with
     and has nothing to follow until it outgrows the screen.
   - A touch, a wheel, a scroll bar or a key that takes the transcript up
     lets go. Coming to rest within 80 points of the end takes it up again.
+    A scroll bar and a key are told from the app's own moves by where the
+    scroll view stood when this view last saw it: moved up, with the
+    content and the room as they were. Never by the place the system
+    hands over as the one before, which may be one the scroll view passed
+    through and never said. When stored rows take a stream's place the
+    lazy stack guesses its heights again, the content gets shorter and
+    taller again in one breath, and read by the system's "before" that was
+    a reader scrolling up at the end of every reply.
   - A send and Jump to Latest go to the end from anywhere.
   - While it follows, every change of the content's height and of the room
     for it takes it to the end: a piece of a reply, rows landing, the
