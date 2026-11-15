@@ -90,7 +90,7 @@ var foldWriteSites = map[string]string{
 	// record a resync effect that restates the result (fold.go recordResync).
 	"merge.go:moveAnnotations": "merge's annotations, restated by the resync effect",
 	"merge.go:splitIf":         "split's side-store rows, restated by the resync effect",
-	"rows.go:moveFormerIDs":    "merge's former-id flattening, which no effect records, so a rebuild leaves chains where the live table is flat (#821)",
+	"rows.go:moveFormerIDs":    "merge's former-id flattening, restated by the resync effect",
 
 	// Writes that carry state of their own.
 	"functions.go:advanceCursor": "the trigger scan position: it acknowledges no delivery, so a restore that loses it re-reads rows that deliver nothing",
