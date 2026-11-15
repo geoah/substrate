@@ -138,6 +138,27 @@ import Testing
         }
     }
 
+    /// The point a row is put back at, which an iPhone and an iPad use
+    /// (`RowsBefore.anchor`): a scroll view asked to put a row's point at
+    /// `y` of its height on the room's point at `y` of its own stands the
+    /// row's top at `y * (room - height)`.
+    @Test func theRowsPointThatStandsItWhereItStood() throws {
+        func top(_ y: Double, height: Double, room: Double) -> Double { y * (room - height) }
+        // Inside a row that spans the room, 100 points down it.
+        let spanning = try #require(RowsBefore.fraction(top: -100, height: 777, room: 620))
+        #expect(spanning > 0 && spanning < 1 && abs(top(spanning, height: 777, room: 620) + 100) < 0.001)
+        // Further down it, where the row's end is on screen: past its end.
+        let past = try #require(RowsBefore.fraction(top: -300, height: 777, room: 620))
+        #expect(past > 1 && abs(top(past, height: 777, room: 620) + 300) < 0.001)
+        // A short row whole on screen, and one cut by the top.
+        let whole = try #require(RowsBefore.fraction(top: 100, height: 50, room: 620))
+        #expect(abs(top(whole, height: 50, room: 620) - 100) < 0.001)
+        let cut = try #require(RowsBefore.fraction(top: -20, height: 50, room: 620))
+        #expect(cut < 0 && abs(top(cut, height: 50, room: 620) + 20) < 0.001)
+        // As tall as the room: no point says more than the top does.
+        #expect(RowsBefore.fraction(top: -5, height: 620.4, room: 620) == nil)
+    }
+
     @Test(.timeLimit(.minutes(5)))
     func rowsThatArriveAboveATableAndCodeLeaveTheirReaderWhereTheyAre() async throws {
         let (chat, stage, older) = try await staged()
@@ -159,9 +180,10 @@ import Testing
         #expect(!stage.buttons.contains("Copy"))
 
         // Part way down the reply, inside its row, when more arrive: the
-        // reader keeps the row, at its top, and is taken no further. (A
-        // row is kept by its top, which is the list's rule: inside a row
-        // taller than the screen that is a move of what was read of it.)
+        // reader keeps the row, at its top, and is taken no further. (On
+        // a Mac a row is kept by its top, which inside a row taller than
+        // the screen is a move of what was read of it; an iPhone and an
+        // iPad keep it to the point, `RowsBefore.anchor`.)
         stage.wheel(up: -300)
         try await stage.rest()
         let inside = try top(first)
@@ -170,6 +192,12 @@ import Testing
         try await stage.rest()
         let stayed = try top(first)
         #expect(abs(stayed) < 1, "not at the row its reader was in: \(inside) then \(stayed)")
+        // And the wheel moves it after: the scroll view takes its reader's
+        // hand again once the app has put it somewhere.
+        stage.wheel(up: -120)
+        try await stage.rest()
+        let on = try top(first)
+        #expect(on < stayed - 60, "the wheel is refused after rows arrived: \(stayed) then \(on)")
 
         // Through all of it one reply had the row under it, the last: at
         // the chat's end it is drawn, once.

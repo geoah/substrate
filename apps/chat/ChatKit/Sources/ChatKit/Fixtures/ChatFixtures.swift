@@ -99,6 +99,12 @@ public enum ChatFixtures {
             """
     }
 
+    /// A reply taller than a window, with a table wider than a phone: what
+    /// stands at the top of each read of the deep chat's rows (every 200th
+    /// row from its first reply), for a reader part way down it when the
+    /// rows before arrive.
+    static let page = reply + "\n\n" + tables
+
     // MARK: Records, as JSON
 
     public static func agents() -> String {
@@ -115,13 +121,15 @@ public enum ChatFixtures {
 
     /// The chat list, newest first: the two measured chats, then others up
     /// to `count`, each a settled chat with its last reply's start.
-    public static func threads(count: Int = 100) -> String {
-        page(([long, full] + (2 ..< max(count, 2)).map { "t-\($0)" }).map { thread($0) })
+    ///
+    /// - Parameter first: rows that stand before them, as `thread` makes one.
+    public static func threads(count: Int = 100, first: [String] = []) -> String {
+        page(first + ([long, full] + (2 ..< max(count, 2)).map { "t-\($0)" }).map { thread($0) })
     }
 
     /// One chat's row: its subject and its age follow from its id, so the
     /// list and a read of the one thread say the same.
-    public static func thread(_ id: String, version: Int = 3, status: String = "ok") -> String {
+    public static func thread(_ id: String, version: Int = 3, status: String = "ok", lastMessage: String? = nil) -> String {
         let index = id == long ? 0 : id == full ? 1 : Int(id.dropFirst(2)) ?? 2
         let subject =
             switch (id, index) {
@@ -136,7 +144,17 @@ public enum ChatFixtures {
         return record(
             id: id, kind: Kinds.thread, version: version, at: -age,
             properties:
-                #"{"subject":\#(quoted(subject)),"mode":"chat","status":"\#(status)","agent":{"ref":"\#(Kinds.agent)/\#(agent)"},"finishedAt":"\#(stamp(-age))","lastReply":"Here is where it stands."}"#
+                #"{"subject":\#(quoted(subject)),"mode":"chat","status":"\#(status)","agent":{"ref":"\#(Kinds.agent)/\#(agent)"},"finishedAt":"\#(stamp(-age))","lastReply":"Here is where it stands."\#(lastMessage.map { #","lastMessage":{"ref":"\#(Kinds.message)/\#($0)"}"# } ?? "")}"#
+        )
+    }
+
+    /// The person's mark of a thread: the row of `transcript` they read
+    /// through, by its ordinal.
+    public static func mark(_ thread: String, through turn: Int) -> String {
+        record(
+            id: "\(thread).me", kind: Kinds.threadMark, version: 2, at: -3600,
+            properties:
+                #"{"thread":{"ref":"\#(Kinds.thread)/\#(thread)"},"readThrough":{"ref":"\#(Kinds.message)/\#(thread)-m\#(turn)"},"readAt":"\#(stamp(-3600))"}"#
         )
     }
 
@@ -153,7 +171,7 @@ public enum ChatFixtures {
         let oldest = max(0, newest - (first ?? rows) + 1)
         for turn in stride(from: oldest, through: newest, by: 1) {
             let user = turn % 2 == 0
-            let content = user ? "What about item \(turn / 2 + 1)? Keep it short." : answer(turn / 2)
+            let content = user ? "What about item \(turn / 2 + 1)? Keep it short." : thread == deep && turn % 200 == 1 ? page : answer(turn / 2)
             out.append(
                 record(
                     id: "\(thread)-m\(turn)", kind: Kinds.message, version: 1, at: -(rows - turn) * 30,

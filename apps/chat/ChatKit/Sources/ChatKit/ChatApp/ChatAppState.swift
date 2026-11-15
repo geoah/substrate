@@ -62,6 +62,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var opensAt: String?
         /// The "New" line is above the rows held, and is read toward.
         var line: LineSeek?
+        /// The first row held when that read gave up: where the line that
+        /// says the new messages begin above stands. It stays on that row
+        /// when rows arrive above it, as a line a reader was shown does.
+        var lineAt: String?
         var visits = 0
         /// A reply typed into a notification, for the conversation to send:
         /// kept until it says what became of it.

@@ -35,12 +35,20 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     /// The `agents` feature's revision the discovery document states: 0
     /// for a server from before it, as the measurement runs against.
     private let agents: Int
+    /// The `records` feature's revision: at 8 the server keeps a person's
+    /// marks, and `read` holds them.
+    private let records: Int
+    /// The row each chat's person read through, by its ordinal.
+    private var read: [String: Int] = [:]
     /// A chat's rows where a picture sets them whole, by thread; and the
     /// records served by path under `/api/v1/` (a question's, an
     /// approval's), each with what a write of it leaves.
     private var pages: [String: String] = [:]
-    private var records: [String: String] = [:]
+    private var cards: [String: String] = [:]
     private var written: [String: (record: String, thread: String, page: String)] = [:]
+    /// How long a read of the rows before the ones held takes: time for a
+    /// hand to move the transcript while they are out.
+    var olderTakes: Duration?
 
     /// A run a test writes a line at a time (`step`), so every screen
     /// between its first piece and its stored rows can be looked at: the
@@ -60,11 +68,21 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         var page: String? { rows.last { $0.after <= out }?.page }
     }
 
-    init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace(), agents: Int = 0) {
+    init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace(), agents: Int = 0, records: Int = 1) {
         rows = [ChatFixtures.long: 200, ChatFixtures.full: 500, ChatFixtures.deep: 1100]
         self.reply = reply
         self.pace = pace
         self.agents = agents
+        self.records = records
+    }
+
+    /// A chat of `rows` rows whose person read through the row at the
+    /// ordinal `through` and has not opened it since.
+    func left(_ thread: String, rows count: Int, through: Int) {
+        lock.withLock {
+            rows[thread] = count
+            read[thread] = through
+        }
     }
 
     /// A chat that holds exactly this page of rows.
@@ -79,7 +97,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     func ask(_ asked: ChatFixtures.Asked, resolved: Bool = false) {
         lock.withLock {
             pages[asked.thread] = resolved ? asked.rowsResolved : asked.rows
-            records[asked.path] = resolved ? asked.resolved : asked.pending
+            cards[asked.path] = resolved ? asked.resolved : asked.pending
             written[asked.path] = (asked.resolved, asked.thread, asked.rowsResolved)
         }
     }
@@ -173,14 +191,14 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         func json(_ body: String, status: Int = 200) -> LineStream { LineStream(head: head(status), body: Data(body.utf8)) }
         let missing = json(#"{"error":{"code":"not_found","message":"The fixture holds nothing there."}}"#, status: 404)
 
-        if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery(agents: agents)) }
+        if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery(agents: agents, records: records)) }
         // A card's record: read, and resolved by the one write a card makes.
-        if let range = path.range(of: "/api/v1/"), let held = lock.withLock({ records[String(path[range.upperBound...])] }) {
+        if let range = path.range(of: "/api/v1/"), let held = lock.withLock({ cards[String(path[range.upperBound...])] }) {
             let key = String(path[range.upperBound...])
             guard method == "PATCH" else { return json(held) }
             let next = lock.withLock { () -> String in
                 guard let after = written[key] else { return held }
-                records[key] = after.record
+                cards[key] = after.record
                 pages[after.thread] = after.page
                 versions[after.thread] = (versions[after.thread] ?? 3) + 1
                 return after.record
@@ -224,10 +242,15 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 lines: turn(thread: body?["thread"]?.string ?? "", message: body?["message"]?.string ?? ""))
         }
         if method == "GET", path.hasSuffix("/api/v1/records") {
+            // The person's marks of the threads the read names.
+            if query.contains(#"llm/threadmark""#), !query.contains("referencedBy") {
+                let marks = lock.withLock { read.filter { query.contains(#""\#($0.key)""#) } }
+                return json(ChatFixtures.page(marks.sorted { $0.key < $1.key }.map { ChatFixtures.mark($0.key, through: $0.value) }))
+            }
             // The person's own resolved cards (`me` in the filter): the
             // fixture has one person, so every card that ended is theirs.
             if query.contains(#""eq":"me""#) {
-                let own = lock.withLock { records.filter { query.contains($0.key.split(separator: "/").dropLast().joined(separator: "/")) }.map(\.value) }
+                let own = lock.withLock { cards.filter { query.contains($0.key.split(separator: "/").dropLast().joined(separator: "/")) }.map(\.value) }
                 return json(ChatFixtures.page(own.filter { !$0.contains(#""state":"pending""#) }))
             }
             if query.contains("llm/message") {
@@ -237,9 +260,17 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 // before an ordinal where it reads the rows before the
                 // ones held.
                 let first = components?.queryItems?.first { $0.name == "first" }?.value.flatMap(Int.init)
-                return json(transcript(thread, first: first, through: Self.number(after: #""lte":"#, in: query)))
+                let through = Self.number(after: #""lte":"#, in: query)
+                if through != nil, let olderTakes { try await Task.sleep(for: olderTakes) }
+                return json(transcript(thread, first: first, through: through))
             }
-            if query.contains("llm/thread") { return json(query.contains(#""chat""#) ? ChatFixtures.threads() : ChatFixtures.page([])) }
+            if query.contains("llm/thread") {
+                // A chat with a mark is listed, first: its mark is read
+                // with the list's.
+                let marked = lock.withLock { read.keys.sorted().map { ($0, rows[$0] ?? 0) } }
+                let first = marked.map { ChatFixtures.thread($0.0, lastMessage: "\($0.0)-m\($0.1 - 1)") }
+                return json(query.contains(#""chat""#) ? ChatFixtures.threads(first: first) : ChatFixtures.page([]))
+            }
             if query.contains("core/agent") { return json(ChatFixtures.agents()) }
             if query.contains("llm/provider") { return json(ChatFixtures.providers()) }
             return json(ChatFixtures.page([]))
@@ -265,7 +296,10 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                     scripts[id].map { $0.done && $0.lines.last?.contains(#""status":"stopped""#) == true } ?? false
                 )
             }
-            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : stopped ? "stopped" : "ok"))
+            // A chat with a mark says which message is its newest, as a
+            // server that keeps marks does.
+            let last = lock.withLock { read[id] != nil ? rows[id].map { "\(id)-m\($0 - 1)" } : nil }
+            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : stopped ? "stopped" : "ok", lastMessage: last))
         }
         return missing
     }
@@ -325,13 +359,13 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     /// A released server's discovery document, with no app authorization:
     /// the session is a password one. Its `agents` feature is listed where
     /// a picture needs what a revision of it brought.
-    private static func discovery(agents: Int) -> String {
+    private static func discovery(agents: Int, records: Int) -> String {
         let listed = agents > 0 ? #",{"name":"agents","stability":"experimental","revision":\#(agents),"surfaces":["rest"]}"# : ""
         return #"""
             {"versions":[{"name":"v1","status":"served"}],
              "server":{"version":"v0.123.1","build":"0123456789abcdef0123456789abcdef01234567"},
              "changelog":{"horizon":0},"vocabulary":{"dialect":3},
-             "features":[{"name":"records","stability":"stable","revision":1,"surfaces":["rest"]}\#(listed)],
+             "features":[{"name":"records","stability":"stable","revision":\#(records),"surfaces":["rest"]}\#(listed)],
              "registration":{"inviteRequired":false,"totpRequired":false}}
             """#
     }

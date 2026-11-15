@@ -622,6 +622,7 @@ extension ChatApp {
         guard let seek = state.seeking.removeValue(forKey: thread), !seek.line.isEmpty else { return }
         for key in state.conversations.keys where state.conversations[key]?.thread == thread && state.conversations[key]?.line == .reading {
             state.conversations[key]?.line = found ? nil : .missed
+            state.conversations[key]?.lineAt = found ? nil : state.transcripts[thread]?.records.first?.id
         }
     }
 
