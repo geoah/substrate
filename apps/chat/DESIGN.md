@@ -751,7 +751,10 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Where it opens**: a chat with more than the person had read opens at
   the first turn they had not, under a "New" line; where all of that fits
   on one screen the scroll stops at the end, as a chat with nothing new
-  opens. The line stays while the chat is open and is gone the next time
+  opens. Where the rows the device held were older than the thread, the
+  rows read on opening bring the line with them: the chat is put at it
+  once they are laid out, and does not follow its end in between. The
+  line stays while the chat is open and is gone the next time
   ([Read state](#read-state)).
 
 ### New chat
