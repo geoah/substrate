@@ -139,6 +139,9 @@ struct SeededRun {
         /// alone under the chat's last turn; with the run again never
         /// offered both there and on the turn's card, never while a run
         /// goes on, and nothing to share of a reply still being written.
+        /// And there where it must be: under a last turn that is a reply
+        /// with words, and with the run again a card names beside its
+        /// button.
         case offered = "what stands under a reply is under the last one, and offers the run again once or not at all"
     }
 
@@ -1272,6 +1275,18 @@ struct SeededRun {
                         return broke(.offered, "\(name) offers \(resume.title) under the reply and on its card")
                     }
                     if !resume.busy, live.phase != .idle { return broke(.offered, "\(name) offers \(resume.title) while a run goes on") }
+                }
+            }
+            // And it is there where it must be, said without asking what
+            // made it: under a chat whose last turn is a reply with words,
+            // and with the run again wherever the last turn's card names
+            // one beside its button.
+            if let last = screen.turns.last {
+                if case let .assistant(reply) = last.body, reply.text != nil, screen.replyActions?.turn != last.id {
+                    return broke(.offered, "\(name) draws nothing under \(last.id), its last turn and a reply with words")
+                }
+                if let named = cards[last.id]?.resume, screen.replyActions?.resume != named {
+                    return broke(.offered, "\(name) names \(named.title) beside its card's button under \(last.id) and offers it nowhere")
                 }
             }
             let draft = live.draft
