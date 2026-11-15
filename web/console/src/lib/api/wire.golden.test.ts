@@ -174,6 +174,7 @@ import type {
   RecordFilter,
   RecordLink,
   ReferenceSite,
+  ReferencedBy,
   Referencing,
   SessionCredential,
   IdentityInfo,
@@ -370,8 +371,16 @@ const recordFilter: Shape<RecordFilter> = {
   labels: false,
   deleted: false,
   referencing: false,
+  referencedBy: false,
   orphaned: false,
   ambiguous: false,
+}
+
+const referencedBy: Shape<ReferencedBy> = {
+  kind: true,
+  property: true,
+  properties: false,
+  exists: false,
 }
 
 const kindInfo: Shape<KindInfo> = {
@@ -1582,6 +1591,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ErasureKept: erasureKept,
   ErasureWait: erasureWait,
   Referencing: referencing,
+  ReferencedBy: referencedBy,
   ReferenceSite: referenceSite,
   PropertyMark: propertyMark,
   PropertyAlternative: propertyAlternative,

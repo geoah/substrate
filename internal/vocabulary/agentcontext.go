@@ -132,6 +132,12 @@ func (l *loader) parseAgentPin(where string, entry map[string]any, a *Agent) (Ag
 			l.errf("%s: filter.kinds — a pinned read lists the one kind its `kind` names", where)
 			return pin, false
 		}
+		// The arm names a second kind, and a pinned read is held to the
+		// grant by the one kind it lists.
+		if pin.Filter.ReferencedBy != nil {
+			l.errf("%s: filter.referencedBy — a pinned read is narrowed by its own kind's properties alone", where)
+			return pin, false
+		}
 	}
 	// A stable order is what makes the block the same bytes twice, so the
 	// cached prefix holds; an unordered list is not refused anywhere else.

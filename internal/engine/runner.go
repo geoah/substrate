@@ -446,6 +446,11 @@ func (b *callBackend) hostReadsHeld(ctx context.Context, kinds ...string) error 
 // occurrences and all (internal/window, decision 0111), so no body carries
 // its own recurrence expander; any other filter is the plain list.
 func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	// The callers here hold a read to an allowlist of kinds by filter.kinds,
+	// and this arm names a kind beside them (referencedby.go).
+	if q.Filter.ReferencedBy != nil {
+		return nil, errReferencedByList()
+	}
 	from, to, bounded, err := window.Bounds(q.Filter)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
