@@ -424,7 +424,7 @@ struct ListRules {
             ] + baseRoutes())
         try await rig.signIn()
         // The list read again answers 10 as its earliest head.
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             let state = await harness.state
             return rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1 && state.watching && !state.refreshing
         }
@@ -448,7 +448,7 @@ struct ListRules {
                 .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
             ] + baseRoutes())
         try await rig.signIn()
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             await harness.state.listFailure != nil
         }
         let state = await rig.harness.state
@@ -475,7 +475,7 @@ struct ListRules {
             ] + baseRoutes())
         try await rig.signIn()
         let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             await harness.state.listFailure != nil || lists() > 2
         }
         let state = await rig.harness.state
@@ -507,12 +507,12 @@ struct ListRules {
             ] + baseRoutes())
         try await rig.signIn()
         // Busy, the watch waits a second on the app's clock to open again.
-        try await rig.harness.until(timeout: .seconds(20)) { _ in
+        try await rig.harness.until { _ in
             rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1
                 && rig.clock.deadlines.contains(rig.clock.now.addingTimeInterval(1))
         }
         await rig.harness.advance(by: 3600)
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             let state = await harness.state
             return state.listFailure != nil
                 || (rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 3 && state.watching && !state.refreshing)
@@ -533,7 +533,7 @@ struct ListRules {
         let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
         rig.clock.advance(to: started.addingTimeInterval(59.999))
         rig.server.release()
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             await harness.state.listFailure != nil || lists() > 2
         }
         let state = await rig.harness.state
@@ -551,7 +551,7 @@ struct ListRules {
         let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
         rig.clock.advance(to: started.addingTimeInterval(60))
         rig.server.release()
-        try await rig.harness.until(timeout: .seconds(20)) { harness in
+        try await rig.harness.until { harness in
             let state = await harness.state
             return state.listFailure != nil
                 || (lists() == 3 && rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 2 && state.watching
@@ -707,7 +707,7 @@ private func readAgainAndFollowing() async throws -> (ChatRig, Date) {
     let start = rig.clock.now
     try await rig.signIn()
     let changed = ChatAppState.WatchKey(kind: Kinds.thread, id: "t1")
-    try await rig.harness.until(timeout: .seconds(20)) { harness in
+    try await rig.harness.until { harness in
         let state = await harness.state
         return state.listFailure != nil || (state.watching && !state.refreshing && state.feedBatch.contains(changed))
     }

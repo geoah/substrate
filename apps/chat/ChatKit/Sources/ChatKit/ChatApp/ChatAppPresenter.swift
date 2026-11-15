@@ -79,6 +79,8 @@ extension ChatApp {
         /// The message it was opened at, and how often it was put at a row.
         var opensAt: String?
         var visits = 0
+        /// Its "New" line is read toward, or was not reached.
+        var line: State.LineSeek?
     }
 
     public func present(_ input: PresenterInput<ChatApp>) -> ChatPresentation {
@@ -132,7 +134,8 @@ extension ChatApp {
                 "chat/\(key.rawValue)/screen",
                 reading: ConversationReads(
                     live: live, state: state.conversed(live.thread), newFrom: state.conversations[key]?.newFrom,
-                    opensAt: state.conversations[key]?.opensAt, visits: state.conversations[key]?.visits ?? 0),
+                    opensAt: state.conversations[key]?.opensAt, visits: state.conversations[key]?.visits ?? 0,
+                    line: state.conversations[key]?.line),
                 at: input.now
             ) {
                 let pace = TurnPresenter.Pace(now: input.now, reveals: state.paces)
@@ -548,6 +551,11 @@ extension ChatApp {
         // turn was streamed in this conversation keeps the id the stream
         // gave it.
         var newLine = Self.newLine(held, from: state.conversations[key]?.newFrom)
+        // Read toward and not reached: the new messages begin above the
+        // rows held, and the line at their top says so.
+        if newLine == nil, state.conversations[key]?.line == .missed, let first = held?.turns.first?.id {
+            newLine = NewLine(turn: first, label: "New from above", spoken: "New messages begin above these")
+        }
         if let row = newLine?.turn, let drawn = claims[row] ?? live.aliases[row] { newLine?.turn = drawn }
         // A line that is not drawn holds nothing: the "New" line, and a
         // chat opened at a message, stand at the first turn drawn after it.
@@ -566,12 +574,16 @@ extension ChatApp {
             held?.turns.first { $0.row == message || $0.id == message }?.id ?? own.first { $0.id == message }?.id
         }.map(drawn).map(stands)
         let above = held?.above.map { RowsAbove(turn: stands(drawn($0)), count: held?.grown ?? 0) }
+        // Its "New" line is above the rows held and is read toward: until
+        // it is found the chat stands at the top of what it holds.
+        let seeks = entry?.line == .reading && at == nil && newLine == nil
+        let top = seeks ? held?.turns.first.map { stands(drawn($0.id)) } : nil
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
-            older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false),
+            older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false, seeking: seeks),
             turns: folded, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
             failures: failures(state, live: live, row: row, all: all, turns: folded), technical: technical,
             cards: shown, approvals: asked, titles: titles,
@@ -587,13 +599,15 @@ extension ChatApp {
             streaming: live.phase == .streaming, stopping: live.stopping,
             wrapsCode: state.preferences.wrapCode,
             expandThinking: state.preferences.expandThinking, sends: live.sends,
-            opens: at.map { .turn($0) } ?? newLine.map { .turn($0.turn) } ?? .end, visit: entry?.visits ?? 0, above: above)
+            opens: at.map { .turn($0) } ?? newLine.map { .turn($0.turn) } ?? top.map { .turn($0) } ?? .end, seeks: seeks,
+            visit: entry?.visits ?? 0, above: above)
     }
 
     /// The row at a transcript's top while its thread holds rows before
     /// the ones drawn.
-    static func olderRows(_ held: State.Held?, reading: Bool) -> OlderRows? {
+    static func olderRows(_ held: State.Held?, reading: Bool, seeking: Bool = false) -> OlderRows? {
         guard let held, held.full, !held.records.isEmpty else { return nil }
+        if seeking { return OlderRows(label: "Finding where you left off…", loading: true) }
         return OlderRows(label: reading ? "Loading earlier messages…" : "Earlier messages", loading: reading)
     }
 

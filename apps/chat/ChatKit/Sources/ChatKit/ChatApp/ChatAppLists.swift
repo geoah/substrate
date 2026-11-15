@@ -579,16 +579,49 @@ extension ChatApp {
     /// A chat opened at a message: the rows before the ones held are read
     /// until they hold it, a few pages at most. Past that it opens where
     /// the rows held begin.
+    ///
+    /// So is a chat opened with more than its person had read, whose "New"
+    /// line stands above the rows held: a read position further back than
+    /// the newest window. The rows before are read toward the message they
+    /// read through, by the same bound (`seekReads` reads of 200 rows past
+    /// the window's 500). While that is out the chat is shown at the top
+    /// of what it holds, under the row that says so, and is put at the
+    /// line when the rows hold it. Where the bound is met first, or the
+    /// thread's first row, or a read fails, it stays at the top of what
+    /// was read, and its line says the new messages begin above.
     func seek(_ state: inout State, _ thread: String) {
+        seekLine(&state, thread)
         guard let seek = state.seeking[thread], let held = state.transcripts[thread] else { return }
-        if held.records.contains(where: { $0.id == seek.message }) || !held.full || seek.reads >= Self.seekReads {
-            state.seeking[thread] = nil
-            return
-        }
+        let found = held.records.contains { $0.id == seek.message || seek.line.contains($0.id) }
+        if found || !held.full || seek.reads >= Self.seekReads { return sought(&state, thread, found: found) }
         guard !state.olderReading.contains(thread) else { return }
         state.seeking[thread]?.reads += 1
         older(&state, thread)
-        if !state.olderReading.contains(thread) { state.seeking[thread] = nil }
+        if !state.olderReading.contains(thread) { sought(&state, thread, found: false) }
+    }
+
+    /// A read toward a row is over: its conversation's line is found, or
+    /// was not reached.
+    func sought(_ state: inout State, _ thread: String, found: Bool) {
+        guard let seek = state.seeking.removeValue(forKey: thread), !seek.line.isEmpty else { return }
+        for key in state.conversations.keys where state.conversations[key]?.thread == thread && state.conversations[key]?.line == .reading {
+            state.conversations[key]?.line = found ? nil : .missed
+        }
+    }
+
+    /// Starts the read toward a chat's "New" line where the rows held do
+    /// not reach the message its person read through. Decided once for an
+    /// opening, as the line is: a chat whose line was not reached is not
+    /// read toward again until it is opened again.
+    private func seekLine(_ state: inout State, _ thread: String) {
+        guard state.seeking[thread] == nil, let held = state.transcripts[thread], held.full else { return }
+        for key in state.conversations.keys.sorted() {
+            guard let entry = state.conversations[key], entry.thread == thread, entry.line == nil, entry.opensAt == nil,
+                case let .after(read)? = entry.newFrom, !held.records.contains(where: { read.contains($0.id) })
+            else { continue }
+            state.conversations[key]?.line = .reading
+            state.seeking[thread] = State.Seek(message: "", line: read)
+        }
     }
 
     // MARK: The first screen

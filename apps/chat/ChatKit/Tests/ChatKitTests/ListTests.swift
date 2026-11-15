@@ -852,6 +852,68 @@ struct ListSearch {
         #expect(held.contains("big-m100") && !held.contains("big-o0"))
     }
 
+    /// A read position above the newest window: the chat's "New" line
+    /// stands above the rows held. They are read toward it, and the chat
+    /// is put at the line once they hold it; until then it stands at the
+    /// top of what it holds, under the row that says what is happening.
+    @Test func aChatReadThroughAMessageAboveItsWindowIsReadTowardItsLine() async throws {
+        let server = MarkServer(records: 9)
+        let older = #""lte""#
+        server.chat("big", messages: 900, readThrough: "big-m300")
+        let rig = ChatRig(marks: server)
+        try await rig.signIn(flagged: server)
+        await rig.harness.send(.sceneAppeared(scene: "s", restoring: nil))
+        // The rows before the window are held back, so the wait is seen.
+        server.hold(older)
+        await rig.harness.send(.show(thread: "big", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { harness in await harness.presentation.conversations[key]?.seeks == true }
+        var screen = try #require(await rig.conversation(key))
+        // The newest 500 are held: m401 to m900. No line is drawn where
+        // none is known, and the chat stands at the top of what it holds.
+        #expect(screen.opens == .turn("big-m401") && screen.newLine == nil)
+        #expect(screen.older == OlderRows(label: "Finding where you left off…", loading: true))
+        server.letGo(older)
+        try await rig.harness.until { harness in await harness.presentation.conversations[key]?.newLine != nil }
+        screen = try #require(await rig.conversation(key))
+        #expect(screen.newLine == NewLine(turn: "big-m301", label: "New", spoken: "New messages") && screen.opens == .turn("big-m301"))
+        #expect(!screen.seeks && screen.older == OlderRows(label: "Earlier messages", loading: false))
+        // As far as the line, and no further: one read of the rows before.
+        let state = await rig.harness.state
+        #expect(state.seeking.isEmpty && server.count(older) == 1)
+        #expect(state.transcripts["big"]?.records.first?.id == "big-m202")
+    }
+
+    /// Further back than the reads go (five, of 200 rows, past the
+    /// window's 500), or past a read that failed: the chat stays at the
+    /// top of what was read, and its line says the new messages begin
+    /// above. The rows before are still there to be read, by the row at
+    /// the top.
+    @Test func aLineFurtherBackThanTheReadsGoIsSaidToBeAbove() async throws {
+        let server = MarkServer(records: 9)
+        let older = #""lte""#
+        server.chat("vast", messages: 2000, readThrough: "vast-m10")
+        let rig = ChatRig(marks: server)
+        try await rig.signIn(flagged: server)
+        await rig.harness.send(.sceneAppeared(scene: "s", restoring: nil))
+        await rig.harness.send(.show(thread: "vast", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { harness in await harness.state.conversations[key]?.line == .missed }
+        let screen = try #require(await rig.conversation(key))
+        #expect(server.count(older) == ChatApp.seekReads)
+        // 500 and five reads of 200, each of which begins on the row the
+        // one before ended on: m506 is the first row held.
+        #expect(screen.newLine == NewLine(turn: "vast-m506", label: "New from above", spoken: "New messages begin above these"))
+        #expect(screen.opens == .turn("vast-m506") && !screen.seeks)
+        #expect(screen.older == OlderRows(label: "Earlier messages", loading: false))
+        // Asked for by hand, the rows before arrive and the chat is not
+        // read toward its line a second time.
+        await rig.harness.send(.olderRows(thread: "vast"))
+        try await rig.harness.until { harness in await harness.state.transcripts["vast"]?.records.first?.id == "vast-m307" }
+        let seeking = await rig.harness.state.seeking
+        #expect(server.count(older) == ChatApp.seekReads + 1 && seeking.isEmpty)
+    }
+
     @Test func aHitIsCutToTheWordsAroundTheFirstThatMatchedWithEachMarked() {
         let text = "We spoke about the garden for a long while before anything else.\nThe balcony tomatoes want water, and so do the tomato seedlings."
         let runs = SearchSnippet.runs(of: text, words: ["tomato"])

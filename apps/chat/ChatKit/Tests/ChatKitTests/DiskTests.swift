@@ -72,14 +72,14 @@ struct LegacyCache {
                 .init(method: "GET", path: "/api/v1/changes", answer: .stream([compactedJSON])),
             ] + headless + baseRoutes(), base: base)
         await first.runtime.linkChanged(signedIn)
-        try await first.harness.until(timeout: .seconds(20)) { await $0.state.listFailure != nil }
+        try await first.harness.until { await $0.state.listFailure != nil }
         #expect(first.server.count("/api/v1/changes", query: "from=7&generation=old") == 1)
         #expect(await first.storage.records(try await first.lease())?.cursor == nil)
         await first.runtime.close()
 
         let again = ChatRig(headless + baseRoutes(), base: base)
         await again.runtime.linkChanged(signedIn)
-        try await again.harness.until(timeout: .seconds(20)) { harness in
+        try await again.harness.until { harness in
             await harness.state.watching && again.server.count("/api/v1/changes") > 0
         }
         // Opened at the live head instead.
