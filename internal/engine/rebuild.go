@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -389,11 +388,19 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	if err := t.planEveryStatement(); err != nil {
 		return err
 	}
-	if err := t.keepPagedCursors(); err != nil {
-		return err
+	// A pass of the declarations alone folds no page entry, so it leaves
+	// paged_cursors as it found them: they are the only copy of the
+	// cursors, which the full pass after it keeps.
+	if !t.declarationsOnly {
+		if err := t.keepPagedCursors(); err != nil {
+			return err
+		}
 	}
 	defer func() { t.keptCursors = false }()
 	for _, table := range foldTables {
+		if t.declarationsOnly && table == "paged_cursors" {
+			continue
+		}
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
 		}
@@ -413,9 +420,13 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	if err != nil {
 		return err
 	}
-	cur := &tableCursor{ctx: t.ctx, q: t.tx}
-	prog := t.ds.svc.progress("replaying the changelog into the fold",
-		"repository", t.ds.scope.Repository, "head", head)
+	var cur historyCursor = &tableCursor{ctx: t.ctx, q: t.tx}
+	walk := "replaying the changelog into the fold"
+	if t.declarationsOnly {
+		cur = &declarationCursor{ctx: t.ctx, q: t.tx}
+		walk = "replaying the declarations into the fold"
+	}
+	prog := t.ds.svc.progress(walk, "repository", t.ds.scope.Repository, "head", head)
 	for {
 		entries, err := cur.Next(rebuildBatch)
 		if err != nil {
@@ -664,7 +675,7 @@ func changeOfEntry(e changelogfile.Entry) (substrate.Change, error) {
 // declaration (fold.go foldFTS), so a rebuild that reproduced the rows but not
 // their index has not reproduced the store, and a mismatch in the index is a
 // different finding from a mismatch in the rows, which the section names.
-func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
+func foldSnapshot(ctx context.Context, db dbx) (map[string]any, error) {
 	out := map[string]any{}
 	queries := map[string]string{
 		"records": `SELECT to_jsonb(r) - 'repository' FROM (

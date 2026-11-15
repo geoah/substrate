@@ -209,6 +209,11 @@ type options struct {
 	replayPage func(seq int64, tx *sql.Tx)
 	replayEnd  func(tx *sql.Tx)
 	replaySQL  func(sqlText string)
+	// refoldWhole has an import's refold replay the whole history in both
+	// passes, and declarationsFirst has its first pass replay the
+	// declarations alone even into an empty database, so a test can hold
+	// the two folds equal. Tests only.
+	refoldWhole, declarationsFirst bool
 	// statisticsLockTimeout replaces the bound on the reset's and the
 	// ANALYZE's wait for a lock (seams.go WithTestStatisticsLockTimeout).
 	statisticsLockTimeout time.Duration
@@ -922,6 +927,9 @@ type service struct {
 	testReplayPage func(seq int64, tx *sql.Tx)
 	testReplayEnd  func(tx *sql.Tx)
 	testReplaySQL  func(sqlText string)
+	// testRefoldWhole and testDeclarationsFirst are options.refoldWhole and
+	// declarationsFirst.
+	testRefoldWhole, testDeclarationsFirst bool
 	// statisticsLockTimeout bounds the reset's and the ANALYZE's wait for a
 	// table's lock (rebuild.go statisticsStatement), and statsReset is every
 	// fold table this process has reset before a replay, under statsMu.
@@ -1270,6 +1278,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testReplayPage:        o.replayPage,
 		testReplayEnd:         o.replayEnd,
 		testReplaySQL:         o.replaySQL,
+		testRefoldWhole:       o.refoldWhole,
+		testDeclarationsFirst: o.declarationsFirst,
 		statisticsLockTimeout: cmp.Or(o.statisticsLockTimeout, statisticsLockTimeout),
 		statsReset:            map[string]bool{},
 		testBeforeDirectories: o.beforeDirectories,

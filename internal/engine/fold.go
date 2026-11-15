@@ -1536,6 +1536,9 @@ func (t *txn) foldEntry(ch substrate.Change) error {
 		return err
 	}
 	for _, op := range ops {
+		if _, declaration := vocabularyRecordKinds[op.Ref]; t.declarationsOnly && !declaration {
+			continue
+		}
 		if _, err := t.foldOne(op); err != nil {
 			return fmt.Errorf("substrate/engine: fold seq %d (%s %s %s): %w", ch.Seq, ch.Op, ch.Kind, ch.RecordID, err)
 		}

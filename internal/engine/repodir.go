@@ -355,11 +355,20 @@ func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 	// id (namescache.go).
 	ds := &dataset{
 		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
-		reg: vocabulary.NewRegistry(), watch: newBroadcaster(),
-		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
+		watch: newBroadcaster(),
+		info:  substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
-	ds.reg.SetNames(ds.answersTo)
+	ds.reg = ds.emptyRegistry()
 	return ds
+}
+
+// emptyRegistry is the registry an import folds through before it has
+// loaded any declaration: nothing declared, the local namespace spelled by
+// the names the repository answers to.
+func (ds *dataset) emptyRegistry() *vocabulary.Registry {
+	reg := vocabulary.NewRegistry()
+	reg.SetNames(ds.answersTo)
+	return reg
 }
 
 // openLocalHistory opens a 0.x directory's segments READ-ONLY. THE UPGRADE
@@ -1240,10 +1249,11 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // sites (refs.go syncRefs), and the registry is built from declaration
 // RECORDS that do not exist until the first pass has folded them. So the
 // first pass folds under an empty registry to bring the declaration rows into
-// being, the registry is loaded from them, read through the same transaction,
-// without writing anything, and the second pass folds every row the way the
-// live write did. Nothing appends here: an import runs before any dataset is
-// open.
+// being, from the lines that carry an effect on one
+// (refoldFromDeclarations), the registry is loaded from them, read through
+// the same transaction, without writing anything, and the second pass folds
+// every row the way the live write did. Nothing appends here: an import runs
+// before any dataset is open.
 //
 // BOTH PASSES ARE ONE TRANSACTION. The first pass, under no declarations,
 // leaves `refs` and the other derived tables empty; committed, an empty table
@@ -1270,26 +1280,32 @@ func (ds *dataset) refold(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	replay := func() (*txn, error) {
+	replay := func(declarationsOnly bool) (*txn, error) {
 		t := &txn{
 			ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem,
-			now: nowUTC(), internal: true,
+			now: nowUTC(), internal: true, declarationsOnly: declarationsOnly,
 		}
 		var report RebuildReport
 		return t, t.rebuild(&report)
 	}
-	if _, err := replay(); err != nil {
-		return fmt.Errorf("substrate/engine: import: first fold: %w", err)
-	}
-	if err := ds.importFault(refoldAfterFirstReplay); err != nil {
-		return err
-	}
-	if err := ds.loadDeclarationsForReplay(ctx, tx); err != nil {
-		return err
-	}
-	t, err := replay()
+	t, folded, err := ds.refoldFromDeclarations(ctx, tx, replay)
 	if err != nil {
-		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
+		return err
+	}
+	if !folded {
+		ds.forgetDeclarations()
+		if _, err := replay(false); err != nil {
+			return fmt.Errorf("substrate/engine: import: first fold: %w", err)
+		}
+		if err := ds.importFault(refoldAfterFirstReplay); err != nil {
+			return err
+		}
+		if err := ds.loadDeclarationsForReplay(ctx, tx); err != nil {
+			return err
+		}
+		if t, err = replay(false); err != nil {
+			return fmt.Errorf("substrate/engine: import: second fold: %w", err)
+		}
 	}
 	if _, err := t.queueObservedRederivation(); err != nil {
 		return err
@@ -1327,6 +1343,101 @@ func (ds *dataset) refold(ctx context.Context) error {
 			"repository", ds.scope.Repository, "queued", queued)
 	}
 	return nil
+}
+
+// refoldFromDeclarations is the refold's two passes with a first pass that
+// replays only the effects on declaration rows, which is all the registry is
+// loaded from: a history of millions of lines holds a few thousand of them.
+// The full second pass folds those rows again, and the registry is right
+// exactly when what the loader reads of them came out the same both times.
+// When it did not, or the first pass failed, it reports false with the fold
+// tables to be cleared again by the caller's two full passes, whose first
+// runs under no declarations as before.
+//
+// An import into a repository whose fold holds no row keeps the whole first
+// pass. The second pass's statements are planned against the tables as they
+// stand, and the rows the whole first pass leaves are what has them planned
+// by their keys from the first page: after the declarations alone, a table
+// of a few hundred wide rows is planned as the small table it is
+// (TestAnImportIntoAnEmptyDatabaseKeepsItsPlans). Over an old fold the
+// tables keep their pages and their statistics, and the plans hold
+// (TestAConversionsReplaysKeepTheirPlans).
+func (ds *dataset) refoldFromDeclarations(ctx context.Context, tx *sql.Tx, replay func(bool) (*txn, error)) (*txn, bool, error) {
+	if ds.svc.testRefoldWhole {
+		return nil, false, nil
+	}
+	if !ds.svc.testDeclarationsFirst {
+		var folded bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM records)`).Scan(&folded); err != nil {
+			return nil, false, err
+		}
+		if !folded {
+			return nil, false, nil
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT substrate_refold_declarations`); err != nil {
+		return nil, false, err
+	}
+	_, err := replay(true)
+	var declared string
+	if err == nil {
+		declared, err = declarationRowsSum(ctx, tx)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, false, err
+		}
+		for _, q := range []string{`ROLLBACK TO SAVEPOINT substrate_refold_declarations`, `RELEASE SAVEPOINT substrate_refold_declarations`} {
+			if _, rerr := tx.ExecContext(ctx, q); rerr != nil {
+				return nil, false, rerr
+			}
+		}
+		ds.svc.log.Warn("substrate: the declarations alone did not replay; replaying the whole history twice",
+			"repository", ds.scope.Repository, "err", err)
+		return nil, false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT substrate_refold_declarations`); err != nil {
+		return nil, false, err
+	}
+	if err := ds.importFault(refoldAfterFirstReplay); err != nil {
+		return nil, false, err
+	}
+	if err := ds.loadDeclarationsForReplay(ctx, tx); err != nil {
+		return nil, false, err
+	}
+	t, err := replay(false)
+	if err != nil {
+		return nil, false, fmt.Errorf("substrate/engine: import: second fold: %w", err)
+	}
+	full, err := declarationRowsSum(ctx, tx)
+	if err != nil {
+		return nil, false, err
+	}
+	if full != declared {
+		ds.svc.log.Warn("substrate: the declarations alone replayed to other rows than the whole history; replaying it twice",
+			"repository", ds.scope.Repository)
+		return nil, false, nil
+	}
+	return t, true, nil
+}
+
+// declarationRowsSum digests what loadDeclarationsForReplay reads of the
+// fold: every live declaration row's kind, id, creation time and properties.
+func declarationRowsSum(ctx context.Context, q dbx) (string, error) {
+	var sum sql.NullString
+	err := q.QueryRowContext(ctx, `
+		SELECT md5(string_agg(kind || ' ' || id || ' ' || created_at::text || ' ' || props::text, E'\n' ORDER BY kind, id))
+		FROM records WHERE kind = ANY($1) AND deleted_at IS NULL`, vocabularyKindRefs).Scan(&sum)
+	return sum.String, err
+}
+
+// forgetDeclarations puts back the empty registry an import's dataset starts
+// with (bareDataset).
+func (ds *dataset) forgetDeclarations() {
+	reg := ds.emptyRegistry()
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.reg, ds.parked = reg, nil
 }
 
 // loadDeclarationsForReplay fills the dataset's registry from its stored

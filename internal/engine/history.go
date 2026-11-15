@@ -73,6 +73,69 @@ func (c *tableCursor) Next(n int) ([]changelogfile.Entry, error) {
 
 func (c *tableCursor) Close() error { return nil }
 
+// declarationCursor reads, in seq order, the lines of the table that carry
+// an effect on a declaration row (vocabularyRecordKinds). The seqs are found
+// in ONE scan before the first page: a page query filtered on the payload
+// can be planned as a scan of the whole table per page.
+type declarationCursor struct {
+	ctx   context.Context
+	q     dbx
+	seqs  []int64
+	found bool
+}
+
+func (c *declarationCursor) Next(n int) ([]changelogfile.Entry, error) {
+	if !c.found {
+		seqs, err := declarationLineSeqs(c.ctx, c.q)
+		if err != nil {
+			return nil, err
+		}
+		c.seqs, c.found = seqs, true
+	}
+	page := c.seqs[:min(n, len(c.seqs))]
+	if len(page) == 0 {
+		return nil, nil
+	}
+	c.seqs = c.seqs[len(page):]
+	rows, err := queryChecksumRows(c.ctx, c.q, `WHERE seq = ANY($1) ORDER BY seq`, page)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != len(page) {
+		return nil, fmt.Errorf("substrate/engine: %d of %d declaration lines after seq %d read back", len(rows), len(page), page[0]-1)
+	}
+	out := make([]changelogfile.Entry, len(rows))
+	for i, row := range rows {
+		out[i] = row.entry.fileEntry()
+	}
+	return out, nil
+}
+
+func (c *declarationCursor) Close() error { return nil }
+
+// declarationLineSeqs is every seq whose line carries an effect on a row of a
+// declaration kind, ascending.
+func declarationLineSeqs(ctx context.Context, q dbx) ([]int64, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT seq FROM changelog
+		WHERE payload->'fold' @> ANY(ARRAY(
+			SELECT jsonb_build_array(jsonb_build_object('ref', k)) FROM unnest($1::text[]) AS k))
+		ORDER BY seq`, vocabularyKindRefs)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var seqs []int64
+	for rows.Next() {
+		var seq int64
+		if err := rows.Scan(&seq); err != nil {
+			return nil, err
+		}
+		seqs = append(seqs, seq)
+	}
+	return seqs, rows.Err()
+}
+
 // dirSource is a 0.x directory's segments and sealed files; its blobs are
 // already where the server keeps them.
 type dirSource struct {
