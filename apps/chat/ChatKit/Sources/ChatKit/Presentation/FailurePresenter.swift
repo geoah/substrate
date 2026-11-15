@@ -96,6 +96,9 @@ enum FailurePresenter {
         var sentence: String
         var note: String?
         var button: FailureButton?
+        /// The run can be tried again once what the button leads to is
+        /// done: Try Again, offered beside the card and never in it.
+        var again: FailureButton?
         /// The sentence says all of it: the server's words add nothing.
         var whole = false
     }
@@ -104,7 +107,7 @@ enum FailurePresenter {
         let words = words(failure, context)
         return FailurePresentation(
             id: id(failure), tone: words.tone, sentence: words.sentence, note: words.note, button: context.acts ? words.button : nil,
-            details: words.whole ? nil : details(failure), dismiss: dismiss)
+            resume: context.acts ? words.again : nil, details: words.whole ? nil : details(failure), dismiss: dismiss)
     }
 
     /// A failure in one line, for the places that are a line: a card, a
@@ -127,6 +130,9 @@ enum FailurePresenter {
         // whatever refused it: that cannot send it twice, and a new
         // message could.
         if failure.attempt == .message, words.button?.action != .edit { words.button = retry(failure, c) }
+        // One place offers the run again: the card where that is its
+        // button, else what stands under the reply, and only for a run.
+        if words.button?.action == .resume || words.again?.action != .resume { words.again = nil }
         return words
     }
 
@@ -162,13 +168,15 @@ enum FailurePresenter {
                     tone: .warn, sentence: "Too many replies are being written at once.", note: "Try again when one finishes.",
                     button: retry(failure, c))
             case .spendCap?:
-                return Words(tone: .bad, sentence: "Today's spending limit is reached.", button: page("Open in Console", c.agentPage) ?? retry(failure, c))
+                return Words(
+                    tone: .bad, sentence: "Today's spending limit is reached.", button: page("Open in Console", c.agentPage) ?? retry(failure, c),
+                    again: retry(failure, c))
             case .nothingToContinue?:
                 return Words(tone: .quiet, sentence: "\(c.agent) already finished this reply.", whole: true)
             case .providerKeyMissing?:
                 return Words(
                     tone: .bad, sentence: "\(provider(c)) has no API key yet.", note: boxNote(failure),
-                    button: key("Add Key", c) ?? retry(failure, c))
+                    button: key("Add Key", c) ?? retry(failure, c), again: retry(failure, c))
             case .quota?: return run(.allowanceSpent, status: "error", failure, c)
             case .keyRefused?: return run(.providerKeyRefused, status: "error", failure, c)
             case nil: return refused(status, failure, c)
@@ -184,7 +192,7 @@ enum FailurePresenter {
         let again = (failure.attempt == .send || failure.attempt == .message ? retry(failure, c) : nil) ?? resume("Try Again", c)
         switch cause {
         case .providerKeyRefused?:
-            return Words(tone: .bad, sentence: "\(provider(c)) refused the API key.", button: page("Replace Key", c.providerPage) ?? again)
+            return Words(tone: .bad, sentence: "\(provider(c)) refused the API key.", button: page("Replace Key", c.providerPage) ?? again, again: again)
         case .providerRateLimited?:
             let wait = failure.retryAfter.flatMap { $0 > 0 ? " Try again in \(span($0))." : nil } ?? ""
             return Words(
@@ -206,7 +214,7 @@ enum FailurePresenter {
         case .modelUnavailable?:
             return Words(
                 tone: .bad, sentence: "\(provider(c)) does not offer this model to your key.",
-                button: page("Open in Console", c.agentPage) ?? again)
+                button: page("Open in Console", c.agentPage) ?? again, again: again)
         case .contextTooLong?:
             return Words(
                 tone: .bad, sentence: "This chat is too long for the model.",
@@ -214,7 +222,7 @@ enum FailurePresenter {
         case .allowanceSpent?:
             return Words(
                 tone: .warn, sentence: "Today's allowance is used up.", note: "It resets at midnight UTC.",
-                button: key("Add Your Own Key", c) ?? again)
+                button: key("Add Your Own Key", c) ?? again, again: again)
         case .interrupted?, .shutdown?:
             return Words(tone: .warn, sentence: "The server restarted while \(c.agent) was working.", note: unread(c, "Try Again"), button: again)
         case .writeFailed?:
