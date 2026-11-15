@@ -9,10 +9,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -231,5 +234,124 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 	}
 	if rebuilt := foldSnapshotOf(t, ds); live != rebuilt {
 		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifferenceOf([]byte(live), []byte(rebuilt)))
+	}
+}
+
+// A restore marks existing threads read once, and never after (decision
+// 0321). An archive a binary before this migration wrote names a ledger
+// without it, so the restore's first open runs it, and it alone: the threads
+// the archive holds get their newest message, and each person a mark that
+// reads through it. An archive taken after it ran names it, so a restore of
+// that one runs nothing: a mark a person has since set unread, and one they
+// deleted, come back as they left them.
+func TestARestoreMarksExistingThreadsReadOnceAndNeverAfter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const migration = "mark_existing_threads_read"
+	unread := &plantedThread{id: fid("old-unread"), mode: agentModeChat, status: threadOK}
+	dropped := &plantedThread{id: fid("old-dropped"), mode: agentModeChat, status: threadOK}
+	kept := &plantedThread{id: fid("old-kept"), mode: agentModeChat, status: threadOK, asks: 1}
+	threads := []*plantedThread{unread, dropped, kept}
+	src := writeLedgerSource(t, func(t *testing.T, d *dataset) {
+		plantThreads(t, d, "restore.example.com/crew/lead", threads)
+	})
+
+	// The archive as a binary one migration behind this one published it.
+	before := archiveCopy(t, src)
+	publishManifest(t, before, src.id, func(m *changelogfile.Manifest) {
+		m.RepositoryMigrations = slices.DeleteFunc(m.RepositoryMigrations, func(r changelogfile.RepositoryMigration) bool { return r.Name == migration })
+	})
+	open := func(root string) (*dataset, string, int, func()) {
+		t.Helper()
+		var ran atomic.Int32
+		dsn := MigratedDSN(t)
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithArchiveInterval(time.Hour), countingBinary(&ran))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := svc.Dataset(ctx, src.repo)
+		if err != nil {
+			_ = svc.Close()
+			t.Fatalf("open the restored repository: %v", err)
+		}
+		return d.(*dataset), dsn, int(ran.Load()), func() { _ = svc.Close() }
+	}
+	ledgerOf := func(rows []ledgerRow) (rest []ledgerRow, own *ledgerRow) {
+		for _, r := range rows {
+			if r.Name == migration {
+				own = &r
+				continue
+			}
+			rest = append(rest, r)
+		}
+		return rest, own
+	}
+
+	first, firstDSN, ran, closeFirst := open(before)
+	if ran != 1 {
+		t.Fatalf("%d repository migration(s) ran at the restore of an archive from before the migration, want it alone", ran)
+	}
+	srcRest, srcOwn := ledgerOf(src.ledger)
+	rest, own := ledgerOf(ledgerRows(t, firstDSN, src.id))
+	if !sameLedger(rest, srcRest) || own == nil || !own.At.After(srcOwn.At) {
+		t.Fatalf("the restored ledger is %v and %v, want the archive's rows carried and the migration recorded at this open", rest, own)
+	}
+	for _, th := range threads {
+		if got := lastMessageOf(t, first, th.id); got != th.reply {
+			t.Fatalf("thread %s names %q as its newest message after the restore, want its reply %s", th.id, got, th.reply)
+		}
+		if got := waitingOf(t, first, th.id); got != th.asks {
+			t.Fatalf("thread %s counts %d waiting after the restore, want %d", th.id, got, th.asks)
+		}
+		marks := marksOf(t, first, th.id)
+		if len(marks) == 0 {
+			t.Fatalf("thread %s has no mark after the restore: the repository holds a person, who should read through it", th.id)
+		}
+		for actor, mark := range marks {
+			if referenceTargetOf(mark, propMarkReadThrough).ID != th.reply || mark.Props[propMarkUnread] != nil {
+				t.Fatalf("thread %s: the mark of %s is %v, want it read through the reply", th.id, actor, mark.Props)
+			}
+		}
+	}
+
+	// The person marks one thread unread and deletes their mark of another.
+	if _, err := first.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeThreadMark, Properties: map[string]any{
+		propMarkThread: unread.id, propMarkUnread: true,
+	}}); err != nil {
+		t.Fatalf("mark a migrated thread unread: %v", err)
+	}
+	person := ""
+	for actor := range marksOf(t, first, dropped.id) {
+		person = actor
+	}
+	if _, err := first.Delete(ctx, substrate.ActorPerson, typeThreadMark, threadMarkID(dropped.id, person), substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete a migrated thread's mark: %v", err)
+	}
+	if err := first.ArchivePass(ctx); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	firstLedger := ledgerRows(t, firstDSN, src.id)
+	keptMark := marksOf(t, first, kept.id)[person]
+	closeFirst()
+
+	// The archive taken after the migration ran names it.
+	second, secondDSN, ran, closeSecond := open(archiveCopy(t, ledgerSource{root: before}))
+	defer closeSecond()
+	if ran != 0 {
+		t.Fatalf("%d repository migration(s) ran at the restore of an archive taken after the migration, want none", ran)
+	}
+	if got := ledgerRows(t, secondDSN, src.id); !sameLedger(got, firstLedger) {
+		t.Fatalf("the ledger after the second restore is %v, want the archive's %v", got, firstLedger)
+	}
+	if mark := marksOf(t, second, unread.id)[person]; mark == nil || mark.Props[propMarkUnread] != true ||
+		referenceTargetOf(mark, propMarkReadThrough).ID != unread.reply {
+		t.Errorf("the mark the person set unread came back as %+v, want it unread at the reply", mark)
+	}
+	if marks := marksOf(t, second, dropped.id); len(marks) != 0 {
+		t.Errorf("the mark the person deleted came back: %d mark(s) of its thread", len(marks))
+	}
+	if mark := marksOf(t, second, kept.id)[person]; mark == nil || mark.Version != keptMark.Version ||
+		mark.Props[propMarkReadAt] != keptMark.Props[propMarkReadAt] {
+		t.Errorf("a mark nobody touched came back as %+v, want the one the migration wrote, %+v", mark, keptMark)
 	}
 }
