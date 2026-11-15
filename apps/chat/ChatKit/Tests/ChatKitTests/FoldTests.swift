@@ -161,6 +161,25 @@ struct LiveRowsTests {
         #expect(live.turns[0].tools.count == 1)
     }
 
+    @Test func aStreamThatNamesNoTurnIsMadeAnewWhenItIsJoinedAgain() {
+        let events: [AgentEvent] = [.delta("Hel"), .delta("lo"), .toolStarted("c1"), .toolFinished("c1"), .delta("After")]
+        var live = LiveRows()
+        live.hear(events)
+        // Joined again at every point of the replay: the first reply is
+        // never written into the last, and the whole is the stream heard
+        // once.
+        for count in 1 ... events.count {
+            var again = live
+            again.begin(replaying: true)
+            again.hear(Array(events.prefix(count)))
+            #expect(again.turns.first?.content == String("Hello".prefix(count == 1 ? 3 : 5)))
+            if count == events.count {
+                #expect(again.turns.map(\.content) == ["Hello", "After"])
+                #expect(again.turns[0].tools.map(\.id) == ["c1"])
+            }
+        }
+    }
+
     @Test func anUnclaimedFinishOpensASettledCard() {
         var live = LiveRows()
         live.hear([.toolFinished("x", turn: 4, output: #"{"error":"budget"}"#, ok: false)])

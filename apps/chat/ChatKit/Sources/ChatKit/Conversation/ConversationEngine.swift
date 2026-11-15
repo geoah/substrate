@@ -144,7 +144,7 @@ extension Conversation {
             // and the stream starts again from the turn's start over the
             // rest: nothing held is emptied for it.
             TurnFold.settle(rows, &next.provisional, aliases: &next.aliases, ended: false)
-            next.provisional.begin()
+            next.provisional.begin(replaying: true)
         case let .attachReadFailed(failure):
             guard case let .attach(run)? = next.run else { break }
             if failure.report == .accessEnded {

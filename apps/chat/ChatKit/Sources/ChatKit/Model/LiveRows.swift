@@ -52,8 +52,16 @@ struct LiveRows: Codable, Hashable, Sendable {
 
     /// A new pass begins: every position starts again, and nothing held is
     /// let go.
-    mutating func begin() {
+    ///
+    /// - Parameter replaying: the pass is an attach's, which says the turn
+    ///   again from its start. A turn the stream gave no ordinal has no key
+    ///   to be found by when it is said again, so those are let go and the
+    ///   replay makes them anew; written over, the first reply's text would
+    ///   land in the last one held. Every server with an attach route names
+    ///   the turn on each event, so this is no server's usual path.
+    mutating func begin(replaying: Bool = false) {
         pass = Pass()
+        if replaying, turns.contains(where: \.unkeyed) { keep(turns.filter { !$0.unkeyed }) }
     }
 
     /// The message just sent, shown before the server has it.
@@ -157,7 +165,7 @@ struct LiveRows: Codable, Hashable, Sendable {
             turns.append(Turn(id: "turn-\(ordinal)", ordinal: ordinal, role: .assistant, content: ""))
         } else {
             if let last = turns.last, last.role == .assistant, !pass.closed { return turns.count - 1 }
-            turns.append(Turn(id: "live-a\(seq)", role: .assistant, content: ""))
+            turns.append(Turn(id: "\(Turn.unkeyedPrefix)\(seq)", role: .assistant, content: ""))
         }
         pass.closed = false
         return turns.count - 1
@@ -182,7 +190,7 @@ struct LiveRows: Codable, Hashable, Sendable {
             guard let ordinal = call.ordinal, let newest = ordinals.max(), ordinals.count == last.tools.count else { return turns.count - 1 }
             if ordinal <= newest + 1 { return turns.count - 1 }
         }
-        turns.append(Turn(id: call.id.isEmpty ? "live-a\(seq)" : "call-\(call.id)", role: .assistant, content: ""))
+        turns.append(Turn(id: call.id.isEmpty ? "\(Turn.unkeyedPrefix)\(seq)" : "call-\(call.id)", role: .assistant, content: ""))
         pass.closed = false
         return turns.count - 1
     }
@@ -266,4 +274,11 @@ struct LiveRows: Codable, Hashable, Sendable {
         markers = markers.filter { ids.contains($0.key) }
         if kept.isEmpty { incomplete = false }
     }
+}
+
+extension Turn {
+    /// The id of a provisional turn whose stream named neither its ordinal
+    /// nor a call: its place in the stream is all that tells it apart.
+    static let unkeyedPrefix = "live-a"
+    var unkeyed: Bool { id.hasPrefix(Self.unkeyedPrefix) }
 }
