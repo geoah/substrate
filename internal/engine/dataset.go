@@ -851,6 +851,10 @@ type txn struct {
 	// replaying marks a rebuild's or an import's replay of the changelog
 	// (rebuild.go), which re-derives the fold and judges nothing.
 	replaying bool
+	// declarationsOnly marks the refold's first pass (repodir.go refold),
+	// which folds only the effects on declaration rows, read from the lines
+	// that carry one.
+	declarationsOnly bool
 	// heldRegistryDep records that this transaction already took the SHARED
 	// registry-dependency lock, so the several doors that need it (the write's
 	// entry, preRecordLocks, trigger and policy admission) can each ask without
