@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1019,12 +1020,16 @@ func TestAStepIsHandedTheRepositorysDeclarationsInItsDialect(t *testing.T) {
 	src := writeConvertSource(t)
 	var seen []declarationVersion
 	// Each step's Line, the one step 3's Declarations were built after
-	// included, is called once for every line, in seq order (finding 3 of
-	// the archive's sixth review): calls holds every seq each step saw.
+	// included, is called once for every line (finding 3 of the archive's
+	// sixth review): calls holds every seq each step saw. A walk converts a
+	// page's lines on every core, so they arrive in no order.
+	var mu sync.Mutex
 	calls := map[int][]int64{}
 	counting := func(step int, line func(*changelogfile.Entry) error) func(*changelogfile.Entry) error {
 		return func(e *changelogfile.Entry) error {
+			mu.Lock()
 			calls[step] = append(calls[step], e.Seq)
+			mu.Unlock()
 			return line(e)
 		}
 	}
@@ -1099,13 +1104,13 @@ func TestAStepIsHandedTheRepositorysDeclarationsInItsDialect(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, step := range []int{2, 3} {
-		got := calls[step]
+		got := slices.Sorted(slices.Values(calls[step]))
 		if int64(len(got)) != head {
 			t.Fatalf("step %d's Line was called %d times over a history of %d lines", step, len(got), head)
 		}
 		for i, seq := range got {
 			if seq != int64(i)+1 {
-				t.Fatalf("step %d's Line saw seq %d as its call %d: every line once, in seq order", step, seq, i+1)
+				t.Fatalf("step %d's Line saw seq %d where seq %d was due: every line once", step, seq, i+1)
 			}
 		}
 	}
