@@ -938,8 +938,11 @@ watch.
 
 **What is unread.** A settled chat is unread when its mark says
 `markedUnread`, or when the thread's `lastMessage` is not the mark's
-`readThrough`. A thread with no `lastMessage` is unread only when marked
-so. A thread the person has no mark of was never opened, and is unread. A
+`readThrough`. `lastMessage` is the server's: the newest message the
+thread settled with, passing over a message of the person's that no reply
+came after (from `agents` 6), so a chat whose last send failed is failed
+by its status and not unread. A thread with no `lastMessage` is unread
+only when marked so. A thread the person has no mark of was never opened, and is unread. A
 chat that is running is working, not unread. A chat whose mark the server
 has not said yet is not called unread, and its reply is not notified, until
 it has: a list read whose marks failed shows no dot it would have to take
@@ -957,6 +960,16 @@ two reads, and would look unread against the older row: the threads are
 then read once more. This matters to the refresh job, which has no feed
 to put it right a moment later.
 
+A mark can also arrive without its thread's row: a read of the marks
+alone (after a list read whose marks failed), the answer to this device's
+own write, the folder's state at a launch. Where such a mark is ahead of
+the row held by the same test, the chat is not called unread for the
+older message: it reads as it did, the row is asked for again
+(`rowsBehind`), and what that read brings is told by the rule. A dot that
+went does not come back for the time one read takes to follow another,
+and a position another device took from an older row of its own still
+shows its dot once the row is read.
+
 **Reading.** A chat is read once the newest message it settled with has
 been on screen for a second, in a window that is in front and active (the
 key window of the app in front, on a Mac) with nothing presented over it:
@@ -969,8 +982,10 @@ moment the rows drawn hold that message, and stops counting when the chat
 scrolls away from its end, runs again, or leaves the front. So a reply
 that settles while the person is looking at the end is read without a
 scroll, a reply that arrives below a chat scrolled up is not, and a
-resumed run that settles a second reply is read like the first. The mark
-moves to the thread's `lastMessage`.
+resumed run that settles a second reply is read like the first. Nobody
+is looking while the sign-in has ended: the screen that says so stands
+over every chat. The mark moves to the thread's `lastMessage`, never to
+the newest row.
 
 The chat reads so on this device at once: what the device moved is laid
 over the server's mark until the server answers. A read this device made
@@ -998,6 +1013,17 @@ the marks together (a mark that reads through a reply this device has not
 heard of would otherwise look unread). When a mark says a chat was read,
 the dot goes, the chat's delivered and pending notifications are taken
 back, and the badge is counted again, as when the chat is opened here.
+The app keeps the threads it notified a reply of since its launch
+(`announced`) and takes each back once the mark it holds reads the reply,
+however the two came to agree: the first marks a launch learns take back
+what the device's own map notified before them, and a row a stale list
+read dropped and a later one brought back beside its mark is taken back
+too.
+
+A call that failed before any reply leaves `lastMessage` where it was, so
+the chat is not unread and no mark moves for it. Its failure is notified
+all the same where the chat is not on screen, unless the mark's position
+was taken after the thread settled: then somebody has looked since.
 
 **Mark as Unread and Mark as Read**, on a row's swipe and its context
 menu, and Mark as Unread in a chat's menu. Mark as Unread writes
@@ -1327,7 +1353,27 @@ button and Details stack where the text size leaves no room side by side.
   fails and one refused for good; the waiting mark from the thread; the
   "New" line; a server without marks, one that does not know the kind and
   one that stops keeping them; the first launch after the server gained
-  marks; the offer to notify.
+  marks; the offer to notify; and what the seeded runs found, each as
+  the engine alone (a chat under the screen that says the sign-in ended,
+  the first marks taking back what the device's map notified, a mark
+  ahead of the row held, a row dropped and brought back read, a failed
+  call that is not unread).
+- Read state by a seed (`SeededRun`, `SeededServer`): the seeded server
+  keeps marks as #1405's does where its `records` revision is 8 (a sixth
+  of the seeds draw 7, a server without them), names `lastMessage` as
+  #1419 does, and tells each mark that moved on its change feed. The
+  person also scrolls to a chat's end and away from it, presses Mark as
+  Unread and Mark as Read, and has another device that reads a chat or
+  marks it unread at any step. After every step: a dot that went for a
+  message the server holds read, with the app holding it read, is drawn
+  again only once somebody marked the chat unread; every write of a mark
+  names a message whose chat stood open at its end, in front, for a
+  second of the run's clock, or one Mark as Read was pressed on, and
+  nothing is written to a server without marks; the badge is the number
+  of chats drawn unread, and each is drawn as its mark and its newest
+  message say; no reply's notification stands, waiting or shown, for a
+  chat the app holds read. A kill takes what the list drew read, since
+  the launch after it draws from the folder first.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in
