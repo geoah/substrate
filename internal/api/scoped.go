@@ -613,6 +613,12 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		ctx = substrate.WithAskedFilter(ctx, q.Filter)
 	}
 	if s.person && slices.Equal(q.Filter.Kinds, []string{kindDeclarationRow}) {
+		// The declarations are cut on the way out, but the arm is answered
+		// by the engine from records of another kind: it is held here as on
+		// every other list.
+		if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
+			return nil, err
+		}
 		return s.listDeclarations(ctx, q)
 	}
 	if gated, err := s.anyRowGated(ctx, q.Filter.Kinds); err != nil {
