@@ -60,6 +60,9 @@ struct ComposerBar: View {
                     Text(queued)
                         .font(ChatType.caption)
                         .ink(.quiet, on: .field)
+                        // Whole at any text size: it says what Stop does,
+                        // and the field gives up lines before it does.
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, ChatSpace.edge)
                         .arrives()
@@ -70,6 +73,7 @@ struct ComposerBar: View {
                 Text(reason)
                     .font(ChatType.caption)
                     .ink(.quiet, on: .field)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, ChatSpace.edge)
                     .arrives()
@@ -78,6 +82,7 @@ struct ComposerBar: View {
                 Text(problem)
                     .font(ChatType.caption)
                     .ink(.tone(.critical), on: .field)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, ChatSpace.edge)
             }
@@ -202,7 +207,10 @@ struct ComposerBar: View {
             } else {
                 TextField(composer.placeholder, text: $text, selection: $selection, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .lineLimit(1 ... 8)
+                    // Fewer lines at the accessibility text sizes, where
+                    // eight would be the screen: the lines over the field
+                    // say what is happening and are never the ones cut.
+                    .lineLimit(1 ... (size.isAccessibilitySize ? 3 : 8))
                     .focused($focused)
                     .padding(.vertical, ChatSpace.blocks)
                     // What the press does is ChatKit's rule (`ComposerKeys`):
