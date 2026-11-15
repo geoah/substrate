@@ -598,11 +598,46 @@ struct PinsAndArchives {
         app.apply(&state, threads: lists([thread("z", minutes: 50), thread("y", minutes: 40)], cursor: "after-y"))
         app.settleMarks(&state)
         #expect(state.chats.map(\.id) == ["z", "y"] && state.announced == ["a"] && app.beside(state) == ["a"])
+        // Archived, and come to wait since the lists were read: its row,
+        // read by name, says so, and it is listed and notified for.
+        var waits = lists([thread("z", minutes: 50), thread("y", minutes: 40)], cursor: "after-y")
+        var asking = thread("a", minutes: 55)
+        asking.properties["waitingOnPerson"] = 1
+        asking.version = 2
+        waits.named = [asking]
+        let shelved = Record(
+            id: "a.me", kind: Kinds.threadMark, properties: ["thread": ["ref": .string("\(Kinds.thread)/a")], "archived": true], version: 2)
+        waits.marks = ChatAppStep.Marks(threads: ["z", "y", "a"], records: [shelved])
+        app.apply(&state, threads: waits)
+        app.settleMarks(&state)
+        #expect(state.archived("a") && state.threads.map(\.id) == ["a", "z", "y"])
+        #expect(state.announced == ["a"] && !state.asks.contains(.cancelGroup("a")))
         // A deleted one is told gone by its read by name.
         var gone = lists([thread("z", minutes: 50), thread("y", minutes: 40)], cursor: "after-y")
         gone.gone = ["a"]
         app.apply(&state, threads: gone)
         #expect(state.announced.isEmpty && state.asks.contains(.cancelGroup("a")))
+    }
+
+    @Test func anArchivedPageAskedForBeforeItsFilterMovedIsNotTheListsToGoOnFrom() {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = ChatAppState()
+        state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: nil, online: true))
+        state.recordsRevision = 9
+        state.marks = [:]
+        state.scenes["s"] = ChatAppState.Scene()
+        // The archived chats are shown, and their first page is out.
+        app.showArchived(&state, scene: "s", shown: true)
+        #expect(state.archive.window.reading && state.asks.contains(.page(state.plan, part: .archived, after: nil)))
+        // Automated Runs is switched on before it answers: the list is
+        // another one now, and the answer's cursor was cut for the old.
+        state.archive.window.restart = true
+        let old = Record(id: "x", kind: Kinds.thread, properties: ["mode": "chat"], version: 1, updatedAt: "2026-11-14T10:00:00Z")
+        app.pageRead(&state, part: .archived, after: nil, rows: [old], cursor: "cut-for-chats-alone", marks: nil)
+        #expect(state.archive.window.cursor == nil && state.archive.window.restart && state.archive.rows.isEmpty)
+        state.asks = []
+        app.more(&state, archived: true)
+        #expect(state.asks.isEmpty)
     }
 
     @Test func aFlagStillToBeWrittenNeverGoesToAServerThatKeepsNoneAndItsPositionStillDoes() {

@@ -1300,7 +1300,8 @@ lists read beside it do not hold it, in a background refresh too. A row
 going missing from a list says nothing by itself, since a read may have
 left the server before the chat was there: a notification is taken back
 by the mark that says the chat was archived, or by the read that finds
-the thread gone.
+the thread gone. One read so that came to wait since the lists were read
+is listed with the ones that wait.
 The watch resumes from where it stopped, so what moved while a phone was
 away is told when it is back.
 
