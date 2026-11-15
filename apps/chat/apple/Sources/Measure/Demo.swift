@@ -156,8 +156,7 @@ enum Demo {
             // Time for a hand to bring the keyboard up before the run.
             let wait = Double(ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO_WAIT"] ?? "") ?? 1
             try? await Task.sleep(for: .seconds(wait))
-            host.send(.draft(run.message), to: key)
-            host.send(.send, to: key)
+            await say(run.message, host, key)
             if asked == "play" {
                 for _ in run.lines {
                     try? await Task.sleep(for: .milliseconds(700))
@@ -174,13 +173,21 @@ enum Demo {
         }
     }
 
+    /// Sends a message as the composer would, once the chat can send: on a
+    /// slow machine its assistant is not read by the time the wait above
+    /// is over, and a send before that is refused and draws nothing.
+    private static func say(_ message: String, _ host: ChatHost, _ key: ChildKey) async {
+        host.send(.draft(message), to: key)
+        _ = await until { host.conversation(key)?.composer.canSend == true ? true : nil }
+        host.send(.send, to: key)
+    }
+
     /// A run a message joins while it is written: the first message, the
     /// reply part way, the second message sent from the composer as a
     /// person would, and then, for `taken`, the call that reads it.
     private static func join(_ host: ChatHost, _ key: ChildKey, _ server: FixtureServer, taken: Bool) async {
         try? await Task.sleep(for: .milliseconds(600))
-        host.send(.draft(joined.message), to: key)
-        host.send(.send, to: key)
+        await say(joined.message, host, key)
         try? await Task.sleep(for: .milliseconds(600))
         server.step(thread, joined.joins)
         _ = await until { host.conversation(key)?.composer.canSend == true && host.conversation(key)?.streaming == true ? true : nil }
