@@ -44,8 +44,15 @@ export function useResolver(
     ),
     enabled: asks,
   })
-  const isMine =
-    mine.data?.records.some((r) => r.id === record?.id) ?? undefined
+  // A record the answer holds is the reader's. One it does not hold is
+  // somebody else's only where the answer is whole: past its first page
+  // nothing is concluded, and the card says only how it ended.
+  const found = mine.data?.records.some((r) => r.id === record?.id)
+  const isMine = found
+    ? true
+    : mine.data && !mine.data.cursor
+      ? false
+      : undefined
   // Somebody else's actor, where the reader's roles read actors: an admin
   // sees the name, and anyone else is told only that it was not them.
   const other = useQuery({
