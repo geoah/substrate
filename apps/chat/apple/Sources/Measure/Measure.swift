@@ -103,7 +103,9 @@ enum Measure {
                 String(
                     format: "Opening the chat of %d rows: %d turn bodies evaluated, %.0f ms of main thread.", held,
                     opening.stat("body", "Turn")?.count ?? 0, opening.stat("main")?.milliseconds ?? 0))
-            passes = MainPasses()
+            // Each pass is filed under the kind of the block the reply ends
+            // on as it is drawn: what is being written.
+            passes = MainPasses { Self.writing(host.conversation(key)) }
             Meter.shared.start(signposts: signposts)
             host.send(.draft(message), to: key)
             host.send(.send, to: key)
@@ -165,6 +167,16 @@ enum Measure {
             rows.append(("presenter `\(detail)`, ms per step (longest run)", { cell($0, "present", detail, time: true) }))
             rows.append(("presenter `\(detail)`, runs per step", { cell($0, "present", detail, time: false) }))
         }
+        for detail in details("writing") {
+            rows.append(
+                (
+                    "main thread while `\(detail)` is written, ms per pass (passes)",
+                    { phase in
+                        guard let stat = phase.stat("writing", detail), stat.count > 0 else { return "0" }
+                        return String(format: "%.2f (%d)", stat.milliseconds / Double(stat.count), stat.count)
+                    }
+                ))
+        }
         rows.append(("flush on the runtime's executor, ms per step (longest)", { cell($0, "flush", time: true) }))
         rows.append(("publish, runtime's half, ms per step (longest)", { cell($0, "publish", time: true) }))
         rows.append(("publish, model's half on the main thread, ms per step (longest)", { cell($0, "republish", time: true) }))
@@ -212,6 +224,23 @@ enum Measure {
         #endif
     }
 
+    /// The kind of the block a reply being written ends on, or what the
+    /// chat shows where none is.
+    private static func writing(_ screen: ConversationScreen?) -> String {
+        guard let screen, screen.streaming, case let .assistant(reply)? = screen.turns.last?.body, let last = reply.blocks.rows.last else {
+            return "nothing"
+        }
+        switch last.block {
+        case .paragraph: return "a paragraph"
+        case .heading: return "a heading"
+        case .code: return "code"
+        case .quote: return "a quote"
+        case .list: return "a list"
+        case .table: return "a table"
+        case .rule: return "a rule"
+        }
+    }
+
     // MARK: Waiting and timing
 
     /// The first answer `read` gives, asked every 50 ms; nil after `seconds`.
@@ -236,20 +265,24 @@ enum Measure {
 }
 
 /// What the main thread spends: each pass of its run loop from waking to
-/// waiting again, recorded as `MeterPoint.mainPass`.
+/// waiting again, recorded as `MeterPoint.mainPass`, and again under what
+/// `kind` says the pass was of where it is given.
 @MainActor
 final class MainPasses {
+    static let writing = MeterPoint("writing")
     private var observers: [CFRunLoopObserver] = []
     private var woke = Meter.now
 
-    init() {
+    init(kind: (@MainActor () -> String)? = nil) {
         let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.woke = Meter.now }
         }
         let wait = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { [weak self] _, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                Meter.shared.record(.mainPass, nanoseconds: Meter.now - self.woke)
+                let took = Meter.now - self.woke
+                Meter.shared.record(.mainPass, nanoseconds: took)
+                if let kind { Meter.shared.record(Self.writing, kind(), nanoseconds: took) }
                 // A pass that never waits again is counted from here.
                 self.woke = Meter.now
             }
