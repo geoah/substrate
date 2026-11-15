@@ -40,8 +40,10 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
   }
 })
 
-// The revision of the `agents` feature the server under test says it has.
+// The revision of the `agents` feature the server under test says it has,
+// and whether it has said so yet.
 let agentsRevision = 7
+let discoveryAnswers = true
 vi.mock("@/lib/api/discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/discovery")>()
   const doc = () => ({
@@ -51,8 +53,9 @@ vi.mock("@/lib/api/discovery", async (importOriginal) => {
     ...actual,
     discoveryQueryOptions: {
       queryKey: ["discovery", "server"],
-      queryFn: () => Promise.resolve(doc()),
-      initialData: doc,
+      queryFn: () =>
+        discoveryAnswers ? Promise.resolve(doc()) : new Promise(() => {}),
+      initialData: () => (discoveryAnswers ? doc() : undefined),
     },
   }
 })
@@ -66,6 +69,7 @@ afterEach(() => {
   cleanup()
   calls.length = 0
   agentsRevision = 7
+  discoveryAnswers = true
   vi.unstubAllGlobals()
   resetUnsent()
 })
@@ -240,4 +244,16 @@ it("offers nothing against a server that does not take the field", async () => {
   })
   fireEvent.click(screen.getByRole("button", { name: "Send" }))
   expect(calls[0].repliesTo).toBeUndefined()
+})
+
+it("offers nothing until the server has said what it takes", async () => {
+  // The rest of the page speaks to the server it was built with until
+  // discovery answers. This button waits: an older server refuses the field.
+  discoveryAnswers = false
+  serveAskedThread()
+  mount()
+  await screen.findByRole("button", { name: "Answer" })
+  expect(
+    screen.queryByRole("button", { name: "Answer in your own words" })
+  ).toBeNull()
 })

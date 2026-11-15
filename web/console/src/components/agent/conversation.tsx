@@ -485,11 +485,13 @@ export function Conversation({
     hasFeature(discovery.data, "agents", MESSAGE_DURING_RUN_REVISION)
   // Whether the server takes a message that names the question it answers:
   // then a question's card offers to be answered in a message. The answer
-  // is written with the message's own id, so it needs those too.
+  // is written with the message's own id, so it needs those too. Unlike the
+  // rest, this waits for the server to have said: it is a button the page
+  // can do without, and an older server refuses the field.
   const repliesInWords =
     ownIds &&
-    (!discovery.data ||
-      hasFeature(discovery.data, "agents", REPLY_IN_WORDS_REVISION))
+    Boolean(discovery.data) &&
+    hasFeature(discovery.data, "agents", REPLY_IN_WORDS_REVISION)
   // The question the next message answers in the person's own words, and
   // what it asked; `composerFocus` moves the cursor to the composer.
   const [replying, setReplying] = useState<{
@@ -1092,7 +1094,7 @@ export function Conversation({
     // its own, into the question's thread, can.
     const sentReply = again
       ? again.repliesTo
-      : messageId && sentTo
+      : repliesInWords && messageId && sentTo
         ? replying?.id
         : undefined
     const about = (sentContext ?? []).flatMap((p) => {
@@ -1308,7 +1310,7 @@ export function Conversation({
     const to = agentId
     const messageId = newMessageId()
     const sentContext = context?.length ? context : undefined
-    const sentReply = replying?.id
+    const sentReply = repliesInWords ? replying?.id : undefined
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
       return parts ? [parts] : []
@@ -1748,7 +1750,7 @@ export function Conversation({
               </Button>
             </div>
           )}
-          {replying && (
+          {replying && repliesInWords && (
             <div
               className="flex items-start justify-between gap-2 px-4 pt-3 md:px-6"
               data-slot="replying-to-question"

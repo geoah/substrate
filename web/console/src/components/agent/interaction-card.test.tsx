@@ -58,7 +58,12 @@ function interaction(
  * reads off the actor record, absent for a person who may not read it. */
 function serve(
   record: SubstrateRecord,
-  opts: { revision?: number; mine?: boolean; actorName?: string } = {}
+  opts: {
+    revision?: number
+    mine?: boolean
+    actorName?: string
+    more?: boolean
+  } = {}
 ) {
   const asked: string[] = []
   fetchMock.mockImplementation(async (input) => {
@@ -90,6 +95,7 @@ function serve(
         records: opts.mine ? [record] : [],
         head: 0,
         generation: "g",
+        ...(opts.more && { cursor: "next" }),
       })
     }
     return Response.json(record)
@@ -214,4 +220,20 @@ it("asks an older server nothing it would refuse", async () => {
   )
   expect(container.querySelector("[data-slot=resolved-by]")).toBeNull()
   expect(asked.some((u) => u.includes("/api/v1/records"))).toBe(false)
+})
+
+it("concludes nothing from a first page that does not hold the card", async () => {
+  // The reader resolved more cards on this thread than one page lists: a
+  // card past it is not called somebody else's.
+  const asked = serve(interaction("answered", { resolvedBy: { ref: ACTOR } }), {
+    more: true,
+    actorName: "ada.example.com",
+  })
+  const { container } = renderCard()
+  await screen.findByText("Answered")
+  await waitFor(() =>
+    expect(asked.some((u) => u.includes("/api/v1/records"))).toBe(true)
+  )
+  expect(container.querySelector("[data-slot=resolved-by]")).toBeNull()
+  expect(asked.some((u) => u.includes("/core/actor/"))).toBe(false)
 })
