@@ -1007,7 +1007,7 @@ struct SeededRun {
         guard !thread.running, let mark = known(state, thread) else { return false }
         if mark.markedUnread { return true }
         // Its row is older than its mark, and is being read again.
-        if state.rowsBehind.contains(thread.id) { return false }
+        if state.rowsBehind.contains(thread.id), mark.ahead(of: thread) { return false }
         guard let last = thread.lastMessage else { return false }
         return mark.readThrough != last
     }
@@ -1021,8 +1021,15 @@ struct SeededRun {
         if let held = looking, clock.now >= held.since.addingTimeInterval(ChatApp.sightSeconds - 0.000_001) {
             ripe[held.thread, default: []].insert(held.message)
         }
-        let current = state.scenes[scene]?.current.flatMap { state.conversations[$0]?.thread }
-        if inFront, !signedOut, atEnd, viewed == state.scenes[scene]?.current, let current, let last = state.thread(current)?.lastMessage {
+        // Looking at a message is more than standing at the end: the
+        // thread has settled with it, the conversation has handed its rows
+        // back, and the rows drawn hold it. Checked here, apart from the
+        // app's own reading of the same.
+        let entry = state.scenes[scene]?.current.flatMap { state.conversations[$0] }
+        if inFront, !signedOut, atEnd, viewed == state.scenes[scene]?.current, let entry, !entry.owns, let current = entry.thread,
+            let row = state.thread(current), row.status != "running", let last = row.lastMessage,
+            state.transcripts[current]?.records.contains(where: { $0.id == last }) == true
+        {
             if looking?.thread != current || looking?.message != last { looking = (current, last, clock.now) }
         } else {
             looking = nil
