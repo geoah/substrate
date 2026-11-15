@@ -44,6 +44,15 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// By a compaction marker's id: the largest ordinal the stream had
     /// carried before it, which its summary row's ordinal is past.
     var markers: [String: Int] = [:]
+    /// The messages sent from here into a turn that was running, by id:
+    /// each stands after everything held until the server says its ordinal
+    /// (`messageQueued`), which is past the reply that was being written.
+    var joined: Set<String> = []
+    /// The messages sent while the turn runs that no model call has read
+    /// yet, by id: sent from here, or said queued by the stream. Each took
+    /// an ordinal of its own after the reply being written, so a call of
+    /// that reply comes past them and is that reply's all the same.
+    var waiting: Set<String> = []
     var pass = Pass()
 
     static let empty = LiveRows()
@@ -70,7 +79,10 @@ struct LiveRows: Codable, Hashable, Sendable {
     ///   the server takes one: its row will have the same id, and that is
     ///   all the fold pairs the two by. With none, the turn is told from
     ///   an older row of the same words by `baseline` and `at`.
-    mutating func send(_ message: String, id: String? = nil, seq: Int, baseline: Int?, at: Date) {
+    ///   - joining: a turn runs on the thread, and the message joins it
+    ///     (`agents` 6): its row comes after what that turn has written,
+    ///     not before the run it would otherwise have started.
+    mutating func send(_ message: String, id: String? = nil, seq: Int, baseline: Int?, at: Date, joining: Bool = false) {
         if let id, let held = turns.firstIndex(where: { $0.id == id }) {
             // The same message once more: its turn is the one held.
             turns[held].pending = true
@@ -79,6 +91,10 @@ struct LiveRows: Codable, Hashable, Sendable {
         let turn = id ?? "sent-\(seq)"
         turns.append(Turn(id: turn, role: .user, content: message, pending: true))
         if id == nil { sent[turn] = Sent(baseline: baseline, at: at) }
+        if joining, id != nil {
+            joined.insert(turn)
+            waiting.insert(turn)
+        }
     }
 
     /// The server took the message.
@@ -114,9 +130,37 @@ struct LiveRows: Codable, Hashable, Sendable {
             if incomplete { return false }
             incomplete = true
             return true
+        case .messageQueued:
+            return queued(event)
+        case .messageTaken:
+            if let id = event.id { waiting.remove(id) }
+            return false
         case .thread, .idle, .done, .error, .lagged, .heartbeat:
             return false
         }
+    }
+
+    /// A message's row was written while the turn runs: the message as a
+    /// user turn under its row's id, at its row's ordinal. One sent from
+    /// here is the turn held, which now knows its place; another window's,
+    /// or another device's, is drawn from the event. It stands before the
+    /// first turn held whose ordinal is past its own, so a replay that
+    /// brings it late puts it where its row will be.
+    private mutating func queued(_ event: AgentEvent) -> Bool {
+        guard let id = event.id, !id.isEmpty else { return false }
+        waiting.insert(id)
+        if let index = turns.firstIndex(where: { $0.id == id }) {
+            let before = turns[index]
+            if let ordinal = event.turn { turns[index].ordinal = ordinal }
+            turns[index].pending = false
+            return turns[index] != before
+        }
+        let turn = Turn(id: id, ordinal: event.turn, role: .user, content: event.text ?? "")
+        let past = event.turn.flatMap { ordinal in
+            turns.firstIndex { ($0.ordinal ?? $0.tools.compactMap(\.ordinal).min()).map { $0 > ordinal } ?? false }
+        }
+        turns.insert(turn, at: past ?? turns.count)
+        return true
     }
 
     private func call(_ event: AgentEvent) -> ToolCall {
@@ -187,13 +231,23 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// that streamed no text: a reply kept from the run before is not the
     /// one a continued run's first call belongs to. It is keyed by the
     /// call until its row is read.
+    ///
+    /// A message sent while the turn runs stands after the reply being
+    /// written and took an ordinal of its own. Until a call reads it
+    /// (`messageTaken`), a call that comes after it is still that reply's:
+    /// it is looked for past such messages, and its ordinal may follow
+    /// theirs.
     private mutating func home(of call: ToolCall, seq: Int) -> Int {
-        if let last = turns.last, last.role == .assistant {
+        var at = turns.count - 1
+        while at >= 0, turns[at].role == .user, waiting.contains(turns[at].id) { at -= 1 }
+        let passed = turns.count - 1 - at
+        if at >= 0, turns[at].role == .assistant {
+            let last = turns[at]
             let ordinals = last.tools.compactMap(\.ordinal)
             guard let ordinal = call.ordinal, ordinals.count == last.tools.count, let newest = ordinals.max() ?? last.ordinal else {
-                return turns.count - 1
+                return at
             }
-            if ordinal <= newest + 1 { return turns.count - 1 }
+            if ordinal <= newest + 1 + passed { return at }
         }
         turns.append(Turn(id: call.id.isEmpty ? "\(Turn.unkeyedPrefix)\(seq)" : "call-\(call.id)", role: .assistant, content: ""))
         pass.closed = false
@@ -277,6 +331,8 @@ struct LiveRows: Codable, Hashable, Sendable {
         thought = thought.filter { ids.contains($0.key) }
         sent = sent.filter { ids.contains($0.key) }
         markers = markers.filter { ids.contains($0.key) }
+        joined = joined.filter { ids.contains($0) }
+        waiting = waiting.filter { ids.contains($0) }
         if kept.isEmpty { incomplete = false }
     }
 }

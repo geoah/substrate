@@ -159,6 +159,19 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var target: Record?
         var busy: String?
         var problem: Failure?
+        /// What the last write set and what the card said while it was
+        /// out, kept so Try Again asks the same again over the version the
+        /// card holds now.
+        var tried: Tried?
+
+        struct Tried: Codable, Equatable, Sendable {
+            var properties: [String: JSONValue]
+            var busy: String
+        }
+
+        /// `busy` while the dismissal is out that an answer in the person's
+        /// own words makes: the card stays aside for it.
+        static let words = "words"
     }
 
     /// A rename the server did not take: what was asked, so Try Again asks

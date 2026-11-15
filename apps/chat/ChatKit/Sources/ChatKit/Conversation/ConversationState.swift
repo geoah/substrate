@@ -53,6 +53,17 @@ public struct ConversationState: Codable, Equatable, Sendable {
         /// A repeat's whole answer after `thread`: the message's turn is no
         /// stream of this server process, and this is its thread's status.
         var idle: String?
+        /// Sent while a turn was running on the thread (`agents` 6): the
+        /// server answers with that turn's stream, from its start, as it
+        /// answers an attach, and the stream that was being read is let go
+        /// for it.
+        var joins = false
+        /// What the stream this send took the place of knew of the rows:
+        /// the `turn` ordinals they held, whose replay is dropped as that
+        /// stream dropped it, and the newest ordinal a reply among them
+        /// carried (`Attach.replied`).
+        var held: Set<Int> = []
+        var replied = -1
     }
 
     /// An attach's run.
@@ -71,6 +82,10 @@ public struct ConversationState: Codable, Equatable, Sendable {
         /// Opened to see whether a turn nothing streamed has a stream now:
         /// the conversation stays as it was unless it has.
         var probe = false
+        /// The newest ordinal a reply's row carried when the rows were
+        /// read: a message sent while a turn ran whose ordinal is below it
+        /// was read by that reply's call, whatever a replay says first.
+        var replied = -1
     }
 
     enum Run: Codable, Equatable, Sendable {
@@ -200,6 +215,43 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// and not by a run's `thread` event: the list is told, and where
     /// another conversation already has that thread, this one gives way.
     var adopted: String?
+    /// The messages sent while the turn runs that no model call has read
+    /// yet, in the order they were sent: each is drawn as queued. Only
+    /// while a run may still read one: a run that ends without doing so
+    /// leaves it an ordinary message in the thread.
+    var queued: [Queued] = []
+    /// The messages the server said a model call read, by id, so a stream
+    /// joined again that says one queued once more does not draw it so.
+    var taken: Set<String> = []
+    /// How many messages the run that last ended left unread, where it was
+    /// stopped or failed: nothing starts their turn, and the card at the
+    /// end of the chat says so.
+    var unread = 0
+    /// The run that just ended finished on its own with messages unread:
+    /// the server starts their turn itself, and the conversation looks for
+    /// it once the run's rows are read.
+    var follows = false
+    /// The questions the person chose to answer in their own words: their
+    /// card is off the transcript and the composer says so, until the
+    /// answer is sent or the person takes the choice back.
+    var answering: String?
+    /// The message sent as the answer to questions in the person's own
+    /// words, until the server is known to hold it, by its id where it was
+    /// sent under one: the questions are dismissed then, and not before.
+    var answer: OwnAnswer?
+
+    struct OwnAnswer: Codable, Equatable, Sendable {
+        var message: String?
+        var interaction: String
+    }
+
+    /// The questions the last event learned are answered in the person's
+    /// own words, by a message the server now holds: the list dismisses
+    /// them, which is how the server is told (a typed message alone leaves
+    /// a question waiting).
+    var answered: String?
+    /// Moved when the composer's field is asked to take the cursor.
+    var focuses = 0
     /// The read of the rows failed or outlasted its wait: what the stream
     /// said stays.
     var reloadFailed: Failure?
@@ -255,6 +307,14 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var held: Int { (chatFailure != nil ? 1 : 0) + (lost != nil ? 1 : 0) + (pending != nil ? 1 : 0) }
     /// The pending message stands unsent: no copy is out and none waits.
     var standing: Bool { pending != nil && unsentFailure != nil }
+
+    /// A message the server holds that no model call has read yet: sent
+    /// while a turn ran, from here or from another window or device.
+    struct Queued: Codable, Equatable, Sendable {
+        var id: String
+        /// Its row's ordinal, as the server said it.
+        var ordinal: Int?
+    }
 
     /// A send that ended with no answer either way, while it is read for.
     struct Lost: Codable, Equatable, Sendable {

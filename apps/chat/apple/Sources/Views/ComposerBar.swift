@@ -8,7 +8,10 @@ import SwiftUI
 /// it is not, and Stop while a turn runs; it morphs between them. While a
 /// reply is on its way a line over the field says what is happening
 /// (`ComposerStatus`), Stop is there the whole time, and the field can be
-/// typed in throughout. The text
+/// typed in throughout. Where the server takes a message into a running
+/// turn (`ComposerPresentation.queues`), Send stands beside Stop once
+/// something is typed, and a line says what Stop does to the messages that
+/// wait; elsewhere only Stop is offered until the reply ends. The text
 /// is the field's own while it is typed: the conversation is told after a
 /// pause, before a send and when the field stops editing (`DraftReports`),
 /// so a key draws nothing but the field. The field takes what the
@@ -42,9 +45,22 @@ struct ComposerBar: View {
             if let keyless = composer.keyless {
                 KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
             }
+            if let note = composer.answering {
+                AnsweringNoteView(note: note) { host.send(.showOptions, to: key) }
+                    .transition(.opacity)
+            }
             if let status = composer.status {
                 ComposerStatusLine(status: status)
                     .transition(.opacity)
+                // What Stop does to the messages that wait to be read.
+                if let queued = composer.queued {
+                    Text(queued)
+                        .font(.caption)
+                        .foregroundStyle(.quietText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 18)
+                        .transition(.opacity)
+                }
             } else if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
                 // While a reply is on its way the line above says so: "wait
                 // for the answer" would say it twice.
@@ -113,6 +129,8 @@ struct ComposerBar: View {
         .onChange(of: text) { _, text in
             draft.typed(text) { [host, key] in host.send($0, to: key) }
         }
+        // A question is being answered in the person's own words here.
+        .onChange(of: composer.focus) { _, _ in focused = true }
         .onAppear { draftField?.flush = { host.send(draft.reports.tell(text), to: key) } }
         .onChange(of: focused) { _, focused in
             if !focused { say() }
@@ -219,8 +237,18 @@ struct ComposerBar: View {
 
     @ViewBuilder private var trailing: some View {
         if screen.streaming {
+            // Where the server takes a message into a running turn, Send
+            // stands beside Stop once something is typed; elsewhere only
+            // Stop is offered until the reply ends.
+            if composer.queues, !empty, !dictation.active {
+                round("arrow.up", tint: .accentColor, label: "Send", id: "send") { send() }
+                    .disabled(!composer.canSend)
+                    .sendShortcut(on: .current)
+                    .transition(.scale.combined(with: .opacity))
+            }
             round("stop.fill", tint: .red, label: screen.stopping ? "Stopping" : "Stop") { host.send(.stop, to: key) }
                 .disabled(screen.stopping)
+                .accessibilityHint(composer.queued ?? "")
         } else if dictation.active {
             round("checkmark", tint: .accentColor, label: "Done Listening") {
                 Task { await toggleListening() }
@@ -236,7 +264,7 @@ struct ComposerBar: View {
         }
     }
 
-    private func round(_ symbol: String, tint: Color?, label: String, action: @escaping () -> Void) -> some View {
+    private func round(_ symbol: String, tint: Color?, label: String, id: String = "action", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.body.weight(.semibold))
@@ -246,7 +274,7 @@ struct ComposerBar: View {
         }
         .buttonStyle(.plain)
         .glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? .regular.interactive(), in: .circle)
-        .glassEffectID("action", in: glass)
+        .glassEffectID(id, in: glass)
         .accessibilityLabel(label)
     }
 

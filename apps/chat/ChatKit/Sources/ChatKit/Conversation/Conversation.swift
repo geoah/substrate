@@ -52,6 +52,12 @@ public struct Conversation: Controller, Equatable {
         case dismissFailure
         /// The composer started listening, as a shortcut asked.
         case listened
+        /// "Answer in your own words" on a question's card: the card leaves
+        /// the transcript, the composer's field takes the cursor, and the
+        /// message sent from it is the answer.
+        case answerInWords(String)
+        /// The choice taken back: the card stands in the transcript again.
+        case showOptions
     }
 
     /// An event, opaque outside ChatKit.
@@ -107,6 +113,8 @@ public struct Conversation: Controller, Equatable {
         case threadMoved(ThreadFacts?)
         case nudgedPoll
         case resumed
+        case ownWords(String)
+        case optionsShown
     }
 
     /// A send of unknown delivery the check found: its thread, and what it
@@ -143,6 +151,14 @@ public struct Conversation: Controller, Equatable {
     /// The newest turn the list holds of the thread's rows; nil while they
     /// are unread.
     let newestTurn: Int?
+    /// The `turn` ordinals of the rows the list holds of the thread: a
+    /// message sent into a turn that already runs is answered with that
+    /// turn's stream from its start, and what it says again of a row drawn
+    /// from the rows is dropped (`stale`).
+    let rowTurns: Set<Int>
+    /// The newest ordinal a reply's row carries among them, or -1: a
+    /// message sent while a turn ran whose ordinal is below it was read.
+    let rowReplied: Int
     /// A scene in front shows it.
     let visible: Bool
     /// Moved by the list for each change of a message the watch reports
@@ -200,6 +216,29 @@ public struct Conversation: Controller, Equatable {
     /// chat's every run streams and a quiet stream beats every 10 seconds.
     static let positionsRevision = 5
 
+    /// The revision from which a message sent under its id while a chat
+    /// turn runs joins that turn (decision 0318). Below it the same send
+    /// is refused as busy, so the composer holds it until the turn ends.
+    static let queueRevision = 6
+
+    /// A message may be sent while a turn runs: the server's document says
+    /// it takes one, the message goes under an id, and the thread is a
+    /// chat's. Asked of the document, never found out by sending.
+    var queues: Bool { agents >= Self.queueRevision && sendsIDs && (facts?.chat ?? true) }
+
+    /// A turn the server streams runs on the thread, and a message sent
+    /// now joins it. Not while a stop is out, whose answer says how the
+    /// turn ended, and not while a continue has had no answer: it may be
+    /// refused, and there is then no turn to join.
+    func joins(_ state: State) -> Bool {
+        guard queues, state.thread != nil, state.phase == .streaming, !state.stopping else { return false }
+        switch state.run {
+        case let .send(run)?: return run.named && (!run.resumes || run.started)
+        case let .attach(run)?: return !run.probe
+        case nil: return false
+        }
+    }
+
     /// How long a stream may say nothing before it is taken for dead and
     /// opened again: past two of the server's heartbeats, which come every
     /// 10 seconds from `positionsRevision` and every 30 before it.
@@ -224,7 +263,8 @@ public struct Conversation: Controller, Equatable {
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
         pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
-        kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil
+        kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil,
+        rowTurns: Set<Int> = [], rowReplied: Int = -1
     ) {
         self.key = key
         self.seed = seed
@@ -232,6 +272,8 @@ public struct Conversation: Controller, Equatable {
         self.online = online
         self.keyless = keyless
         self.newestTurn = newestTurn
+        self.rowTurns = rowTurns
+        self.rowReplied = rowReplied
         self.visible = visible
         self.pollNudge = pollNudge
         self.resumeNudge = resumeNudge
@@ -277,6 +319,7 @@ public struct Conversation: Controller, Equatable {
         if agent(state) == nil { return "Choose an assistant" }
         if state.checking { return "Checking whether your last message arrived" }
         switch state.phase {
+        case .streaming where joins(state): break
         case .streaming, .handingOver: return "Waiting for the answer"
         case .background: return "\(name(state)) is working on this chat"
         case .idle: break
@@ -299,6 +342,8 @@ public struct Conversation: Controller, Equatable {
             return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [Event(.heard(words))]
         case let .choose(agent): return [Event(.chose(agent))]
         case .listened: return state.listenOnOpen ? [Event(.listened)] : []
+        case let .answerInWords(interaction): return [Event(.ownWords(interaction))]
+        case .showOptions: return state.answering == nil ? [] : [Event(.optionsShown)]
         case .stop: return [Event(.stopAsked)]
         case .retryReload: return [Event(.retriedReload)]
         case .reopen: return [Event(.reopened)]

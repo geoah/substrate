@@ -180,6 +180,33 @@ public struct ComposerPresentation: Codable, Equatable, Sendable {
     public var canSend: Bool
     /// What is happening while a reply is on its way; nil when nothing is.
     public var status: ComposerStatus?
+    /// A message may be sent while a reply is being written: Send stands
+    /// beside Stop, and what is sent is read at the assistant's next step
+    /// (`agents` 6). False on a server that refuses such a send, where
+    /// only Stop is offered until the reply ends.
+    public var queues = false
+    /// Said over the field while messages wait for the assistant to read
+    /// them: how many, and what Stop does to them.
+    public var queued: String?
+    /// The questions being answered in the person's own words: said over
+    /// the field, with the way back to their options.
+    public var answering: AnsweringNote?
+    /// Moved when the field is asked to take the cursor.
+    public var focus = 0
+}
+
+/// What the composer says while it holds the answer to a question in the
+/// person's own words: the question's card is off the transcript until the
+/// answer is sent, or `back` is pressed.
+public struct AnsweringNote: Codable, Equatable, Sendable {
+    /// The interaction answered.
+    public var id: String
+    /// "Answering in your own words"
+    public var title: String
+    /// The question, where there is one question and its record is read.
+    public var prompt: String?
+    /// "Show Options"
+    public var back: String
 }
 
 /// What the composer says is happening while a reply is on its way, from

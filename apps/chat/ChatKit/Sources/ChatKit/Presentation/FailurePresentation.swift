@@ -125,4 +125,7 @@ public enum FailureAction: Codable, Hashable, Sendable {
     /// The failure above the composer was read.
     case dismiss
     case dismissRename
+    /// Try Again in a card: its answer or its decision once more, over the
+    /// version the card holds now, or its read where that is what failed.
+    case retryCard(CardReference)
 }

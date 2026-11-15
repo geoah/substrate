@@ -86,6 +86,31 @@ struct SeededNumbers: Sendable {
 /// rig's clock. A write is taken or not before its answer is lost, by the
 /// same draw: that is the case `messageId` exists for. An attach replays
 /// its turn from the start, as the server does.
+///
+/// **A run of several calls.** A turn is one or more model calls: a reply's
+/// pieces, then for some a tool call and another reply. A call's reply row
+/// is written with its tool call, the tool's row at its own ordinal, and
+/// the next call draws its reply's ordinal past everything written since.
+///
+/// **A message sent while a turn runs** (`agents` 6, #1419). A message
+/// under an id into a running turn is admitted: its row is written at once
+/// at the next ordinal, the request is answered with the turn's stream from
+/// its start, and every stream of the turn says `messageQueued`. The next
+/// call says `messageTaken` for each message that waits. A turn that ends
+/// `ok` with one unread starts the next turn itself, which opens with
+/// `messageTaken`; one stopped or failed starts nothing, and the message
+/// stays in the thread for a continue or the next message. Below 6 the
+/// same send is `409 thread_busy`.
+///
+/// **Questions and approvals.** A tool call may ask the person (`ask`,
+/// which lands an `llm/interaction`) or wait for their approval (which
+/// lands an `llm/approval`). Each is resolved by one write over the version
+/// read, refused `409` once it moved, by the app or by another device of
+/// the person (`resolve`). A resolution writes its `system` row into the
+/// thread, tells the change feed, and resumes the thread: at once where no
+/// turn runs, and after a turn that ends `ok` where one does. A stopped
+/// thread is resumed by nothing. A typed message answers and dismisses
+/// nothing. A thread's row counts what waits on it (`waitingOnPerson`).
 final class SeededServer: @unchecked Sendable {
     /// One `llm/message` row.
     struct Row: Equatable, Sendable {
@@ -94,6 +119,53 @@ final class SeededServer: @unchecked Sendable {
         var content: String
         var turn: Int
         var createdAt: Date
+        /// An assistant row's tool call, and a tool row's: the call's id,
+        /// the name the model saw, and the callable behind it.
+        var call: String?
+        var tool: String?
+        var callable: String?
+        /// A tool row's stamp: the record its call landed.
+        var landed: Landed?
+
+        struct Landed: Equatable, Sendable {
+            var kind: String
+            var id: String
+        }
+
+        /// What somebody said: a tool's row and the substrate's own are
+        /// not that.
+        var spoken: Bool { role == "user" || role == "assistant" }
+    }
+
+    /// Questions an agent asked, or a call that waits for approval: the
+    /// record a tool call landed, which waits on the person.
+    struct Card: Equatable, Sendable {
+        static let interaction = "substrate.reamde.dev/llm/interaction"
+        static let approval = "substrate.reamde.dev/llm/approval"
+
+        struct Question: Equatable, Sendable {
+            var id: String
+            var prompt: String
+            var options: [String]
+            var multi = false
+        }
+
+        var id: String
+        var kind: String
+        var thread: String
+        var state = "pending"
+        var version = 1
+        var questions: [Question] = []
+        /// By question, the option values chosen.
+        var answers: [String: [String]] = [:]
+        var tool = ""
+        var arguments: [String: String] = [:]
+        var createdAt: Date
+        var resolvedAt: Date?
+        /// How many writes resolved it: one, ever.
+        var resolutions = 0
+
+        var pending: Bool { state == "pending" }
     }
 
     /// One reader of a running turn's events.
@@ -106,14 +178,35 @@ final class SeededServer: @unchecked Sendable {
         var thread = ""
     }
 
+    /// What a turn does next.
+    enum Step: Equatable, Sendable {
+        /// A piece of the reply being written, by its number.
+        case piece(Int)
+        /// The reply asks for a tool: its row is written with the call, the
+        /// tool runs and its row is written.
+        case tool(Tool)
+        /// The next model call: it reads what was sent meanwhile, and its
+        /// reply draws an ordinal past all of it.
+        case call
+    }
+
+    enum Tool: Equatable, Sendable { case query, ask, approve }
+
     /// A turn running on a thread.
     private struct Turn {
-        /// The ordinal its reply row will carry.
+        /// The ordinal the reply being written will carry.
         var ordinal: Int
         /// Every event emitted so far: what an attach replays.
         var emitted: [String] = []
-        var remaining: [String]
+        var remaining: [Step]
         var written = ""
+        /// The code points of the reply being written so far.
+        var before = 0
+        /// The messages admitted into the turn that no call has read yet.
+        var queued: [String] = []
+        /// Resolutions that landed while the turn ran: it is resumed for
+        /// them once it ends on its own.
+        var resolutions = 0
         /// The turn ends in a provider's failure instead of its last piece.
         var fails: Bool
         var readers: [Reader] = []
@@ -216,11 +309,24 @@ final class SeededServer: @unchecked Sendable {
     private let lock = NSLock()
     private var marks: [String: Mark] = [:]
     private var written: [MarkWrite] = []
-    /// The change feed: a row for each mark that moved, and who follows.
+    /// The change feed: a row for each mark and each card that moved, and
+    /// who follows which kinds.
     private var feedSeq = 1
     private var ordered = Date.distantPast
     private var feed: [(seq: Int, kind: String, line: String)] = []
     private var watchers: [Int: (port: Int, kinds: Set<String>, to: AsyncThrowingStream<String, any Error>.Continuation)] = [:]
+    private var cards: [String: Card] = [:]
+    private var cardOrder: [String] = []
+    /// The messages a model call was said to read, by id.
+    private var taken: Set<String> = []
+    /// The messages admitted into a running turn, by id.
+    private var joined: Set<String> = []
+    /// What the next turns do, where a test says so in place of the seed:
+    /// each runs to its end unless `failing`, with no restart.
+    private var planned: [(steps: [Step], fails: Bool)] = []
+    /// The faults the next requests draw, where a test says so in place of
+    /// the seed: each for the first request whose signature starts so.
+    private var forced: [(prefix: String, fault: Fault, lands: Bool)] = []
     private var threads: [String: Thread] = [:]
     private var order: [String] = []
     private var minted = 0
@@ -260,6 +366,58 @@ final class SeededServer: @unchecked Sendable {
     /// The rows a correct server holds of a thread, in order.
     func rows(of thread: String) -> [Row] { lock.withLock { threads[thread]?.rows ?? [] } }
 
+    /// What somebody said in a thread, in order: the rows a transcript
+    /// draws as messages.
+    func spoken(in thread: String) -> [Row] { rows(of: thread).filter(\.spoken) }
+
+    /// A message sent while a turn ran, as the server holds it: admitted
+    /// into a turn, and whether a model call was said to read it.
+    func wasQueued(_ message: String) -> Bool { lock.withLock { joined.contains(message) } }
+    func wasTaken(_ message: String) -> Bool { lock.withLock { taken.contains(message) } }
+
+    /// The messages a running turn holds unread, by thread.
+    func queued(in thread: String) -> [String] { lock.withLock { threads[thread]?.turn?.queued ?? [] } }
+
+    /// A card as the server holds it.
+    func card(_ id: String) -> Card? { lock.withLock { cards[id] } }
+
+    /// Every card, in the order they were asked.
+    var allCards: [Card] { lock.withLock { cardOrder.compactMap { cards[$0] } } }
+
+    /// The next turn does `steps`, whatever the seed would have drawn: a
+    /// test's own run. `.piece` numbers each reply's pieces from 0.
+    func plan(_ steps: [Step], failing: Bool = false) { lock.withLock { planned.append((steps, failing)) } }
+
+    /// The next request whose signature starts with `prefix` (`chat|`,
+    /// `decide|`, `events|`) draws `fault`; a write then lands or not.
+    func fail(_ prefix: String, with fault: Fault, lands: Bool = false) { lock.withLock { forced.append((prefix, fault, lands)) } }
+
+    /// Another device of the same person sends a message into a thread
+    /// under an id of its own: taken into the turn running there, or
+    /// starting one. False where the server refused it.
+    @discardableResult func elsewhere(send text: String, to thread: String, id: String) -> Bool {
+        lock.withLock {
+            if case .stream = chat(agent, ["thread": thread, "message": text, "messageId": id]) { return true }
+            return false
+        }
+    }
+
+    /// Another device of the same person resolves a card: answers its
+    /// questions with each one's first option, or dismisses them; approves
+    /// a call, or declines it. False where it no longer waits.
+    @discardableResult func elsewhere(card id: String, accept: Bool) -> Bool {
+        lock.withLock {
+            guard let card = cards[id], card.pending else { return false }
+            let state = card.kind == Card.approval ? (accept ? "approved" : "denied") : (accept ? "answered" : "dismissed")
+            let answers = Dictionary(card.questions.map { ($0.id, Array($0.options.prefix(1))) }) { first, _ in first }
+            if case .json(200, _) = resolve(id, to: state, answers: accept ? answers : [:], ifVersion: card.version) {
+                note("a card resolved on another device")
+                return true
+            }
+            return false
+        }
+    }
+
     var threadIDs: [String] { lock.withLock { order } }
 
     func version(of thread: String) -> Int? { lock.withLock { threads[thread]?.version } }
@@ -272,7 +430,22 @@ final class SeededServer: @unchecked Sendable {
     var keepsFlags: Bool { records >= 9 }
 
     /// How many things wait on a person in a thread.
-    func waiting(_ thread: String) -> Int { lock.withLock { threads[thread]?.waiting ?? 0 } }
+    func waiting(_ thread: String) -> Int { lock.withLock { threads[thread].map(waits) ?? 0 } }
+
+    /// Called under the lock: what a thread's row counts as waiting on a
+    /// person. Its own cards that wait, and what a test or a step said
+    /// waits in it beside them (`wait(_:on:)`), which no card stands for.
+    private func waits(_ thread: Thread) -> Int {
+        thread.waiting + cards.values.filter { $0.thread == thread.id && $0.pending }.count
+    }
+
+    /// Called under the lock: what waits in a thread moved with a card of
+    /// its own, so its row moved, and the feed tells of it.
+    private func counted(_ thread: inout Thread) {
+        thread.version += 1
+        thread.updatedAt = clock.now
+        tell("substrate.reamde.dev/llm/thread", thread.id)
+    }
 
     /// A thread comes to wait on a person, or is answered: its row moves,
     /// and the feed tells of it. False where nothing moved.
@@ -531,26 +704,34 @@ final class SeededServer: @unchecked Sendable {
 
     /// Starts a turn on a thread: its reply is fixed by the seed and the
     /// thread's place, never by when it was asked for.
-    private func start(_ id: String) {
+    ///
+    /// - Parameter resumed: nobody sent a message for it: the thread is
+    ///   resumed after a resolution, or for messages a run left unread.
+    ///   Below `agents` 5 such a run has no stream.
+    private func start(_ id: String, resumed: Bool = false) {
         guard var thread = threads[id] else { return }
         var numbers = SeededNumbers(seed: seed ^ SeededNumbers.hash("turn|\(id)|\(thread.nextTurn)"))
         let ordinal = thread.nextTurn
         thread.nextTurn += 1
-        let pieces = (0 ... numbers.below(4)).map { "r\(ordinal).\($0) " }
-        // From `agents` 5 a piece says where it belongs: the code points
-        // of the reply before it. Below, it says nothing.
-        var before = 0
-        let events = pieces.map { piece -> String in
-            defer { before += piece.unicodeScalars.count }
-            var event: [String: Any] = ["kind": "delta", "text": piece, "turn": ordinal]
-            if revision >= 5 { event["at"] = before }
-            return line(event)
-        }
-        thread.turn = Turn(ordinal: ordinal, remaining: events, fails: numbers.chance(0.12))
+        let pieces = 1 + numbers.below(4)
+        thread.turn = Turn(ordinal: ordinal, remaining: (0 ..< pieces).map(Step.piece), fails: numbers.chance(0.12))
         // Drawn after everything a turn drew before these were known, so
         // what a seed's turns say is what they said.
-        if numbers.chance(0.15) { thread.turn?.restartsAfter = numbers.below(pieces.count + 1) }
+        if numbers.chance(0.15) { thread.turn?.restartsAfter = numbers.below(pieces + 1) }
         thread.turn?.unready = numbers.below(2)
+        // Three turns in eight make a second call: a tool, then another
+        // reply. One in eight asks the person, and one waits for their
+        // approval.
+        let more = numbers.below(8)
+        if more >= 5 {
+            let tool: Tool = more == 6 ? .ask : more == 7 ? .approve : .query
+            thread.turn?.remaining += [.tool(tool), .call] + (0 ... numbers.below(3)).map(Step.piece)
+        }
+        if !planned.isEmpty {
+            let plan = planned.removeFirst()
+            thread.turn = Turn(ordinal: ordinal, remaining: plan.steps, fails: plan.fails)
+        }
+        if resumed, revision < 5 { thread.turn?.streamless = true }
         thread.status = "running"
         thread.cause = nil
         thread.finishedAt = nil
@@ -575,16 +756,197 @@ final class SeededServer: @unchecked Sendable {
             note("a server restart under a running turn")
             return
         }
-        if let next = turn.remaining.first, !(turn.fails && turn.remaining.count == 1) {
-            turn.remaining.removeFirst()
-            turn.emitted.append(next)
-            if case let .object(event)? = JSONValue.parse(next), case let .string(text)? = event["text"] { turn.written += text }
-            thread.turn = turn
-            threads[id] = thread
-            emit(id, next)
-            return
+        guard let next = turn.remaining.first, !(turn.fails && turn.remaining.count == 1) else {
+            return settle(id, status: turn.fails ? "error" : "ok")
         }
-        settle(id, status: turn.fails ? "error" : "ok")
+        turn.remaining.removeFirst()
+        var said: [String] = []
+        switch next {
+        case let .piece(number):
+            // From `agents` 5 a piece says where it belongs: the code
+            // points of the reply before it. Below, it says nothing.
+            let piece = "r\(turn.ordinal).\(number) "
+            var event: [String: Any] = ["kind": "delta", "text": piece, "turn": turn.ordinal]
+            if revision >= 5 { event["at"] = turn.before }
+            turn.before += piece.unicodeScalars.count
+            turn.written += piece
+            said = [line(event)]
+        case let .tool(tool):
+            // The reply's row is written with its call, then the tool
+            // runs: its row draws the next ordinal.
+            minted += 1
+            let call = "c\(minted)"
+            let ordinal = thread.nextTurn
+            thread.nextTurn += 1
+            let (name, callable): (String, String) =
+                switch tool {
+                case .query: ("query", "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query")
+                case .ask: ("ask", "substrate.reamde.dev/core/function/substrate.reamde.dev/core/ask")
+                case .approve: ("gmail_send", "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/sendmail")
+                }
+            var landed: Row.Landed?
+            var output = #"{"records":[],"total":0}"#
+            if tool != .query {
+                let card = ask(tool, thread: id, call: call)
+                counted(&thread)
+                landed = Row.Landed(kind: card.kind, id: card.id)
+                output =
+                    tool == .ask
+                    ? #"{"id":"\#(card.id)"}"# : #"{"output":{"approval":"\#(card.id)","status":"waiting for the owner's approval"}}"#
+            }
+            minted += 1
+            add(
+                Row(
+                    id: "a\(minted)", role: "assistant", content: turn.written, turn: turn.ordinal, createdAt: clock.now, call: call,
+                    tool: name, callable: callable), to: &thread)
+            add(
+                Row(
+                    id: "o\(minted)", role: "tool", content: output, turn: ordinal, createdAt: clock.now, call: call, tool: name,
+                    callable: callable, landed: landed), to: &thread)
+            thread.lastReply = turn.written
+            turn.written = ""
+            let event: [String: Any] = ["id": call, "tool": name, "callable": callable, "turn": ordinal]
+            said = [
+                line(event.merging(["kind": "toolStarted", "args": "{}"]) { first, _ in first }),
+                line(event.merging(["kind": "toolFinished", "ok": true, "output": output]) { first, _ in first }),
+            ]
+            if tool != .query { note(tool == .ask ? "a question asked" : "an approval asked") }
+        case .call:
+            // The next call reads what was sent while the one before
+            // worked, and says so; its reply's ordinal is past all of it.
+            said = turn.queued.map { message in
+                taken.insert(message)
+                note("a queued message taken by the next call")
+                return line(["kind": "messageTaken", "id": message, "turn": thread.rows.first { $0.id == message }?.turn ?? 0])
+            }
+            turn.queued = []
+            turn.ordinal = thread.nextTurn
+            thread.nextTurn += 1
+            turn.before = 0
+        }
+        turn.emitted += said
+        thread.turn = turn
+        threads[id] = thread
+        for text in said { emit(id, text) }
+    }
+
+    /// Puts a row among a thread's, which are kept in the order of their
+    /// ordinals: a message sent while a reply is written is stored before
+    /// that reply's row, and stands after it.
+    private func add(_ row: Row, to thread: inout Thread) {
+        thread.rows.insert(row, at: thread.rows.firstIndex { $0.turn > row.turn } ?? thread.rows.count)
+    }
+
+    /// A tool call lands the record that waits on the person: questions
+    /// with their options, or a call to approve with what it would run
+    /// with. All of it follows from the seed and the call.
+    private func ask(_ tool: Tool, thread: String, call: String) -> Card {
+        var numbers = SeededNumbers(seed: seed ^ SeededNumbers.hash("card|\(thread)|\(call)"))
+        minted += 1
+        var card = Card(id: "\(tool == .ask ? "i" : "p")\(minted)", kind: tool == .ask ? Card.interaction : Card.approval, thread: thread, createdAt: clock.now)
+        if tool == .ask {
+            // Mostly one question of two or three options: what a
+            // notification can answer. Some have more of either.
+            let questions = numbers.below(4) == 0 ? 2 : 1
+            card.questions = (1 ... questions).map { number in
+                Card.Question(
+                    id: "q\(number)", prompt: "Question \(number) of \(card.id)?",
+                    options: (0 ..< 2 + numbers.below(3)).map { "o\($0)" }, multi: numbers.below(6) == 0)
+            }
+        } else {
+            card.tool = "gmail_send"
+            card.arguments = ["to": "ada@example.com", "subject": "Subject \(card.id)"]
+            // Some say more than a notification can show whole.
+            if numbers.below(4) == 0 { card.arguments["body"] = String(repeating: "A long body. ", count: 40) }
+        }
+        cards[card.id] = card
+        cardOrder.append(card.id)
+        tell(card.kind, card.id)
+        return card
+    }
+
+    /// Called under the lock: the one write that resolves a card, over the
+    /// version read. It writes the resolution's `system` row into the
+    /// thread, tells the change feed, and resumes the thread where nothing
+    /// runs on it and it was not stopped.
+    private func resolve(_ id: String, to state: String, answers: [String: [String]], ifVersion: Int?) -> Outcome {
+        guard var card = cards[id] else { return refuse(404, "not_found", "substrate: not found: \(id)") }
+        if let ifVersion, ifVersion != card.version {
+            return refuse(409, "conflict", "substrate: version conflict: \(id) is at version \(card.version), not \(ifVersion)")
+        }
+        guard card.pending else { return refuse(409, "conflict", "substrate: version conflict: \(id) is no longer pending") }
+        let allowed = card.kind == Card.approval ? ["approved", "denied"] : ["answered", "dismissed"]
+        guard allowed.contains(state) else { return refuse(422, "validation", "\(id) has no transition from pending to \(state)") }
+        if state == "answered" {
+            for question in card.questions {
+                let chosen = answers[question.id] ?? []
+                let fits = question.multi ? !chosen.isEmpty : chosen.count == 1
+                guard fits, chosen.allSatisfy(question.options.contains) else {
+                    return refuse(422, "validation", "question \(question.id) of \(id) is not answered with its options")
+                }
+            }
+            card.answers = answers
+        }
+        // An approved call runs at once here, and works.
+        card.state = state == "approved" ? "done" : state
+        card.version += 1
+        card.resolvedAt = instant()
+        card.resolutions += 1
+        cards[id] = card
+        tell(card.kind, id)
+        guard var thread = threads[card.thread] else { return .json(200, line(record(card))) }
+        var envelope: [String: Any]
+        if card.kind == Card.approval {
+            envelope = ["event": "approvalDecided", "approval": "\(Card.approval)/\(id)", "decision": state, "tool": card.tool]
+            if state == "approved" { envelope["ok"] = true }
+        } else {
+            envelope = ["event": state == "answered" ? "interactionAnswered" : "interactionDismissed", "interaction": "\(Card.interaction)/\(id)"]
+            if state == "answered" {
+                envelope["answers"] = card.questions.map { ["question": $0.id, "selected": answers[$0.id] ?? []] as [String: Any] }
+            }
+        }
+        minted += 1
+        add(Row(id: "s\(minted)", role: "system", content: line(envelope), turn: thread.nextTurn, createdAt: clock.now), to: &thread)
+        thread.nextTurn += 1
+        counted(&thread)
+        if thread.turn != nil {
+            // A turn runs: it is resumed for this once it ends on its own.
+            thread.turn?.resolutions += 1
+            threads[card.thread] = thread
+        } else {
+            threads[card.thread] = thread
+            // A stopped thread holds until its person writes again.
+            if thread.status != "stopped" {
+                note("a thread resumed by a resolution")
+                start(card.thread, resumed: true)
+            }
+        }
+        return .json(200, line(record(cards[id] ?? card)))
+    }
+
+    private func record(_ card: Card) -> [String: Any] {
+        var properties: [String: Any] = ["thread": ["ref": "substrate.reamde.dev/llm/thread/\(card.thread)"], "state": card.state]
+        if card.kind == Card.approval {
+            properties["agent"] = ["ref": "substrate.reamde.dev/core/agent/\(agent)"]
+            properties["tool"] = card.tool
+            properties["arguments"] = card.arguments
+            if let at = card.resolvedAt { properties["decidedAt"] = stamp(at) }
+        } else {
+            properties["questions"] = card.questions.map { question in
+                [
+                    "id": question.id, "prompt": question.prompt, "multi": question.multi,
+                    "options": question.options.map { ["value": $0, "label": "Option \($0)"] },
+                ] as [String: Any]
+            }
+            if !card.answers.isEmpty {
+                properties["answers"] = card.questions.map { ["question": $0.id, "selected": card.answers[$0.id] ?? []] as [String: Any] }
+            }
+            if let at = card.resolvedAt { properties["resolvedAt"] = stamp(at) }
+        }
+        return [
+            "id": card.id, "kind": card.kind, "version": card.version, "createdAt": stamp(card.createdAt),
+            "updatedAt": stamp(card.resolvedAt ?? card.createdAt), "properties": properties,
+        ]
     }
 
     /// Ends the thread's turn: the reply so far is its row, the thread
@@ -593,7 +955,7 @@ final class SeededServer: @unchecked Sendable {
         guard var thread = threads[id], let turn = thread.turn else { return }
         if !turn.written.isEmpty {
             minted += 1
-            thread.rows.append(Row(id: "a\(minted)", role: "assistant", content: turn.written, turn: turn.ordinal, createdAt: clock.now))
+            add(Row(id: "a\(minted)", role: "assistant", content: turn.written, turn: turn.ordinal, createdAt: clock.now), to: &thread)
             thread.lastReply = turn.written
         }
         thread.status = status
@@ -606,7 +968,8 @@ final class SeededServer: @unchecked Sendable {
         // reply came after (#1419): after a call that wrote no reply it
         // still names the reply before, and names the message only in a
         // chat that holds nothing else. It never moves back.
-        let named = thread.rows.lastIndex { $0.role != "user" } ?? (thread.lastMessage == nil ? thread.rows.indices.last : nil)
+        let named =
+            thread.rows.lastIndex { $0.role == "assistant" || $0.role == "tool" } ?? (thread.lastMessage == nil ? thread.rows.indices.last : nil)
         let held = thread.lastMessage.flatMap { id in thread.rows.firstIndex { $0.id == id } }
         if let named, held.map({ named > $0 }) ?? true { thread.lastMessage = thread.rows[named].id }
         threads[id] = thread
@@ -621,6 +984,26 @@ final class SeededServer: @unchecked Sendable {
         for reader in turn.readers {
             var reader = reader
             if deliver(last, to: &reader) { reader.continuation.finish() }
+        }
+        // A run that ended on its own starts the turn of the messages it
+        // never read, which opens by saying each one taken; or is resumed
+        // for a resolution that landed while it ran. One that was stopped
+        // or that failed starts nothing: the messages stay in the thread.
+        guard status == "ok" else {
+            if !turn.queued.isEmpty { note("a run ended by a stop or a failure with a message unread") }
+            return
+        }
+        if !turn.queued.isEmpty {
+            note("a turn started by the messages a run left unread")
+            start(id, resumed: true)
+            let said = turn.queued.map { message in
+                taken.insert(message)
+                return line(["kind": "messageTaken", "id": message, "turn": thread.rows.first { $0.id == message }?.turn ?? 0])
+            }
+            threads[id]?.turn?.emitted = said
+        } else if turn.resolutions > 0 {
+            note("a thread resumed by a resolution that landed mid-turn")
+            start(id, resumed: true)
         }
     }
 
@@ -683,11 +1066,15 @@ final class SeededServer: @unchecked Sendable {
         case resume(String)
         case watch(kinds: Set<String>, from: Int?)
         case mark([String: Any])
+        /// A question's or an approval's record, read.
+        case card(String)
+        /// The write that resolves one.
+        case decide(String, body: [String: Any])
         case other
 
         var writes: Bool {
             switch self {
-            case .chat, .stop, .resume, .mark: true
+            case .chat, .stop, .resume, .mark, .decide: true
             default: false
             }
         }
@@ -747,6 +1134,14 @@ final class SeededServer: @unchecked Sendable {
             }
         }
         if method == "GET", let id = after("/llm/message/") { return (.message(id), "message|\(id)", "message:\(id)") }
+        if let id = after("/llm/interaction/") ?? after("/llm/approval/") {
+            if method == "GET" { return (.card(id), "card|\(id)", nil) }
+            if method == "PATCH" {
+                let body = (request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+                let properties = body["properties"] as? [String: Any] ?? [:]
+                return (.decide(id, body: body), "decide|\(id)|\(properties["state"] as? String ?? "")", nil)
+            }
+        }
         return (.other, "other|\(method)|\(path)", nil)
     }
 
@@ -755,6 +1150,10 @@ final class SeededServer: @unchecked Sendable {
     private func fault(for call: Call, signature: String) -> (Fault, lands: Bool) {
         let count = counts[signature, default: 0]
         counts[signature] = count + 1
+        if let index = forced.firstIndex(where: { signature.hasPrefix($0.prefix) }) {
+            let chosen = forced.remove(at: index)
+            return (chosen.fault, chosen.lands)
+        }
         guard rate > 0 else { return (.none, true) }
         var numbers = SeededNumbers(seed: seed ^ SeededNumbers.hash("\(signature)#\(count)"))
         // A send, a continue and an attach are what a chat is made of, and
@@ -867,6 +1266,12 @@ final class SeededServer: @unchecked Sendable {
                     default: break
                     }
                 }
+                if case .decide = call, case .json(200, _) = done {
+                    switch fault {
+                    case .status, .gateway, .hang, .dropped, .page: note("a card's write taken and its answer lost")
+                    default: break
+                    }
+                }
                 if call.writes, case .stream = done {
                     switch fault {
                     case .status, .gateway, .hang, .dropped, .page: note("a write taken and its answer lost")
@@ -903,10 +1308,11 @@ final class SeededServer: @unchecked Sendable {
             return json(status, body, url: url)
         case let .watching(kinds, from):
             // The change feed: its bookmark, what a watch resumed from a
-            // cursor missed, then each mark as it moves and each thread as
-            // what waits on a person in it moves, for as long as the app
-            // listens. Nothing else is told on it: the app hears of a
-            // thread's runs from its reads.
+            // cursor missed, then each mark and each card as it moves, and
+            // each thread as what waits on a person in it moves, of the
+            // kinds the watch names, for as long as the app listens.
+            // Nothing else is told on it: the app hears of a thread's runs
+            // from its reads.
             return ndjson(url: url) { [self] continuation in
                 lock.withLock {
                     continuation.yield(line(["bookmark": from ?? feedSeq, "generation": "g"]))
@@ -1034,7 +1440,8 @@ final class SeededServer: @unchecked Sendable {
             properties["reason"] = "the run ended: \(cause)"
         }
         if keepsMarks, let last = thread.lastMessage { properties["lastMessage"] = ["ref": "substrate.reamde.dev/llm/message/\(last)"] }
-        if keepsMarks, thread.waiting > 0 { properties["waitingOnPerson"] = thread.waiting }
+        // What waits on a person, counted where the server keeps marks.
+        if keepsMarks, waits(thread) > 0 { properties["waitingOnPerson"] = waits(thread) }
         return [
             "id": thread.id, "kind": "substrate.reamde.dev/llm/thread", "version": thread.version, "createdAt": stamp(thread.startedAt),
             "updatedAt": stamp(thread.updatedAt), "properties": properties,
@@ -1042,12 +1449,23 @@ final class SeededServer: @unchecked Sendable {
     }
 
     private func record(_ row: Row, thread: String) -> [String: Any] {
-        [
+        var properties: [String: Any] = [
+            "role": row.role, "content": row.content, "turn": row.turn, "thread": ["ref": "substrate.reamde.dev/llm/thread/\(thread)"],
+        ]
+        if let call = row.call, let tool = row.tool {
+            if row.role == "assistant" {
+                properties["toolCalls"] = [["id": call, "name": tool, "callable": row.callable ?? "", "arguments": "{}"] as [String: Any]]
+            } else {
+                properties["toolCallId"] = call
+                properties["name"] = tool
+                properties["callable"] = row.callable ?? ""
+                properties["ok"] = true
+                if let landed = row.landed { properties["changes"] = [["seq": 1, "op": "put", "kind": landed.kind, "id": landed.id] as [String: Any]] }
+            }
+        }
+        return [
             "id": row.id, "kind": "substrate.reamde.dev/llm/message", "version": 1, "createdAt": stamp(row.createdAt),
-            "updatedAt": stamp(row.createdAt),
-            "properties": [
-                "role": row.role, "content": row.content, "turn": row.turn, "thread": ["ref": "substrate.reamde.dev/llm/thread/\(thread)"],
-            ],
+            "updatedAt": stamp(row.createdAt), "properties": properties,
         ]
     }
 
@@ -1098,6 +1516,18 @@ final class SeededServer: @unchecked Sendable {
                 if let row = threads[thread]?.rows.first(where: { $0.id == id }) { return .json(200, line(record(row, thread: thread))) }
             }
             return refuse(404, "not_found", "substrate: not found: message \(id)")
+        case let .card(id):
+            guard let card = cards[id] else { return refuse(404, "not_found", "substrate: not found: \(id)") }
+            return .json(200, line(record(card)))
+        case let .decide(id, body):
+            let properties = body["properties"] as? [String: Any] ?? [:]
+            var answers: [String: [String]] = [:]
+            for answer in properties["answers"] as? [[String: Any]] ?? [] {
+                if let question = answer["question"] as? String { answers[question] = answer["selected"] as? [String] ?? [] }
+            }
+            let done = resolve(id, to: properties["state"] as? String ?? "", answers: answers, ifVersion: body["ifVersion"] as? Int)
+            if case .json(200, _) = done { note("a card resolved by the app") }
+            return done
         case let .list(kind, filter, query):
             return list(kind, filter, query)
         case let .chat(agent, body):
@@ -1132,7 +1562,12 @@ final class SeededServer: @unchecked Sendable {
             guard revision >= 3 else { return refuse(404, "not_found", "no such API path: \(url.path)") }
             guard let thread = threads[id] else { return refuse(404, "not_found", "substrate: not found: thread \(id)") }
             if thread.turn != nil { return refuse(409, "conflict", reason: "thread_busy", "a turn is running on the thread") }
-            if thread.status == "ok" { return refuse(409, "conflict", reason: "nothing_to_continue", "the thread's last turn finished") }
+            // From `agents` 6 a finished thread whose newest message no
+            // reply came after is taken up: a message a run left unread.
+            let unanswered = revision >= 6 && thread.rows.last(where: \.spoken)?.role == "user"
+            if thread.status == "ok", !unanswered {
+                return refuse(409, "conflict", reason: "nothing_to_continue", "the thread's last turn finished")
+            }
             if let capped = capped() { return capped }
             note("a continue")
             start(id)
@@ -1187,17 +1622,35 @@ final class SeededServer: @unchecked Sendable {
             thread = Thread(id: "t\(minted)", agent: agent, startedAt: clock.now, updatedAt: clock.now)
             order.append(thread.id)
         } else {
-            guard let held = threads[named] else { return refuse(404, "not_found", "substrate: not found: thread \(named)") }
+            guard var held = threads[named] else { return refuse(404, "not_found", "substrate: not found: thread \(named)") }
             if held.turn != nil {
-                note("a send refused: thread_busy")
-                return refuse(409, "conflict", reason: "thread_busy", "a turn is running on the thread")
+                // A message under its id joins the turn (`agents` 6): its
+                // row is written at once, every stream of the turn hears of
+                // it, and the request is answered with the turn's stream.
+                guard revision >= 6, let id else {
+                    note("a send refused: thread_busy")
+                    return refuse(409, "conflict", reason: "thread_busy", "a turn is running on the thread")
+                }
+                note("a message taken into a running turn")
+                let ordinal = held.nextTurn
+                held.nextTurn += 1
+                add(Row(id: id, role: "user", content: text, turn: ordinal, createdAt: clock.now), to: &held)
+                held.turn?.queued.append(id)
+                joined.insert(id)
+                let said = line(["kind": "messageQueued", "id": id, "turn": ordinal, "text": text])
+                held.turn?.emitted.append(said)
+                threads[named] = held
+                emit(named, said)
+                var opening = [line(["kind": "thread", "thread": named])]
+                if held.turn?.streamless == true { opening.append(line(["kind": "idle", "thread": named, "status": "running"])) }
+                return .stream(thread: named, opening: opening, fault: .none)
             }
             if let capped = capped() { return capped }
             thread = held
         }
         minted += 1
         note(id == nil ? "a message written without an id" : "a message written under its id")
-        thread.rows.append(Row(id: id ?? "u\(minted)", role: "user", content: text, turn: thread.nextTurn, createdAt: clock.now))
+        add(Row(id: id ?? "u\(minted)", role: "user", content: text, turn: thread.nextTurn, createdAt: clock.now), to: &thread)
         thread.nextTurn += 1
         threads[thread.id] = thread
         start(thread.id)
@@ -1236,7 +1689,7 @@ final class SeededServer: @unchecked Sendable {
             }
             var held = order.compactMap { threads[$0] }
             if let agent = equal("agent") { held = held.filter { "substrate.reamde.dev/core/agent/\($0.agent)" == agent } }
-            if let waits = (properties["waitingOnPerson"] as? [String: Any])?["gt"] as? Int { held = held.filter { $0.waiting > waits } }
+            if let more = (properties["waitingOnPerson"] as? [String: Any])?["gt"] as? Int { held = held.filter { waits($0) > more } }
             // Narrowed by the person's marks that point at each thread,
             // before the page is cut.
             if let arm = filter["referencedBy"] as? [String: Any] {
@@ -1286,6 +1739,12 @@ final class SeededServer: @unchecked Sendable {
             if let role = equal("role") { rows = rows.filter { $0.0.role == role } }
             if query["orderBy"]?.hasPrefix("turn:desc") == true { rows.reverse() }
             return page(rows.prefix(first).map { record($0.0, thread: $0.1) })
+        case Card.interaction, Card.approval:
+            // The ones that wait, under the threads named where any are.
+            var held = cardOrder.compactMap { cards[$0] }.filter { $0.kind == kind }
+            if let state = equal("state") { held = held.filter { $0.state == state } }
+            if let named = (properties["thread"] as? [String: Any])?["in"] as? [String] { held = held.filter { named.contains($0.thread) } }
+            return page(held.prefix(first).map(record))
         case "substrate.reamde.dev/llm/threadmark":
             guard keepsMarks else { return refuse(404, "not_found", "unknown kind \(kind)") }
             let named = (properties["thread"] as? [String: Any])?["in"] as? [String] ?? []

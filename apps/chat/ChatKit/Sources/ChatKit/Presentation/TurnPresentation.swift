@@ -33,6 +33,9 @@ public struct UserTurn: Codable, Hashable, Sendable {
     /// The records the message is about.
     public var about: [RecordReference]
     public var aboutLabel: String
+    /// Sent while a reply was being written, and not read by the assistant
+    /// yet: what is said under the message until it is.
+    public var queued: String?
 }
 
 public struct AssistantTurn: Codable, Hashable, Sendable {
@@ -100,6 +103,8 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
         /// The owner's policy held its write for review, or the call waits
         /// for their approval: either waits on them in the card under it.
         case held
+        /// What it asked was dismissed or declined: the person's own no.
+        case declined
     }
 
     public enum Attachment: Codable, Hashable, Sendable {
@@ -131,7 +136,14 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
     public var chips: [RecordChips]
     /// A sub-agent's own conversation, which its call ran in.
     public var thread: ThreadLink?
+    /// The card its call landed, whether or not it still stands: questions,
+    /// a suggestion or an approval.
+    public var asked: CardReference?
+    /// The card that stands under it while it waits on the person.
     public var attachment: Attachment?
+    /// How that card ended, once it has: the row's mark and label are its
+    /// own, and the row opens to what was asked and what was answered.
+    public var resolution: CardResolution?
 }
 
 /// The one record a tool line names, read for its heading.

@@ -20,9 +20,19 @@ public enum CardReference: Codable, Hashable, Sendable {
     case suggestion(String)
     case approval(String)
 
-    var id: String {
+    public var id: String {
         switch self {
         case let .question(id), let .suggestion(id), let .approval(id): id
+        }
+    }
+
+    /// The card of a record, by its kind; nil for a kind that lands none.
+    init?(kind: String, id: String) {
+        switch kind {
+        case Kinds.interaction, Kinds.interactionBeforeMove: self = .question(id)
+        case Kinds.request: self = .suggestion(id)
+        case Kinds.approval: self = .approval(id)
+        default: return nil
         }
     }
 }

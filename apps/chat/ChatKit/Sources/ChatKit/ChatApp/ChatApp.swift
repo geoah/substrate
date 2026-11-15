@@ -71,6 +71,8 @@ public struct ChatApp: LinkedApp {
         /// Approve or decline a call waiting on the owner: the engine runs
         /// the stored call, never anything the app sends.
         case decideApproval(String, approve: Bool)
+        /// Try Again on a card's failure: its write once more, or its read.
+        case retryCard(CardReference)
         case settings(SettingsCommand)
         /// Settings opened: the permission, the storage and the owner's
         /// memories and instructions read again.
@@ -197,6 +199,7 @@ public struct ChatApp: LinkedApp {
             let shown = context.presentation?.conversations.values.lazy.compactMap { $0.cards[suggestion]?.suggestion?.values }.first ?? []
             return [Event(.decideAsked(suggestion, accept: accept, shown: Dictionary(shown.map { ($0.key, $0.value) }) { a, _ in a }))]
         case let .decideApproval(id, approve): return [Event(.approveAsked(id, approve: approve))]
+        case let .retryCard(reference): return [Event(.cardRetried(reference))]
         case let .settings(command):
             switch command {
             case let .toggle(.app(row), on): return [Event(.setting(row: row, toggle: on, choice: nil))]
@@ -270,7 +273,8 @@ public struct ChatApp: LinkedApp {
                     thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
                     outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
                     read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved,
-                    unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack, spoke: spoke)))
+                    unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack, spoke: spoke,
+                    answered: state.answered)))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -412,7 +416,8 @@ public struct ChatApp: LinkedApp {
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
                 continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
-                landed: landed, landedOn: landedOn, draftFound: entry.draftFound)
+                landed: landed, landedOn: landedOn, draftFound: entry.draftFound, rowTurns: held.map { persistedTurns($0.records) } ?? [],
+                rowReplied: held.map { Self.Child.replied($0.records) } ?? -1)
         }
         return out
     }

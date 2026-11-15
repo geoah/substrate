@@ -91,6 +91,16 @@ enum TurnFold {
             case .user:
                 if let index = row(of: turn, live.sent[turn.id], in: turns, not: claimed) {
                     claim(index, turn.id)
+                } else if let ordinal = turn.ordinal {
+                    // A message sent while a turn ran, whose ordinal the
+                    // server has said: where its row will stand.
+                    keep(turn, at: Double(ordinal))
+                    held.append(turn)
+                } else if live.joined.contains(turn.id) {
+                    // Sent into a running turn and not yet placed by the
+                    // server: after everything held.
+                    keep(turn, at: .greatestFiniteMagnitude / 2)
+                    held.append(turn)
                 } else {
                     // Its row comes before every row of the run it started.
                     keep(turn, at: named.min().map { Double($0) - 0.75 } ?? .greatestFiniteMagnitude / 2)

@@ -510,11 +510,17 @@ extension ChatApp {
         if hero?.empty == nil { hero?.keyless = callout }
         let blocked = live.blocked
         let asked = live.thread.map(state.subagentApprovals) ?? []
-        var shown = cards(state, scan, titles: titles)
+        var shown = cards(state, scan, titles: titles, answering: live.answering)
         for id in asked where shown[id] == nil {
             shown[id] = CardPresentation(
                 approval: CardPresenter.approval(id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: nil))
         }
+        // A card that ended is the mark on the call that asked; and what
+        // the stream still holds unread is said under its message.
+        let folded = Self.queued(CardPresenter.fold(turns, cards: shown), live: live)
+        // A decided suggestion whose call the transcript holds is drawn
+        // there: the decision's own line stands without a second card.
+        for (id, card) in shown where card.suggestion?.decided == true && scan.proposals[id] != nil { shown[id] = nil }
         // The "New" line stands above a turn as it is drawn: a row whose
         // turn was streamed in this conversation keeps the id the stream
         // gave it.
@@ -532,7 +538,7 @@ extension ChatApp {
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
             older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false),
-            turns: turns, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
+            turns: folded, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
             failures: failures(state, live: live, row: row, all: all, turns: turns), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
@@ -542,7 +548,8 @@ extension ChatApp {
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
                 keyless: hero?.keyless == nil ? callout : nil,
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
-                canSend: blocked == nil, status: Self.status(live, agent: agent)),
+                canSend: blocked == nil, status: Self.status(live, agent: agent), queues: live.queues,
+                queued: Self.queuedNote(live), answering: Self.answering(state, live), focus: live.focuses),
             streaming: live.phase == .streaming, stopping: live.stopping,
             expandThinking: state.preferences.expandThinking, sends: live.sends,
             opens: at.map { .turn($0) } ?? newLine.map { .turn($0.turn) } ?? .end, visit: entry?.visits ?? 0, above: above)
@@ -569,6 +576,41 @@ extension ChatApp {
             return ComposerStatus(kind: .writing, words: "Writing…")
         }
         return ComposerStatus(kind: .thinking, words: "Thinking…")
+    }
+
+    /// The turns with each message the assistant has not read yet said so
+    /// under it: sent while a reply was being written, it is read at the
+    /// assistant's next step.
+    static func queued(_ turns: [TurnPresentation], live: ConversationLive) -> [TurnPresentation] {
+        guard !live.queued.isEmpty else { return turns }
+        let waiting = Set(live.queued)
+        return turns.map { turn in
+            guard waiting.contains(turn.id), case var .user(message) = turn.body else { return turn }
+            message.queued = "Queued for \(live.name)'s next step"
+            return TurnPresentation(id: turn.id, body: .user(message))
+        }
+    }
+
+    /// What the composer says while messages are queued: Stop is beside
+    /// it, and a stop leaves them unread.
+    static func queuedNote(_ live: ConversationLive) -> String? {
+        guard live.phase == .streaming, !live.queued.isEmpty else { return nil }
+        let held = live.queued.count == 1 ? "1 message is queued" : "\(live.queued.count) messages are queued"
+        return "\(held). If you stop \(live.name) first, \(live.queued.count == 1 ? "it stays" : "they stay") unread until you continue."
+    }
+
+    /// What the composer says of the questions being answered in the
+    /// person's own words.
+    static func answering(_ state: State, _ live: ConversationLive) -> AnsweringNote? {
+        guard let id = live.answering else { return nil }
+        let record = state.cards[id]?.record ?? state.interactions.first { $0.id == id }
+        // Answered or dismissed meanwhile, here or on another device:
+        // there is nothing left to answer in any words.
+        if let record, !Self.waits(record) { return nil }
+        let questions = record?["questions"]?.array ?? []
+        return AnsweringNote(
+            id: id, title: "Answering in your own words", prompt: questions.count == 1 ? questions[0]["prompt"]?.text : nil,
+            back: "Show Options")
     }
 
     /// The stored rows' part of a conversation: its turns as drawn, what
@@ -612,6 +654,7 @@ extension ChatApp {
         var proposals: [String: ToolCall] = [:]
         var decisions: [String: DecisionNotice] = [:]
         var approvals: [String: ApprovalNotice] = [:]
+        var answers: [String: InteractionNotice] = [:]
         var asked: [String] = []
         var interactions: [String] = []
 
@@ -620,6 +663,7 @@ extension ChatApp {
             for turn in turns {
                 if let decision = decisionNotice(turn) { decisions[decision.requestID] = decision }
                 if let ended = approvalNotice(turn) { approvals[ended.approvalID] = ended }
+                if let answer = interactionNotice(turn) { answers[answer.interactionID] = answer }
                 for call in turn.tools {
                     if let interaction = interactionID(of: call) { interactions.append(interaction) }
                     if let approval = approvalID(of: call) { asked.append(approval) }
@@ -633,26 +677,37 @@ extension ChatApp {
             proposals.merge(later.proposals) { _, new in new }
             decisions.merge(later.decisions) { _, new in new }
             approvals.merge(later.approvals) { _, new in new }
+            answers.merge(later.answers) { _, new in new }
             asked += later.asked
             interactions += later.interactions
         }
     }
 
-    private func cards(_ state: State, _ scan: CardScan, titles: [String: String]) -> [String: CardPresentation] {
+    /// - Parameter answering: the questions the person is answering in
+    ///   their own words, whose card is aside.
+    private func cards(_ state: State, _ scan: CardScan, titles: [String: String], answering: String?) -> [String: CardPresentation] {
         var out: [String: CardPresentation] = [:]
         for interaction in scan.interactions {
-            out[interaction] = CardPresentation(question: CardPresenter.question(interaction, card: state.cards[interaction]))
+            let card = state.cards[interaction]
+            let pending = state.interactions.first { $0.id == interaction }
+            let outcome = scan.answers[interaction]
+            out[interaction] = CardPresentation(
+                question: CardPresenter.question(interaction, card: card, pending: pending, outcome: outcome, aside: answering == interaction),
+                resolution: CardPresenter.resolved(question: interaction, card: card, pending: pending, outcome: outcome))
         }
         for id in scan.asked {
+            let pending = state.approvals.first { $0.id == id }
+            let made = CardPresenter.approval(id, card: state.cards[id], pending: pending, outcome: scan.approvals[id])
             out[id] = CardPresentation(
-                approval: CardPresenter.approval(
-                    id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: scan.approvals[id]))
+                approval: made, resolution: CardPresenter.resolved(approval: id, made: made, card: state.cards[id], pending: pending))
         }
         for id in Set(scan.proposals.keys).union(scan.decisions.keys) {
+            let made = CardPresenter.suggestion(
+                id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: scan.proposals[id],
+                outcome: scan.decisions[id], session: state.session, titles: titles)
             out[id] = CardPresentation(
-                suggestion: CardPresenter.suggestion(
-                    id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: scan.proposals[id],
-                    outcome: scan.decisions[id], session: state.session, titles: titles))
+                suggestion: made,
+                resolution: CardPresenter.resolved(suggestion: id, made: made, card: state.cards[id], outcome: scan.decisions[id]))
         }
         return out
     }
