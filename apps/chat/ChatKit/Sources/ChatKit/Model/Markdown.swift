@@ -27,7 +27,7 @@ public enum MarkdownAlignment: String, Codable, Hashable, Sendable { case leadin
 
 public extension MeterPoint {
     /// One parse of a reply's Markdown into blocks.
-    static let parse = MeterPoint("parse")
+    static let parse = MeterPoint("parse", kept: true)
     /// One line of inline Markdown made into styled text.
     static let inline = MeterPoint("inline")
 }

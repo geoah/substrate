@@ -30,6 +30,14 @@ extension ChatApp {
             next.preferences.askedNotifications = true
             if allow { next.asks.append(.askPermission) }
         case let .usageRead(usage): next.usage = usage
+        case .followEnded:
+            // The diagnostics' alone (`effects`).
+            break
+        case let .diagnosticsAsked(shown):
+            next.diagnostics = shown ? (next.diagnostics ?? []) : nil
+            if shown, let disk = next.disk { next.asks.append(.readDiagnostics(disk)) }
+        case let .diagnosticsRead(lines):
+            if next.diagnostics != nil { next.diagnostics = lines }
         case .transcriptsCleared:
             if let disk = next.disk { next.asks.append(.readUsage(disk)) }
         case let .backgroundRun(run): backgroundRun(&next, run)

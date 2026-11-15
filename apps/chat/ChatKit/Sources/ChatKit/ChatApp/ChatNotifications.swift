@@ -35,6 +35,12 @@ public enum ChatNotifications {
     /// record id alphabet, so one thread's prefix never covers another's.
     static func prefix(_ thread: String) -> String { "chat|\(thread)|" }
 
+    /// The thread a notification's id names, where it names one.
+    static func thread(of id: String) -> String? {
+        let parts = id.split(separator: "|", omittingEmptySubsequences: false)
+        return parts.count >= 3 && parts[0] == "chat" ? String(parts[1]) : nil
+    }
+
     // MARK: Categories and actions
 
     /// A reply: answered with a line of text.

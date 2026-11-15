@@ -20,7 +20,8 @@ import FoundationNetworking
 /// trace to what it prints, `CHATKIT_TRACE` keeps the trace of the whole
 /// run, `CHATKIT_WATCH=<text>` prints where that text is after each
 /// step, and `CHATKIT_MARK=<thread>` what the app and the server hold of
-/// that thread's mark. `CHATKIT_REVISION=<n>` runs every seed against a
+/// that thread's mark, and `CHATKIT_DIAGNOSTICS` the diagnostics file as it
+/// would be shared at the run's end. `CHATKIT_REVISION=<n>` runs every seed against a
 /// server at that `agents` revision, in place of the one each seed draws:
 /// for the paths only the newest revision has.
 private struct SeedPlan {

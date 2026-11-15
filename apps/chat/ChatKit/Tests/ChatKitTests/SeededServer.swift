@@ -308,6 +308,12 @@ final class SeededServer: @unchecked Sendable {
         case stream(StreamFault)
     }
 
+    /// Every sentence the server says in its own words: an envelope's
+    /// message, a thread's reason, a failed turn's error. The app shows
+    /// them under Details and writes them nowhere, the diagnostics file
+    /// least of all, which a seeded run holds it to (`SeededRun.discreet`).
+    static let said = ["the server could not answer", "the token was revoked", "the run ended", "llm: overloaded_error", "unknown type"]
+
     let seed: UInt64
     let clock: TestClock
     /// The `agents` feature's revision the discovery document states: below
@@ -996,7 +1002,7 @@ final class SeededServer: @unchecked Sendable {
         threads[id] = thread
         let last: String
         if status == "error" {
-            last = line(["kind": "error", "error": "llm: overloaded_error", "cause": "provider_overloaded"])
+            last = line(["kind": "error", "error": Self.said[3], "cause": "provider_overloaded"])
         } else {
             var result: [String: Any] = ["reply": turn.written, "thread": id, "status": status, "turns": 1]
             if status == "stopped" { result["cause"] = "requested" }
@@ -1310,12 +1316,12 @@ final class SeededServer: @unchecked Sendable {
             // Only a stream that opened can go wrong as one.
             if case let .stream(thread, opening, _)? = outcome { outcome = .stream(thread: thread, opening: opening, fault: broken) }
         case let .status(status, code, retryAfter):
-            return json(status, #"{"error":{"code":"\#(code)","message":"the server could not answer"}}"#, url: url, retryAfter: retryAfter)
+            return json(status, #"{"error":{"code":"\#(code)","message":"\#(Self.said[0])"}}"#, url: url, retryAfter: retryAfter)
         case .gateway:
             return page(502, url: url)
         case .unauthorized:
             lock.withLock { refused401 = true }
-            return json(401, #"{"error":{"code":"unauthorized","message":"the token was revoked"}}"#, url: url)
+            return json(401, #"{"error":{"code":"unauthorized","message":"\#(Self.said[1])"}}"#, url: url)
         case .page:
             return page(200, url: url)
         case .dropped:
@@ -1458,7 +1464,7 @@ final class SeededServer: @unchecked Sendable {
         if let reply = thread.lastReply { properties["lastReply"] = reply }
         if let cause = thread.cause {
             properties["cause"] = cause
-            properties["reason"] = "the run ended: \(cause)"
+            properties["reason"] = "\(Self.said[2]): \(cause)"
         }
         if keepsMarks, let last = thread.lastMessage { properties["lastMessage"] = ["ref": "substrate.reamde.dev/llm/message/\(last)"] }
         // What waits on a person, counted where the server keeps marks.

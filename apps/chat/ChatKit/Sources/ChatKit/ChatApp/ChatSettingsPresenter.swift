@@ -73,7 +73,14 @@ extension ChatApp {
                     ? "Notifications are off for Substrate Chat. " + reach
                     : unasked ? "Substrate Chat has not asked to notify you yet. " + reach : reach),
         ]
-        if state.session != nil { sections.append(SettingsPresenter.storage(state.usage, budget: ChatStorage.budget)) }
+        if state.session != nil {
+            sections.append(SettingsPresenter.storage(state.usage, budget: ChatStorage.budget))
+            sections.append(
+                SettingsSection(
+                    id: .app("diagnostics"), title: "Diagnostics",
+                    rows: [SettingsRow(id: .app("shareDiagnostics"), label: "Share Diagnostics", control: .action(destructive: false, enabled: true))],
+                    footer: DiagnosticsReport.promise + " You see all of it before you share it."))
+        }
         return ChatSettingsPresentation(
             assistants: assistants, guidance: guidance(state), sections: sections, notificationsDenied: denied,
             voiceLocale: prefs.voiceLocale)

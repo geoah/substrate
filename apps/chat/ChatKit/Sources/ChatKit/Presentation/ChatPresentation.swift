@@ -35,6 +35,9 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     /// A run settled: the announcement, and the haptic where its chat is
     /// on screen.
     public var answered: Signal<ChatAnswer>
+    /// The diagnostics file as it would be shared, while Share Diagnostics
+    /// shows it.
+    public var diagnostics: DiagnosticsReport?
     /// The instant the tree must be presented again though nothing moved:
     /// a reply being written whose rows were left as they were, because its
     /// last parse was too recent. Nil while every reply is drawn as it
