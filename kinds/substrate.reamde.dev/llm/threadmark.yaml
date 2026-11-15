@@ -1,9 +1,9 @@
 # how far one person has read one thread, and what they did with it (decision
-# record 0313). The thread is the engine's row and says what the run did;
-# this is the person's, so reading a chat moves neither the thread's version
-# nor its place in a list. One record per thread and person, under the id
-# `<thread id>.<actor id>`, which the engine builds for a create that names
-# none (engine/threadmarks.go).
+# records 0313 and 0322). The thread is the engine's row and says what the
+# run did; this is the person's, so reading a chat, pinning it or archiving
+# it moves neither the thread's version nor its place in a list. One record
+# per thread and person, under the id `<thread id>.<actor id>`, which the
+# engine builds for a create that names none (engine/threadmarks.go).
 #
 # The engine holds every write of one: a person, or an app acting for them,
 # writes only their own; `thread` and `readBy` are fixed at the create;
@@ -13,7 +13,11 @@
 # `markedUnread` is set, when its `lastMessage` is not `readThrough`, or when
 # the person has no mark of it.
 #
-# `pinned` and `archived` are meant for this record later.
+# `pinned` and `archived` are the person's too, and the engine writes
+# neither: no run, reply or settle moves them, and neither moves the
+# position or is moved by it. A person may pin or archive a thread they
+# never opened, so a mark may hold no `readThrough`: such a thread is as
+# unopened as one with no mark.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/llm/threadmark
@@ -21,9 +25,10 @@ data:
   authority: substrate.reamde.dev
   package: llm
   description: >-
-    How far one person has read one thread: the newest message they have seen,
-    when, and whether they marked the thread unread. Each person has their
-    own for a thread, and it follows them to every device.
+    What one person has done with one thread: the newest message they have
+    seen and when, whether they marked the thread unread, and whether they
+    pinned or archived it. Each person has their own for a thread, and it
+    follows them to every device.
   purpose: internal
   # The id is `<thread id>.<actor id>`, a name the engine checks against the
   # two references, so a client reads a mark without a search.
@@ -32,6 +37,9 @@ data:
   # A mark is its person's own record, so its history is kept whole like
   # every kind that is not bookkeeping (decision record 0333): it states no
   # retention.
+  # version 10: `pinned` and `archived` (decision record 0322). The kind took
+  # its package's version, 9, until then.
+  version: 10
   names:
     singular: threadmark
   # Whose mark, then of what: two people's marks of one thread read apart.
@@ -66,3 +74,12 @@ data:
       type: bool
       description: true while the person has marked the thread unread; the
         next write of `readThrough` at or after the stored one clears it
+    pinned:
+      type: bool
+      description: true while the person keeps the thread pinned above the
+        rest of their list; only their own write changes it
+    archived:
+      type: bool
+      description: true while the person keeps the thread out of their list;
+        the thread, its run and its cost are untouched, and only their own
+        write changes it

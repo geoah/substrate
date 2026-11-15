@@ -21,6 +21,13 @@ package engine
 //   - `readAt` is stamped when a write's position is taken, and a value a
 //     write sends is dropped.
 //
+// `pinned` and `archived` (decision record 0322) are the person's own flags
+// on the same record, held by the same rules and by nothing more: no path
+// here reads or writes either, so no run, reply or settle moves them, and a
+// write of one never touches the position. A person may set one on a thread
+// they never opened, so a mark may hold no `readThrough`; everything here
+// already reads such a mark as a position not yet taken.
+//
 // `lastMessage` and `waitingOnPerson` are the engine's (`writer: system`):
 // the first is stamped on every write that settles a thread, whichever path
 // makes it, and the second is counted again in each write that creates or
@@ -44,6 +51,8 @@ const (
 	propMarkReadThrough = "readThrough"
 	propMarkReadAt      = "readAt"
 	propMarkUnread      = "markedUnread"
+	propMarkPinned      = "pinned"
+	propMarkArchived    = "archived"
 
 	propThreadLastMessage = "lastMessage"
 	propThreadWaiting     = "waitingOnPerson"

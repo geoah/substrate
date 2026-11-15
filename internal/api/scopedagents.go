@@ -440,20 +440,20 @@ func (s *scopedDataset) requireRow(ctx context.Context, kind, id string) error {
 
 // rowPatchable names what an app's patch of a row-gated kind may carry: a
 // thread's rename, an interaction's answer or dismissal, a mark's position
-// and its unread flag, a change request's decision. Nothing else of those
+// and its three flags (unread, pinned, archived), a change request's decision. Nothing else of those
 // kinds is written through the agent verbs.
 var rowPatchable = map[string][]string{
 	kindThread:      {"subject"},
 	kindInteraction: {"state", "answers"},
 	kindApproval:    {"state"},
-	kindThreadMark:  {"readThrough", "markedUnread"},
+	kindThreadMark:  {"readThrough", "markedUnread", "pinned", "archived"},
 	kindRequest:     {"decision", "adjustedDiff"},
 }
 
 // markWritable names what a put of a thread mark may carry through a view.
 // `readAt` is the engine's and dropped there; `readBy` is held there to the
 // person the write acts for, so it names nothing the caller does not hold.
-var markWritable = []string{"thread", "readBy", "readThrough", "readAt", "markedUnread"}
+var markWritable = []string{"thread", "readBy", "readThrough", "readAt", "markedUnread", "pinned", "archived"}
 
 // putMark is a put of a thread mark through a view (decision 0313). A
 // person whose roles write the kind writes it as any other, but for
