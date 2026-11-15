@@ -309,6 +309,12 @@ type declaredReferences struct {
 // parses (Unread) still says where its references sit.
 func referencePositionsOf(versions []declarationVersion, home string) referencePositions {
 	out := referencePositions{kinds: map[string][]declaredReferences{}, traits: map[string][]declaredReferences{}}
+	declaredTraits := map[string]bool{}
+	for _, v := range versions {
+		if v.Ref == kindTrait {
+			declaredTraits[vocabulary.LocalizeRef(v.ID, home)] = true
+		}
+	}
 	for _, v := range versions {
 		var into map[string][]declaredReferences
 		switch v.Ref {
@@ -333,13 +339,44 @@ func referencePositionsOf(versions []declarationVersion, home string) referenceP
 			for _, t := range list {
 				if s, ok := t.(string); ok {
 					name, _, _ := strings.Cut(s, "(")
-					d.traits = append(d.traits, vocabulary.LocalizeRef(strings.TrimSpace(name), home))
+					d.traits = append(d.traits, boundTrait(vocabulary.LocalizeRef(strings.TrimSpace(name), home), id, declaredTraits))
 				}
 			}
 		}
 		into[id] = append(into[id], d)
 	}
 	return out
+}
+
+// boundTrait is the trait a `traits:` entry of kind binds. A declaration
+// written before decision 0098 may name it by its bare word, which the
+// loader of the day resolved (Registry.ResolveTrait): the declaring
+// package's trait of that name, else core's, else the one trait any package
+// declares under it. traits is every trait the history declares. A full
+// name, or a word none of the three settles, is the entry as written.
+func boundTrait(name, kind string, traits map[string]bool) string {
+	if strings.Contains(name, "/") {
+		return name
+	}
+	if i := strings.LastIndex(kind, "/"); i > 0 && traits[kind[:i]+"/"+name] {
+		return kind[:i] + "/" + name
+	}
+	if traits[vocabulary.PackageCore+"/"+name] {
+		return vocabulary.PackageCore + "/" + name
+	}
+	found := ""
+	for t := range traits {
+		if strings.HasSuffix(t, "/"+name) {
+			if found != "" {
+				return name
+			}
+			found = t
+		}
+	}
+	if found == "" {
+		return name
+	}
+	return found
 }
 
 // governing is the version of a declaration that governs a line at seq whose
@@ -392,13 +429,31 @@ func (rp referencePositions) lastDeclared(kind string) map[string]map[string]any
 	return nil
 }
 
+// shippedGoverning is governing, and for a line of a kind or trait the
+// binary ships, written before the history declares it at all, its first
+// version: a repository migration runs before the stored vocabulary loads
+// and writes under the embedded declaration, which the boot upgrade stores
+// after it (the units move of decision 0186 wrote core/unit records one
+// transaction before core/unit was declared). A repository's own kind has no
+// such writer, and its line stays ungoverned.
+func shippedGoverning(versions []declaredReferences, ref string, seq, txn int64) (declaredReferences, bool) {
+	if d, ok := governing(versions, seq, txn); ok {
+		return d, true
+	}
+	if strings.HasPrefix(ref, vocabulary.AuthorityPublisher+"/") && len(versions) > 0 && versions[0].seq > seq && !versions[0].deleted {
+		return versions[0], true
+	}
+	return declaredReferences{}, false
+}
+
 // at is where a record of kind written at seq, in a transaction ending at
 // txn, holds references: by the declaration of its kind that governs the
 // line, and by those of the traits it binds that govern the line for the
-// properties the kind does not declare itself. A line no declaration
-// governs is refused, naming the kind and the seq: nothing is guessed.
+// properties the kind does not declare itself (shippedGoverning). A line no
+// declaration governs is refused, naming the kind and the seq: nothing is
+// guessed.
 func (rp referencePositions) at(kind string, seq, txn int64) (map[string]map[string]any, error) {
-	d, ok := governing(rp.kinds[kind], seq, txn)
+	d, ok := shippedGoverning(rp.kinds[kind], kind, seq, txn)
 	if !ok {
 		return nil, fmt.Errorf("seq %d writes a record of %s, and no declaration of %s governs it: none was in force at that line and none was written in its transaction", seq, kind, kind)
 	}
@@ -407,7 +462,7 @@ func (rp referencePositions) at(kind string, seq, txn int64) (map[string]map[str
 		out[name] = decl
 	}
 	for _, t := range d.traits {
-		tv, ok := governing(rp.traits[t], seq, txn)
+		tv, ok := shippedGoverning(rp.traits[t], t, seq, txn)
 		if !ok {
 			return nil, fmt.Errorf("seq %d writes a record of %s, which binds %s, and no declaration of %s governs it there", seq, kind, t, t)
 		}

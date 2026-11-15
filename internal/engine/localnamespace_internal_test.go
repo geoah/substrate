@@ -128,6 +128,90 @@ func TestLocalizeLineReadsTheDeclarationThatGovernsIt(t *testing.T) {
 	}
 }
 
+// A kind declared before decision 0098 may bind a trait by its bare word,
+// and the conversion reads the binding as the loader of the day resolved
+// it: the declaring package's trait of that name, else core's, else the one
+// trait any package declares under it. A word two other packages declare
+// stays unresolved, and a line of the kind stops the conversion.
+func TestABareTraitBindingIsReadAsTheLoaderResolvedIt(t *testing.T) {
+	trait := func(id, prop string) declarationVersion {
+		return declarationVersion{Seq: 1, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(id string, traits ...any) declarationVersion {
+		return declarationVersion{Seq: 2, Ref: kindKind, ID: id, Properties: map[string]any{"traits": traits}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		trait(vocabulary.PackageCore+"/oauth2", "account"),
+		trait("ada.example.com/notes/oauth2", "owner"),
+		trait("other.example.com/memory/attention", "about"),
+		trait("a.example.com/x/feedback", "from"),
+		trait("b.example.com/y/feedback", "to"),
+		kind("ada.example.com/notes/note", "oauth2", "attention"),
+		kind("ada.example.com/tasks/task", "oauth2(point: dueAt)"),
+		kind("ada.example.com/tasks/log", "feedback"),
+	}, localizeHome)
+	for _, c := range []struct {
+		kind       string
+		want, lack []string
+	}{
+		{"~/notes/note", []string{"owner", "about"}, []string{"account"}}, // its own package's oauth2 over core's
+		{"~/tasks/task", []string{"account"}, []string{"owner"}},          // core's, with a variant after the word
+	} {
+		got, err := refs.at(c.kind, 3, 3)
+		if err != nil {
+			t.Fatalf("a line of %s: %v", c.kind, err)
+		}
+		for _, name := range c.want {
+			if _, ok := got[name]; !ok {
+				t.Errorf("a line of %s holds no reference at %s, which a trait it binds bare declares: %v", c.kind, name, slices.Sorted(maps.Keys(got)))
+			}
+		}
+		for _, name := range c.lack {
+			if _, ok := got[name]; ok {
+				t.Errorf("a line of %s holds a reference at %s, from a trait its bare binding did not resolve to", c.kind, name)
+			}
+		}
+	}
+	if _, err := refs.at("~/tasks/log", 3, 3); err == nil || !strings.Contains(err.Error(), "binds feedback") {
+		t.Errorf("a line of a kind binding a word two packages declare: %v, want the conversion stopped", err)
+	}
+}
+
+// A repository migration runs before the stored vocabulary loads, so a
+// record of a kind the binary ships may precede the history's first
+// declaration of that kind, and of a trait it binds: the line is read by the
+// first version. A repository's own kind has no such writer, and its line
+// before any declaration still stops the conversion.
+func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing.T) {
+	unit := vocabulary.PackageCore + "/unit"
+	temporal := vocabulary.PackageCore + "/temporal"
+	refs := referencePositionsOf([]declarationVersion{
+		{Seq: 10, Ref: kindTrait, ID: temporal, Properties: map[string]any{"properties": map[string]any{
+			"source": map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}},
+		{Seq: 11, Ref: kindKind, ID: unit, Properties: map[string]any{
+			"properties": map[string]any{"base": map[string]any{"type": "reference", "kind": unit}},
+			"traits":     []any{temporal + "(point)"},
+		}},
+		{Seq: 11, Ref: kindKind, ID: "ada.example.com/notes/note", Properties: map[string]any{}},
+	}, localizeHome)
+	got, err := refs.at(unit, 5, 6)
+	if err != nil {
+		t.Fatalf("a line of %s one transaction before its declaration: %v", unit, err)
+	}
+	if _, ok := got["base"]; !ok {
+		t.Errorf("the line holds no reference at base, which the first version declares: %v", slices.Sorted(maps.Keys(got)))
+	}
+	if _, ok := got["source"]; !ok {
+		t.Errorf("the line holds no reference at source, which the first version of the trait it binds declares: %v", slices.Sorted(maps.Keys(got)))
+	}
+	if _, err := refs.at("~/notes/note", 5, 6); err == nil || !strings.Contains(err.Error(), "no declaration of ~/notes/note governs it") {
+		t.Errorf("a line of an own kind before any declaration of it: %v, want the conversion stopped", err)
+	}
+}
+
 func TestLocalizeLineMovesOwnKindsAndLeavesTheRest(t *testing.T) {
 	cases := []localizeCase{
 		{
