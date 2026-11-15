@@ -41,6 +41,14 @@ public protocol Notifications: Sendable {
     /// read the stream (the tap that launched the app) is kept for the first
     /// reader.
     func responses() -> AsyncStream<NotificationResponse>
+    /// The app has done what a response's action asked for. An action that
+    /// answers in the background (`NotificationAction.opensApp` false)
+    /// holds the app awake from its response until this is said of it, or
+    /// until the service's own limit passes: the system may suspend the app
+    /// the moment it is told a response was handled, so it is told only
+    /// then. Said of a tap, a dismissal or a response already finished, it
+    /// does nothing.
+    func finished(_ response: NotificationResponse) async
 }
 
 public extension Notifications {
@@ -62,6 +70,7 @@ public extension Notifications {
     func setBadge(_ count: Int) async {}
     func pending(prefix: String) async -> [String] { [] }
     func responses() -> AsyncStream<NotificationResponse> { AsyncStream { $0.finish() } }
+    func finished(_ response: NotificationResponse) async {}
 }
 
 /// What the owner allows.

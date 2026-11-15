@@ -274,7 +274,7 @@ public struct ChatApp: LinkedApp {
                     outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
                     read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved,
                     unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack, spoke: spoke,
-                    answered: state.answered)))
+                    answered: state.answered, replied: state.replyOutcome)))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -339,6 +339,12 @@ public struct ChatApp: LinkedApp {
             taken.formUnion(previous.unreadThreads.subtracting(state.unreadThreads).filter { state.thread($0)?.running == false })
         }
         for thread in taken.sorted() { asks.append(.cancelGroup(thread)) }
+        // The questions a notification can answer changed, or the folder
+        // was just read: each one's options are its category's actions.
+        let answerable = { (state: State) in state.interactions.filter { ChatNotifications.answerable($0) != nil } }
+        if state.disk != nil, previous.disk == nil || answerable(state) != answerable(previous) {
+            asks.append(.categories(ChatNotifications.categories(for: state.interactions)))
+        }
         return asks.map(Effect.init)
     }
 
@@ -374,6 +380,8 @@ public struct ChatApp: LinkedApp {
         case .setKey: "key"
         case let .readCard(reference, _): "card:\(reference.id)"
         case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
+        case .categories: "categories"
+        case let .actionWait(id, _): "actWait:\(id)"
         case .readGuidance: "guidance"
         case let .writeGuidance(reference, _, _), let .deleteGuidance(reference, _): "guidance:\(reference.path)"
         case .followRuns: "runs"
@@ -384,7 +392,7 @@ public struct ChatApp: LinkedApp {
         case .readPermission: "permission"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
-            .askPermission, .finishRun, .scheduleRefresh, .endContinued:
+            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification:
             nil
         }
     }
@@ -417,7 +425,7 @@ public struct ChatApp: LinkedApp {
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
                 continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
                 landed: landed, landedOn: landedOn, draftFound: entry.draftFound, rowTurns: held.map { persistedTurns($0.records) } ?? [],
-                rowReplied: held.map { Self.Child.replied($0.records) } ?? -1)
+                rowReplied: held.map { Self.Child.replied($0.records) } ?? -1, reply: entry.reply)
         }
         return out
     }

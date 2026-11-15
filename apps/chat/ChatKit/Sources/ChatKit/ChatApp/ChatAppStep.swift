@@ -22,6 +22,12 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case backgroundExpired(String)
     case continued(ChildKey, ContinuedProcessing.Update)
     case notificationOpened(NotificationResponse)
+    /// An action of a notification: `key` and `message` are ids minted for
+    /// it, the conversation a reply is sent from where its thread has none
+    /// yet, and the id the reply is sent under.
+    case notificationActed(NotificationResponse, key: ChildKey, message: String, at: Date)
+    /// The time an action from a notification may take has passed.
+    case actionDue(String)
     case phase(AppPhase)
     case paced(Bool)
 
@@ -274,6 +280,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         /// The questions the server now holds an answer to in the person's
         /// own words: dismissed, so they do not wait for good.
         var answered: String?
+        /// What became of a reply typed into a notification.
+        var replied: Conversation.ReplyOutcome?
     }
 
     struct Read: Codable, Equatable, Sendable {

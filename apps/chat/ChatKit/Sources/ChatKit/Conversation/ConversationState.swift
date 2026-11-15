@@ -252,6 +252,12 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var answered: String?
     /// Moved when the composer's field is asked to take the cursor.
     var focuses = 0
+    /// The reply typed into a notification that this conversation last
+    /// took up, by its id, so it is sent once; the one it is still sending;
+    /// and what the last event learned became of one.
+    var repliedTo: String?
+    var replying: String?
+    var replyOutcome: Conversation.ReplyOutcome?
     /// The read of the rows failed or outlasted its wait: what the stream
     /// said stays.
     var reloadFailed: Failure?

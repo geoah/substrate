@@ -26,6 +26,7 @@ extension ChatApp {
         let preferences = preferences
         let notifications = environment.devices.notifications
         let background = environment.devices.background
+        let ids = environment.ids
         @Sendable func failed(_ attempt: Failure.Attempt, _ error: any Error, _ client: SubstrateClient) -> Failure {
             Failure(attempt, error, server: client.server)
         }
@@ -469,6 +470,21 @@ extension ChatApp {
 
         case let .notify(request):
             return Self.device(notifications) { await $0.schedule(request) }
+        case let .notifyCard(request, categories):
+            return Self.device(notifications) { notifications in
+                await notifications.register(categories)
+                await notifications.schedule(request)
+            }
+        case let .categories(categories):
+            return Self.device(notifications) { await $0.register(categories) }
+        case let .actionWait(id, seconds):
+            return .once { await pause(seconds) ? Event(.actionDue(id)) : nil }
+        case let .finishAction(response, cancel, notify):
+            return Self.device(notifications) { notifications in
+                if let cancel { await notifications.cancel(cancel) }
+                if let notify { await notifications.schedule(notify) }
+                await notifications.finished(response)
+            }
         case let .notifyHeld(request, seconds):
             let fireAt = clock.now.addingTimeInterval(seconds)
             return Self.device(notifications) { notifications in
@@ -482,6 +498,8 @@ extension ChatApp {
                 await notifications.cancel(thread: thread)
                 for id in await notifications.pending(prefix: ChatNotifications.prefix(thread)) { await notifications.cancel(id) }
             }
+        case let .cancelNotification(id):
+            return Self.device(notifications) { await $0.cancel(id) }
         case .cancelAllNotifications:
             return Self.device(notifications) { await $0.cancelAll() }
         case let .badge(count):
@@ -496,7 +514,18 @@ extension ChatApp {
             guard let notifications else { return .none }
             return .sequence {
                 Self.relay { yield in
-                    for await response in notifications.responses() { yield(.notificationOpened(response)) }
+                    for await response in notifications.responses() {
+                        // An action is answered in the background, under
+                        // ids minted for it as it arrives.
+                        guard case .named = response.action else {
+                            yield(.notificationOpened(response))
+                            continue
+                        }
+                        yield(
+                            .notificationActed(
+                                response, key: ChildKey(ids.next().uuidString.lowercased()), message: ids.next().uuidString.lowercased(),
+                                at: clock.now))
+                    }
                 }
             }
         case .followRuns:

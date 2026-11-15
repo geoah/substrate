@@ -115,6 +115,27 @@ public struct Conversation: Controller, Equatable {
         case resumed
         case ownWords(String)
         case optionsShown
+        /// A reply typed into a notification is the list's to hand over:
+        /// read from the value, as after every event.
+        case replyAsked
+    }
+
+    /// A reply typed into a notification, for this conversation to send as
+    /// a message under `id`.
+    struct Reply: Codable, Hashable, Sendable {
+        var id: String
+        var text: String
+        var at: Date
+        /// The action's time is up: a copy still unanswered stops being
+        /// sent, and the message stands in the chat.
+        var expired = false
+    }
+
+    /// What became of it: sent, or why not, with the text kept in the
+    /// composer or on a message that stands.
+    struct ReplyOutcome: Codable, Equatable, Sendable {
+        var id: String
+        var failure: Failure?
     }
 
     /// A send of unknown delivery the check found: its thread, and what it
@@ -159,6 +180,8 @@ public struct Conversation: Controller, Equatable {
     /// The newest ordinal a reply's row carries among them, or -1: a
     /// message sent while a turn ran whose ordinal is below it was read.
     let rowReplied: Int
+    /// A reply typed into a notification of this thread, to send.
+    let reply: Reply?
     /// A scene in front shows it.
     let visible: Bool
     /// Moved by the list for each change of a message the watch reports
@@ -264,7 +287,7 @@ public struct Conversation: Controller, Equatable {
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
         pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
         kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil,
-        rowTurns: Set<Int> = [], rowReplied: Int = -1
+        rowTurns: Set<Int> = [], rowReplied: Int = -1, reply: Reply? = nil
     ) {
         self.key = key
         self.seed = seed
@@ -274,6 +297,7 @@ public struct Conversation: Controller, Equatable {
         self.newestTurn = newestTurn
         self.rowTurns = rowTurns
         self.rowReplied = rowReplied
+        self.reply = reply
         self.visible = visible
         self.pollNudge = pollNudge
         self.resumeNudge = resumeNudge
@@ -374,7 +398,7 @@ public struct Conversation: Controller, Equatable {
     }
 
     /// Made while a scene shows it: as if it had just appeared there.
-    public func event(atOpen replayed: Bool) -> Event? { visible ? Event(.opened) : nil }
+    public func event(atOpen replayed: Bool) -> Event? { visible ? Event(.opened) : reply == nil ? nil : Event(.replyAsked) }
 
     public func event(replacing previous: Conversation) -> Event? {
         if facts != previous.facts { return Event(.threadMoved(facts)) }
@@ -388,6 +412,7 @@ public struct Conversation: Controller, Equatable {
         if landed, !previous.landed { return Event(.landed) }
         if landedOn != nil, landedOn != previous.landedOn { return Event(.landed) }
         if draftFound != nil, draftFound != previous.draftFound { return Event(.draftFound) }
+        if reply != nil, reply != previous.reply { return Event(.replyAsked) }
         return nil
     }
 

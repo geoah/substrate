@@ -16,6 +16,7 @@ extension Conversation {
         next.adopted = nil
         next.gaveBack = false
         next.answered = nil
+        next.replyOutcome = nil
         switch event.step {
         case let .drafted(text):
             next.draft = text
@@ -97,7 +98,7 @@ extension Conversation {
             next.finding = false
             next.failure = failure
             next.unsentFailure = Failure(.message, .closed, at: at)
-        case .kept, .landed, .draftFound:
+        case .kept, .landed, .draftFound, .replyAsked:
             // Read from the value below, as after every event.
             break
         case let .continued(at):
@@ -137,6 +138,7 @@ extension Conversation {
                 next.asks.append(.cancel("repeat"))
             } else if !run.resumes {
                 answerDelivered(&next, nil)
+                replySettled(&next, nil)
             }
         case let .streamed(streamed, at):
             stream(&next, streamed, at: at)
@@ -333,6 +335,16 @@ extension Conversation {
             if case let .send(run)? = next.run, run.id == pending.id, !run.named { carried = true }
             if !carried { next.unsentFailure = Failure(.message, .interrupted) }
         }
+        // A reply typed into a notification: taken up once, and stood
+        // where its time ran out with no answer.
+        if let reply {
+            if next.repliedTo != reply.id {
+                next.repliedTo = reply.id
+                send(&next, reply)
+            } else if reply.expired, next.replying == reply.id {
+                expire(&next)
+            }
+        }
         // A message is queued only while a run may read it.
         quieten(&next)
         // The wait for a rate limit's end follows the failure that names it.
@@ -393,6 +405,7 @@ extension Conversation {
         }
         giveBack(&state, message)
         state.answer = nil
+        replySettled(&state, failure)
         // A sign-in that ended is the signed-out screen's to say.
         if failure.report != .accessEnded { state.chatFailure = failure }
     }
@@ -427,7 +440,12 @@ extension Conversation {
     ///   questions in the person's own words, they are dismissed now; given
     ///   back or taken back, it answered nothing.
     private func forget(_ state: inout State, taken: Bool = false) {
-        if taken { answerDelivered(&state, state.pending?.id) } else { state.answer = nil }
+        if taken {
+            answerDelivered(&state, state.pending?.id)
+            replySettled(&state, nil)
+        } else {
+            state.answer = nil
+        }
         state.pending = nil
         state.unsentFailure = nil
         state.copies = 0
@@ -444,6 +462,51 @@ extension Conversation {
         read(&state, queuedIn: rows)
         guard let pending = state.pending, rows.contains(where: { $0.id == pending.id }) else { return }
         forget(&state, taken: true)
+    }
+
+    // MARK: A reply typed into a notification
+
+    /// Sends a reply typed into a notification, as the composer's Send
+    /// would: under the id minted for it where the server takes one, kept
+    /// in the folder before its request leaves, and sent again if its
+    /// answer is lost. Where a send cannot go now, the text goes into the
+    /// composer, ahead of what is there, and the list is told why: it is
+    /// never dropped.
+    private func send(_ state: inout State, _ reply: Reply) {
+        guard blockedReason(state) == nil, let agent = agent(state) else {
+            let why: Failure =
+                switch state.phase {
+                case .streaming, .handingOver, .background:
+                    Failure(.send, .http(status: 409, code: "conflict", reason: RefusalReason.threadBusy.rawValue))
+                case .idle:
+                    Failure(.send, online ? .interrupted : .offline)
+                }
+            giveBack(&state, reply.text)
+            state.replyOutcome = ReplyOutcome(id: reply.id, failure: why)
+            return
+        }
+        state.replying = reply.id
+        let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
+        send(
+            &state, message: reply.text, agent: agent, at: reply.at, baseline: baseline, fromDraft: false, id: sendsIDs ? reply.id : nil,
+            typed: true)
+    }
+
+    /// The action's time is up with the reply unanswered: it stops being
+    /// sent and stands at its place in the chat, with Send Again. A send
+    /// under no id cannot be stopped safely, and ends as it ends.
+    private func expire(_ state: inout State) {
+        if case let .send(run)? = state.run, !run.named, run.id != nil {
+            stand(&state, run, Failure(.message, .timeout))
+        }
+        replySettled(&state, state.unsentFailure ?? Failure(.message, .timeout))
+    }
+
+    /// What became of the reply being sent is known: the list is told, once.
+    private func replySettled(_ state: inout State, _ failure: Failure?) {
+        guard let id = state.replying else { return }
+        state.replying = nil
+        state.replyOutcome = ReplyOutcome(id: id, failure: failure)
     }
 
     /// The server holds the message `id` (nil for one sent under no id).
@@ -537,6 +600,7 @@ extension Conversation {
         // A copy still out is let go: whatever it wrote, the rows will say.
         state.asks += [.cancel("repeat"), .cancel("run")]
         state.unsentFailure = failure.attempting(.message)
+        replySettled(&state, state.unsentFailure)
         // A turn runs on the thread, which may be this message's own: an
         // attach reads what the thread holds. So does one the message was
         // sent into, whose stream was let go for the send's.
@@ -1051,6 +1115,7 @@ extension Conversation {
         if state.thread == nil { state.thread = found.thread }
         // The check found it: the server holds it.
         answerDelivered(&state, nil)
+        replySettled(&state, nil)
         if found.running { attach(&state, attempt: 0) }
     }
 }

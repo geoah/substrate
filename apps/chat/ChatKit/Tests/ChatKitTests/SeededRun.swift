@@ -1,6 +1,7 @@
 import Foundation
 import SubstrateAPI
 import SubstrateCore
+import SubstrateDevice
 import SubstrateRuntime
 import SubstrateTesting
 
@@ -120,6 +121,10 @@ struct SeededRun {
         /// A card is resolved by one write, whoever made it and however
         /// often it was pressed.
         case decidedOnce = "a card is resolved once"
+        /// An action of a notification (`ChatAppActions`): the device is
+        /// told it is over within the time an action has, whatever the
+        /// server does, and what it asked for happens at most once.
+        case acted = "an action from a notification is over within its time"
     }
 
     /// Rules the app is known to break today, each with what breaks it. A
@@ -226,6 +231,9 @@ struct SeededRun {
     private var drewRead: [ChildKey: Set<String>] = [:]
     /// The cards the app drew as ended.
     private var drewEnded: Set<String> = []
+    /// The actions of notifications this launch was handed, each with
+    /// when: the device must be told each is over.
+    private var acts: [(response: NotificationResponse, at: Date)] = []
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -376,6 +384,7 @@ struct SeededRun {
                 "dismisses i": "person: dismisses questions", "chooses to answer": "person: answers in their own words",
                 "approves": "person: approves a call", "declines": "person: declines a call",
                 "goes back to the question": "person: goes back to a question's options",
+                "answers the notification": "person: answers from a notification",
             ]
             for (prefix, name) in marks where step.hasPrefix(prefix) { out[name, default: 0] += 1 }
         }
@@ -452,6 +461,9 @@ struct SeededRun {
         }
         // The person's other device answers what waits.
         if server.allCards.contains(where: \.pending) { choices.append((3, "elsewhereCard")) }
+        // And the person answers a notification where it stands, in front
+        // of the app or away from it.
+        if !signedOut, !actionable().isEmpty { choices.append((10, "notification")) }
         var draw = numbers.below(choices.reduce(0) { $0 + $1.weight })
         let choice = choices.first { choice in
             draw -= choice.weight
@@ -589,6 +601,8 @@ struct SeededRun {
             if let current { await send(current.key, current.screen) }
         case "card":
             if let current { await decide(numbers.pick(standing(current.screen)), current.key, current.screen) }
+        case "notification":
+            await act(numbers.pick(actionable()))
         case "options":
             steps.append("goes back to the question's options")
             if let current { await tell(.showOptions, current.key) }
@@ -633,6 +647,43 @@ struct SeededRun {
         }
         for card in wanted where asked.insert(card.id).inserted { await rig.harness.send(.loadCard(card)) }
         await drain()
+    }
+
+    /// The notifications that are shown and offer an action.
+    private func actionable() -> [NotificationRequest] {
+        rig.notifications.pending.values.filter { $0.category != nil && ($0.fireAt.map { $0 <= clock.now } ?? true) }.sorted { $0.id < $1.id }
+    }
+
+    /// An action of a notification: a reply with a line of text, an
+    /// approval or a refusal, an option of a question. Sometimes the
+    /// device hands the same response over twice.
+    private mutating func act(_ note: NotificationRequest) async {
+        var action = ChatNotifications.Action.open.id
+        var text: String?
+        switch note.category {
+        case ChatNotifications.replyCategory:
+            action = ChatNotifications.Action.reply.id
+            let words = word()
+            text = words
+            // A message of the person's like any other: sent once, under
+            // an id, and never lost.
+            sent[words] = (1, true, server.chatRequests(saying: words))
+            ever[words, default: 1] += 0
+        case ChatNotifications.approvalCategory:
+            action = numbers.chance(0.6) ? ChatNotifications.Action.approve.id : ChatNotifications.Action.decline.id
+        case ChatNotifications.openCategory:
+            break
+        default:
+            let options = rig.notifications.categories.first { $0.id == note.category }?.actions ?? []
+            guard !options.isEmpty else { return }
+            action = numbers.pick(options).id
+        }
+        let response = NotificationResponse(id: note.id, category: note.category, action: .named(action), userInfo: note.userInfo, text: text)
+        let twice = numbers.chance(0.15)
+        steps.append("answers the notification \(note.id) with \(action)\(text.map { " \"\($0)\"" } ?? "")\(twice ? ", handed over twice" : "")")
+        acts.append((response, clock.now))
+        rig.notifications.respond(response)
+        if twice { rig.notifications.respond(response) }
     }
 
     /// The cards that stand in a chat and wait: each can be acted on.
@@ -829,6 +880,10 @@ struct SeededRun {
         drewQueued = [:]
         drewRead = [:]
         drewEnded = []
+        // The process is gone, and with it the time the system gave its
+        // actions: one unfinished is lost with it, but for a reply, which
+        // the folder keeps.
+        acts = []
         // The view is gone with the process, and what the launch draws
         // first is the folder's: a dot it kept may be older than the read.
         viewed = nil
@@ -1037,6 +1092,10 @@ struct SeededRun {
         func home(_ text: String) { for known in sent.keys where text.contains(known) { homes.insert(known) } }
         state.drafts.values.forEach(home)
         state.unsent.values.forEach { home($0.message) }
+        // A reply typed into a notification, until the app is ready to
+        // send it: held by the list.
+        state.deferred.forEach { home($0.response.text ?? "") }
+        for entry in state.conversations.values { home(entry.reply?.text ?? "") }
 
         for key in state.conversations.keys.sorted() {
             guard let live = await rig.live(key), let screen = presentation.conversations[key] else { continue }
@@ -1248,6 +1307,12 @@ struct SeededRun {
         }
         for card in server.allCards where card.resolutions > 1 {
             return broke(.decidedOnce, "\(card.id) was resolved by \(card.resolutions) writes")
+        }
+        // Every action handed to this launch is said over to the device
+        // once its time has passed, with room for the app to say so.
+        let finished = rig.notifications.calls.compactMap { if case let .finished(response) = $0 { response } else { nil } }
+        for act in acts where clock.now.timeIntervalSince(act.at) > ChatApp.actionSeconds + 1 && !finished.contains(act.response) {
+            return broke(.acted, "the action \(act.response.action) of \(act.response.id) was handed over \(Int(clock.now.timeIntervalSince(act.at))) s ago and is not over")
         }
         if let broken = marks(state, presentation) { return broken }
         if let broken = lists(state, presentation, settled: settled) { return broken }
