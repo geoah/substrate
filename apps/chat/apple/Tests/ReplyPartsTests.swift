@@ -49,12 +49,10 @@ import Testing
         var elements: [AnyObject] { LeavingTheApp.elements(under: hosting) }
 
         /// What a screen reader is told of each element: its label, or the
-        /// text it holds. A link inside a text is in that text's own words,
-        /// and is not asked for its label: SwiftUI's own element for one
-        /// raises on a line that holds a record's pill.
+        /// text it holds. A link inside a text is an element of its own
+        /// beside the text's.
         var words: [String] {
             elements.compactMap { element in
-                if element.accessibilityRole?() == .link { return nil }
                 if let label = element.accessibilityLabel?(), !label.isEmpty { return label }
                 return Self.text((element as? NSAccessibilityProtocol)?.accessibilityValue())
             }
@@ -67,6 +65,11 @@ import Testing
             return nil
         }
 
+        /// The links, by what each is read as.
+        var links: [String] {
+            elements.filter { $0.accessibilityRole?() == .link }.map { ReplyPartsTests.plain(($0.accessibilityLabel?() ?? nil) ?? "") }
+        }
+
         /// The buttons, by their labels.
         var buttons: [String] {
             elements.filter { $0.accessibilityRole?() == .button }.compactMap { $0.accessibilityLabel?() ?? nil }
@@ -77,10 +80,49 @@ import Testing
         }
     }
 
-    /// The same words with every run of spaces, breaking or not, as one.
+    /// The same words with every run of spaces, breaking or not, as one,
+    /// and without what makes a labelled piece as long as its label
+    /// (`SpokenPiece`).
     static func plain(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{00A0}", with: " ").replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\u{2060}", with: "")
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    // MARK: Links
+
+    /// A link on a Mac is an element of its own, read as its words out of
+    /// the line. With a pill or another link's mark before it on the line
+    /// it was read from the wrong place: as other words, or, past the
+    /// line's end, as nothing, AppKit raising where it was asked, which a
+    /// test meets as a call that never returns.
+    @Test(.timeLimit(.minutes(1))) func everyLinkOfALineIsReadAsItsOwnWordsWhateverStandsBeforeIt() async throws {
+        let lines: [(markdown: String, links: [String])] = [
+            ("See [a](https://example.com/a) and [b](https://example.com/b).", ["a", "b"]),
+            ("[Q4 budget](substrate://ada.example.com/tasks/task/q4)", ["Q4 budget"]),
+            ("Ask [Grace](substrate://ada.example.com/people/person/grace) about [the venue](https://example.com/v)", ["Grace", "the venue"]),
+            (
+                "First [the venue](https://example.com/v), then [Grace](substrate://ada.example.com/people/person/grace) and [more](https://example.com/m)",
+                ["the venue", "Grace", "more"]
+            ),
+            (ChatFixtures.links, ["Q4 budget", "the planning notes", "the board deck", "Grace Hopper", "finance"]),
+            // A kind whose name is shorter than its tile's place, and two
+            // pills of one record.
+            (
+                "[Io](substrate://ada.example.com/moons/io/one), [Io](substrate://ada.example.com/moons/io/one) and [Europa](https://example.com/e)",
+                ["Io", "Io", "Europa"]
+            ),
+        ]
+        for line in lines {
+            for selectable in [false, true] {
+                let view = MarkdownView(text: line.markdown).replyTools(wraps: false)
+                let hosted = try await Hosted(selectable ? AnyView(view.textSelection(.enabled)) : AnyView(view))
+                #expect(hosted.links == line.links, "\(line.markdown), selectable: \(selectable)")
+            }
+        }
+        // In a table's cell and in a list too.
+        let table = try await Hosted(MarkdownView(text: ChatFixtures.tables).replyTools(wraps: false))
+        #expect(table.links.contains("Q4 budget") && !table.links.contains(""))
     }
 
     // MARK: Code

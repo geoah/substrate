@@ -10,9 +10,13 @@ enum ExternalMark {
     static let symbol = "arrow.up.right.square"
     static let words = "opens in your browser"
 
-    /// The mark as text, to follow a link inside a line.
+    /// The mark as text, to follow a link inside a line. With its filler
+    /// it is as long as its words, which is what keeps the links after it
+    /// on the line read as their own words on a Mac (`SpokenPiece`).
     static var text: Text {
-        Text(Image(systemName: symbol)).foregroundStyle(.tint).accessibilityLabel(words)
+        // An image in a text is one unit.
+        let spoken = SpokenPiece.fill(1, for: words)
+        return Text("\(Text(Image(systemName: symbol)))\(Text(verbatim: spoken.filler))").foregroundStyle(.tint).accessibilityLabel(spoken.label)
     }
 }
 
