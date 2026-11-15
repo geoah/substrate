@@ -3225,7 +3225,13 @@ And today:
   Nor a copy made under a mapping that has since been removed: the delete
   finds copies through the current mappings and marks, and forgetting the
   history of the record that holds the copy removes it
-  ([#1395](https://github.com/geoah/substrate/issues/1395)).
+  ([#1395](https://github.com/geoah/substrate/issues/1395)). Nor a value a
+  merge moved onto the record it was merged into, where a split later gave
+  it back: the merge's line keeps it among the other record's rows, and
+  the reply's `kept`, which names the merge's and split's own records,
+  does not name the line. A build of main before the fix for #1460 took it
+  out with the merge's whole resync, which left a history no rebuild could
+  replay (see [#1462](https://github.com/geoah/substrate/issues/1462)).
 - **No bound on the archive's delay.** The server reports how far each
   archive is behind and goes on serving however far that is
   ([the archive](#the-archive)).

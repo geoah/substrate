@@ -278,6 +278,16 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 	if openTxn != 0 {
 		found(fmt.Sprintf("the table ends inside the transaction ending at seq %d", openTxn))
 	}
+	// A merge or a split line a replay refuses leaves a repository that
+	// neither rebuilds nor restores from its own archive, and a build of main
+	// from #1384 to #1460 could write one (decision 0331). A history the boot
+	// has not converted is in another dialect's shapes, and the conversion's
+	// finding above stands for it.
+	if len(pendingConversions(s.conversion, stamped)) == 0 {
+		if err := verifyReplayable(ctx, tx, found); err != nil {
+			return report, err
+		}
+	}
 
 	rows, err := readSealedTable(ctx, tx)
 	if err != nil {
@@ -1091,6 +1101,35 @@ func (s *service) verifySealedOpen(repo Repository, rows map[string]changelogfil
 type checksumRow struct {
 	entry pendingEntry
 	hash  []byte
+}
+
+// verifyReplayable holds every merge and split line to the predicate a
+// replay holds it to (fold.go foldRefuses), reading those lines alone, in
+// pages, payload and all.
+func verifyReplayable(ctx context.Context, tx dbx, found func(string)) error {
+	var after int64
+	for {
+		page, err := queryChecksumRows(ctx, tx, `WHERE op IN ($2, $3) AND seq > $1 ORDER BY seq LIMIT $4`,
+			after, string(substrate.OpMerge), string(substrate.OpSplit), rebuildBatch)
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			return nil
+		}
+		for _, row := range page {
+			after = row.entry.Seq
+			ch, err := changeOfEntry(row.entry.fileEntry())
+			switch {
+			case err != nil:
+				found(fmt.Sprintf("seq %d: a %s line a replay cannot read: %v", row.entry.Seq, row.entry.Op, err))
+			case foldRefuses(ch):
+				found(fmt.Sprintf("seq %d: a %s line with no resync, which a replay refuses, so the repository can be neither rebuilt nor restored from its archive. "+
+					"A permanent delete on a build of main before the fix for #1460 could leave one (decision 0331), and the backup taken before that delete restores the repository: "+
+					"find where this line came from before acting on it", row.entry.Seq, row.entry.Op))
+			}
+		}
+	}
 }
 
 // scanChecksumPage reads one page of entries with their stored checksum, over

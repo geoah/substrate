@@ -811,17 +811,22 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 				switch {
 				case o == at && state.Kind != "":
 					edit(o.seq).replace[o.idx] = state
-				case o.kind == foldResync && t.erasing && !t.forgetting:
-					// A live record's erasure takes it out of a merge's or a
-					// split's resync, which goes on restating its partner.
-					partner, err := t.resyncWithout(o, k.ref)
+				case o.kind == foldResync && t.erasing && t.ds.svc.oldResyncErasure:
+					if err := t.resyncErasedAsBefore(edit(o.seq), o, k.ref); err != nil {
+						return report, err
+					}
+				case o.kind == foldResync && t.erasing:
+					// An erasure keeps a merge's or a split's resync and
+					// takes out of it only the values it restated for the
+					// record (erase.go resyncWithout). A resync above the
+					// state is not replaced: it restates the record as the
+					// state does.
+					rewritten, changed, err := t.resyncWithout(o, k.ref)
 					if err != nil {
 						return report, err
 					}
-					if len(partner.Scope) == 0 {
-						edit(o.seq).remove[o.idx] = true
-					} else {
-						edit(o.seq).replace[o.idx] = partner
+					if changed {
+						edit(o.seq).replace[o.idx] = rewritten
 					}
 				default:
 					edit(o.seq).remove[o.idx] = true
@@ -1102,9 +1107,8 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 	// record forgotten keeps no purge.
 	from := 0
 	for i, o := range p.occ[:last] {
-		// An erasure replaces a merge's or a split's resync too: a purged
-		// record's partners are erased with it, and a live record's leaves
-		// the resync, which then restates its partner alone (compactOver).
+		// An erasure replaces a merge's or a split's resync too, with one
+		// that restates none of the record's values (compactOver).
 		resyncStays := o.kind == foldResync && !t.erasing
 		// A live record's erasure crosses an earlier purge where nothing it
 		// removed can come back at a replay: no former id named the record

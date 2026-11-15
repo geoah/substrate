@@ -73,7 +73,10 @@ type options struct {
 	deletionsKept      time.Duration
 	compactionFault    func(stage string) error
 	purgeKeepsHistory  bool
-	deletionsKeptSet   bool
+	// oldResyncErasure is an erasure's treatment of a resync as the builds
+	// before #1460 had it, in a test (WithTestOldResyncErasure).
+	oldResyncErasure bool
+	deletionsKeptSet bool
 	// compactionBatches and compactionBatch are the pass's batch bounds and
 	// what it is told of each batch, in a test (WithTestCompactionBatches).
 	compactionBatches [2]int
@@ -733,10 +736,12 @@ type service struct {
 	compactionBytes    int64
 	compactionRead     func(kind string, ids []string, lines int, bytes, largest, second int64)
 	purgeKeepsHistory  bool
-	archive            archive.Store
-	archiving          bool
-	archiveInterval    time.Duration
-	archivePieceBytes  int64
+	// oldResyncErasure: options.oldResyncErasure.
+	oldResyncErasure  bool
+	archive           archive.Store
+	archiving         bool
+	archiveInterval   time.Duration
+	archivePieceBytes int64
 	// archiveStepBytes bounds the blob bytes one pass copies, and
 	// archiveProcess is this process's id in the record's rows: an object
 	// no manifest selects is reused only by the process that put it.
@@ -1285,6 +1290,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		compactionBytes:       o.compactionBytes,
 		compactionRead:        o.compactionRead,
 		purgeKeepsHistory:     o.purgeKeepsHistory,
+		oldResyncErasure:      o.oldResyncErasure,
 		archivePieceBytes:     o.archivePieceBytes,
 		archiveStepBytes:      o.archiveStepBytes,
 		archiveProcess:        process,

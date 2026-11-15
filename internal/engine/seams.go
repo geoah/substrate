@@ -450,6 +450,15 @@ func WithTestPurgeKeepsHistory() Option {
 	return func(o *options) { o.purgeKeepsHistory = true }
 }
 
+// WithTestOldResyncErasure makes an erasure treat a merge's or a split's
+// resync as the builds before #1460 did: a forget of a live record rewrites
+// it without the record and keeps every former-id row it restated, whoever
+// the row names, and the erasure of a purged record removes it whole. It is
+// how a test writes the histories those builds left. Tests only.
+func WithTestOldResyncErasure() Option {
+	return func(o *options) { o.oldResyncErasure = true }
+}
+
 // WithTestCompactionFault hands each stage of a compaction pass to fn; an
 // error from it stops the pass there, as a server killed at that stage
 // would, and a transaction it stops in rolls back. Tests only.

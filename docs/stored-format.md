@@ -460,6 +460,34 @@ purged record's history becomes one state with neither row nor value on its
 `writers` of what it replaced; a live record's, one state with its current
 values.
 
+An erasure also edits a merge's or a split's `resync` at or below the
+record's state, which a compaction otherwise never replaces: it takes out
+the annotation and mark rows the resync restated for the record, its values
+as they were, and keeps the `scope` and the former-id rows. A replay of a
+resync clears the side rows of every record its scope names before it writes
+its rows back, which is how a merge or a split moves a former id from one
+record to another, so the history replays as it did before the erasure.
+
+A build of `main` from #1384 to the fix for #1460, which no release carries,
+erased a resync otherwise
+([decision 0331](decisions/0331-a-resync-restates-a-former-id-that-stands-under-its-owner-without-writing-it-twice.md)):
+
+- A forget of a live record took it out of the scope and kept every
+  former-id row, so its replay could write a former-id row a second time.
+  A replay takes a former-id row a resync restates that already stands under
+  the same record as the trail it is, and refuses one that stands under
+  another. Only a binary with this rule replays that history. No line
+  changes shape, so the dialect is unchanged.
+- The erasure of a purged record removed the resync whole. Where a merge's
+  loser was split back and then deleted permanently, the merge line, and the
+  split line, were left with no resync. A replay refuses such a line, because
+  what the resync restated for the live winner is in no other line: the
+  repository can be neither rebuilt, nor restored from its own archive, nor
+  replayed at an upgrade, and its operator restores the backup taken before
+  that delete. `repository verify` reports each merge or split line with no
+  resync by its seq; it reads the line's shape and not its cause, so an
+  operator confirms the line came from such a delete before restoring.
+
 ## Dialects
 
 A repository's **changelog dialect** names the shapes its lines are in: the

@@ -1010,12 +1010,33 @@ func (t *txn) mergeRecordsKeeping(ref eref, ids []string) ([]substrate.ErasureKe
 	return out, nil
 }
 
-// resyncWithout is the resync at o with ref taken out: its scope, and the
-// annotation and mark rows it restated for ref. The former-id rows stay,
-// whoever they name: the trail is ids alone, and a replay of the resync
-// restores it through the partner, whose scope clears the rows that name
-// it before it writes them back (fold.go applyResync).
-func (t *txn) resyncWithout(o compactOcc, ref eref) (foldOp, error) {
+// resyncWithout is the resync at o without the annotation and mark rows it
+// restated for ref: ref's values as they were, which the erasure's state
+// restates as they are. Its scope and its former-id rows stay. They are ids,
+// and a replay of the resync clears the side rows of every record its scope
+// names before it writes its rows back (fold.go applyResync), which is how a
+// merge or a split moves a former id from one record to another; with ref out
+// of the scope its rows would stand under the rows the resync writes, a
+// duplicate or a second owner of one former id (#1460). changed reports
+// whether the resync restated anything of ref's.
+func (t *txn) resyncWithout(o compactOcc, ref eref) (foldOp, bool, error) {
+	op, err := t.resyncAt(o)
+	if err != nil || op.Rows == nil {
+		return op, false, err
+	}
+	rows := *op.Rows
+	rows.Annotations = slices.DeleteFunc(slices.Clone(rows.Annotations), func(a foldAnnotationRow) bool {
+		return a.Kind == ref.Kind && a.ID == ref.ID
+	})
+	rows.Marks = slices.DeleteFunc(slices.Clone(rows.Marks), func(m foldMarkRow) bool {
+		return m.Kind == ref.Kind && m.ID == ref.ID
+	})
+	changed := len(rows.Annotations) < len(op.Rows.Annotations) || len(rows.Marks) < len(op.Rows.Marks)
+	op.Rows = &rows
+	return op, changed, nil
+}
+
+func (t *txn) resyncAt(o compactOcc) (foldOp, error) {
 	ops, err := t.loadEffects([]compactOcc{o})
 	if err != nil {
 		return foldOp{}, err
@@ -1023,19 +1044,30 @@ func (t *txn) resyncWithout(o compactOcc, ref eref) (foldOp, error) {
 	if len(ops) != 1 || ops[0].Kind != foldResync {
 		return foldOp{}, fmt.Errorf("substrate/engine: seq %d effect %d is no resync", o.seq, o.idx)
 	}
-	op := ops[0]
-	op.Scope = slices.DeleteFunc(slices.Clone(op.Scope), func(r foldRef) bool { return eref(r) == ref })
-	if op.Rows != nil {
-		rows := *op.Rows
-		rows.Annotations = slices.DeleteFunc(slices.Clone(rows.Annotations), func(a foldAnnotationRow) bool {
-			return a.Kind == ref.Kind && a.ID == ref.ID
-		})
-		rows.Marks = slices.DeleteFunc(slices.Clone(rows.Marks), func(m foldMarkRow) bool {
-			return m.Kind == ref.Kind && m.ID == ref.ID
-		})
-		op.Rows = &rows
+	return ops[0], nil
+}
+
+// resyncErasedAsBefore edits the resync at o as the builds before #1460 did
+// (WithTestOldResyncErasure): a purged record's erasure removes it, and a live
+// record's takes ref out of its scope and its annotation and mark rows,
+// keeping every former-id row, and removes it once its scope is empty. Tests
+// only.
+func (t *txn) resyncErasedAsBefore(ed *compactEdit, o compactOcc, ref eref) error {
+	if t.forgetting {
+		ed.remove[o.idx] = true
+		return nil
 	}
-	return op, nil
+	op, _, err := t.resyncWithout(o, ref)
+	if err != nil {
+		return err
+	}
+	op.Scope = slices.DeleteFunc(slices.Clone(op.Scope), func(r foldRef) bool { return eref(r) == ref })
+	if len(op.Scope) == 0 {
+		ed.remove[o.idx] = true
+	} else {
+		ed.replace[o.idx] = op
+	}
+	return nil
 }
 
 // formerBelow reports whether a former id named ref on a line below seq: a

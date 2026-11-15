@@ -462,7 +462,13 @@ another record quotes, a request already in the webhook spool, a provider's
 sync, and every copy taken before. A copy a mapping made that has since been
 removed is not found either, because the delete reads the current mappings and
 marks: forget the history of the record that holds the copy
-([#1395](https://github.com/geoah/substrate/issues/1395)). A mapped target
+([#1395](https://github.com/geoah/substrate/issues/1395)). Nor is a value a
+merge moved onto the record it was merged into, where a split later gave
+it back: the merge's line keeps it among the other record's rows, and the
+reply's `kept`, which names the merge's and split's own records, does not
+name the line. A build of main before the fix for #1460 took it out with
+the merge's whole resync, which left a history no rebuild could replay (see
+[#1462](https://github.com/geoah/substrate/issues/1462)). A mapped target
 whose own history no erasure can cross (below) keeps its copy, and the
 reply's `kept` names it; the delete itself goes ahead.
 

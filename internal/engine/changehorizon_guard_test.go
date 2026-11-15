@@ -46,6 +46,7 @@ var changeReads = map[string]string{
 	"verify.go:scanChecksumPage":         "maintenance: the verify and the conversion walk every line, the whole table",
 	"verify.go:scanStampPage":            "maintenance: the verify reads every line's stamp, the whole table",
 	"verify.go:verifyArchive":            "maintenance: the verify asks its own snapshot for a line between two pieces of the archive, below a piece it skips",
+	"verify.go:verifyReplayable":         "maintenance: the verify reads every merge and split line, the whole table, in its own snapshot",
 	"webhookspool.go:webhookRecordedSQL": "maintenance: the webhook spool asks whether its own delivery entry stands above the seq the ledger recorded",
 }
 
