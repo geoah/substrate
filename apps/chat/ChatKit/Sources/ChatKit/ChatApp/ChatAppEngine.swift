@@ -157,6 +157,9 @@ extension ChatApp {
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
+            // A reply from a notification that waited for a row the list
+            // brought.
+            if !next.deferred.isEmpty { resume(&next) }
         case let .agentsRead(agents, providers, models, keys):
             next.agents = agents
             if let providers { next.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }

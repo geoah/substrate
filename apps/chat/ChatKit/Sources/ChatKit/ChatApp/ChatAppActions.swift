@@ -50,12 +50,22 @@ extension ChatApp {
         // one and would hold the later of two.
         let rowKnown = state.thread(thread) != nil
         let replying = state.key(of: thread).flatMap { state.conversations[$0]?.reply } != nil
-        guard state.opened, action != .reply || (state.agentsRevision != nil && rowKnown && !replying) else {
+        // And in the order they were typed: a reply that arrives while an
+        // earlier one into the same chat still waits goes behind it. What
+        // the earlier one waited for may have come by a read that did not
+        // ask after it (a list read brings a chat's row as the read by
+        // name does), and a reply that arrived then went first.
+        let behind =
+            !waited && action == .reply
+            && state.deferred.contains { Self.isReply($0.response) && $0.response.userInfo[ChatNotifications.threadKey] == thread }
+        guard state.opened, action != .reply || (state.agentsRevision != nil && rowKnown && !replying && !behind) else {
             if !waited { state.deferred.append(State.Deferred(response: response, key: key, message: message, at: at)) }
             // A launch for the action may hold no row of the chat (one
             // past the list's first page, or archived on another device):
             // it is read by name, and the reply goes when it is.
             if action == .reply, state.opened, state.agentsRevision != nil, !rowKnown { state.asks.append(.fetchThread(thread)) }
+            // The one it waits behind is asked after now, in its turn.
+            if behind { resume(&state) }
             return
         }
         state.acted.insert(stamp)
@@ -111,9 +121,9 @@ extension ChatApp {
         state.acting[stamp] = act
     }
 
-    /// The folder is read, or the server's document, or a thread's row, or
-    /// a reply before it in its chat has gone: the actions that waited for
-    /// any of them go now.
+    /// The folder is read, or the server's document, or a thread's row (by
+    /// name or with a list), or a reply before it in its chat has gone: the
+    /// actions that waited for any of them go now, in the order they came.
     func resume(_ state: inout State) {
         guard state.opened else { return }
         // Each asks again what it waits for; one that still waits stays.

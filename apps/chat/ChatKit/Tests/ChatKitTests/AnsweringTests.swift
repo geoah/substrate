@@ -1606,6 +1606,51 @@ struct ArchivedAnswering {
         app.server.finishTurns()
     }
 
+    /// What reordered them (8 of 240 pairs in a container held to half a
+    /// processor): the first reply waited for its chat's row, which is
+    /// read by name, and the second arrived after a list read had brought
+    /// that row. Nothing had asked after the first, so the second met a
+    /// chat with a row and no reply under way, and went. The engine alone:
+    /// a reply goes behind an earlier one into its chat that still waits,
+    /// and a list read asks after the ones that wait.
+    @Test func aReplyThatArrivesWhileAnEarlierOneWaitsGoesBehindIt() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        state.recordsRevision = 9
+        state.agentsRevision = 7
+        state.marks = [:]
+        func reply(_ text: String) -> NotificationResponse {
+            NotificationResponse(
+                id: "pushed", category: ChatNotifications.replyCategory, action: .named("reply"),
+                userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: text)
+        }
+        let row = Record(
+            id: "t1", kind: Kinds.thread, properties: ["status": "ok", "mode": "chat", "agent": ["ref": .string("\(Kinds.agent)/\(helper)")]],
+            version: 2)
+        func replying(_ state: ChatAppState) -> String? { state.key(of: "t1").flatMap { state.conversations[$0]?.reply?.text } }
+        // The first waits for the chat's row.
+        state = try app.apply(.init(.notificationActed(reply("On my way"), key: ChildKey("k1"), message: "m1", at: Date(timeIntervalSince1970: 0))), to: state)
+        #expect(state.deferred.map(\.response.text) == ["On my way"] && state.asks.contains(.fetchThread("t1")))
+        // The row comes by a way that asks after nothing, and then the
+        // second reply: it goes behind the first, which goes now.
+        var late = state
+        late.chats = [row]
+        late = try app.apply(.init(.notificationActed(reply("Five minutes"), key: ChildKey("k2"), message: "m2", at: Date(timeIntervalSince1970: 1))), to: late)
+        #expect(replying(late) == "On my way")
+        #expect(late.deferred.map(\.response.text) == ["Five minutes"])
+        // The first has gone: the second goes.
+        let key = try #require(late.key(of: "t1"))
+        app.replied(&late, key, Conversation.ReplyOutcome(id: "m1", failure: nil))
+        #expect(replying(late) == "Five minutes" && late.deferred.isEmpty)
+
+        // A list read that brings the row asks after the reply that waits.
+        var listed = try app.apply(.init(.threadsRead(.init(chats: [row], automated: []))), to: state)
+        #expect(replying(listed) == "On my way" && listed.deferred.isEmpty)
+        listed = try app.apply(
+            .init(.notificationActed(reply("Five minutes"), key: ChildKey("k2"), message: "m2", at: Date(timeIntervalSince1970: 1))), to: listed)
+        #expect(replying(listed) == "On my way" && listed.deferred.map(\.response.text) == ["Five minutes"])
+    }
+
     /// The engine alone: the mark read beside a reply from a notification
     /// says the chat was archived, which the device had not heard. The
     /// archive ends, by the person's own write.
