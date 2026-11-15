@@ -116,16 +116,27 @@ func (t *txn) dismissedAfterTheirWord(ty *vocabulary.Kind, rec *erow, note *reso
 	if l == nil || l.hub == nil || l.in.mode != agentModeChat {
 		return false, nil
 	}
+	// The loop stays registered until its run returns, past its settle and
+	// its re-check: only a thread the stored row still says is running has a
+	// turn whose settle is yet to come. Writes are serialized, so that
+	// settle commits after this transaction, and its re-check after that.
+	thread, err := t.loadRow(eref{Kind: typeThread, ID: threadID}, false)
+	if err != nil {
+		return false, err
+	}
+	if thread == nil || thread.DeletedAt != nil || thread.Props["status"] != threadRunning {
+		return false, nil
+	}
 	b := &builder{}
 	kind := b.arg(typeMessage)
-	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
+	ofThread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
 	if err != nil {
 		return false, err
 	}
 	var spoke bool
 	if err := t.row(`
 		SELECT EXISTS (SELECT 1 FROM records e
-		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+ofThread+`
 		  AND e.props->>'role' = 'user' AND e.created_at > `+b.arg(rec.CreatedAt)+`)`,
 		b.args...).Scan(&spoke); err != nil || !spoke {
 		return false, err
