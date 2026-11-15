@@ -132,8 +132,9 @@ undeclared property (`422 validation`).
   not read actors as for an admin.
 - Bad, because an interaction has a fourth state, and a reader that
   switches over the three it knew must take a default.
-- Bad, because the quiet dismissal reads what runs in this process: one
-  that lands a moment after its turn settled still starts a second turn.
+- Bad, because the quiet dismissal holds only while the thread's row says a
+  turn is running: one that lands a moment after its turn settled still
+  starts a second turn.
 - Bad, because the entry is text the person never sees, in a block the
   model is trusted to read.
 - Bad, because a person who cannot read actors learns another person's
@@ -156,7 +157,8 @@ undeclared property (`422 validation`).
 `TestAnAnswerLinksThePersonWhoGaveIt`,
 `TestAnApprovalLinksThePersonWhoDecidedIt`,
 `TestAChangeRequestLinksWhoDecidedItAndAPolicysLinksNobody`,
-`TestARequestAPolicyDecidedLinksNobody`; the wire is
+`TestARequestAPolicyDecidedLinksNobody`,
+`TestAChangeRequestAnAgentDecidedLinksTheAgent`; the wire is
 `TestAnAppsReplyAnswersItsQuestionAndLinksItsPerson` and
 `TestAViewerReadsWhoResolvedACardWithoutReadingActors` in
 `internal/api/agentreply_db_test.go`.
