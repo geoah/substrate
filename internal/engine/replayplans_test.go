@@ -14,11 +14,11 @@ import (
 // planEveryStatementLoops are the calls a transaction makes once a line or a
 // record when it replays a history or fills fold tables wholesale: a replay
 // folds a line, a kind move carries a record, a conversion step rewrites a
-// line.
-var planEveryStatementLoops = []string{"foldEntry", "moveRecord", "Line"}
+// line, and a conversion's walk converts a page of them (convertPage).
+var planEveryStatementLoops = []string{"foldEntry", "moveRecord", "Line", "convertPage"}
 
 // EVERY BULK FOLD PLANS EACH STATEMENT. A function that calls foldEntry,
-// moveRecord or a step's Line directly inside a loop must call
+// moveRecord, a step's Line or convertPage directly inside a loop must call
 // planEveryStatement somewhere in its own body, so a new replay cannot keep
 // a plan made while a table was smaller (rebuild.go). What it does not see: a
 // loop that reaches those calls through a wrapper two calls down, and whether
