@@ -227,7 +227,13 @@ extension ChatApp {
         }
         for record in threads.named.map(newer) where !replaceHeld(&state, record) {
             // No list holds it: a chat a window shows keeps its row beside them.
-            if open.contains(record.id) || state.others[record.id] != nil { state.others[record.id] = record }
+            if open.contains(record.id) || state.others[record.id] != nil {
+                state.others[record.id] = record
+            } else if threads.waiting != nil, ChatThread(record: record).waiting > 0 {
+                // It came to wait after the lists were read: one of the
+                // ones that wait, as the next read of them will say.
+                state.waiting.append(record)
+            }
         }
         for id in threads.gone { forget(&state, id) }
         // A chat that left the list while a window shows it keeps its row.
@@ -357,6 +363,10 @@ extension ChatApp {
             window.reading = false
             guard window.cursor == after, after == nil || window.part == part else { return }
             if after == nil {
+                // Asked for before the list was told to start over (its
+                // filter moved since): the read that starts it over brings
+                // the page, and this one's cursor is not the list's.
+                guard !window.restart else { return }
                 _ = Self.merge(rows.map(newer), cursor: cursor, of: part, into: &held, &window) { _ in false }
                 return
             }
@@ -395,6 +405,8 @@ extension ChatApp {
         guard shown, state.session != nil, state.online, !state.accessEnded, !state.archive.window.reading else { return }
         state.archive.window.reading = true
         state.archive.window.cursor = nil
+        // Asked for under the filter as it stands now.
+        state.archive.window.restart = false
         state.asks.append(.page(state.plan, part: .archived, after: nil))
     }
 
