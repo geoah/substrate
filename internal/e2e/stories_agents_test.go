@@ -377,20 +377,23 @@ func caseStory06(c *C) {
 	c.stepf("operator verify: %s", verifySummary(out))
 
 	// A rebuild refolds the changelog into records, so against a live
-	// substrate the operator hat must refuse, not race the writer. Two
-	// refusals say so, and either is the right answer: the writer LEASE at
-	// the boot check (decision record 0083, "another process is this
-	// repository's writer", which fires for whichever leased repository the
-	// check meets first, this one or another the same server holds), and the
-	// per-directory changelog writer lock behind it. The refold itself runs
-	// against a stopped server in internal/testenv's acceptance drill.
+	// substrate the operator hat must refuse, not race the writer. Three
+	// refusals say so, and any is the right answer: the database's writer
+	// lock its start takes first (decision record 0325, "another process is
+	// this database's writer"), which a server of this release holds; the
+	// writer LEASE (decision record 0083, "another process is this
+	// repository's writer"), which a server of a release before the lock
+	// holds; and the per-directory changelog writer lock behind it. The
+	// refold itself runs against a stopped server in internal/testenv's
+	// acceptance drill.
 	out, err = ctlRun(ctl, dsn, "repository", "rebuild", r.authority)
-	c.requiref(err != nil && (strings.Contains(out, "writer lock") || strings.Contains(out, "is this repository's writer")),
+	c.requiref(err != nil && (strings.Contains(out, "writer lock") || strings.Contains(out, "is this repository's writer") ||
+		strings.Contains(out, "is this database's writer")),
 		"repository rebuild against the live server: err=%v, want the writer refusal: %s", err, out)
 	rebuilt := c.graphJoin()
 	c.requiref(string(join) == string(rebuilt),
 		"the refused rebuild changed the graph:\nbefore: %s\nafter:  %s", join, rebuilt)
-	c.stepf("repository rebuild against the live server was refused by the writer lease, and the fold is untouched")
+	c.stepf("repository rebuild against the live server was refused as the server's second writer, and the fold is untouched")
 }
 
 // graphJoin is the one fixed read STORY-06 compares around the refused

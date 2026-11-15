@@ -48,6 +48,35 @@ import (
 // is not one of the repository's own write locks.
 const writerLeaseKeySQL = `hashtext(current_schema() || '|writer|' || $1)::bigint`
 
+// THE DATABASE'S WRITER LOCK (decision record 0325): one per schema, held by
+// the one process that writes it, for its life. It is the two-integer form
+// of an advisory lock, which Postgres keeps as a key space of its own
+// (objsubid 2 in pg_locks, against 1 for the one-bigint form), so it cannot
+// share a key with a repository's lease or any other lock the engine takes:
+// every one of those is the one-bigint form. current_schema() keeps two
+// substrates sharing a database in separate schemas apart, as the leases do.
+const databaseWriterKeySQL = `hashtext(current_schema()), hashtext('substrate|writer')`
+
+// ErrDatabaseHasAnotherWriter is the refusal of a start that met another
+// process holding the database's writer lock (decision record 0325).
+var ErrDatabaseHasAnotherWriter = errors.New("substrate/engine: another process is this database's writer")
+
+// databaseWriterRefusal is a start's refusal at the database's writer lock.
+// It is ErrRepositoryHasAnotherWriter too: that process is the writer of
+// every repository the database holds, and every caller that tells a running
+// server from a fault reads that error.
+type databaseWriterRefusal struct{ holder *leaseHolder }
+
+func (e databaseWriterRefusal) Error() string {
+	return fmt.Sprintf("%s. One server per database: this start applies no migration and writes no row; stop every running server and every writing substratectl command, then start this one. "+
+		"The lock is the advisory lock (hashtext(current_schema()), hashtext('substrate|writer')), visible in pg_locks with objsubid 2. Held by %s",
+		ErrDatabaseHasAnotherWriter, e.holder)
+}
+
+func (e databaseWriterRefusal) Unwrap() []error {
+	return []error{ErrDatabaseHasAnotherWriter, ErrRepositoryHasAnotherWriter}
+}
+
 // writerLeaseHeartbeat is how often the pinned connection is proven alive. A
 // session's advisory locks can only be released by that session or by its
 // end, so a live pinned session IS the lease — nothing else has to be read
@@ -96,10 +125,12 @@ var ErrRepositoryHasAnotherWriter = errors.New("substrate/engine: another proces
 var ErrWriterLeaseLost = fmt.Errorf("%w: this process lost the repository's writer lease and will not write until it is retaken", substrate.ErrUnavailable)
 
 // ErrWriterLeaseStale is the refusal of a process that retook its lease and
-// found the database migrated meanwhile by another server (decision record
-// 0324): it was not built for that schema, so it writes nothing for the rest
-// of its life, and a restart is the only way back.
-var ErrWriterLeaseStale = fmt.Errorf("%w: this process lost its writer lease and another server migrated the database meanwhile; it writes nothing until it is restarted", substrate.ErrUnavailable)
+// found that another process held it meanwhile: one that migrated the
+// database (decision record 0324) or started as its writer (0325). What this
+// process holds in memory predates that process's writes, or its schema, so
+// it writes nothing for the rest of its life, and a restart is the only way
+// back.
+var ErrWriterLeaseStale = fmt.Errorf("%w: this process lost its writer lease and another process held it meanwhile; it writes nothing until it is restarted", substrate.ErrUnavailable)
 
 // writerLease is a process's claim on the repositories it writes.
 type writerLease struct {
@@ -132,6 +163,14 @@ type writerLease struct {
 	// had applied its migrations (migrationPrint), "" for a lease that ran
 	// none. A retake reads it again (decision record 0324).
 	startedUnder string
+	// writer is set once this process holds the database's writer lock
+	// (holdDatabase): from then on the session is proven, and taken back
+	// first at a retake, whether or not it holds any repository's lease.
+	writer bool
+	// startMark is the mark this process's start left in writer_starts
+	// (markStart), "" for a lease that left none. A retake reads it again
+	// (decision record 0325).
+	startMark string
 	// stale is set once a retake found the database migrated by another
 	// process meanwhile: the process writes nothing for the rest of its life.
 	stale atomic.Bool
@@ -266,7 +305,7 @@ func (l *writerLease) closeConn() {
 // on it. while names what the connection was doing when it failed. Called
 // with mu held.
 func (l *writerLease) dropConn(cause error, while string) {
-	if len(l.held) > 0 {
+	if len(l.held) > 0 || l.writer {
 		// Nothing held is nothing lost: latching here would refuse every
 		// write on behalf of a session that was guarding no repository.
 		l.lost.Store(true)
@@ -309,7 +348,7 @@ func (l *writerLease) release(repository string) {
 	// the same way — forever, and past the recovery of the database that
 	// caused it. The next acquisition starts clean, on a connection of its
 	// own.
-	if len(l.held) == 0 {
+	if len(l.held) == 0 && !l.writer {
 		l.lost.Store(false)
 		// Unlocked before the session goes: a closed session's locks are
 		// released only once its backend notices the close, so a caller
@@ -421,11 +460,27 @@ func (h *leaseHolder) String() string {
 // a second writer: it is ended and the lock taken again, inside ctx. Any other
 // holder is returned, untouched, with the refusal. Called with mu held.
 func (l *writerLease) lock(ctx context.Context, conn dbx, repository string) (bool, *leaseHolder, error) {
+	return l.takeLock(ctx, conn, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`,
+		func() (*leaseHolder, error) { return readLeaseHolder(ctx, conn, repository) }, logSafeID(repository), repository)
+}
+
+// lockDatabase takes the database's writer lock on the pinned session, as
+// lock takes a repository's lease. Called with mu held.
+func (l *writerLease) lockDatabase(ctx context.Context, conn dbx) (bool, *leaseHolder, error) {
+	return l.takeLock(ctx, conn, `SELECT pg_try_advisory_lock(`+databaseWriterKeySQL+`)`,
+		func() (*leaseHolder, error) { return readDatabaseWriter(ctx, conn) }, "the database's writer lock")
+}
+
+// takeLock runs try, a pg_try_advisory_lock, on conn. A refusal whose
+// holder, read by holder, carries this process's name is its own orphaned
+// session, which is ended and the lock taken again (lock). what names the
+// lock in the line logged then. Called with mu held.
+func (l *writerLease) takeLock(ctx context.Context, conn dbx, try string, holder func() (*leaseHolder, error), what string, args ...any) (bool, *leaseHolder, error) {
 	var got bool
-	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil || got {
+	if err := conn.QueryRowContext(ctx, try, args...).Scan(&got); err != nil || got {
 		return got, nil, err
 	}
-	h, err := readLeaseHolder(ctx, conn, repository)
+	h, err := holder()
 	if err != nil {
 		return false, nil, err
 	}
@@ -438,12 +493,12 @@ func (l *writerLease) lock(ctx context.Context, conn dbx, repository string) (bo
 		return false, h, fmt.Errorf("substrate/engine: end this process's orphaned writer lease session (%s): %w", h, err)
 	}
 	for {
-		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repository).Scan(&got); err != nil {
+		if err := conn.QueryRowContext(ctx, try, args...).Scan(&got); err != nil {
 			return false, h, err
 		}
 		if got {
 			l.log.Warn("substrate: this process's previous writer lease session was still holding the lease after its connection dropped; it was ended and the lease retaken",
-				"repository", logSafeID(repository), "orphan", h.String())
+				"lock", what, "orphan", h.String())
 			return true, nil, nil
 		}
 		select {
@@ -475,6 +530,29 @@ SELECT a.pid, coalesce(a.application_name, ''), host(a.client_addr), a.backend_s
 	}
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: read the writer lease's holder: %w", err)
+	}
+	return &h, nil
+}
+
+// readDatabaseWriter reads who holds the database's writer lock, or nil when
+// nobody does: the two-integer form, whose keys pg_locks shows as classid
+// and objid with objsubid 2.
+func readDatabaseWriter(ctx context.Context, conn dbx) (*leaseHolder, error) {
+	var h leaseHolder
+	err := conn.QueryRowContext(ctx, `
+SELECT a.pid, coalesce(a.application_name, ''), host(a.client_addr), a.backend_start
+  FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+ WHERE l.locktype = 'advisory' AND l.objsubid = 2 AND l.granted
+   AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+   AND l.classid = (hashtext(current_schema())::bigint & 4294967295)::oid
+   AND l.objid = (hashtext('substrate|writer')::bigint & 4294967295)::oid
+   AND a.pid <> pg_backend_pid()
+ LIMIT 1`).Scan(&h.pid, &h.applicationName, &h.clientAddr, &h.backendStart)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read the database writer lock's holder: %w", err)
 	}
 	return &h, nil
 }
@@ -552,11 +630,15 @@ func (l *writerLease) accept(conn *sql.Conn) bool {
 func (l *writerLease) beatLocked(shutdown context.Context) (retakeOutcome, *sql.Conn) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.held) == 0 {
+	if l.stale.Load() {
+		return retakeNone, nil
+	}
+	if len(l.held) == 0 && !l.writer {
 		// Nothing is claimed, so there is no lease to prove. The connection
 		// is not left to rot either: releasing the last lease closes it
 		// (release), and one an acquisition left behind after being refused
-		// is replaced by that acquisition's own retry.
+		// is replaced by that acquisition's own retry. A process that holds
+		// the database's writer lock always has that to prove.
 		return retakeNone, nil
 	}
 	// The deadline is derived AFTER the mutex, not before it: a beat that
@@ -623,11 +705,12 @@ func (l *writerLease) dropped(shutdown, ctx context.Context) bool {
 // (beat). Called with mu held.
 //
 // A lease proves a session, not a process: while this one was down, another
-// server may have started, migrated the database and stopped again. So a
-// retake reads schema_migrations and compares it with what this process
-// started under; where they differ it stays refused for good, lets its
-// leases go so that server can start again, and says to restart (decision
-// record 0324).
+// process may have started as the writer, migrated the database or written
+// to it, and stopped again. So a retake reads schema_migrations and the
+// writer starts and compares them with what this process started under;
+// where either moved it stays refused for good, lets its leases go so that
+// process can start again, and says to restart (decision records 0324 and
+// 0325).
 func (l *writerLease) retake(shutdown, ctx context.Context) retakeOutcome {
 	l.closeConn()
 	conn, err := l.pinned(ctx)
@@ -636,6 +719,20 @@ func (l *writerLease) retake(shutdown, ctx context.Context) retakeOutcome {
 			l.log.Error("substrate: the writer lease could not be retaken", "error", err)
 		}
 		return retakeNone
+	}
+	if l.writer {
+		got, foreign, err := l.lockDatabase(ctx, conn)
+		if err != nil {
+			if shutdown.Err() == nil {
+				l.log.Error("substrate: the database's writer lock could not be retaken", "error", err)
+			}
+			return retakeNone
+		}
+		if !got {
+			l.log.Error("substrate: another process took this database's writer lock while this one's connection was down; every write stays refused. Run one server per database and restart this one",
+				"holder", foreign.String())
+			return retakeNone
+		}
 	}
 	for _, id := range l.held {
 		got, foreign, err := l.lock(ctx, conn, id)
@@ -653,6 +750,9 @@ func (l *writerLease) retake(shutdown, ctx context.Context) retakeOutcome {
 	}
 	if l.startedUnder != "" {
 		now, err := migrationPrint(ctx, conn)
+		if err != nil && missingTable(err) {
+			now, err = "", nil
+		}
 		if err != nil {
 			if shutdown.Err() == nil {
 				l.log.Error("substrate: the writer lease was retaken, and the database's migrations could not be read to check them; every write stays refused", "error", err)
@@ -660,19 +760,46 @@ func (l *writerLease) retake(shutdown, ctx context.Context) retakeOutcome {
 			return retakeNone
 		}
 		if now != l.startedUnder {
-			l.stale.Store(true)
 			l.log.Error("substrate: the writer lease was retaken after its connection dropped, and the database's migrations are not the ones this process started under: another server migrated it meanwhile. This process writes nothing for the rest of its life; restart it",
 				"repositories", len(l.held))
-			// Its leases go, so the server that migrated can start again.
-			if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_unlock_all()`); err != nil {
-				l.log.Error("substrate: could not release the writer leases; discarding their connection", "error", err)
+			l.refuseForGood(ctx, conn)
+			return retakeStale
+		}
+	}
+	if l.startMark != "" {
+		now, err := readStartMark(ctx, conn)
+		switch {
+		case errors.Is(err, sql.ErrNoRows) || err != nil && missingTable(err):
+			l.log.Error("substrate: the writer lease was retaken after its connection dropped, and the database holds no start mark: it was emptied or replaced since this process started. This process writes nothing for the rest of its life; restart it",
+				"repositories", len(l.held))
+			l.refuseForGood(ctx, conn)
+			return retakeStale
+		case err != nil:
+			if shutdown.Err() == nil {
+				l.log.Error("substrate: the writer lease was retaken, and the database's start mark could not be read to check it; every write stays refused", "error", err)
 			}
-			l.closeConn()
-			l.held = nil
+			return retakeNone
+		case now != l.startMark:
+			l.log.Error("substrate: the writer lease was retaken after its connection dropped, and the database's start mark is not this process's: another process started as its writer meanwhile, or the database was restored from a copy. What this process holds in memory predates it. This process writes nothing for the rest of its life; restart it",
+				"repositories", len(l.held))
+			l.refuseForGood(ctx, conn)
 			return retakeStale
 		}
 	}
 	return retakeDone
+}
+
+// refuseForGood is a retake's end where another process held the leases
+// meanwhile: the process stays refused for the rest of its life, and its
+// leases go, so that process can start again. Called with mu held.
+func (l *writerLease) refuseForGood(ctx context.Context, conn *sql.Conn) {
+	l.stale.Store(true)
+	l.writer = false
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_unlock_all()`); err != nil {
+		l.log.Error("substrate: could not release the writer leases; discarding their connection", "error", err)
+	}
+	l.closeConn()
+	l.held = nil
 }
 
 // close stops the heartbeat and RELEASES every lease, in that order. The

@@ -22,7 +22,13 @@ import (
 // names the migration and both hashes rather than saying the schema is wrong.
 func TestOpenRefusesAnUnknownEditedMigration(t *testing.T) {
 	t.Parallel()
-	_, dsn := newService(t)
+	svc, dsn := newService(t)
+	// The first writer stops before the second starts: the second would
+	// otherwise be refused at the database's writer lock, before the runner
+	// reads a migration (decision record 0325).
+	if err := svc.Close(); err != nil {
+		t.Fatal(err)
+	}
 	db := rawDB(t, dsn)
 	if _, err := db.Exec(`UPDATE schema_migrations SET sha256 = 'not-a-hash-anybody-shipped' WHERE version = 1`); err != nil {
 		t.Fatalf("edit the recorded hash: %v", err)

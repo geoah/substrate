@@ -1967,13 +1967,14 @@ opens the repository, and the start refuses to.
 
 **Operator commands beside it.** The server's list of what it set aside is
 its own memory, and an operator command runs in a process of its own, so
-what tells the command is the writer leases: a running server holds the
-lease of every repository it serves and none of one it set aside. A running
-server holds at least one: a start that serves no repository stops.
+what tells the command is the server's locks: a running server holds the
+database's writer lock, and the lease of every repository it serves and
+none of one it set aside. A running server holds at least one: a start
+that serves no repository stops.
 
 | Command | What tells it | What it does |
 | --- | --- | --- |
-| `repository rebuild`, `repository reindex`, `repository rotate-generation`, the `archive` commands, and a `user reset` that writes a person's actor | it opens as the writer, and before its start keys, checks or imports any repository it takes the lease of every repository with a row: the first one the server holds refuses it | beside a running server it refuses having written to no repository, whatever repository it names and whichever comes first, a set-aside one included, and the refusal names the lease's holder; with the server stopped, its own start decides again and refuses a repository it finds damaged, as the server does |
+| `repository rebuild`, `repository compact`, `repository reindex`, `repository rotate-generation`, the `archive` commands, and a `user reset` that writes a person's actor | it opens as the writer, and its start takes the database's writer lock before it keys, checks or imports any repository: the server holds it, so it refuses there; a server of a release before the lock holds only the leases, and the first one the command meets refuses it | beside a running server it refuses having written to no repository, whatever repository it names, a set-aside one included, and the refusal names the holder; with the server stopped, its own start decides again and refuses a repository it finds damaged, as the server does |
 | an import or a restore | it happens at a start, the server's or a writer command's | the same as above |
 | `repository reembed` | it opens read-only beside the server and runs no start, so it reads the leases before it writes its queue rows | refuses a repository the running server holds no lease of while it holds others' (`set aside`), and writes no queue row for it |
 | `repository verify`, `repository list` | they read and write nothing | they run, and name what does not verify or read `set aside` |
@@ -1984,15 +1985,28 @@ server holds at least one: a start that serves no repository stops.
 **Two processes on one database are refused at open**, whether or not they
 share a data root
 ([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)).
-The exclusion is **the database's writer lease**: the server takes a Postgres
-session-level advisory lock per repository, keyed by its id, on one
-connection pinned for the life of the process. It holds whatever the second
-process's data root or archive is.
+The exclusion is **the database's writer lock**, held by its one writer
+process (below), and **each repository's writer lease**, a Postgres
+session-level advisory lock per repository keyed by its id, all on one
+connection pinned for the life of the process. They hold whatever the
+second process's data root or archive is.
+
+**A database has one writer process**
+([0325](decisions/0325-a-database-has-one-writer-process-and-a-retaken-lease-checks-who-else-started.md)).
+A start that writes, the server's or a writing `substratectl --dsn`
+command's, first takes the database's writer lock on that same connection,
+a Postgres advisory lock of the two-integer form,
+`(hashtext(current_schema()), hashtext('substrate|writer'))`, which shows in
+`pg_locks` with `objsubid` 2. Another process holding it refuses the start
+with `another process is this database's writer`, naming the holder as a
+lease's refusal does. It holds on a database with no repository too, so a
+start is the only way to become a writer, and two writers cannot run at
+once whatever repositories each saw. A read-only command takes no lock.
 
 **A start takes every lease before it applies a migration**
 ([0324](decisions/0324-a-start-takes-every-writer-lease-before-it-migrates-and-a-retaken-lease-checks-the-migrations.md)).
-Its first act after checking the roles is to read every repository, under a
-lock that stops a new one from appearing, and take each one's lease. A server
+Holding the database's writer lock, it reads every repository, under a lock
+that stops a new one from appearing, and takes each one's lease. A server
 of a release before ids holds them by name, so a repository's name is asked
 of too. Then it applies the pending migrations on the same connection, and
 before each one checks again that no repository it does not hold has
@@ -2000,8 +2014,9 @@ appeared. Only then does it sweep, build indexes or open a repository.
 
 So **a second start beside a running server** is refused before it has
 applied a migration or written a row, whatever it has pending: the running
-server holds its repositories' leases. The refusal names the repository and
-the holder, and `schema_migrations` is as it was. What a start does before
+server holds the database's writer lock, and a server of a release before
+the lock holds its repositories' leases. The refusal names the lock or the
+repository, and the holder, and `schema_migrations` is as it was. What a start does before
 the lease it has done: it made `repositories/` under its data root and the
 two isolation roles where they were absent, and beside a running server
 both exist already. A start that finds a database with no
@@ -2021,8 +2036,21 @@ schema it was not built for. Stop it, and check that no session whose
 `application_name` starts with `substrate-writer-` is left in
 `pg_stat_activity`, before you start this release.
 
-A server that cannot take the lease **does not boot**. The error names the
-repository and the rule:
+A server that cannot take the database's writer lock or a repository's
+lease **does not boot**. Beside a running server of this release it is the
+lock, and the error names it, its holder and the rule:
+
+```text
+substrate/engine: another process is this database's writer. One server per database: this
+start applies no migration and writes no row; stop every running server and every writing
+substratectl command, then start this one. The lock is the advisory lock
+(hashtext(current_schema()), hashtext('substrate|writer')), visible in pg_locks with
+objsubid 2. Held by pid 4242, application_name "substrate-writer-…", client_addr 192.0.2.10,
+backend_start 2026-01-01T00:00:00Z
+```
+
+Beside a server of a release before the lock it is a repository's lease, and
+the error names the repository and the rule:
 
 ```text
 substrate/engine: boot check: repository ada.example.com (id rnd-0vrkvsgbs6bnz2sjy4196kccck):
@@ -2035,7 +2063,18 @@ visible in pg_locks. Held by pid 4242, application_name "substrate-writer-…",
 client_addr 192.0.2.10, backend_start 2026-01-01T00:00:00Z
 ```
 
-**To see who holds one**, compute the key and ask `pg_locks`. The key is
+**To see who holds the database's writer lock**, ask `pg_locks` for the
+two-integer key, in the schema the server runs in:
+
+```sql
+SELECT l.pid, a.application_name, a.client_addr, a.backend_start, a.state
+  FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+ WHERE l.locktype = 'advisory' AND l.objsubid = 2
+   AND l.classid = (hashtext(current_schema())::bigint & 4294967295)::oid
+   AND l.objid = (hashtext('substrate|writer')::bigint & 4294967295)::oid;
+```
+
+**To see who holds a repository's lease**, compute the key and ask `pg_locks`. The key is
 `hashtext(current_schema() || '|writer|' || <repository id>)::bigint`, composed
 the way every other advisory lock the engine takes is:
 
@@ -2083,20 +2122,48 @@ another one cannot land under a lease that went away while it waited. Every
 later beat tries again, so a Postgres that restarted is recovered from without
 restarting the server, and the recovery is logged at `WARN`.
 
-**A retake checks the migrations.** A lease proves a session, not a process:
-while a server's connection was down, another may have started, migrated the
-database and stopped. So a retake reads `schema_migrations` and compares it
-with what the server started under. Where they differ, the server logs at
-`ERROR` that another server migrated the database meanwhile, lets its leases
-go, stops its passes and refuses every write with `503 unavailable` for the
-rest of its life: restart it. Where they are the same, every write stays
-refused while it stops the passes that hold a position in memory (the search
-reindex, the reprojection and a compaction pass in flight) and has the
-archive pass read its archive record again; then writes are accepted, and
-then the passes start again, so none of them goes on from where it stood
-while the lease was gone. A retake sees a migration, not a server: one of
-the same release that started, served and stopped while the lease was down
-goes unseen.
+**A retake checks the migrations and who else started.** A lease proves a
+session, not a process: while a server's connection was down, another
+process may have taken the free lock and leases, migrated the database or
+written to it, and stopped. So every start that writes leaves a mark in the
+database (`writer_starts`), a random value no other start leaves, once it
+holds the lock and every lease and its migrations are applied
+([0325](decisions/0325-a-database-has-one-writer-process-and-a-retaken-lease-checks-who-else-started.md)).
+A retake takes the database's writer lock back first, and stays refused
+while another process holds it, logging at `ERROR` that another process
+took it. Then it takes the leases, reads `schema_migrations` and the mark,
+and compares them with what the server started under. Where either moved,
+the server logs at `ERROR` which it found, lets its lock and leases go,
+stops its passes and refuses every write with `503 unavailable` for the
+rest of its life: restart it, and it serves what the other process wrote.
+There are three lines: another server migrated the database meanwhile; the
+start mark is not this process's, which is another start, or a database
+restored from a copy taken before this server started; or the database
+holds no start mark, which is a database emptied or replaced. A start that
+left its mark and died before it served still counts, so a server whose
+connection dropped meanwhile refuses until it is restarted.
+
+**An equal mark is not the same history.** It says the stored mark is this
+server's, not that the database holds what the server wrote. A copy taken
+after the server started holds its mark: restored under the running server
+with no other writer started on it, the migrations and the mark both match,
+and the server goes on from memory newer than the database. So stop every
+writer before restoring a database and start it again after, as
+[the restore](#backups) and [the archive's contract](#the-archives-contract)
+say. Seeing that case needs a comparison of what each repository holds,
+which is not small, and the retake does not make one.
+
+Where a retake finds the migrations and the mark as the server left them,
+every write stays refused while it stops the passes that hold a position in
+memory (the search reindex, the reprojection and a compaction pass in
+flight) and has the archive pass read its archive record again; then writes
+are accepted, and then the passes start again, so none of them goes on from
+where it stood while the lease was gone. A read-only command and a
+start refused at the lock or a lease leave no mark, so neither leaves the
+server whose lock it met refused. What a retake does not see is a process of
+a release without the lock and the mark: v0.123.1 and before take neither,
+which is why the first start of this release is held to the migration check
+and to the order above.
 
 A connection the server gave up on is not always one Postgres has noticed is
 gone: after a network blip the old backend can live on, still holding every

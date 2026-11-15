@@ -7,6 +7,7 @@ package engine_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -16,15 +17,15 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// The second process refuses to BOOT: the lease is taken by the boot check,
-// over every repository with a row, so the refusal arrives before the second
-// server has read a declaration, run an upgrade or opened a directory.
+// The second process refuses to BOOT: the database's writer lock is taken
+// first in the start, before any repository's lease or migration, so the
+// refusal arrives before the second server has read a declaration, run an
+// upgrade or opened a directory.
 func TestASecondWriterOfARepositoryIsRefusedAtOpen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, dsn := newDatasetWithDSN(t)
+	_, ds, dsn := newDatasetWithDSN(t)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "the first writer's"}})
-	id := repositoryIDByName(t, svc, testdb.Repository(t))
 
 	_, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithKindsFS(engine.SeedKinds),
@@ -33,18 +34,20 @@ func TestASecondWriterOfARepositoryIsRefusedAtOpen(t *testing.T) {
 	if err == nil {
 		t.Fatal("a second writer opened the database the first one is writing")
 	}
-	if !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
-		t.Fatalf("the refusal must be the lease's: %v", err)
+	// The first writer holds the database's writer lock, which the second
+	// start meets before any repository's lease (decision record 0325). The
+	// refusal is the lease's error too, so every caller that tells a running
+	// server from a fault still reads it as one.
+	if !errors.Is(err, engine.ErrDatabaseHasAnotherWriter) || !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
+		t.Fatalf("the refusal must be the database's writer lock's: %v", err)
 	}
-	// The refusal NAMES the repository and says what the rule is, because the
-	// person reading it is looking at a server that will not start: by its
-	// name, which is what they know, and by its id, which the lock in
-	// pg_locks is keyed by.
-	if !strings.Contains(err.Error(), testdb.Repository(t)) {
-		t.Fatalf("the refusal does not name the repository: %v", err)
+	// It names the lock and its holder and says what the rule is, because the
+	// person reading it is looking at a server that will not start.
+	if !strings.Contains(err.Error(), "(hashtext(current_schema()), hashtext('substrate|writer'))") {
+		t.Fatalf("the refusal does not name the database's writer lock: %v", err)
 	}
-	if !strings.Contains(err.Error(), "hashtext(current_schema() || '|writer|' || '"+id+"')") {
-		t.Fatalf("the refusal does not name the lock by the repository's id %s: %v", id, err)
+	if !strings.Contains(err.Error(), "substrate-writer-") {
+		t.Fatalf("the refusal does not name the first writer's session: %v", err)
 	}
 	if !strings.Contains(err.Error(), "One server per database") {
 		t.Fatalf("the refusal does not say the rule: %v", err)
@@ -95,20 +98,50 @@ func TestARepositoryRegisteredAfterTheBootIsLeasedAtItsOpen(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = second.Close() })
 
+	// The second process holds the database's writer lock, so no start of
+	// this release registers beside it (decision record 0325). A server of
+	// a release before the lock still can, and serves what it registers
+	// under the repository's lease: the first process here registers through
+	// the seam that opens a second writer on purpose, and a session of its
+	// own holds the new repository's lease as that server would.
 	first, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(t.TempDir()),
-		engine.WithCredentialKey(engine.TestCredentialKey))
+		engine.WithCredentialKey(engine.TestCredentialKey),
+		engine.WithTestSkipWriterLease())
 	if err != nil {
 		t.Fatalf("open the first process: %v", err)
 	}
 	t.Cleanup(func() { _ = first.Close() })
-	if _, err := first.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+	info, err := first.CreateRepository(ctx, testdb.Repository(t))
+	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
+	holdRepositoryLease(t, dsn, info.ID)
 
 	if _, err := second.Dataset(ctx, testdb.Repository(t)); !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
-		t.Fatalf("the second process opened a repository the first one registered and holds: %v", err)
+		t.Fatalf("the second process opened a repository another process registered and holds: %v", err)
+	}
+}
+
+// holdRepositoryLease holds id's writer lease on a session of its own for
+// the rest of the test, as a server of a release before the database's
+// writer lock holds a repository it serves.
+func holdRepositoryLease(t *testing.T, dsn, id string) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext(current_schema() || '|writer|' || $1)::bigint)`, id); err != nil {
+		t.Fatal(err)
 	}
 }
 
