@@ -507,10 +507,17 @@ extension ChatApp {
 
     /// Rows read in above the ones held. The turn that stood first is
     /// named, so a transcript on screen stays at it.
-    func olderRead(_ state: inout State, thread: String, epoch: Int, rows: [Record], more: Bool) {
+    func olderRead(_ state: inout State, thread: String, epoch: Int, before: Int, rows: [Record], more: Bool) {
         guard state.readEpochs[thread, default: 0] == epoch else { return }
         state.olderReading.remove(thread)
         guard var held = state.transcripts[thread] else { return }
+        // Asked for from another first row than the one held now (a read
+        // of the newest rows replaced the window meanwhile): these are not
+        // the rows before it, and say nothing of whether any stand there.
+        guard held.records.first?["turn"]?.int == before else {
+            seek(&state, thread)
+            return
+        }
         let have = Set(held.records.map(\.id))
         let fresh = rows.filter { !have.contains($0.id) }
         let stood = held.turns

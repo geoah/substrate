@@ -226,6 +226,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// that bring a line after that leave the transcript where they put
     /// it.
     @State private var placed = false
+    /// The rows above that had arrived when the chat was put at its row.
+    @State private var landed: RowsAbove?
     @State private var laidOut = false
     @State private var atEnd = true
     /// The rows on screen: what Jump to Latest counts from.
@@ -279,6 +281,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     private func place(_ reader: ScrollViewProxy) {
         guard laidOut, !placed, let anchor else { return }
         placed = true
+        landed = above
         follow = TranscriptFollow(opening: opens)
         position = ScrollPosition(idType: String.self)
         // By the row's id, which the lazy stack knows however far up it
@@ -290,10 +293,12 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// Rows arrived above the ones drawn. A transcript that does not follow
     /// its end stays at the turn that was its first, which its reader had
     /// at the top when the rows were asked for: without this the content
-    /// grows above them and what they read moves down off the screen.
+    /// grows above them and what they read moves down off the screen. A
+    /// transcript still to be put at the row it opens at is left for that,
+    /// and so is one put there with these very rows: they were read to
+    /// reach the row, and keeping the old first turn would take it away.
     private func keep(_ reader: ScrollViewProxy, at above: RowsAbove?) {
-        guard let above, !follow.following else { return }
-        placed = true
+        guard let above, placed, above != landed, !follow.following else { return }
         position = ScrollPosition(idType: String.self)
         DispatchQueue.main.async { reader.scrollTo(above.turn, anchor: .top) }
     }

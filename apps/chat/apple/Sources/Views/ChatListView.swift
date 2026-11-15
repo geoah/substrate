@@ -340,7 +340,7 @@ struct ThreadRowView: View {
                         .accessibilityLabel("Unread")
                 case nil:
                     // A chat at work says so where its mark would stand.
-                    if row.running { RunningMark() }
+                    if row.running { RunningMark(selected: selected) }
                 }
             }
         }
