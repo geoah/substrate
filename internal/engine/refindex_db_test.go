@@ -326,9 +326,10 @@ func TestTheReferencingListWalksTheRefsIndex(t *testing.T) {
 
 // The batched trail is every identity a pointer may spell and still resolve,
 // on read, to a target's canonical record: canonicalOf decides both halves.
-// It holds on the trails a live merge never leaves but a rebuild can, a chain
-// (the flattening UPDATE is no changelog effect) and a cycle, and across
-// kinds in one statement without a trail crossing from one kind to another.
+// It holds on trails no merge leaves, live or rebuilt (the merge's resync
+// effect restates the flat trail), a chain and a cycle, so the read does not
+// rest on the flattening, and across kinds in one statement without a trail
+// crossing from one kind to another.
 func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

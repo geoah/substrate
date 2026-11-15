@@ -42,10 +42,13 @@ import (
 // `property_offers`), the refs projection (refs.go, derived again by
 // foldRecordOp) and the observed index (observedindex.go and
 // observedsettle.go: points derived again by foldRecordOp, rollups and latest
-// rows by rederiveObservedAll). Two more carry state of their own: the trigger scan position
+// rows by rederiveObservedAll). One more carries state of its own: the trigger scan position
 // (functions.go advanceCursor), which acknowledges no delivery, so a restore
-// may lose it, and a merge's former-id flattening (rows.go moveFormerIDs),
-// which a rebuild does not reproduce (#821). foldpath_internal_test.go lists
+// may lose it. Merge and split rewrite the side stores with set-shaped
+// statements, a merge's former-id flattening (rows.go moveFormerIDs) among
+// them, and record a resync effect that restates the rows they leave, so a
+// rebuild lands the flat trail the live fold holds
+// (TestARecordMergedTwiceRebuildsAFlatTrail). foldpath_internal_test.go lists
 // every function that writes a fold table with the reason it may, and fails
 // on one it does not list.
 //
