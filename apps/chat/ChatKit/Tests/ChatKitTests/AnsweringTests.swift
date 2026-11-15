@@ -410,6 +410,24 @@ struct FoldedCards {
         #expect(Array(screen.turns.map(\.id).prefix(pieces.count)) == before)
     }
 
+    /// The engine alone. A question is drawn from the pending list before
+    /// the card's own read lands, and its buttons work from then: Answer
+    /// and Dismiss write over the version the list read, as Apply and
+    /// Approve do. They did nothing until the card's own read, in the app
+    /// as first built.
+    @Test func aQuestionDrawnFromThePendingListIsAnsweredOverThatVersion() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        let question: JSONValue = ["id": "q1", "prompt": "Which day?", "options": [["value": "tue", "label": "Tuesday"]]]
+        state.interactions = [Record(id: "i1", kind: Kinds.interaction, properties: ["state": "pending", "questions": [question]], version: 3)]
+        var answered = try app.apply(.init(.answerAsked("i1", picks: ["q1": ["tue"]])), to: state)
+        let answers: JSONValue = [["question": "q1", "selected": ["tue"]]]
+        #expect(answered.asks.contains(.writeCard("i1", kind: Kinds.interaction, properties: ["state": "answered", "answers": answers], ifVersion: 3)))
+        #expect(answered.cards["i1"]?.busy == "answer")
+        answered = try app.apply(.init(.questionsDismissed("i1")), to: state)
+        #expect(answered.asks.contains(.writeCard("i1", kind: Kinds.interaction, properties: ["state": "dismissed"], ifVersion: 3)))
+    }
+
     @Test func oneResolvedOnAnotherDeviceFoldsWhenTheFeedSaysSo() async throws {
         let app = Answering()
         try await app.signIn()
