@@ -9,10 +9,26 @@ import SubstrateRuntime
 public struct MarkdownRow: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var block: MarkdownBlock
+    /// The colours of the block's code, made with the row: one for each
+    /// code block in it, a list's and a quote's included, in the order they
+    /// stand (`MarkdownBlock.codeBlocks`). What they are follows from the
+    /// block alone, so a finished block's are the same at every flush.
+    public var code: [CodeHighlight]
 
     public init(position: Int, block: MarkdownBlock) {
+        self.init(position: position, block: block, memo: nil)
+    }
+
+    /// - Parameter memo: the lines read for this reply's code at its last
+    ///   parse, which a block still being written is coloured from.
+    init(position: Int, block: MarkdownBlock, memo: CodeMemo?) {
         id = "\(position)-\(String(block.digest, radix: 16))"
         self.block = block
+        code = block.codeBlocks.enumerated().map { index, code in
+            guard let memo else { return CodeHighlighter.highlight(code.text, language: code.language) }
+            let slot = CodeMemo.Slot(row: position, block: index)
+            return CodeHighlighter.highlight(code.text, language: code.language, kept: &memo.lines[slot, default: []])
+        }
     }
 }
 
@@ -32,7 +48,17 @@ public extension Markdown {
     /// (`parse(writing:)`). A finished reply is parsed as it stands, so what
     /// a stream drew at its end is what its stored row draws.
     static func rows(_ text: String, open: Bool) -> [MarkdownRow] {
-        (open ? parse(writing: text) : parse(text)).enumerated().map { MarkdownRow(position: $0, block: $1) }
+        rows(text, open: open, memo: nil)
+    }
+
+    /// The same, its code coloured from the lines `memo` holds of the
+    /// reply's last parse and kept there for the next: a block being
+    /// written then costs its last line, not its length.
+    internal static func rows(_ text: String, open: Bool, memo: CodeMemo?) -> [MarkdownRow] {
+        let made = (open ? parse(writing: text) : parse(text)).enumerated().map { MarkdownRow(position: $0, block: $1, memo: memo) }
+        // A row that is gone, or holds no code now, keeps none.
+        if let memo { memo.lines = memo.lines.filter { $0.key.row < made.count && $0.key.block < made[$0.key.row].code.count } }
+        return made
     }
 
     /// Where each row of the transcript starts among a reply's blocks: the

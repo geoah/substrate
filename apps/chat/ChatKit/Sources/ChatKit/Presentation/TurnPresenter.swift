@@ -125,8 +125,10 @@ enum TurnPresenter {
         var rows: [MarkdownRow]
         var pages: [Int]
 
-        init(_ text: String, open: Bool) {
-            rows = Markdown.rows(text, open: open)
+        /// - Parameter memo: the lines read for the reply's code at its
+        ///   last parse (`CodeMemo`).
+        init(_ text: String, open: Bool, memo: CodeMemo? = nil) {
+            rows = Markdown.rows(text, open: open, memo: memo)
             pages = Markdown.pages(rows)
         }
     }
@@ -184,18 +186,24 @@ enum TurnPresenter {
         // they were.
         let reads = BlockReads(text: written, open: live)
         let name = "\(scope)/blocks/\(turn.id)"
+        // The lines read for the reply's code, kept beside its rows under
+        // their name and forgotten with them: a reply is parsed whole at
+        // each flush, and a code block's finished lines are read once.
+        let memo = kept?.state(name, from: CodeMemo()) { $0 }
         let blocks: Blocks
         if let kept, let pace, live {
             // While it is written, no more often than the limit: sooner
             // than that the rows stay, and the turn is presented again when
             // the next parse may start.
             let paced = kept.part(name, reading: reads, at: pace.now, every: 1 / Markdown.parsesPerSecond) {
-                Blocks(reads.text, open: reads.open)
+                Blocks(reads.text, open: reads.open, memo: memo)
             }
             pace.wait(until: paced.due)
             blocks = paced.value
         } else {
-            blocks = kept?.part(name, reading: reads) { Blocks(reads.text, open: reads.open) } ?? Blocks(reads.text, open: reads.open)
+            blocks =
+                kept?.part(name, reading: reads) { Blocks(reads.text, open: reads.open, memo: memo) }
+                ?? Blocks(reads.text, open: reads.open)
         }
         return AssistantTurn(
             live: live, reasoning: reasoning, text: written.isEmpty ? nil : written,
