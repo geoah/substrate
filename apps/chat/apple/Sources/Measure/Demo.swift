@@ -175,6 +175,9 @@ enum Demo {
     /// `SUBSTRATE_CHAT_SESSION` holds the server's address, the
     /// repository's name and a token, with spaces between. Kept in memory,
     /// with a scratch folder, so it shares nothing with a signed-in build.
+    /// It notifies through the device's own service where
+    /// `SUBSTRATE_CHAT_SESSION_NOTIFY` is set, for an answer given from a
+    /// notification to reach that server.
     static func session() -> ChatHost.Parts? {
         let words = (ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_SESSION"] ?? "").split(separator: " ").map(String.init)
         guard words.count == 3, let server = URL(string: words[0]) else { return nil }
@@ -183,7 +186,9 @@ enum Demo {
         if let data = try? JSONEncoder().encode(session) { try? storage.write(data, account: "session") }
         return ChatHost.Parts(
             sessions: SessionStore(storage: storage), transport: URLSessionTransport.shared, folders: ScratchFolders(),
-            preferences: MemoryPreferenceStore(), notifications: nil, background: nil)
+            preferences: MemoryPreferenceStore(),
+            notifications: ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_SESSION_NOTIFY"] == nil ? nil : ChatServices.notifications,
+            background: nil)
     }
 
     private static func until<T>(_ read: () -> T?) async -> T? {
