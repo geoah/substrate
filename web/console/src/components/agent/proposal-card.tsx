@@ -17,6 +17,7 @@ import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
 import { AlwaysAllowButton } from "@/components/agent/always-allow"
 import { ChangeValue, DecisionButtons } from "@/components/change-request"
 import { RecordRef } from "@/components/identity/record-ref"
+import { ResolvedBy } from "@/components/agent/resolved-by"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -196,6 +197,13 @@ export function ProposalCard({ id }: { id: string }) {
           />
         )}
       </div>
+      {!pending && (
+        <ResolvedBy
+          label={decision === "accepted" ? "Applied by" : "Dismissed by"}
+          kind="recordpatchrequest"
+          record={record}
+        />
+      )}
       {rationale && (
         <p className="text-[13px] [overflow-wrap:anywhere] text-muted-foreground">
           {rationale}

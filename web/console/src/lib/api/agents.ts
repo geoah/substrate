@@ -741,6 +741,11 @@ export interface ChatRequest {
    * writes the user row under it, and a request that repeats it writes
    * nothing and runs nothing. */
   messageId?: string
+  /** The pending question (`llm/interaction`) of `thread` this message
+   * answers in the person's own words (decision 0327): the server resolves
+   * it with the message, and the turn that reads the message is the only
+   * one that follows. It needs `thread` and `messageId`. */
+  repliesTo?: string
   /** The client's IANA zone; absent falls back to the repository's
    * `substrate.reamde.dev/llm/timezone` setting, then UTC. */
   timezone?: string
@@ -775,6 +780,13 @@ export const STREAM_POSITIONS_REVISION = 5
  * turn, and the stream says when it is queued and when the model is handed
  * it. Below it the same send is refused as busy. */
 export const MESSAGE_DURING_RUN_REVISION = 6
+
+/** The revision of the server's `agents` feature that takes a chat body's
+ * `repliesTo`, a question answered with the message that names it, and
+ * whose resolved questions, approvals and change requests link whose hand
+ * resolved them (decision 0327). Below it the server refuses the field as
+ * unknown, and a filter on the link as an undeclared property. */
+export const REPLY_IN_WORDS_REVISION = 7
 
 /** An id for a message this client is about to send: a UUID, which is a
  * legal record id. The fallback is for a page served without a secure
@@ -811,6 +823,9 @@ export function streamChat(
     messageId?: string
     /** The records the message is about, as record paths. */
     context?: string[]
+    /** The pending question of `thread` the message answers
+     * (`REPLY_IN_WORDS_REVISION`); sent only with a `messageId`. */
+    repliesTo?: string
   } & StreamHandlers
 ): ChatHandle {
   const body: ChatRequest = {
@@ -819,6 +834,7 @@ export function streamChat(
     timezone: browserTimezone(),
   }
   if (opts.messageId) body.messageId = opts.messageId
+  if (opts.repliesTo && opts.messageId) body.repliesTo = opts.repliesTo
   if (opts.context?.length) body.context = opts.context
   return openAgentStream(
     `${corePath("agent", opts.agent)}/chat`,

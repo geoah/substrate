@@ -1148,6 +1148,7 @@ const chatRequest: Shape<ChatRequest> = {
   thread: false,
   message: true,
   messageId: false,
+  repliesTo: false,
   timezone: false,
   context: false,
 }
