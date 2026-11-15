@@ -1363,6 +1363,41 @@ struct ArchivedAnswering {
         app.server.finishTurns()
     }
 
+    /// The same from a launch that holds nothing of the chat: its folder
+    /// keeps the list's first page alone, and an archived chat is in no
+    /// list. The reply waits for the thread's row, read by name, and then
+    /// goes as any reply does. It was given back at once before, for want
+    /// of the agent the row names, and what said so was then taken back
+    /// with the archived chat's notifications (found on a simulator
+    /// against a server, with the app not running).
+    @Test func aReplyFromANotificationInALaunchThatHoldsNoRowOfItsChatWaitsForTheRow() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        try await app.rig.harness.until { harness in await harness.state.flags }
+        let key = try await app.chat([.piece(0), .piece(1)])
+        await app.rig.harness.send(.back(scene: "s"))
+        app.server.finishTurns()
+        try await app.rig.harness.until(advancing: 6) { _ in
+            let live = await app.rig.live(key)
+            return !app.server.running("t1") && (live == nil || live?.phase == .idle)
+        }
+        app.server.elsewhere("t1", archived: true)
+        app.server.plan([.piece(0)])
+        // Another folder: nothing kept of the chat.
+        let again = ChatRig([], transport: app.server.connect(), clock: app.rig.clock, ids: app.ids)
+        let response = NotificationResponse(
+            id: "pushed", category: ChatNotifications.replyCategory, action: .named("reply"),
+            userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: "On my way")
+        again.notifications.respond(response)
+        try await again.signIn()
+        try await again.harness.until(advancing: 0.5) { _ in
+            again.notifications.calls.contains(.finished(response)) && app.server.mark(of: "t1")?.archived == false
+        }
+        #expect(app.server.userRows(saying: "On my way") == 1 && app.server.chatRequests(saying: "On my way") == 1)
+        #expect(!again.notifications.calls.contains { if case let .schedule(request) = $0 { request.id == "chat|t1|failed" } else { false } })
+        app.server.finishTurns()
+    }
+
     /// The engine alone: the mark read beside a reply from a notification
     /// says the chat was archived, which the device had not heard. The
     /// archive ends, by the person's own write.

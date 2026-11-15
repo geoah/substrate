@@ -611,6 +611,12 @@ The server has no push channel, so the app promises what it can observe:
   version the notification was made from, which rides in its `userInfo`,
   so a record that changed since is refused by the server and never
   decided unseen. The same response heard twice acts once.
+- **What an action waits for.** A launch for an action may hold nothing
+  yet: an action waits, inside its time, for the folder to be read, a
+  reply also for the server's document (which says whether a message
+  takes an id) and for its chat's row, which names the agent it is sent
+  to. The folder keeps the list's first page alone, and an archived chat
+  is in no list, so that row is read by name where the launch holds none.
 - **Inside the time a background action gets.** An action has 20 seconds
   (`ChatApp.actionSeconds`). Done, its notification is taken back. Not
   done, a new notification says so in the sentence the chat would say it

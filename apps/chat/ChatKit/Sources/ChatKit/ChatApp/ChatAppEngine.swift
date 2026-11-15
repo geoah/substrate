@@ -197,6 +197,8 @@ extension ChatApp {
             if record == nil || next.marks?[thread]?.version == mark { next.rowsBehind.remove(thread) }
         case let .threadFetched(record):
             upsert(&next, record)
+            // A reply from a notification that waited for this row.
+            if !next.deferred.isEmpty { resume(&next) }
             if next.readsMarks, next.marks?[record.id] == nil { next.asks.append(.readMarks([record.id])) }
 
         case let .watchOpened(fresh):
