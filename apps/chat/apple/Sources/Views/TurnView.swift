@@ -97,6 +97,8 @@ private struct UserTurnView: View {
                     }
             }
             .accessibilityLabel("You: \(turn.text)")
+            // Sent while a reply was being written, and not read yet.
+            if let queued = turn.queued { QueuedMark(words: queued) }
         }
     }
 }
@@ -499,6 +501,8 @@ struct ToolCallRow: View {
             .accessibilityHint(open ? "Hides the details" : "Shows the details")
             if open {
                 VStack(alignment: .leading, spacing: 8) {
+                    // A card that ended: what was asked and what was answered.
+                    if let resolution = tool.resolution { ResolvedCardView(resolution: resolution) }
                     ForEach(Array(tool.details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
                     if let link = tool.thread, let openThread {
                         Button(link.label, systemImage: "bubble.left.and.bubble.right") { openThread(link.thread) }
@@ -543,6 +547,7 @@ struct ToolCallRow: View {
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
         case .held: Image(systemName: "hourglass.circle.fill").foregroundStyle(.orange)
+        case .declined: Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
         }
     }
 }

@@ -83,6 +83,12 @@ enum FailurePresenter {
         /// The message the failure is about stands unsent: no copy of it
         /// is on its way.
         var stands = false
+        /// The card the failure is drawn in: its button tries the card's
+        /// write, or its read, again.
+        var card: CardReference?
+        /// How many messages the run that ended left unread: sent while it
+        /// worked, and nothing starts their turn after a stop or a failure.
+        var unread = 0
     }
 
     struct Words {
@@ -139,7 +145,9 @@ enum FailurePresenter {
             case .failure?, nil: return Words(tone: .bad, sentence: "\(c.agent) couldn't finish this reply.", button: resume("Try Again", c))
             }
         case .unanswered:
-            return Words(tone: .quiet, sentence: "\(c.agent) didn't answer this message.", whole: true)
+            // At the chat's end it can be answered still: Continue has the
+            // assistant read it. An older one is said, and that is all.
+            return Words(tone: .quiet, sentence: "\(c.agent) didn't answer this message.", button: resume("Continue", c), whole: true)
         case let .http(status, _, reason):
             switch reason.flatMap(RefusalReason.init(rawValue:)) {
             case .threadBusy?:
@@ -208,7 +216,7 @@ enum FailurePresenter {
                 tone: .warn, sentence: "Today's allowance is used up.", note: "It resets at midnight UTC.",
                 button: key("Add Your Own Key", c) ?? again)
         case .interrupted?, .shutdown?:
-            return Words(tone: .warn, sentence: "The server restarted while \(c.agent) was working.", button: again)
+            return Words(tone: .warn, sentence: "The server restarted while \(c.agent) was working.", note: unread(c, "Try Again"), button: again)
         case .writeFailed?:
             return Words(tone: .bad, sentence: "The server couldn't save what \(c.agent) was doing.", button: again)
         case .internal?:
@@ -218,7 +226,9 @@ enum FailurePresenter {
                 tone: .warn, sentence: "\(c.agent) ran out of room before finishing.",
                 note: FailureFallback.limit(status: status, reason: failure.said), button: resume("Continue", c))
         case .requested?:
-            return Words(tone: .quiet, sentence: "\(c.agent) was stopped before it finished.", button: resume("Continue", c))
+            return Words(
+                tone: .quiet, sentence: "\(c.agent) was stopped before it finished.", note: unread(c, "Continue"),
+                button: resume("Continue", c))
         case nil:
             // No cause, or one from a newer server: the sentence for the
             // status.
@@ -226,7 +236,9 @@ enum FailurePresenter {
             case "overbudget":
                 return Words(tone: .warn, sentence: "\(c.agent) ran out of room before finishing.", button: resume("Continue", c))
             case "stopped":
-                return Words(tone: .quiet, sentence: "\(c.agent) was stopped before it finished.", button: resume("Continue", c))
+                return Words(
+                    tone: .quiet, sentence: "\(c.agent) was stopped before it finished.", note: unread(c, "Continue"),
+                    button: resume("Continue", c))
             default:
                 return Words(tone: .bad, sentence: "\(c.agent) couldn't finish this reply.", button: again)
             }
@@ -352,7 +364,8 @@ enum FailurePresenter {
         // Try Again on the list reads it again, and with it searches
         // again and writes the change again.
         case .refresh, .feed, .search, .flag: FailureButton(title: "Try Again", action: .refresh, busy: c.busy)
-        case .poll, .card, .answer, .decide, .addKey, .guidance, .guidanceChange, .keep: nil
+        case .card, .answer, .decide: c.card.map { FailureButton(title: "Try Again", action: .retryCard($0), busy: c.busy) }
+        case .poll, .addKey, .guidance, .guidanceChange, .keep: nil
         }
     }
 
@@ -396,6 +409,16 @@ enum FailurePresenter {
     }
 
     // MARK: Parts
+
+    /// What became of the messages sent while the run worked, where it
+    /// ended before reading them: they stay in the chat, and the button
+    /// has them read. A stop starts no turn for them.
+    private static func unread(_ c: Context, _ button: String) -> String? {
+        guard c.unread > 0 else { return nil }
+        return c.unread == 1
+            ? "It hadn't read your last message. \(button) has it read."
+            : "It hadn't read your last \(c.unread) messages. \(button) has them read."
+    }
 
     private static func provider(_ c: Context) -> String { c.provider ?? "The provider" }
 

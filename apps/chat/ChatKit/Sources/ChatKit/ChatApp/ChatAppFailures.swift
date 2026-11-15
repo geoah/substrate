@@ -70,7 +70,7 @@ extension ChatApp {
             if turn.role == .assistant, let cut = turn.cutBy, cut != CutBy.stop.rawValue {
                 out.turns[turn.id] = FailurePresenter.present(Failure(.reply, .cut(cut)), older)
             } else if turn.role == .user, stored[index + 1].role == .user, deliveryNotice(turn) == nil,
-                turn.content != Conversation.continueMessage
+                turn.content != Conversation.continueMessage, !Self.readLater(stored, after: index, queues: live.queues)
             {
                 // Continue's own words, from before the continue route, are
                 // no question of the person's that went unanswered.
@@ -93,11 +93,16 @@ extension ChatApp {
         } else if !live.deleted, !working || resuming, let last = turns.last, last.id != live.unsent {
             context.busy = resuming
             context.kept = all.last.map { $0.role == .assistant && !$0.content.isEmpty } ?? false
+            context.unread = live.unread
             if let failure = Self.turnFailure(row: row, live: live.failures.turn) {
                 out.turns[last.id] = FailurePresenter.present(failure, context)
                 out.spoken = out.turns[last.id]?.spoken
             } else if let turn = all.last, turn.role == .assistant, turn.cutBy == CutBy.length.rawValue || turn.cutBy == CutBy.filter.rawValue {
                 out.turns[last.id] = FailurePresenter.present(Failure(.reply, .cut(turn.cutBy ?? "")), context)
+            } else if live.queues, Self.unanswered(row, all) {
+                // Sent while a run was going, and that run ended without
+                // reading it: no turn was started for it, or none could be.
+                out.turns[last.id] = FailurePresenter.present(Failure(.reply, .unanswered), context)
             }
         }
 
@@ -120,6 +125,25 @@ extension ChatApp {
         }
         if let strip = out.strip, !strip.working { out.spoken = strip.spoken }
         return out
+    }
+
+    /// Whether a later reply read the message at `index`. A server that
+    /// takes a message into a running turn (`agents` 6) has every call read
+    /// what was sent before it, several messages together: one followed by
+    /// another and then by a reply was answered with it. Before that
+    /// revision a message no reply follows directly went unanswered.
+    static func readLater(_ stored: [Turn], after index: Int, queues: Bool) -> Bool {
+        queues && stored[(index + 1)...].contains { $0.role == .assistant }
+    }
+
+    /// Whether the chat ends on a message of the person's that nothing
+    /// answered and nothing is answering: the thread settled as finished,
+    /// and its newest row is theirs. A message sent while a turn ran comes
+    /// to this when that turn ended without reading it and the turn it
+    /// should have started did not start; Continue has it read.
+    static func unanswered(_ row: ChatThread?, _ all: [Turn]) -> Bool {
+        guard row?.status == "ok", let last = all.last, last.row != nil, last.role == .user else { return false }
+        return deliveryNotice(last) == nil && last.content != Conversation.continueMessage
     }
 
     /// The failure drawn at the newest turn. A Try Again that failed stands

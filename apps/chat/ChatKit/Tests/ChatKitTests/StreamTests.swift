@@ -197,31 +197,6 @@ struct StreamTests {
         rig.server.release()
     }
 
-    /// A server at `agents` 6 says of a message sent while a turn runs
-    /// that it was queued and then taken (`messageQueued`,
-    /// `messageTaken`). This build draws no queued message: the two lines
-    /// are kinds it does not know, read as no event at all, and the reply
-    /// around them is what it is without them.
-    @Test func aQueuedMessagesEventsAreReadAsNoneAndTheReplyIsWhole() async throws {
-        let lines = [
-            #"{"kind":"thread","thread":"t1"}"#, #"{"kind":"delta","text":"Hello ","turn":1,"at":0}"#,
-            #"{"kind":"messageQueued","id":"q1","turn":2,"text":"And the mint?"}"#, #"{"kind":"delta","text":"world","turn":1,"at":6}"#,
-            #"{"kind":"messageTaken","id":"q1","turn":2}"#,
-            #"{"kind":"done","result":{"reply":"Hello world","thread":"t1","status":"ok","turns":2}}"#,
-        ]
-        #expect(AgentEvent.parse(lines[2]) == nil && AgentEvent.parse(lines[4]) == nil)
-        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(lines, holdAfter: 5))])
-        try await rig.signIn(agents: 6)
-        let key = try await rig.newChat()
-        try await rig.send(.draft("Hi"), to: key)
-        try await rig.send(.send, to: key)
-        try await rig.harness.until(advancing: 0.1) { _ in await text(rig.conversation(key)) == "Hello world" }
-        let live = try #require(await rig.live(key))
-        #expect(live.provisional.turns.map(\.role) == [.user, .assistant] && live.provisional.turns.last?.content == "Hello world")
-        #expect(live.phase == .streaming && live.lastFailure == nil && live.turnFailure == nil)
-        rig.server.release()
-    }
-
     @Test func aStreamMayBeQuietForTwoOfItsServersHeartbeats() async throws {
         for (agents, quiet) in [(5, 25.0), (4, 75.0), (0, 75.0)] {
             let conversation = Conversation(

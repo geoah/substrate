@@ -370,7 +370,9 @@ enum TurnPresenter {
             statusLabel: status == .working
                 ? "Working in the background" : approval != nil ? "Asked for your approval" : status == .held ? "Waiting for you" : nil,
             summary: line.said(title: named), unnamed: unnamed, details: details, raw: raw, sources: known.map(sources), chips: chips,
-            thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") }, attachment: attachment)
+            thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") },
+            asked: request.map { .suggestion($0) } ?? interaction.map { .question($0) } ?? approval.map { .approval($0) },
+            attachment: attachment)
     }
 
     /// A call's changes as pills, one run per verb in the order they

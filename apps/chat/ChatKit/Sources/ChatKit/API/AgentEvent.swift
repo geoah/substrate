@@ -45,13 +45,16 @@ struct AgentResult: Codable, Hashable, Sendable {
 /// tolerantly: a field spelled some other way reads as absent.
 struct AgentEvent: Codable, Sendable, Equatable {
     /// A kind this build does not name is no event: its line is skipped, and
-    /// the stream goes on. `messageQueued` and `messageTaken` (`agents` 6, a
-    /// message sent while a turn runs) are two such today. A build that
-    /// draws a queued message names them here and folds them in
-    /// `LiveRows.apply`: the first as a user turn under the event's `id`,
-    /// which is its row's, the second as that turn no longer waiting.
+    /// the stream goes on.
     enum Kind: String, Codable, Sendable {
         case thread, delta, reasoning, toolStarted, toolFinished, compacted, truncated, idle, done, error
+        /// A message sent while the turn runs (`agents` 6, decision 0318).
+        /// `messageQueued` says its row is written: `id` is the row's,
+        /// `turn` its ordinal, `text` what it says, on every stream of the
+        /// turn, so a window that did not send it draws it too.
+        /// `messageTaken` says a model call now reads it: until then it is
+        /// queued.
+        case messageQueued, messageTaken
         /// Ends the stream of a reader that fell behind the turn, with no
         /// `done`: the turn runs on, and the reader attaches again
         /// (`agents` 5; before it the same was an `error`).
@@ -69,7 +72,8 @@ struct AgentEvent: Codable, Sendable, Equatable {
     /// A content delta, or on `reasoning` a piece of the model's thinking.
     var text: String?
     /// The tool CALL's id, on both tool events: one turn may dispatch the same
-    /// tool twice, so pairing is by id, never by name.
+    /// tool twice, so pairing is by id, never by name. On `messageQueued`
+    /// and `messageTaken`, the message's own record id.
     var id: String?
     var tool: String?
     var callable: String?

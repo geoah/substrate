@@ -2,12 +2,17 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// The agent's questions, inline in the thread that asked them. Answering is
-/// one patch with the version the owner read; the engine checks every
-/// selection against the stored option values. What the owner picks stays
-/// here until it is sent.
+/// The agent's questions, inline in the thread that asked them, while they
+/// wait: once answered or dismissed they are the mark on the call that
+/// asked (`ResolvedCardView`). Answering is one patch with the version the
+/// person read; the engine checks every selection against the stored option
+/// values. What is picked stays here until it is sent. Beside the options
+/// stands "Answer in Your Own Words", which takes the card off the
+/// transcript and puts the cursor in the composer: what is sent from there
+/// is the answer.
 struct QuestionCardView: View {
     @Environment(ChatHost.self) private var host
+    @Environment(\.conversationKey) private var conversation
     let id: String
     let card: QuestionCard
     @State private var picked: [String: Set<String>] = [:]
@@ -50,8 +55,26 @@ struct QuestionCardView: View {
                     }
                 }
             }
-            if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
+            if card.pending, let conversation {
+                // An option like the others, and the last: prose, in chat.
+                Button {
+                    host.send(.answerInWords(id), to: conversation)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "square.and.pencil")
+                        Text(card.words)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.vertical, 4)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(card.busy != nil)
+                .accessibilityHint("Closes these questions and puts the cursor in the message field")
+            }
+            if let failure = card.failure {
+                CardFailureView(failure: failure)
             }
             if card.pending {
                 HStack {
@@ -116,8 +139,8 @@ struct SuggestionCardView: View {
                     RecordValueView(line.value).font(.footnote).lineLimit(6)
                 }
             }
-            if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
+            if let failure = card.failure {
+                CardFailureView(failure: failure)
             }
             if let console = card.console.flatMap(URL.init(string:)) {
                 // Without `decide:` the request is not the app's to decide.
@@ -195,8 +218,8 @@ struct ApprovalCardView: View {
             if let error = card.error {
                 Text(verbatim: error).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
             }
-            if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
+            if let failure = card.failure {
+                CardFailureView(failure: failure)
             }
             if card.pending {
                 HStack {
@@ -239,6 +262,109 @@ struct ApprovalCardView: View {
         case .failed: .red
         case .declined: nil
         }
+    }
+}
+
+/// A card's answer or decision that did not go through, in the card: the one
+/// component every failure is drawn by, with the button that tries again
+/// where trying again can help.
+struct CardFailureView: View {
+    @Environment(ChatHost.self) private var host
+    let failure: FailurePresentation
+
+    var body: some View {
+        FailureView(failure: failure) { action in
+            if case let .retryCard(reference) = action { host.send(.retryCard(reference)) }
+        }
+    }
+}
+
+/// How a card ended, under the call that asked, when its row is opened: who
+/// decided and when, then each thing that was asked with what was answered,
+/// or the change as it was applied or not taken. What was asked is on the
+/// card's record, read when this is first shown.
+struct ResolvedCardView: View {
+    @Environment(ChatHost.self) private var host
+    let resolution: CardResolution
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: ResolvedCardView.spacing) {
+            Text(when)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.quietText)
+            if resolution.loading {
+                ProgressView().controlSize(.small)
+            }
+            ForEach(Array(resolution.facts.enumerated()), id: \.offset) { _, fact in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: fact.label).font(.caption).foregroundStyle(.quietText)
+                    // The model's words and the person's choice: plain text.
+                    Text(verbatim: fact.value).font(.footnote).textSelection(.enabled)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if let panel = resolution.panel {
+                ChangePanel(panel: panel)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: resolution.card) {
+            if resolution.loading { host.send(.loadCard(resolution.card)) }
+        }
+    }
+
+    /// Between two facts of a folded card.
+    static let spacing: CGFloat = 8
+
+    /// "You answered · 14 Nov 2026 at 09:41", or the words alone where the
+    /// record says no time.
+    private var when: String {
+        guard let at = resolution.at else { return resolution.label }
+        return "\(resolution.label) · \(at.formatted(date: .abbreviated, time: .shortened))"
+    }
+}
+
+/// Under a message sent while a reply was being written: it waits for the
+/// assistant's next step.
+struct QueuedMark: View {
+    let words: String
+
+    var body: some View {
+        Label(words, systemImage: "clock")
+            .font(.caption)
+            .foregroundStyle(.quietText)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityLabel(words)
+    }
+}
+
+/// What the composer says while it holds the answer to a question in the
+/// person's own words: which question, and the way back to its options.
+struct AnsweringNoteView: View {
+    let note: AnsweringNote
+    let back: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "square.and.pencil")
+                .imageScale(.small)
+                .foregroundStyle(.quietText)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(note.title).font(.caption.weight(.semibold))
+                if let prompt = note.prompt {
+                    Text(verbatim: prompt).font(.caption).foregroundStyle(.quietText).lineLimit(2)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 8)
+            Button(note.back, action: back)
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.borderless)
+                .accessibilityHint("Puts the questions back in the chat")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
     }
 }
 

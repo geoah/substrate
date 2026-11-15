@@ -137,6 +137,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case approveAsked(String, approve: Bool)
     case cardWritten(String, Record)
     case cardWriteFailed(String, Failure)
+    case cardRetried(CardReference)
     case setting(row: String, toggle: Bool?, choice: String?)
     case settingsOpened
     case clearAsked
@@ -270,6 +271,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         /// The person spoke in the chat: a message, Send Again, Try Again
         /// or Continue.
         var spoke = false
+        /// The questions the server now holds an answer to in the person's
+        /// own words: dismissed, so they do not wait for good.
+        var answered: String?
     }
 
     struct Read: Codable, Equatable, Sendable {

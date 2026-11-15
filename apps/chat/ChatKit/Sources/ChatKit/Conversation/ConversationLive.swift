@@ -39,6 +39,19 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     var resendBlocked: String?
     var keyless: String?
     var online: Bool
+    /// The messages the server holds that the assistant has not read yet,
+    /// by id, in the order they were sent: each is drawn as queued.
+    var queued: [String] = []
+    /// How many messages the run that last ended left unread, where it was
+    /// stopped or failed.
+    var unread = 0
+    /// A message may be sent while the reply is being written: Send
+    /// stands beside Stop (`agents` 6).
+    var queues = false
+    /// The questions being answered in the person's own words.
+    var answering: String?
+    /// Moved when the composer's field is asked to take the cursor.
+    var focuses = 0
 }
 
 extension Conversation {
@@ -60,10 +73,19 @@ extension Conversation {
             draftReplaced: state.draftReplaced, draftBefore: state.draftBefore, draftGiven: state.given,
             provisional: provisional, aliases: state.aliases, incomplete: state.provisional.incomplete,
             liveKey: streaming ? state.provisional.writing?.id : nil,
-            awaitingFirstEvent: streaming && state.provisional.turns.last?.role == .user,
+            awaitingFirstEvent: streaming && awaits(state),
             connected: state.connected, sends: state.sends,
             phase: state.phase, stopping: state.stopping, failures: failures(state),
             deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
-            unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online)
+            unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online,
+            queued: state.queued.map(\.id), unread: state.unread, queues: queues, answering: state.answering, focuses: state.focuses)
+    }
+
+    /// A message is out and nothing has come back for it yet. One sent
+    /// into a running turn is not that until a call has read it: the reply
+    /// being written above it is not its answer.
+    private func awaits(_ state: State) -> Bool {
+        guard let last = state.provisional.turns.last, last.role == .user else { return false }
+        return !state.provisional.waiting.contains(last.id)
     }
 }

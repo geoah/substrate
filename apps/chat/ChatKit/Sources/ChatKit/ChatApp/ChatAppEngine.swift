@@ -203,9 +203,10 @@ extension ChatApp {
             next.feedBatch.insert(.init(kind: row.kind, id: row.recordID))
             // An approval moves under the engine once decided (running,
             // then done or failed), and the pending list no longer holds it:
-            // a card on screen reads it again.
-            if row.kind == Kinds.approval, next.cards[row.recordID] != nil {
-                next.asks.append(.readCard(.approval(row.recordID), target: false))
+            // a card on screen reads it again. So does a question or a
+            // suggestion: one resolved on another device folds here.
+            if next.cards[row.recordID] != nil, let reference = CardReference(kind: row.kind, id: row.recordID) {
+                next.asks.append(.readCard(reference, target: false))
             }
             // Only the wait restarts, never a batch being read.
             next.asks.append(.feedWait(seconds: 0.3))
@@ -321,39 +322,33 @@ extension ChatApp {
             next.asks.append(.readCard(reference, target: target))
         case let .cardRead(id, record, target):
             var card = next.cards[id] ?? State.Card()
-            card.record = record ?? card.record
+            // A read that started before a write of this device's was
+            // answered must not bring the buttons back.
+            if let record, (card.record?.version ?? 0) <= record.version { card.record = record }
             card.target = target ?? card.target
-            card.problem = nil
+            // A read that failed is answered. A write that failed stays
+            // said, with its button, while the card still waits.
+            if card.problem?.attempt == .card || !Self.waits(card.record) { (card.problem, card.tried) = (nil, nil) }
             next.cards[id] = card
         case let .cardFailed(id, failure):
             if failure.report == nil { next.cards[id, default: State.Card()].problem = failure }
         case let .answerAsked(id, picks):
             guard let record = next.cards[id]?.record else { break }
-            next.cards[id]?.busy = "answer"
-            next.cards[id]?.problem = nil
             let questions = (record["questions"]?.array ?? []).compactMap { $0["id"]?.text }
             let answers: [JSONValue] = questions.map { q in
                 ["question": .string(q), "selected": .array((picks[q] ?? []).map(JSONValue.string))]
             }
-            next.asks.append(
-                .writeCard(
-                    id, kind: Kinds.interaction, properties: ["state": "answered", "answers": .array(answers)],
-                    ifVersion: record.version))
+            write(&next, id, record, ["state": "answered", "answers": .array(answers)], as: "answer")
         case let .questionsDismissed(id):
             guard let record = next.cards[id]?.record else { break }
-            next.cards[id]?.busy = "dismiss"
-            next.cards[id]?.problem = nil
-            next.asks.append(.writeCard(id, kind: Kinds.interaction, properties: ["state": "dismissed"], ifVersion: record.version))
+            write(&next, id, record, ["state": "dismissed"], as: "dismiss")
         case let .decideAsked(id, accept, shown):
             next.cards[id, default: State.Card()].busy = accept ? "accept" : "reject"
             next.cards[id]?.problem = nil
             // The version decided on is the one whose change is on screen:
             // read now when the card holds none.
             if let held = next.cards[id]?.record ?? next.requests.first(where: { $0.id == id }) {
-                next.asks.append(
-                    .writeCard(
-                        id, kind: Kinds.request, properties: ["decision": .string(accept ? "accepted" : "rejected")],
-                        ifVersion: held.version))
+                write(&next, id, held, ["decision": .string(accept ? "accepted" : "rejected")], as: accept ? "accept" : "reject")
             } else {
                 next.asks.append(.decideUnread(id, accept: accept, shown: shown))
             }
@@ -361,13 +356,14 @@ extension ChatApp {
             // Decided on the version the owner read: one moved since is
             // refused, and read again.
             guard let held = next.cards[id]?.record ?? next.approvals.first(where: { $0.id == id }) else { break }
-            next.cards[id, default: State.Card()].busy = approve ? "approve" : "decline"
-            next.cards[id]?.problem = nil
-            next.asks.append(
-                .writeCard(id, kind: Kinds.approval, properties: ["state": .string(approve ? "approved" : "denied")], ifVersion: held.version))
+            write(&next, id, held, ["state": .string(approve ? "approved" : "denied")], as: approve ? "approve" : "decline")
+        case let .cardRetried(reference):
+            retry(&next, reference)
         case let .cardWritten(id, record):
             next.cards[id, default: State.Card()].record = record
             next.cards[id]?.busy = nil
+            next.cards[id]?.problem = nil
+            next.cards[id]?.tried = nil
             // The resolution wrote into the thread and resumed the agent.
             next.asks += [
                 .cards(next.plan, threads: next.cardThreads),
@@ -1102,7 +1098,61 @@ extension ChatApp {
         // A message put back into the composer is written as promptly: it
         // was sent, and is in no other place.
         if report.sent || report.gaveBack, let disk = state.disk { state.asks.append(.saveUnsent(disk, state.unsent, drafts: state.drafts)) }
+        // The server holds a message that answers questions in the
+        // person's own words. A typed message alone leaves a question
+        // waiting, on any server: dismissing it is how the server is told
+        // (the interaction kind: "prose belongs in chat"), and its agent
+        // then hears of the dismissal beside the message.
+        if let interaction = report.answered { answeredInWords(&state, interaction) }
         if !shownOrBusy(state, key) { release(&state) }
+    }
+
+    // MARK: Cards
+
+    /// A card's answer or decision, written over the version read: the
+    /// card says it is out, and keeps what it set, so a write that fails
+    /// can be asked again.
+    private func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String) {
+        var card = state.cards[id] ?? State.Card()
+        card.busy = busy
+        card.problem = nil
+        card.tried = State.Card.Tried(properties: properties, busy: busy)
+        state.cards[id] = card
+        let kind = record.kind.isEmpty ? Kinds.interaction : record.kind
+        state.asks.append(.writeCard(id, kind: kind, properties: properties, ifVersion: record.version))
+    }
+
+    /// Try Again on a card's failure. A write that failed is asked again as
+    /// it was, over the version the card holds now, while its record still
+    /// waits: the engine holds a decision to the version, and refuses one
+    /// whose record moved. Anything else reads the card.
+    private func retry(_ state: inout State, _ reference: CardReference) {
+        let id = reference.id
+        guard let card = state.cards[id], let record = card.record, let tried = card.tried, card.busy == nil, Self.waits(record) else {
+            state.cards[id]?.problem = nil
+            state.asks.append(.readCard(reference, target: false))
+            return
+        }
+        write(&state, id, record, tried.properties, as: tried.busy)
+    }
+
+    /// The questions an answer in the person's own words stands for are
+    /// dismissed, where they still wait: one resolved meanwhile, here or on
+    /// another device, is left as it is.
+    private func answeredInWords(_ state: inout State, _ id: String) {
+        guard let record = state.cards[id]?.record ?? state.interactions.first(where: { $0.id == id }), Self.waits(record),
+            state.cards[id]?.busy == nil
+        else { return }
+        write(&state, id, record, ["state": "dismissed"], as: State.Card.words)
+    }
+
+    /// Whether a card's record still waits on the person.
+    static func waits(_ record: Record?) -> Bool {
+        guard let record else { return false }
+        switch record.kind {
+        case Kinds.request: return record["decision"]?.string == "proposed"
+        default: return record["state"]?.string == "pending"
+        }
     }
 
     private func shownOrBusy(_ state: State, _ key: ChildKey) -> Bool {

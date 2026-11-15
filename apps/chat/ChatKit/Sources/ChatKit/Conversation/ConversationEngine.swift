@@ -15,6 +15,7 @@ extension Conversation {
         next.idsUnserved = false
         next.adopted = nil
         next.gaveBack = false
+        next.answered = nil
         switch event.step {
         case let .drafted(text):
             next.draft = text
@@ -31,6 +32,11 @@ extension Conversation {
             next.agent = agent
         case .listened:
             next.listenOnOpen = false
+        case let .ownWords(interaction):
+            next.answering = interaction
+            next.focuses += 1
+        case .optionsShown:
+            next.answering = nil
         case .opened:
             // A field starts from the tree: it takes up what was typed
             // into the chat before, which the tree did not carry.
@@ -122,10 +128,15 @@ extension Conversation {
             if next.thread == nil { next.thread = thread }
             // The server took the message: the optimistic turn is confirmed.
             next.provisional.confirm()
+            // Its stream is the running turn's, said from its start as an
+            // attach's is: written over what is held of it.
+            if run.joins { next.provisional.begin(replaying: true) }
             if run.id != nil {
-                forget(&next)
+                forget(&next, taken: true)
                 next.lastFailure = nil
                 next.asks.append(.cancel("repeat"))
+            } else if !run.resumes {
+                answerDelivered(&next, nil)
             }
         case let .streamed(streamed, at):
             stream(&next, streamed, at: at)
@@ -139,6 +150,7 @@ extension Conversation {
             }
             taken(&next, by: rows)
             run.held = persistedTurns(rows)
+            run.replied = Self.replied(rows)
             next.run = .attach(run)
             // The rows take the place of what the stream had said of them,
             // and the stream starts again from the turn's start over the
@@ -175,7 +187,13 @@ extension Conversation {
             next.phase = .idle
             next.run = nil
             next.settles += 1
+            // The run left messages unread and the thread runs again: that
+            // is the turn they start, and its stream says each one taken.
+            let follow = follows(next, thread: record)
+            next.follows = false
+            if follow { attach(&next, attempt: 0) }
         case let .handoverFailed(failure):
+            next.follows = false
             next.failure = failure
             next.reloadFailed = failure
             next.reloading = nil
@@ -219,9 +237,16 @@ extension Conversation {
                 // have started is stopped where its thread is known.
                 // Without an id there is nothing safe to do but wait: an
                 // attach here would end the send and drop what was typed.
-                guard run.id != nil, !run.unkept, next.phase == .streaming else { break }
+                // A message sent into a running turn is another matter:
+                // the turn is known, and the stop is for it. The message
+                // stands, and the turn's own stream is read again for how
+                // the stop ended it.
+                guard run.id != nil, !run.unkept || run.joins, next.phase == .streaming else { break }
                 stand(&next, run, Failure(.message, .interrupted))
-                if let thread = next.thread, next.phase == .idle { next.asks.append(.stop(thread: thread)) }
+                if let thread = next.thread, next.phase == .idle || run.joins {
+                    next.stopping = run.joins
+                    next.asks.append(.stop(thread: thread))
+                }
                 break
             }
             guard let thread = next.thread, next.phase == .streaming, !next.stopping else { break }
@@ -277,7 +302,7 @@ extension Conversation {
         // and no longer pending; or the device keeps it, so its first copy
         // may go.
         if landed, next.pending != nil, next.run.map({ if case .attach = $0 { true } else { false } }) ?? true {
-            forget(&next)
+            forget(&next, taken: true)
         }
         // A new chat's message whose first copy opened a thread the list
         // has since read: the chat is that thread, whatever became of the
@@ -308,6 +333,8 @@ extension Conversation {
             if case let .send(run)? = next.run, run.id == pending.id, !run.named { carried = true }
             if !carried { next.unsentFailure = Failure(.message, .interrupted) }
         }
+        // A message is queued only while a run may read it.
+        quieten(&next)
         // The wait for a rate limit's end follows the failure that names it.
         let deadline = retryDeadline(next)
         if deadline != next.armed {
@@ -365,6 +392,7 @@ extension Conversation {
             return
         }
         giveBack(&state, message)
+        state.answer = nil
         // A sign-in that ended is the signed-out screen's to say.
         if failure.report != .accessEnded { state.chatFailure = failure }
     }
@@ -394,7 +422,12 @@ extension Conversation {
 
     /// The pending message is no longer pending: the server took it, the
     /// rows hold it, or the person took it back.
-    private func forget(_ state: inout State) {
+    ///
+    /// - Parameter taken: the server holds it. Where it was the answer to
+    ///   questions in the person's own words, they are dismissed now; given
+    ///   back or taken back, it answered nothing.
+    private func forget(_ state: inout State, taken: Bool = false) {
+        if taken { answerDelivered(&state, state.pending?.id) } else { state.answer = nil }
         state.pending = nil
         state.unsentFailure = nil
         state.copies = 0
@@ -408,8 +441,20 @@ extension Conversation {
     /// The rows a read of this conversation's own brought: where they hold
     /// the pending message, it is the stored row.
     private func taken(_ state: inout State, by rows: [Record]) {
+        read(&state, queuedIn: rows)
         guard let pending = state.pending, rows.contains(where: { $0.id == pending.id }) else { return }
-        forget(&state)
+        forget(&state, taken: true)
+    }
+
+    /// The server holds the message `id` (nil for one sent under no id).
+    /// Where it is the answer given to questions in the person's own
+    /// words, the list is told, which dismisses them: a typed message
+    /// alone leaves a question waiting.
+    private func answerDelivered(_ state: inout State, _ id: String?) {
+        guard let answer = state.answer, answer.message == id else { return }
+        state.answer = nil
+        state.answered = answer.interaction
+        if state.answering == answer.interaction { state.answering = nil }
     }
 
     /// The pending message is a stored row of `thread`, as a read says: it
@@ -425,7 +470,7 @@ extension Conversation {
             state.lastFailure = nil
             state.asks += [.cancel("repeat"), .cancel("run")]
         }
-        forget(&state)
+        forget(&state, taken: true)
         if state.thread == nil {
             state.thread = thread
             state.adopted = thread
@@ -447,7 +492,11 @@ extension Conversation {
     /// message was first sent under, so whatever became of the copies
     /// before, the message is written once and its turn runs once.
     private func sendAgain(_ state: inout State, at: Date) {
-        guard state.standing, var pending = state.pending, state.phase == .idle else { return }
+        guard state.standing, var pending = state.pending, state.phase == .idle || joins(state) else { return }
+        // A turn runs on the thread: the message joins it, as one sent now
+        // from the composer does.
+        let joining = joins(state)
+        let known = joining ? join(&state) : ([], -1)
         startRun(&state)
         pending.sentAt = at
         state.pending = pending
@@ -461,14 +510,16 @@ extension Conversation {
             message: pending.message, agent: pending.agent, sentTo: pending.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: nil, sentAt: at)
         run.id = pending.id
+        (run.joins, run.held, run.replied) = (joining, known.0, known.1)
         state.reloadFailed = nil
+        state.unread = 0
         state.seq += 1
         state.sends += 1
         state.provisional.keep(kept)
         state.provisional.begin()
-        state.provisional.send(pending.message, id: pending.id, seq: state.seq, baseline: nil, at: at)
+        state.provisional.send(pending.message, id: pending.id, seq: state.seq, baseline: nil, at: at, joining: joining)
         state.phase = .streaming
-        state.connected = false
+        if !joining { state.connected = false }
         state.stopping = false
         state.run = .send(run)
         go(&state)
@@ -487,10 +538,11 @@ extension Conversation {
         state.asks += [.cancel("repeat"), .cancel("run")]
         state.unsentFailure = failure.attempting(.message)
         // A turn runs on the thread, which may be this message's own: an
-        // attach reads what the thread holds.
-        if case let .http(409, _, reason) = failure.why, reason == RefusalReason.threadBusy.rawValue, state.thread != nil {
-            attach(&state, attempt: 0)
-        }
+        // attach reads what the thread holds. So does one the message was
+        // sent into, whose stream was let go for the send's.
+        var busy = run.joins
+        if case let .http(409, _, reason) = failure.why, reason == RefusalReason.threadBusy.rawValue { busy = true }
+        if busy, state.thread != nil { attach(&state, attempt: 0) }
     }
 
     /// A copy of a message sent under its id ended before the server named
@@ -519,11 +571,19 @@ extension Conversation {
                 // does not: nothing was written, so the message goes as it
                 // does to a server that takes none, and the list is told.
                 state.idsUnserved = true
-                return send(
-                    &state, message: run.message, agent: run.agent, at: run.sentAt, baseline: run.baseline, fromDraft: false, id: nil,
-                    typed: true)
+                // But into a running turn, where one without an id is
+                // refused as busy: its text goes back, as below.
+                if !run.joins {
+                    return send(
+                        &state, message: run.message, agent: run.agent, at: run.sentAt, baseline: run.baseline, fromDraft: false, id: nil,
+                        typed: true)
+                }
             }
-            return unsent(&state, run.message, typed: true, failure: failure, unconfirmed: false)
+            unsent(&state, run.message, typed: true, failure: failure, unconfirmed: false)
+            // The turn it was sent into runs on, and its stream was let
+            // go for the send's: read again.
+            if run.joins, state.thread != nil { attach(&state, attempt: 0) }
+            return
         }
         if refused { return stand(&state, run, failure) }
         guard state.tries <= Self.repeatDelays.count else { return stand(&state, run, failure) }
@@ -543,6 +603,11 @@ extension Conversation {
     private func send(
         _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil
     ) {
+        // A turn runs on the thread and the server takes a message into
+        // it: the send's stream is that turn's, so the one being read is
+        // let go for it.
+        let joining = id != nil && joins(state)
+        let known = joining ? join(&state) : ([], -1)
         startRun(&state)
         // Continue sends its own words and leaves what is being typed alone.
         if fromDraft {
@@ -565,7 +630,12 @@ extension Conversation {
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: baseline, sentAt: at, typed: typed ?? fromDraft)
         run.id = id
+        (run.joins, run.held, run.replied) = (joining, known.0, known.1)
+        // Sent from the composer while a question's card is aside for it:
+        // this is the answer, in the person's own words.
+        state.answer = fromDraft ? state.answering.map { State.OwnAnswer(message: id, interaction: $0) } : nil
         state.reloadFailed = nil
+        state.unread = 0
         state.seq += 1
         state.sends += 1
         state.provisional.keep(kept)
@@ -575,9 +645,10 @@ extension Conversation {
         // no id it is paired by its words, past what the thread held: a
         // new chat's thread holds nothing before this message, so its row
         // is the first there is.
-        state.provisional.send(message, id: id, seq: state.seq, baseline: state.thread == nil ? -1 : baseline, at: at)
+        state.provisional.send(message, id: id, seq: state.seq, baseline: state.thread == nil ? -1 : baseline, at: at, joining: joining)
         state.phase = .streaming
-        state.connected = false
+        // A turn that was being read is still being written.
+        if !joining { state.connected = false }
         state.stopping = false
         guard let id else {
             state.run = .send(run)
@@ -608,6 +679,7 @@ extension Conversation {
         run.automatic = automatic
         run.named = true
         state.reloadFailed = nil
+        state.unread = 0
         state.provisional.keep(kept)
         state.provisional.begin()
         state.phase = .streaming
@@ -620,7 +692,7 @@ extension Conversation {
     /// Attaches to the turn running on the thread: the rows are read first
     /// and their ordinals frozen, so the replayed events they hold are
     /// dropped.
-    private func attach(_ state: inout State, attempt: Int) {
+    func attach(_ state: inout State, attempt: Int) {
         guard let thread = state.thread else { return }
         startRun(&state)
         state.turnFailure = nil
@@ -670,6 +742,7 @@ extension Conversation {
                 state.run = .send(run)
                 state.provisional.mention(event.result?.mentions)
                 state.turnFailure = ended(event.result, at: at)
+                ended(&state, queueAfter: event.result?.status)
                 return
             }
             if event.kind == .idle {
@@ -678,8 +751,15 @@ extension Conversation {
                 // status is the whole answer.
                 run.idle = event.status ?? "unknown"
                 state.run = .send(run)
+                if run.idle != "running" { ended(&state, queueAfter: run.idle) }
                 return
             }
+            hear(&state, event, replied: max(run.replied, rowReplied))
+            // What the rows held when this send took a stream's place is
+            // dropped from its replay, as that stream dropped it; and so
+            // is what a turn already running said before this send joined
+            // it, where its rows are drawn.
+            if isReplayed(event, held: run.held) || stale(event, state) { return }
         case var .attach(run)?:
             if event.kind != .idle {
                 // The stream is open. One that was only asked after has a
@@ -708,6 +788,8 @@ extension Conversation {
                     }
                 }
                 state.run = .attach(run)
+                // No turn runs: the one a message joined is over.
+                if run.idle != "running" { ended(&state, queueAfter: run.idle) }
                 return
             case .done:
                 run.done = true
@@ -715,6 +797,7 @@ extension Conversation {
                 state.run = .attach(run)
                 state.provisional.mention(event.result?.mentions)
                 state.turnFailure = ended(event.result, at: at)
+                ended(&state, queueAfter: event.result?.status)
                 return
             case .thread:
                 // Open again after a stream that dropped: no longer
@@ -728,6 +811,7 @@ extension Conversation {
                 state.run = .attach(run)
                 return
             default:
+                hear(&state, event, replied: max(run.replied, rowReplied))
                 if isReplayed(event, held: run.held) { return }
             }
         case nil:
@@ -750,6 +834,8 @@ extension Conversation {
     }
 
     private func ended(_ state: inout State, failure: Failure?, outcome: UUID) {
+        // A run that said it failed reads nothing more.
+        if let failure, case .run = failure.why { ended(&state, queueAfter: nil) }
         switch state.run {
         case let .send(run)? where run.resumes && !run.started:
             resumeEnded(&state, run, failure: failure, outcome: outcome)
@@ -963,6 +1049,8 @@ extension Conversation {
             return unsent(&state, lost.message, typed: lost.typed, failure: lost.failure, unconfirmed: true)
         }
         if state.thread == nil { state.thread = found.thread }
+        // The check found it: the server holds it.
+        answerDelivered(&state, nil)
         if found.running { attach(&state, attempt: 0) }
     }
 }

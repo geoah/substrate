@@ -12,10 +12,12 @@ import SubstrateTesting
 /// leaving and coming back to the front, kills and relaunches, scrolling to
 /// a chat's end and away from it, Mark as Unread and Mark as Read, Pin and
 /// Archive and Undo, the archived list, the list scrolled to its end, a
-/// search), the server's turns moved, a chat coming to wait on them,
-/// another device of theirs moving a mark or a flag, and the clock advanced
-/// between them, and after every step the rules a chat must keep whatever
-/// the server does.
+/// search, a message sent while the assistant works, a question answered by
+/// an option or in their own words or dismissed, a call approved or
+/// declined), the server's turns moved, a chat coming to wait on them,
+/// another device of theirs moving a mark or a flag or resolving a card, and
+/// the clock advanced between them, and after every step the rules a chat
+/// must keep whatever the server does.
 ///
 /// The seed fixes everything: the steps, the faults, the clock, and the
 /// order the app's concurrent work runs in, because a run is made on a
@@ -102,6 +104,22 @@ struct SeededRun {
         /// rows by its words, and where the rows held when it was sent were
         /// unread it may be paired with an older row of the same words.
         case mispaired = "a message sent under no id is drawn as its own row, not an older one of the same words"
+        /// A message sent while the assistant works (`ConversationQueue`).
+        /// It is drawn as queued only while the server holds it in a turn
+        /// that may still read it, as far as the app can know: never again
+        /// once it was drawn read, never in a conversation nothing runs
+        /// in, and never one the server does not hold.
+        case queued = "a message is never drawn queued after it was taken or its run ended"
+        /// A card (`CardPresenter.fold`). One the app drew as ended, or
+        /// holds the server's last word of, is never drawn waiting again.
+        case resolved = "a resolved card is never drawn waiting"
+        /// One that waits at the server, under a call the transcript
+        /// draws, stands there: or the composer says it is being answered
+        /// in the person's own words.
+        case hidden = "a card that waits on the person is never hidden"
+        /// A card is resolved by one write, whoever made it and however
+        /// often it was pressed.
+        case decidedOnce = "a card is resolved once"
     }
 
     /// Rules the app is known to break today, each with what breaks it. A
@@ -199,6 +217,15 @@ struct SeededRun {
     /// runs it had settled, whether one went on, and every turn's id, role
     /// and text. What the fold's rules compare a step with.
     private var drew: [ChildKey: Frame] = [:]
+    /// The cards whose view asked for their record since the chat came on
+    /// screen: a card's view reads it once, when it appears.
+    private var asked: Set<String> = []
+    /// The messages each conversation drew as queued, and the ones it then
+    /// drew as read.
+    private var drewQueued: [ChildKey: Set<String>] = [:]
+    private var drewRead: [ChildKey: Set<String>] = [:]
+    /// The cards the app drew as ended.
+    private var drewEnded: Set<String> = []
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -227,7 +254,11 @@ struct SeededRun {
         // And of its own again: half of the servers that take a message's
         // id also say where a stream's text belongs (`agents` 5).
         var positions = SeededNumbers(seed: seed ^ SeededNumbers.hash("positions"))
-        let agents = revision ?? (drawn == 3 && positions.below(2) == 0 ? 5 : drawn)
+        // And once more: half of those also take a message into a running
+        // turn (`agents` 6).
+        var queue = SeededNumbers(seed: seed ^ SeededNumbers.hash("queue"))
+        let positioned = drawn == 3 && positions.below(2) == 0
+        let agents = revision ?? (positioned ? (queue.below(2) == 0 ? 6 : 5) : drawn)
         // And of its own once more: three in four of the servers that keep
         // marks keep the flags too, and the list is read a few chats a page.
         var flags = SeededNumbers(seed: seed ^ SeededNumbers.hash("flags"))
@@ -341,6 +372,10 @@ struct SeededRun {
                 "presses Undo": "person: Undo", "opens the archived": "person: opens or closes the archived list",
                 "closes the archived": "person: opens or closes the archived list", "scrolls the list": "person: scrolls a list to its end",
                 "searches": "person: searches", "chat ": "a chat comes to wait on the person, or is answered",
+                "taps an option": "person: taps an option",
+                "dismisses i": "person: dismisses questions", "chooses to answer": "person: answers in their own words",
+                "approves": "person: approves a call", "declines": "person: declines a call",
+                "goes back to the question": "person: goes back to a question's options",
             ]
             for (prefix, name) in marks where step.hasPrefix(prefix) { out[name, default: 0] += 1 }
         }
@@ -409,8 +444,14 @@ struct SeededRun {
                 if current.screen.composer.canSend { choices.append((30, "send")) }
                 if current.screen.streaming { choices.append((5, "stop")) }
                 if !buttons(current.screen).isEmpty { choices.append((14, "button")) }
+                // A card that stands: an option, the person's own words, a
+                // dismissal, an approval or a refusal.
+                if !standing(current.screen).isEmpty { choices.append((34, "card")) }
+                if current.screen.composer.answering != nil { choices.append((3, "options")) }
             }
         }
+        // The person's other device answers what waits.
+        if server.allCards.contains(where: \.pending) { choices.append((3, "elsewhereCard")) }
         var draw = numbers.below(choices.reduce(0) { $0 + $1.weight })
         let choice = choices.first { choice in
             draw -= choice.weight
@@ -546,6 +587,16 @@ struct SeededRun {
             if let current { await tell(.stop, current.key) }
         case "send":
             if let current { await send(current.key, current.screen) }
+        case "card":
+            if let current { await decide(numbers.pick(standing(current.screen)), current.key, current.screen) }
+        case "options":
+            steps.append("goes back to the question's options")
+            if let current { await tell(.showOptions, current.key) }
+        case "elsewhereCard":
+            let card = numbers.pick(server.allCards.filter(\.pending))
+            let accept = numbers.chance(0.6)
+            steps.append("another device \(accept ? "answers or approves" : "dismisses or declines") \(card.id)")
+            server.elsewhere(card: card.id, accept: accept)
         default:
             if let current { await press(numbers.pick(buttons(current.screen)), current.key, current.screen) }
         }
@@ -563,11 +614,66 @@ struct SeededRun {
     /// nothing, and the list knows by what the window shows.
     private mutating func appears() async {
         let key = signedOut ? nil : await rig.harness.state.scenes[scene]?.current
-        guard key != viewed else { return }
-        viewed = key
-        atEnd = key != nil && numbers.chance(0.7)
-        if inFront { await says(atEnd) }
+        if key != viewed {
+            viewed = key
+            asked = []
+            atEnd = key != nil && numbers.chance(0.7)
+            if inFront { await says(atEnd) }
+            await drain()
+        }
+        // A card's view asks for its record when it appears, once: the
+        // card that stands, and the row a card ended on when it is opened,
+        // which the run always does.
+        guard let key, let screen = await rig.conversation(key) else { return }
+        var wanted: [CardReference] = screen.approvals.map(CardReference.approval)
+        for case let .assistant(reply) in screen.turns.map(\.body) {
+            for tool in reply.tools {
+                if let card = tool.asked, tool.attachment != nil || tool.resolution?.loading == true { wanted.append(card) }
+            }
+        }
+        for card in wanted where asked.insert(card.id).inserted { await rig.harness.send(.loadCard(card)) }
         await drain()
+    }
+
+    /// The cards that stand in a chat and wait: each can be acted on.
+    private func standing(_ screen: ConversationScreen) -> [CardReference] {
+        var out: [CardReference] = []
+        for case let .assistant(reply) in screen.turns.map(\.body) {
+            for tool in reply.tools {
+                guard let card = tool.asked, tool.attachment != nil, let drawn = screen.cards[card.id], drawn.waits else { continue }
+                let busy = drawn.question?.busy ?? drawn.approval?.busy ?? drawn.suggestion?.busy
+                if busy == nil { out.append(card) }
+            }
+        }
+        return out
+    }
+
+    /// What a person does with a card that waits on them.
+    private mutating func decide(_ card: CardReference, _ key: ChildKey, _ screen: ConversationScreen) async {
+        switch card {
+        case let .question(id):
+            guard let drawn = screen.cards[id]?.question else { return }
+            switch numbers.below(5) {
+            case 0, 1:
+                // An option of each question, as its card offers them.
+                var picks: [String: [String]] = [:]
+                for question in drawn.questions { picks[question.id] = [numbers.pick(question.options.map(\.value))] }
+                steps.append("taps an option of \(id)")
+                await rig.harness.send(.answer(question: id, picks: picks))
+            case 2:
+                steps.append("dismisses \(id)")
+                await rig.harness.send(.dismissQuestions(id))
+            default:
+                steps.append("chooses to answer \(id) in their own words")
+                await tell(.answerInWords(id), key)
+            }
+        case let .approval(id):
+            let approve = numbers.chance(0.6)
+            steps.append("\(approve ? "approves" : "declines") \(id)")
+            await rig.harness.send(.decideApproval(id, approve: approve))
+        case .suggestion:
+            break
+        }
     }
 
     /// The next message's text: no other message's is a part of it, so a
@@ -614,7 +720,8 @@ struct SeededRun {
     /// Every button on the screen that can be pressed now.
     private func buttons(_ screen: ConversationScreen) -> [FailureAction] {
         var out: [FailureAction] = []
-        for failure in Array(screen.failures.turns.values) + [screen.failures.strip].compactMap({ $0 }) {
+        let inCards = screen.cards.values.compactMap { $0.question?.failure ?? $0.approval?.failure ?? $0.suggestion?.failure }
+        for failure in Array(screen.failures.turns.values) + [screen.failures.strip].compactMap({ $0 }) + inCards {
             if let button = failure.button, button.enabled(at: clock.now) { out.append(button.action) }
             if let dismiss = failure.dismiss { out.append(dismiss) }
         }
@@ -672,6 +779,9 @@ struct SeededRun {
             await rig.harness.send(.newChat(agent: agent, listen: false, scene: scene))
         case .dismissRename:
             await rig.harness.send(.dismissRename)
+        case let .retryCard(reference):
+            steps.append("presses Try Again in a card")
+            await rig.harness.send(.retryCard(reference))
         case .rename, .addKey, .open:
             steps.append("presses a button that leaves the chat")
         }
@@ -715,6 +825,10 @@ struct SeededRun {
         stuck = [:]
         composed = []
         drew = [:]
+        asked = []
+        drewQueued = [:]
+        drewRead = [:]
+        drewEnded = []
         // The view is gone with the process, and what the launch draws
         // first is the folder's: a dot it kept may be older than the read.
         viewed = nil
@@ -976,6 +1090,8 @@ struct SeededRun {
             }
             drew[key] = frame
 
+            if let broken = answering(key, live, screen, name, state) { return broken }
+
             // No row is drawn twice: not by its id, and no message of the
             // person's as a bubble and a stored row both.
             if Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
@@ -1063,7 +1179,11 @@ struct SeededRun {
                     return broke(.fold, "\(name) draws \"\(unsent.message)\" as unsent while its rows hold it")
                 }
             }
-            let want = server.rows(of: thread).map { "\($0.role): \($0.content)" }
+            // Nothing is queued in a chat that has settled on its rows.
+            if let waiting = screen.turns.first(where: { if case let .user(message) = $0.body { message.queued != nil } else { false } }) {
+                return broke(.queued, "\(name) has settled on its rows and still draws \(waiting.id) as queued")
+            }
+            let want = server.spoken(in: thread).map { "\($0.role): \($0.content)" }
             let got = drawn.map { "\($0.role): \($0.text)" }
             if got != want { return broke(.fold, "\(name) draws \(got), and the server holds \(want)") }
             // Each under its row's id, but a turn that was streamed in
@@ -1071,7 +1191,7 @@ struct SeededRun {
             // reply its turn's ordinal, and a message sent under no id the
             // number of its send. A message sent under an id is drawn
             // under it from the press, and so is its row.
-            for (turn, row) in zip(drawn, server.rows(of: thread)) where turn.id != row.id {
+            for (turn, row) in zip(drawn, server.spoken(in: thread)) where turn.id != row.id {
                 let kept = row.role == "assistant" ? turn.id == "turn-\(row.turn)" : turn.id.hasPrefix("sent-") && row.id.hasPrefix("u")
                 if !kept {
                     let what =
@@ -1125,6 +1245,9 @@ struct SeededRun {
         // composer, or on a message with its card.
         for text in sent.keys.sorted() where server.userRows(saying: text) == 0 && !server.holds(text) && !homes.contains(text) {
             return broke(.lost, "\"\(text)\" is in no stored row, no composer and on no message")
+        }
+        for card in server.allCards where card.resolutions > 1 {
+            return broke(.decidedOnce, "\(card.id) was resolved by \(card.resolutions) writes")
         }
         if let broken = marks(state, presentation) { return broken }
         if let broken = lists(state, presentation, settled: settled) { return broken }
@@ -1307,6 +1430,64 @@ struct SeededRun {
         let pinned = Set(presentation.list.sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
         let shown = Set(want.filter { server.mark(of: $0)?.pinned == true })
         if pinned != shown { return broke(.pinned, "the pinned section draws \(pinned.sorted()), and the server's pinned chats are \(shown.sorted())") }
+        return nil
+    }
+
+    /// The rules of answering, on one conversation as it is drawn: the
+    /// messages sent while the assistant works, and the cards.
+    private mutating func answering(_ key: ChildKey, _ live: ConversationState, _ screen: ConversationScreen, _ name: String, _ state: ChatAppState)
+        -> Violation?
+    {
+        // A message drawn as queued: one the server admitted into a turn,
+        // drawn once, in a conversation a run goes on in, and never one
+        // this conversation already drew as read.
+        var queued: Set<String> = []
+        for turn in screen.turns {
+            guard case let .user(message) = turn.body, message.queued != nil else { continue }
+            queued.insert(turn.id)
+            if !server.wasQueued(turn.id) { return broke(.queued, "\(name) draws \(turn.id) as queued, which the server never took into a turn") }
+            if live.phase == .idle || live.phase == .handingOver {
+                return broke(.queued, "\(name) draws \(turn.id) as queued while no run goes on in it")
+            }
+            if drewRead[key]?.contains(turn.id) == true {
+                return broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read")
+            }
+        }
+        for id in live.queued.map(\.id) where screen.turns.filter({ $0.id == id }).count != 1 {
+            return broke(.queued, "\(name) holds \(id) as queued and draws it \(screen.turns.filter { $0.id == id }.count) times")
+        }
+        drewRead[key, default: []].formUnion((drewQueued[key] ?? []).subtracting(queued))
+        drewQueued[key, default: []].formUnion(queued)
+
+        // The cards, under the calls the transcript draws.
+        for case let .assistant(reply) in screen.turns.map(\.body) {
+            for tool in reply.tools {
+                guard let reference = tool.asked, let truth = server.card(reference.id) else { continue }
+                let id = reference.id
+                let drawn = screen.cards[id]
+                let stands = tool.attachment != nil && drawn?.stands == true
+                let held = state.cards[id]?.record
+                if tool.resolution != nil {
+                    drewEnded.insert(id)
+                    if truth.pending { return broke(.resolved, "\(name) draws \(id) as ended, and it still waits at the server") }
+                    if stands { return broke(.resolved, "\(name) draws \(id) as ended and as a card") }
+                } else if drawn?.waits == true, stands {
+                    if drewEnded.contains(id) { return broke(.resolved, "\(name) draws \(id) waiting again after it drew it as ended") }
+                    if !truth.pending, held?.version == truth.version {
+                        return broke(.resolved, "\(name) draws \(id) waiting while it holds the record that says it ended")
+                    }
+                }
+                guard truth.pending else { continue }
+                // It waits: its card stands, or it is aside for an answer
+                // in the person's own words, which the composer says, or
+                // which is on its way.
+                let aside = drawn?.question?.aside == true
+                let said = screen.composer.answering?.id == id || state.cards[id]?.busy == ChatAppState.Card.words
+                if !stands, !(aside && said) {
+                    return broke(.hidden, "\(name) holds the call that asked \(id), which waits, and draws no card for it (\(tool.statusLabel ?? "no label"))")
+                }
+            }
+        }
         return nil
     }
 
