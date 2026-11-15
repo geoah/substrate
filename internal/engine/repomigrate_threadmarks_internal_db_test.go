@@ -237,6 +237,102 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 	}
 }
 
+// A compaction leaves the migration's writes and a person's marks as they
+// were. A mark's history is kept seven days (`retention: P7D`) and a
+// thread's for good, so the pass replaces a mark's lines with its state
+// while the thread's stay; `repository compact` replaces both. After it the
+// fold is the same, a mark still only moves forward, a second run of the
+// migration still finds nothing to do, and a rebuild reproduces the fold.
+func TestACompactionLeavesMarksAndTheMigrationsWritesAsTheyWere(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newRunsRepository(t)
+	ada := r.person(r.adaID, substrate.ActorPerson)
+	read := &plantedThread{id: fid("old-read"), mode: agentModeChat, status: threadOK, asks: 1}
+	unread := &plantedThread{id: fid("old-unread"), mode: agentModeChat, status: threadOK}
+	plantThreads(t, r.ds, r.pkg+"/lead", []*plantedThread{read, unread})
+	ds, _ := rerunMigration15(t, r)
+	if _, err := ds.Put(ada, substrate.ActorPerson, substrate.PutInput{Kind: typeThreadMark, Properties: map[string]any{
+		propMarkThread: unread.id, propMarkUnread: true,
+	}}); err != nil {
+		t.Fatalf("mark a migrated thread unread: %v", err)
+	}
+	mark := func(d *dataset, thread string) *erow {
+		t.Helper()
+		row, err := d.loadRowDB(ctx, eref{Kind: typeThreadMark, ID: threadMarkID(thread, actorID(substrate.PersonActor(r.adaID)))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row == nil {
+			// Ada is the repository's first person, whose writes link the
+			// actor every repository starts with.
+			if row, err = d.loadRowDB(ctx, eref{Kind: typeThreadMark, ID: threadMarkID(thread, actorID(substrate.ActorPerson))}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if row == nil || row.DeletedAt != nil {
+			t.Fatalf("ada has no mark of thread %s", thread)
+		}
+		return row
+	}
+	changed := mark(ds, unread.id)
+	if changed.Props[propMarkUnread] != true {
+		t.Fatalf("the mark set unread is %v: the test proves nothing", changed.Props)
+	}
+	lines := func(kind, id string) int {
+		t.Helper()
+		var n int
+		if err := ds.db.QueryRow(`SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2`, kind, id).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n, m := lines(typeThreadMark, changed.ID), lines(typeThread, read.id); n < 2 || m < 2 {
+		t.Fatalf("the mark has %d lines and the thread %d before the compaction, want two at least of each: the test proves nothing", n, m)
+	}
+
+	before := foldSnapshotOf(t, ds)
+	if _, err := ds.svc.CompactRepository(ctx, r.ada, 0); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if n, m := lines(typeThreadMark, changed.ID), lines(typeThread, read.id); n != 1 || m != 1 {
+		t.Fatalf("the mark has %d lines and the thread %d after the compaction, want the one state of each", n, m)
+	}
+	if after := foldSnapshotOf(t, ds); after != before {
+		t.Fatalf("the compaction changed the fold\n%s", firstDifferenceOf([]byte(before), []byte(after)))
+	}
+
+	// A mark still only moves forward: the message before the reply is
+	// dropped, and the rest of the write lands.
+	if _, err := ds.Put(ada, substrate.ActorPerson, substrate.PutInput{Kind: typeThreadMark, Properties: map[string]any{
+		propMarkThread: read.id, propMarkReadThrough: fid(read.id + "-sent"), propMarkUnread: true,
+	}}); err != nil {
+		t.Fatalf("write a compacted mark: %v", err)
+	}
+	if m := mark(ds, read.id); referenceTargetOf(m, propMarkReadThrough).ID != read.reply || m.Props[propMarkUnread] != true {
+		t.Fatalf("the compacted mark is %v after a write naming an earlier message, want it at the reply and unread", m.Props)
+	}
+
+	// A second run of the migration reads the rows, which a compaction does
+	// not change, and writes nothing.
+	head := changelogHead(t, ds)
+	ds, _ = rerunMigration15(t, r)
+	if got := changelogHead(t, ds); got != head {
+		t.Fatalf("a run of the migration after the compaction wrote %d changelog lines", got-head)
+	}
+	if got := waitingOf(t, ds, read.id); got != read.asks {
+		t.Fatalf("thread %s counts %d waiting after the compaction, want %d", read.id, got, read.asks)
+	}
+
+	live := foldSnapshotOf(t, ds)
+	if _, err := ds.svc.RebuildRepository(ctx, ds.info.ID); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if rebuilt := foldSnapshotOf(t, ds); live != rebuilt {
+		t.Fatalf("the fold rebuilt from the compacted history is not the live one\n%s", firstDifferenceOf([]byte(live), []byte(rebuilt)))
+	}
+}
+
 // A restore marks existing threads read once, and never after (decision
 // 0321). An archive a binary before this migration wrote names a ledger
 // without it, so the restore's first open runs it, and it alone: the threads
