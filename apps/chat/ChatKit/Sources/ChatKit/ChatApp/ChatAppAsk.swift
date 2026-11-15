@@ -97,8 +97,10 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case actionWait(String, seconds: Double)
     /// An action from a notification is over: its own notification is
     /// taken back or what it could not do is said, and only then is the
-    /// device told, which may suspend the app at that word.
-    case finishAction(NotificationResponse, cancel: String?, notify: NotificationRequest?)
+    /// device told, which may suspend the app at that word. `keep` is
+    /// written first, in this effect and with no wait: a reply's text that
+    /// went back into the drafts is in the folder before the app may stop.
+    case finishAction(NotificationResponse, cancel: String?, notify: NotificationRequest?, keep: KeptDrafts? = nil)
     /// A reply's notification, shown once `seconds` passed: a mark that
     /// arrives first takes it back, so a reply read on a device beside this
     /// one does not sound here.
@@ -160,4 +162,10 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
         /// The rows are in memory already, so the disk is not asked.
         var held: Bool
     }
+}
+
+/// The drafts as they stand, for the folder they are written to.
+struct KeptDrafts: Codable, Equatable, Sendable {
+    var lease: ChatStorage.Lease
+    var drafts: [String: String]
 }

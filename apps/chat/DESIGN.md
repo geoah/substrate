@@ -599,11 +599,17 @@ The server has no push channel, so the app promises what it can observe:
   (`ChatApp.actionSeconds`). Done, its notification is taken back. Not
   done, a new notification says so in the sentence the chat would say it
   in, and opening it opens the chat: a reply's text stands there as a
-  message with Send Again (or is the chat's draft, where the app could not
-  start in time), and a card still waits. Only then is the device told the
-  action is over (`Notifications.finished`), since the system may suspend
-  the app at that word; the kit's delegate answers the system on the main
-  thread then, or after 25 seconds whatever the app says.
+  message with Send Again (or is the chat's draft, where the send could
+  not start in time or was refused), and a card still waits. Only then is
+  the device told the action is over (`Notifications.finished`), since the
+  system may suspend the app at that word: the effect that tells it writes
+  the drafts to the folder first, so a text that went back into them is
+  kept before the app may stop. The kit's delegate answers the system on
+  the main thread then, or after 25 seconds whatever the app says. Where
+  the folder itself was not read in that time (the action launched the
+  app), there is nowhere to write: the notification says the reply whole
+  ("Your reply was not sent or saved. You wrote: …"), and the text becomes
+  the chat's draft when the folder is read.
 - **Which chats are notified for** is asked of one predicate,
   `ChatAppState.mayNotify`, by every notification the app posts of a chat.
 - **On iOS**, when the app leaves the screen with a turn streaming, it asks

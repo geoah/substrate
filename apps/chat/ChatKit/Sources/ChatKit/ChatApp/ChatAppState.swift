@@ -469,6 +469,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var acting: [String: Act] = [:]
     var acted: Set<String> = []
     var deferred: [Deferred] = []
+    /// A reply typed into a notification that could be neither sent nor
+    /// written down in its time, by thread: the folder was not read yet.
+    /// It goes into the thread's draft when the folder is.
+    var unkept: [String: String] = [:]
 
     var feedBatch: Set<WatchKey> = []
     var feedApplying: Set<WatchKey>?

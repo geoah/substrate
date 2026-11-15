@@ -719,8 +719,14 @@ struct NotificationActions {
         try await app.signIn()
         let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
         app.server.fail("chat|t1|On my way", with: .status(429, code: "rate_limited", retryAfter: nil))
+        // What the folder holds as the device is told the action is over:
+        // the system may suspend the app at that word.
+        let folder = Kept()
+        let drafts = app.rig.root.appendingPathComponent("drafts.json")
+        app.rig.notifications.onFinished { _ in folder.set((try? String(contentsOf: drafts, encoding: .utf8)) ?? "") }
         let response = respond(app, note, "reply", text: "On my way")
         try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        #expect(folder.text.contains("On my way"))
         // What it could not do is said first, in the chat's own sentence,
         // and the device is told after.
         let failed = try #require(scheduled(app).first { $0.id == "chat|t1|failed" })
@@ -789,6 +795,62 @@ struct NotificationActions {
         #expect(!again.notifications.calls.contains { if case let .schedule(request) = $0 { request.id == "chat|t1|failed" } else { false } })
         #expect(app.server.userRows(saying: "On my way") == 1)
         app.server.finishTurns()
+    }
+
+    /// The engine alone. A reply typed into a notification that launched
+    /// the app, whose folder is not read inside the action's time: there is
+    /// nowhere to write the text, so the notification says it whole, and it
+    /// is the chat's draft, ahead of what the folder held, once the folder
+    /// is read.
+    @Test func aReplyWhoseTimeEndsBeforeTheFolderIsReadIsSaidWholeAndIsTheDraftOnceItIs() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        let lease = try #require(state.disk)
+        state.disk = nil
+        let response = NotificationResponse(
+            id: "chat|t1|reply", category: ChatNotifications.replyCategory, action: .named("reply"),
+            userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: "On my way")
+        let stamp = ChatNotifications.stamp(response)
+        state = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m1", at: Date(timeIntervalSince1970: 0))), to: state)
+        #expect(state.asks.contains(.actionWait(stamp, seconds: ChatApp.actionSeconds)) && state.deferred.count == 1)
+        state.asks = []
+        state = try app.apply(.init(.actionDue(stamp)), to: state)
+        let over = state.asks.compactMap { ask -> (NotificationRequest?, KeptDrafts?)? in
+            if case let .finishAction(told, _, notify, keep) = ask, told == response { (notify, keep) } else { nil }
+        }
+        #expect(over.count == 1 && over.first?.1 == nil)
+        #expect(over.first?.0?.body == "The server took too long to answer. Your reply was not sent or saved. You wrote: “On my way”")
+        #expect(state.unkept == ["t1": "On my way"] && state.deferred.isEmpty)
+        state.asks = []
+        state = try app.apply(
+            .init(.diskOpened(.init(lease: lease, state: nil, drafts: ["t1": "Earlier words"], preferences: ChatPreferences(), stale: []))), to: state)
+        #expect(state.drafts["t1"] == Conversation.above("On my way", "Earlier words") && state.unkept.isEmpty)
+        #expect(state.asks.contains(.saveDrafts(lease, state.drafts, atOnce: true)))
+    }
+
+    /// The engine alone. With the folder read and the server's document
+    /// not, a reply's time runs out: its text is the chat's draft, and the
+    /// drafts ride the word that tells the device, to be written before it.
+    @Test func aReplyWhoseTimeEndsWithTheFolderReadIsWrittenBeforeTheDeviceIsTold() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        let lease = try #require(state.disk)
+        let response = NotificationResponse(
+            id: "chat|t1|reply", category: ChatNotifications.replyCategory, action: .named("reply"),
+            userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: "On my way")
+        let stamp = ChatNotifications.stamp(response)
+        state = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m1", at: Date(timeIntervalSince1970: 0))), to: state)
+        #expect(state.deferred.count == 1)
+        state = try app.apply(.init(.actionDue(stamp)), to: state)
+        #expect(state.drafts["t1"] == "On my way")
+        let keep = state.asks.compactMap { ask -> KeptDrafts? in
+            if case let .finishAction(told, _, notify, keep) = ask, told == response, notify?.body?.hasSuffix("Your reply is kept in the chat.") == true {
+                keep
+            } else {
+                nil
+            }
+        }
+        #expect(keep == [KeptDrafts(lease: lease, drafts: ["t1": "On my way"])])
     }
 
     @Test func anApprovalIsDecidedOverTheVersionItsNotificationShowed() async throws {
@@ -883,4 +945,12 @@ struct NotificationActions {
         let next = NotificationResponse(id: "chat|t1|reply", category: nil, action: .named("reply"), userInfo: ["nonce": "b"], text: "Hi")
         #expect(ChatNotifications.stamp(first) != ChatNotifications.stamp(next))
     }
+}
+
+/// A text a test keeps from another thread.
+final class Kept: @unchecked Sendable {
+    private let lock = NSLock()
+    private var held = ""
+    func set(_ text: String) { lock.withLock { held = text } }
+    var text: String { lock.withLock { held } }
 }

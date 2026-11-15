@@ -479,8 +479,11 @@ extension ChatApp {
             return Self.device(notifications) { await $0.register(categories) }
         case let .actionWait(id, seconds):
             return .once { await pause(seconds) ? Event(.actionDue(id)) : nil }
-        case let .finishAction(response, cancel, notify):
+        case let .finishAction(response, cancel, notify, keep):
+            // Its place among the drafts' writes, taken now (`saveDrafts`).
+            let ticket = keep.map { _ in storage.draftsTicket() }
             return Self.device(notifications) { notifications in
+                if let keep { storage.save(drafts: keep.drafts, keep.lease, ticket: ticket) }
                 if let cancel { await notifications.cancel(cancel) }
                 if let notify { await notifications.schedule(notify) }
                 await notifications.finished(response)
