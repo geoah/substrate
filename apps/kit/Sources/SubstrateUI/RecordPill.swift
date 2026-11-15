@@ -79,7 +79,8 @@ public struct RecordPill: View {
         .padding(.trailing, RecordPillStyle.trailing)
         .padding(.vertical, RecordPillStyle.vertical)
         .background(RecordPillStyle.fill, in: .capsule)
-        .contentShape(.capsule)
+        // A pill is lower than a finger: it is touched in a whole target.
+        .touchTarget()
         Group {
             if let open {
                 Button {
