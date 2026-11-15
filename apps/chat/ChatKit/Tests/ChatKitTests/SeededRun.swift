@@ -135,9 +135,10 @@ struct SeededRun {
         case acted = "an action from a notification is over within its time"
         /// What stands under the last reply (`ReplyActions`): under a
         /// reply that is drawn and has nothing of the person's after it,
-        /// with the run again never offered both there and on the turn's
-        /// card, never while a run goes on, and nothing to share of a
-        /// reply still being written.
+        /// or the run again alone under the chat's last turn; with the
+        /// run again never offered both there and on the turn's card,
+        /// never while a run goes on, and nothing to share of a reply
+        /// still being written.
         case offered = "what stands under a reply is under the last one, and offers the run again once or not at all"
     }
 
@@ -1221,17 +1222,24 @@ struct SeededRun {
             }
             // What stands under the last reply is offered once.
             if let actions = screen.replyActions {
-                guard let at = screen.turns.firstIndex(where: { $0.id == actions.turn }), case let .assistant(reply) = screen.turns[at].body else {
-                    return broke(.offered, "\(name) offers actions under \(actions.turn), which is no reply drawn")
+                guard let at = screen.turns.firstIndex(where: { $0.id == actions.turn }) else {
+                    return broke(.offered, "\(name) offers actions under \(actions.turn), which is no turn drawn")
                 }
                 let after = screen.turns[(at + 1)...]
                 let own = after.contains { turn in
                     if case .user = turn.body { true } else { false }
                 }
                 if own { return broke(.offered, "\(name) offers actions under \(actions.turn), with a message of the person's after it") }
-                if actions.copies != (reply.text != nil) || (actions.whole && reply.live) {
-                    return broke(
-                        .offered, "\(name) offers to copy or share \(actions.turn), which has \(reply.text == nil ? "no words" : "words still being written")")
+                if case let .assistant(reply) = screen.turns[at].body {
+                    if actions.copies != (reply.text != nil) || (actions.whole && reply.live) {
+                        return broke(
+                            .offered,
+                            "\(name) offers to copy or share \(actions.turn), which has \(reply.text == nil ? "no words" : "words still being written")")
+                    }
+                } else if actions.copies || actions.whole || actions.resume == nil || at != screen.turns.count - 1 {
+                    // Under a turn that is no reply only the run again
+                    // stands, and only under the chat's last.
+                    return broke(.offered, "\(name) offers more than the run again under \(actions.turn), which is no reply")
                 }
                 if let resume = actions.resume {
                     if screen.turns.last.flatMap({ cards[$0.id] })?.button?.action == .resume {

@@ -311,7 +311,10 @@ struct TranscriptPiece: Identifiable {
                 }
             }
             guard case let .assistant(reply) = turn.body else {
-                out.append(TranscriptPiece(id: turn.id, turn: turn, part: .turn, closer: 0))
+                // Under a turn that is no reply only Try Again stands, for
+                // a run that ended before the assistant said anything.
+                let under = actions.flatMap { $0.turn == turn.id ? $0 : nil }
+                out.append(TranscriptPiece(id: turn.id, turn: turn, part: .turn, closer: 0, actions: under, drawsActions: under != nil))
                 continue
             }
             let tailed = reply.sources != nil || !reply.linked.isEmpty || !reply.tools.isEmpty
@@ -375,9 +378,27 @@ struct TranscriptPieceView: View {
                 .equatable()
                 .padding(.top, -piece.closer)
         default:
-            TurnView(turn: piece.turn, cards: cards, expandThinking: expandThinking)
-                .equatable()
+            if piece.drawsActions, let actions = piece.actions {
+                // One view all the same: the turn, and Try Again under it
+                // on the side the turn stands on.
+                VStack(spacing: TranscriptPiece.partSpacing) {
+                    TurnView(turn: piece.turn, cards: cards, expandThinking: expandThinking)
+                        .equatable()
+                    ReplyActionsRow(actions: actions, text: nil, trailing: piece.turn.isUsers, act: act)
+                        .equatable()
+                }
+            } else {
+                TurnView(turn: piece.turn, cards: cards, expandThinking: expandThinking)
+                    .equatable()
+            }
         }
+    }
+}
+
+extension TurnPresentation {
+    /// The person's own message, drawn on the trailing side.
+    var isUsers: Bool {
+        if case .user = body { true } else { false }
     }
 }
 

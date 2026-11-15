@@ -27,6 +27,8 @@ struct ReplyActionsRow: View, Equatable {
     let actions: ReplyActions
     /// The reply's text as its row holds it: what Share takes.
     let text: String?
+    /// Under a message of the person's, which stands on the trailing side.
+    var trailing = false
     /// What Try Again and Continue do.
     var act: (FailureAction) -> Void = { _ in }
     /// A mark's width at the text's size.
@@ -35,7 +37,7 @@ struct ReplyActionsRow: View, Equatable {
     static func == (lhs: ReplyActionsRow, rhs: ReplyActionsRow) -> Bool {
         // A reply being written has other text at every flush, which only
         // Share reads, and it is not offered then.
-        lhs.actions == rhs.actions && (lhs.actions.whole ? lhs.text == rhs.text : true)
+        lhs.actions == rhs.actions && lhs.trailing == rhs.trailing && (lhs.actions.whole ? lhs.text == rhs.text : true)
     }
 
     var body: some View {
@@ -62,7 +64,7 @@ struct ReplyActionsRow: View, Equatable {
         .frame(minHeight: ReplyActionMetrics.target)
         .padding(.leading, actions.copies ? -max(0, (ReplyActionMetrics.target - mark) / 2) : 0)
         .padding(.vertical, -ReplyActionMetrics.tuck)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
         .accessibilityElement(children: .contain)
     }
 }

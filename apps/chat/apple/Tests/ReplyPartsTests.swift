@@ -169,6 +169,14 @@ import Testing
         let said = cards.words.map(Self.plain).joined(separator: " ")
         for cell in Self.cells { #expect(said.contains(cell), "the cards lost “\(cell)”") }
         #expect(said.components(separatedBy: "Estimate").count - 1 == 3)
+        // A table with no row yet is its headers, in a card as in a grid.
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            let bare = try await Hosted(
+                MarkdownView(text: "| Name | Status |\n| --- | --- |").textSelection(.enabled).replyTools(wraps: false)
+                    .environment(\.dynamicTypeSize, size))
+            let headers = bare.words.map(Self.plain).joined(separator: " ")
+            #expect(headers.contains("Name") && headers.contains("Status"), "\(size)")
+        }
         // A record's link in a cell is its pill there too: the line is
         // drawn through the pill's renderer.
         #expect(inline("[Q4 budget](substrate://ada.example.com/tasks/task/q4)").pills)
@@ -281,6 +289,16 @@ import Testing
             buttons = try await drawn(card)
             #expect(buttons.filter { $0.hasPrefix("Try Again") || $0 == "Continue" }.count <= 1, "\(card.sentence)")
         }
+        // A run that ended before the assistant said anything: the card is
+        // at the person's message, and Try Again stands under that.
+        screen.turns.removeLast()
+        let asked = try #require(screen.turns.last?.id)
+        screen.failures.turns = [asked: FailureFixtures.keyRefused]
+        let alone = try await Hosted(
+            VStack(alignment: .leading, spacing: 22) { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
+                .replyLinks().replyTools(wraps: false).environment(host))
+        #expect(alone.buttons.filter { ["Copy", "Share", "Try Again", "Continue"].contains($0) } == ["Try Again"])
+        #expect(alone.buttons.contains("Replace Key"))
     }
 
     // MARK: Select Text
