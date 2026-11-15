@@ -133,12 +133,12 @@ struct SeededRun {
         /// told it is over within the time an action has, whatever the
         /// server does, and what it asked for happens at most once.
         case acted = "an action from a notification is over within its time"
-        /// What stands under the last reply (`ReplyActions`): under a
-        /// reply that is drawn and has nothing of the person's after it,
-        /// or the run again alone under the chat's last turn; with the
-        /// run again never offered both there and on the turn's card,
-        /// never while a run goes on, and nothing to share of a reply
-        /// still being written.
+        /// What stands under the last reply (`ReplyActions`): under the
+        /// last reply drawn that has words, with no message after it that
+        /// nothing answered and nothing is answering, or the run again
+        /// alone under the chat's last turn; with the run again never
+        /// offered both there and on the turn's card, never while a run
+        /// goes on, and nothing to share of a reply still being written.
         case offered = "what stands under a reply is under the last one, and offers the run again once or not at all"
     }
 
@@ -154,7 +154,22 @@ struct SeededRun {
             + "server's rows, each once; only which of the two equal bubbles keeps the id `sent-1` is wrong. Found by the list's new steps, not "
             + "caused by them: the pairing is the send-id group's. That seed is of the list's branch (#1464): with the answering steps "
             + "beside them (#1465) a seed's run is another, and the one that reaches it is seed 1171 at 101 steps on a server at agents 7 "
-            + "(CHATKIT_REVISION=7 CHATKIT_SEED=1171 CHATKIT_STEPS=101)."
+            + "(CHATKIT_REVISION=7 CHATKIT_SEED=1171 CHATKIT_STEPS=101).",
+        .queued:
+            "seed 9435 at 39 steps on a server at agents 7 (CHATKIT_REVISION=7 CHATKIT_SEED=9435 CHATKIT_STEPS=39): after the person signs in "
+            + "again twice while a run goes on, a message a call had read, and that the chat drew as read, is drawn queued once more when the "
+            + "next send joins the run. A conversation made anew by the sign-in holds none of what it knew was taken (`ConversationState.taken`), "
+            + "and the run's stream, said again from its start, says `messageQueued` of it before it says `messageTaken`. It is the answering "
+            + "group's (#1465, `ConversationQueue.hear`): the same seed breaks the rule on that branch's head (04537b747) with nothing of the "
+            + "reply's actions in it. Found by 160,000 steps over the joined line (group A8, #1466).",
+        .archived:
+            "seed 30167 at 45 steps on a server at agents 7 (CHATKIT_REVISION=7 CHATKIT_SEED=30167 CHATKIT_STEPS=45), and seed 20442 at 101 "
+            + "steps at its own revision (CHATKIT_SEED=20442 CHATKIT_STEPS=101): another device archives a chat, and a notification of that "
+            + "chat's reply stands on this device afterwards with nothing in the chat waiting on a person. In the first the app is killed and "
+            + "launched again several times between the archive and the reply; in the second the other device marks the chat unread after "
+            + "archiving it. Only the notification is held as known: an archived chat drawn in the list or counted in the badge still breaks "
+            + "the rule. It is the list's and the answering work's (#1464, #1465): both seeds break the rule on the answering branch's head "
+            + "(04537b747) with nothing of the reply's actions in it. Found by 160,000 more steps over the joined line (group A8, #1466).",
     ]
 
     let seed: UInt64
@@ -1226,10 +1241,21 @@ struct SeededRun {
                     return broke(.offered, "\(name) offers actions under \(actions.turn), which is no turn drawn")
                 }
                 let after = screen.turns[(at + 1)...]
-                let own = after.contains { turn in
-                    if case .user = turn.body { true } else { false }
+                // Under the last reply that has words, and no older one.
+                let later = after.contains { turn in
+                    if case let .assistant(reply) = turn.body { reply.text != nil } else { false }
                 }
-                if own { return broke(.offered, "\(name) offers actions under \(actions.turn), with a message of the person's after it") }
+                if later { return broke(.offered, "\(name) offers actions under \(actions.turn), with a later reply drawn") }
+                // A message after it makes it an older one, but while a
+                // run goes on or where the assistant did something after
+                // the message: the row then stays where the last words are.
+                let working = screen.streaming || screen.status.contains { $0.kind == .background }
+                if let message = after.lastIndex(where: { if case .user = $0.body { true } else { false } }), !working {
+                    let answered = screen.turns[(message + 1)...].contains { if case .assistant = $0.body { true } else { false } }
+                    if !answered, case .assistant = screen.turns[at].body {
+                        return broke(.offered, "\(name) offers actions under \(actions.turn), with a message nothing answered after it")
+                    }
+                }
                 if case let .assistant(reply) = screen.turns[at].body {
                     if actions.copies != (reply.text != nil) || (actions.whole && reply.live) {
                         return broke(
@@ -1471,7 +1497,13 @@ struct SeededRun {
             guard let name = request.thread, Self.flag(state, name, \.archived, \.archived) == true, let thread = state.thread(name),
                 thread.waiting == 0
             else { continue }
-            return broke(.archived, "a notification of \(name)'s reply stands while the app holds the chat archived with nothing waiting")
+            // Known, and noted so the rest of the seed is still held to
+            // every other rule (`known`); a chat drawn or counted while
+            // archived, above, is not.
+            if noted[.archived] == nil {
+                noted[.archived] = broke(
+                    .archived, "a notification of \(name)'s reply stands while the app holds the chat archived with nothing waiting")
+            }
         }
         // A pinned chat the app holds the row of is drawn, in the pinned
         // section; and nothing else is drawn there.
@@ -1547,7 +1579,7 @@ struct SeededRun {
     /// and scrolled to its end: every chat the server lists is drawn, once,
     /// and no other; the pinned ones in their section; and the app holds
     /// each chat's flags as the server does.
-    private func settledList(_ state: ChatAppState, _ presentation: ChatPresentation, settled: Bool) -> Violation? {
+    private mutating func settledList(_ state: ChatAppState, _ presentation: ChatPresentation, settled: Bool) -> Violation? {
         guard settled else { return nil }
         let rows = presentation.list.sections.flatMap(\.rows).map(\.id)
         let want = server.threadIDs.filter { server.mark(of: $0)?.archived != true || (server.keepsMarks && server.waiting($0) > 0) }
@@ -1577,7 +1609,11 @@ struct SeededRun {
         // taken back however the app came to hear of it.
         for (id, request) in rig.notifications.pending.sorted(by: { $0.key < $1.key }) where id.hasSuffix("|reply") {
             guard let name = request.thread, server.mark(of: name)?.archived == true, server.waiting(name) == 0 else { continue }
-            return broke(.archived, "a notification of \(name)'s reply stands at the end, and the server holds the chat archived with nothing waiting")
+            // The same known break, seen once everything has settled.
+            if noted[.archived] == nil {
+                noted[.archived] = broke(
+                    .archived, "a notification of \(name)'s reply stands at the end, and the server holds the chat archived with nothing waiting")
+            }
         }
         let pinned = Set(presentation.list.sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
         let shown = Set(want.filter { server.mark(of: $0)?.pinned == true })
@@ -1606,7 +1642,9 @@ struct SeededRun {
             // lost its stream says nothing of a queue until it reads one
             // again (seed 215, with the list's steps beside these).
             if drewRead[key]?.contains(turn.id) == true, server.wasTaken(turn.id) {
-                return broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read")
+                // Known (above): noted, and the run goes on under every
+                // other rule, this rule's other breaks among them.
+                if noted[.queued] == nil { noted[.queued] = broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read") }
             }
         }
         for id in live.queued.map(\.id) where screen.turns.filter({ $0.id == id }).count != 1 {
