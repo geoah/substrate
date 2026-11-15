@@ -40,7 +40,7 @@ struct ConversationView: View {
     private func transcript(_ screen: ConversationScreen) -> some View {
         let _ = Meter.shared.count(.body, "Transcript")
         return TranscriptScroll(
-            opens: screen.opens, anchor: opening(screen), sends: screen.sends, visit: screen.visit, above: screen.above,
+            opens: screen.opens, anchor: opening(screen), seeks: screen.seeks, sends: screen.sends, visit: screen.visit, above: screen.above,
             first: { TranscriptPiece.firstRow(among: $0, of: screen.turns) },
             looked: { atBottom = $0 },
             released: { host.send(.followEnded(key: key, by: $0)) }
@@ -208,6 +208,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// The row a chat that opens at a turn is put at, once the rows hold
     /// it: they may be drawn before the turn is known, or after.
     let anchor: String?
+    /// `anchor` is the top of the rows held, for now: the row the chat
+    /// opens at is above them and is read toward (`ConversationScreen.seeks`).
+    let seeks: Bool
     /// Moved by every send from the chat.
     let sends: Int
     /// Moved each time the chat is asked to be put at the row it opens at
@@ -250,7 +253,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     @State private var before = RowsBefore()
 
     init(
-        opens: TranscriptOpening, anchor: String? = nil, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
+        opens: TranscriptOpening, anchor: String? = nil, seeks: Bool = false, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
         first: @escaping ([String]) -> String? = { $0.first },
         looked: @escaping (Bool) -> Void = { _ in },
         released: @escaping (TranscriptFollow.Release) -> Void = { _ in },
@@ -259,6 +262,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     ) {
         self.opens = opens
         self.anchor = anchor
+        self.seeks = seeks
         self.sends = sends
         self.visit = visit
         self.above = above
@@ -300,7 +304,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// Puts a chat that opens at a row at it, once.
     private func place(_ reader: ScrollViewProxy) {
         guard laidOut, !placed, let anchor else { return }
-        placed = true
+        // Put at the top of what it holds while the rows before are read
+        // toward where it opens: it is put again when that row is known,
+        // unless its reader has taken it by then.
+        placed = !seeks
         landed = above
         follow = TranscriptFollow(opening: opens)
         position = ScrollPosition(idType: String.self)

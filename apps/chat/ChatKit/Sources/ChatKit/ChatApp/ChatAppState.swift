@@ -60,6 +60,8 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// The message the chat was opened at, from a search: its row, and
         /// how often the chat was asked to be put at a row.
         var opensAt: String?
+        /// The "New" line is above the rows held, and is read toward.
+        var line: LineSeek?
         var visits = 0
         /// A reply typed into a notification, for the conversation to send:
         /// kept until it says what became of it.
@@ -168,6 +170,17 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     struct Seek: Codable, Equatable, Sendable {
         var message: String
         var reads = 0
+        /// The messages the person read through, where the rows are read
+        /// toward the chat's "New" line and not toward a search's hit:
+        /// the seek ends at the first of them the rows hold.
+        var line: [String] = []
+    }
+
+    /// A chat opened with more than its person had read, whose rows held
+    /// do not reach the message they read through: the rows before are
+    /// read toward it, or were, and did not reach it.
+    enum LineSeek: String, Codable, Sendable {
+        case reading, missed
     }
 
     /// The end of a chat on screen in a window in front: `message` is the

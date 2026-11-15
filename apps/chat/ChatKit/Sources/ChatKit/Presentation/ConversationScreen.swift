@@ -52,6 +52,11 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var sends: Int
     /// Where the transcript stands when the chat is shown.
     public var opens: TranscriptOpening
+    /// `opens` is where the chat stands for now, the top of the rows it
+    /// holds, while the rows before them are read toward the place it
+    /// opens at (its "New" line, above them): the transcript is put there,
+    /// and put again where `opens` moves, unless its reader took it first.
+    public var seeks = false
     /// Moved each time the chat is asked to be put at a row again while it
     /// is shown (a message opened from a search): the transcript goes to
     /// `opens` once more.

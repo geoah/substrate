@@ -120,7 +120,7 @@ extension ChatApp {
         case let .olderRowsFailed(thread, epoch):
             if next.readEpochs[thread, default: 0] == epoch {
                 next.olderReading.remove(thread)
-                next.seeking[thread] = nil
+                sought(&next, thread, found: false)
             }
         case let .featuresRead(agents, records):
             featuresRead(&next, agents: agents, records: records)
@@ -293,6 +293,8 @@ extension ChatApp {
                 // Opened at a message: the chat is put at its row, and the
                 // rows before the ones held are read where they lack it.
                 next.conversations[key]?.opensAt = message
+                // The message's row is where it is put now, not its line.
+                next.conversations[key]?.line = nil
                 next.conversations[key]?.visits += 1
                 next.seeking[thread] = State.Seek(message: message)
                 seek(&next, thread)
@@ -983,6 +985,8 @@ extension ChatApp {
         // chat): its row names the agent, so it is read.
         if state.thread(thread) == nil { state.asks.append(.fetchThread(thread)) }
         if state.transcripts[thread] != nil { load(&state, thread) }
+        // Its "New" line may stand above the rows held.
+        seek(&state, thread)
     }
 
     private static let newDraft = "new:"

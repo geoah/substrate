@@ -224,8 +224,18 @@ rows and the stream together. The stream's events become provisional rows
 id, and the message you sent by its id (`messageId`): the bubble is drawn
 under that id from the press, its row has it, and the two are paired by it
 alone, whatever the words. Only a message sent under no id (a server below
-`agents` 3, and Continue's own words there) is found by its words, past
-what the thread held when it was sent. The transcript is one list made
+`agents` 3, a server whose document is not read yet, and Continue's own
+words there) is found by its words, and by where it stands: a message with
+no id starts its run or is refused, so its row is the last of its words
+before the first row its own stream names of that run, with no reply
+between the two. An older row of the same words has its own reply after
+it and is never taken for it. Until the stream has named a row, the
+message is paired by what the device knew when it was sent (past the
+newest row held then, where those rows were the server's word to this
+launch and not the folder's from a launch before; else by when the row
+was written), which is a guess: it is drawn so that nothing stands twice,
+and a conversation's own read gives the row no id for good while the run
+goes on. The transcript is one list made
 from the stored rows and the provisional ones (`TurnFold`): a stored row
 takes the place of the provisional row with its key and keeps the id that
 row was drawn by, so every view over it (an open Thinking section, an
@@ -307,6 +317,21 @@ is a chat's, the composer sends while a reply streams (`Conversation.queues`,
   strip above it says why; the reply goes on, read again from an attach.
   One whose answer is lost is sent again under its id, and the repeat is
   answered with the turn's stream, or with `idle` once the turn is over.
+- **A stream said again says how the turn stood, not how it stands.** An
+  attach, a send into a running turn and a send's repeat are answered with
+  the turn from its start, and nothing on the wire says where that ends
+  and the present begins: a message a call read long ago is first said
+  queued. So what such a stream says is queued is kept apart
+  (`ConversationState.recalled`) and drawn as the ordinary message its row
+  is, until the stream is known to have caught up (`Conversation.catchUp`):
+  it says the message this send carried was written, a heartbeat arrives
+  (sent only into a stream gone quiet), or the run says how it ended. A
+  send that started its own turn is answered with that turn as it
+  happens, and believed from its first event. So a chat that joins a run
+  anew (a launch, a sign-in again) never draws a message as waiting that a
+  call has read, also where its stream is cut between the two words; and
+  a message another device queued is drawn as waiting from the next
+  heartbeat at the latest, ten seconds.
 - **A turn this conversation was not reading.** A message sent into a
   thread may meet a turn already running there. Its rows so far were drawn
   from the rows, under their own ids, so the send's replay of those
@@ -544,7 +569,16 @@ be read again.
   a kind the server does not declare is refused whole). It
   resumes from the list read's `head` and `generation` (taken before the
   reads, so nothing between them is missed), reads the opening `bookmark`,
-  advances its cursor after applying each row, and persists it. A `410` or a
+  advances its cursor past a row once the engine has taken the row
+  (`ChatAppAsk.noteRow`), and persists it: a watch that is replaced has
+  what it says dropped, and a cursor moved first would leave a row nobody
+  took on no stream again. The watch is opened again, from its cursor, to
+  follow one more kind once a read of that kind was answered; the kind is
+  then read once more when the watch that follows it is open, since the
+  cursor moved on with the other kinds past whatever a record of this one
+  did meanwhile (`ChatApp.widen`). A card is kept from the moment its
+  record is asked for, so a row that says the record moved while that read
+  is out reads it again. A `410` or a
   terminal `error` frame with code `compacted` drops the cursor, which is
   never sent again, re-lists everything and opens again at the new head: one
   recovery a minute. Another `compacted` within 60 seconds of the start of
@@ -645,7 +679,10 @@ The server has no push channel, so the app promises what it can observe:
   notification alone. A card's stands while its chat may still wait (the
   row's count, or a card of it among the pending ones) and goes once
   nothing does; what an action could not do stands until its chat is
-  opened here, since the text it kept is on this device.
+  opened here, since the text it kept is on this device. A reply's own, in
+  a chat its person archived, was said because the chat waited: it goes by
+  the row's count alone, the moment that says nothing waits, whatever
+  keeps the other two.
 - **On iOS**, when the app leaves the screen with a turn streaming, it asks
   for a `BGContinuedProcessingTask` (iOS 26, strategy `.fail`, a fresh
   identifier each time, as Sync's `ContinuedSync`): iOS keeps the stream
@@ -1367,6 +1404,7 @@ the microphone, and Send, which morphs into Stop while a turn runs
   settings, and what the app can and cannot see.
 - **Voice**: the language.
 - **Storage**: size; Clear Saved Chats.
+- **Diagnostics**: Share Diagnostics ([its section](#diagnostics)).
 - **About**: the version.
 
 ### Action Button and Shortcuts
@@ -1438,8 +1476,10 @@ may do and for how long; the app never sees the password.
 
 ### Feel and access
 
-- Haptics on send, on a copy, on a reply settling on screen, on a failure
-  appearing.
+- Haptics on send, on Stop, on a copy, on a reply settling on screen, on a
+  failure appearing; and a light one for a reply that settles while its
+  person is elsewhere in the app (another chat, the list, Settings), which
+  is felt and not said.
 - Springs for the send/stop morph and the growing field; rows move to the top
   animated.
 - The live turn carries `.updatesFrequently`; a settled reply is announced
@@ -1888,6 +1928,58 @@ button and Details stack where the text size leaves no room side by side.
 | The chat was deleted | "This chat was deleted"; the draft stays to copy |
 | 401 | The signed-out screen |
 
+## Diagnostics
+
+A file a person can share with whoever is helping them, of what the app
+decided and how long things took, and never a word of a message, a title,
+a record's name, a server's address or a token
+(`ChatKit/Sources/ChatKit/Local/Diagnostics.swift`,
+`ChatApp/ChatAppDiagnostics.swift`).
+
+**What it says**, a line each:
+
+| Line | Says |
+| ---- | ---- |
+| `launch`, `app phase=` | a launch over the folder, and the app going to the front and away |
+| `features` | the `agents` and `records` revisions the server's document said, when they move |
+| `list read`, `rows read`, `older rows read` | a read asked for, and of how many chats |
+| `feed opened`, `feed dropped`, `feed back`, `feed compacted`, `feed ended` | the change feed |
+| `send`, `send out`, `send repeat`, `message stands`, `send again` | a message's press, each copy that left, the wait before the next, and when it stood unsent |
+| `stream opened`, `run of=attach`, `stream wait`, `stream retry`, `stream done`, `stream idle`, `stream ended` | which stream opened, dropped and why, and how long the app waited before it asked again |
+| `failure` | each failure as the value it is: `attempt`, `why`, and the `status`, `code`, `reason` and `cause` where they are of a closed set |
+| `mark write`, `mark written`, `mark not written then=` | a mark's write, what it carried (a position, a flag) and what became of it |
+| `notification posted`, `notification held`, `notification taken back`, `notification action over` | a notification, of what (`reply`, `card`, `failed`) |
+| `follow stopped by=` | why a transcript stopped following its end: `touch`, `wheel`, or `bar` for a scroll bar or a key |
+| `timing of=` | what a `flush`, a `parse` and the main thread's half of a publish (`republish`) cost in a run: how many, the mean and the longest, from the kit's `Meter` |
+
+**How it cannot hold a word.** A line is built only from words written in
+the source (`StaticString`), numbers, and words of the app's closed sets
+(`Diagnostic.with`). A word the server says is written only where it is
+one of a set this build names (its run causes, refusal reasons, cuts,
+statuses, error codes) and otherwise as `other`: an unknown cause from a
+newer server is a sentence as far as this build knows. A failure is
+written without what the server said and what the device saw, which are
+sentences. A chat is `chat 3`, by the order the launch met it in, never
+its id.
+
+**One writer, one order.** A line is a pure reading of one step: the
+event the list applied, what the step asked for, and for a conversation
+the lines its report carries to the list (`Conversation.notes`). The list
+writes them in the one effect that follows (`ChatAppAsk.diagnose`), which
+stamps and numbers them as it is asked and appends them off the main
+thread.
+
+**A bounded ring on disk.** Two files in the repository's folder:
+`diagnostics.log` is appended to, and past 128 KB it becomes
+`diagnostics.old.log` in place of the one before. So the file is kept
+across launches, holds between one and two files' worth of the newest
+lines, and is gone with the folder at a sign-out.
+
+**Sharing it.** Settings → Diagnostics → Share Diagnostics shows the whole
+text first, under what it holds and what it never holds, with the build's
+version under its heading; Share hands exactly that text to the system's
+share sheet. Nothing leaves the device that was not on that screen.
+
 ## Feature list
 
 **Must (v1)**
@@ -1932,6 +2024,51 @@ button and Details stack where the text size leaves no room side by side.
 
 ## Testing
 
+Five kinds of test hold the app, and no CI job runs any of them: a change
+runs them on a Mac, and ChatKit's on Linux too.
+
+| What | Where | Run by |
+| ---- | ----- | ------ |
+| The rig: ChatKit on the kit's runtime against a scripted server, on a clock the test moves | `ChatKit/Tests/ChatKitTests` | `mise run apple:test:chat`, `mise run apps:test:linux` |
+| The seeded suite: a person and a server that misbehave by a seed, with the rules a chat keeps whatever happens | `SeededRun.swift`, `SeededServer.swift`, `SeededThread.swift` | every `swift test`, and by hand for more seeds |
+| The frame tests: the app's own views in a window, frame by frame | `apple/Tests` (`HandoverTests`, `FollowTests`, `OpeningTests`, `OlderRowsTests`, `ReplyPartsTests`) | `mise run apple:test:chat` |
+| The gallery: every state drawn to a picture for a person to look at | `apple/Tests/GalleryTests.swift` | `mise run apps:gallery` |
+| The measure: what a streamed reply and typing cost, as a table | `apple/Sources/Measure` | `mise run apple:measure:chat` |
+
+**The rig** (`ChatRig`). The list is run as the link runs it, on the kit's
+`ControllerHarness`: a `TestClock` the test moves, ids in sequence, a
+folder of its own, recorded notifications and scripted background work,
+and every kept part of the presentation made again and compared at each
+step (`verifiesParts`), which stops the process on a part kept past a
+change to what it reads. The server is one of three, each a transport the
+client is handed in place of the network:
+
+- `ChatServer`: routes scripted by the test, an answer each (a body, an
+  envelope, an ndjson stream held part way until the test lets it go). The
+  list's seven rules are held against it, by number (`RuleTests`), and so
+  are the failures and the send's every exit.
+- `MarkServer`: a server that keeps marks, flags and pages by the real
+  one's rules, for any number of devices at once (`MarkTests`,
+  `ListTests`).
+- `SeededServer`: the truth a correct server would hold, with its turns
+  moved only by the test, and faults where a test or a seed says
+  (`AnsweringTests`, and the seeded suite).
+
+A test waits for a state, never for a time: `harness.until` asks its
+condition each time the runtime moves, and `until(advancing:)` also moves
+the clock to each wait the app asked for that ends within the span named.
+It fails after a minute in which nothing moved at all, so a loaded machine
+slows a test and does not fail it. What a test may not do is lean on an
+order nobody promised. Two tests that timed out on a busy machine were
+each the app doing that with the change feed, and are now
+`RuleTests`' "What the feed does not promise": a row is past the watch's
+bookmark only once the engine took it, a kind the watch gains is read
+again once the watch that follows it is open, and a card asked for is
+kept from that moment. Two helpers of the scripted servers wait on the
+real clock, 5 ms at a time, for a test's own word to let a held answer go
+(`ChatServer.hold`, a stream's `holdAfter`): they poll for the test, and
+no outcome depends on how long they took.
+
 - Unit tests (`mise run apple:test:chat`, on the Mac; ChatKit's also on
   Linux, `mise run apps:test:linux`): the transcript fold
   and the stream's rows against the console's cases (pairing by id, orphans,
@@ -1947,7 +2084,10 @@ button and Details stack where the text size leaves no room side by side.
   rows, a transcript with nothing doubled, nothing lost and every id as the
   stream first gave it. Each `cutBy` says so at the turn the stream drew.
   A message sent under an id is the row of that id and no other, whatever
-  its words; one sent under none is found by its words past what was held.
+  its words; one sent under none is the row its run came after, whatever
+  older row holds the same words and whatever was held when it was sent,
+  and is named for good only once its own stream has said so or its run
+  has ended.
 - The stream (`StreamTests`): a return to the front at revision 5 and
   below it empties nothing and the reply goes on where it was; a turn that
   settles between an attach's read and its stream; `lagged`; the quiet a
@@ -2123,13 +2263,30 @@ button and Details stack where the text size leaves no room side by side.
   starts; a runtime that honoured the hook for some enqueues and not for
   others could pass it, and would be caught only where the run is met.
   A rule the app is known to break is listed in `SeededRun.known`, noted
-  and not failed, and an entry that no longer fails must not stay. It
-  holds one today (its first four were the two models of a turn, gone
-  with them): a message sent under no id, before the chat's rows are
-  read, into a thread that already holds the same words under an id, is
-  paired with that older row, so the two equal bubbles swap ids (seed
-  6523, 76 steps). What is drawn is still the server's rows, each once. A kill may take a draft typed inside its save's pause and
-  a send without an id still on its way, and nothing else.
+  and not failed, and an entry that no longer fails must not stay. It is
+  empty. Its first four were the two models of a turn, gone with them;
+  its last three each have a plain test beside the seed that found them:
+  a message sent under no id paired with an older row of the same words
+  (seed 1171 at 101 steps on a server at `agents` 7; `FoldTests`), a
+  message a call had read drawn queued again by a chat that joined its
+  run anew (seed 9435 at 39 steps; `AnsweringTests`), and a reply's
+  notification standing for an archived chat with nothing waiting (seeds
+  30167 at 45 steps and 20442 at 101; `AnsweringTests`). A kill may take
+  a draft typed inside its save's pause and a send without an id still on
+  its way, and nothing else.
+- The diagnostics file by a seed (`SeededRun.discreet`). The seeded
+  server's every sentence is a canary (`SeededServer.said`: an envelope's
+  message, a thread's reason, a failed turn's error), and so is every
+  message the person typed, every reply the server wrote, every id of a
+  thread, a row and a card, the server's address, the repository's name,
+  the agent's name and the token. At each kill and at the end of every
+  run, every line the launch wrote is read from the folder: none may hold
+  a canary, and each must have the shape of a line (when, a chat by its
+  number, lower-case words, then `name=value` with a number or one word),
+  which no sentence has. At the end Share Diagnostics is opened, and what
+  it would share must be the folder's every line. `DiagnosticsTests` holds
+  the builder against words outside its sets, the ring's bound and its
+  life across a launch and a sign-out, and one run's whole story.
 - Read state (`MarkTests.swift`, over `MarkServer`, a server that keeps
   marks by the real one's rules for any number of devices at once): the
   unread rule case by case; the mark moves after a second with the end on
