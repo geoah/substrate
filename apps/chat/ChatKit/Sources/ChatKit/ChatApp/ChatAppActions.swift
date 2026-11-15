@@ -44,8 +44,14 @@ extension ChatApp {
             guard !state.deferred.contains(where: { ChatNotifications.stamp($0.response) == stamp }) else { return }
             state.asks.append(.actionWait(stamp, seconds: Self.actionSeconds))
         }
-        guard state.opened, action != .reply || state.agentsRevision != nil else {
+        guard state.opened, action != .reply || (state.agentsRevision != nil && state.thread(thread) != nil) else {
             if !waited { state.deferred.append(State.Deferred(response: response, key: key, message: message, at: at)) }
+            // A reply is its chat's conversation sending, to the agent the
+            // thread's row names. A launch for the action may hold no row
+            // of it (a chat past the list's first page, or archived on
+            // another device): it is read by name, and the reply goes when
+            // it is.
+            if action == .reply, state.opened, state.agentsRevision != nil { state.asks.append(.fetchThread(thread)) }
             return
         }
         state.acted.insert(stamp)
@@ -101,11 +107,21 @@ extension ChatApp {
         state.acting[stamp] = act
     }
 
-    /// The folder is read, or the server's document: the actions that
-    /// waited for either go now.
+    /// The folder is read, or the server's document, or a thread's row:
+    /// the actions that waited for any of them go now.
     func resume(_ state: inout State) {
         for waiting in state.deferred {
-            guard state.opened, state.agentsRevision != nil || !Self.isReply(waiting.response) else { continue }
+            let known = waiting.response.userInfo[ChatNotifications.threadKey].map { state.thread($0) != nil } ?? true
+            guard state.opened, !Self.isReply(waiting.response) || (state.agentsRevision != nil && known) else {
+                // The folder or the document is read now, and the chat's
+                // row still is not: asked for by name.
+                if Self.isReply(waiting.response), state.opened, state.agentsRevision != nil, !known,
+                    let thread = waiting.response.userInfo[ChatNotifications.threadKey]
+                {
+                    state.asks.append(.fetchThread(thread))
+                }
+                continue
+            }
             acted(&state, waiting.response, key: waiting.key, message: waiting.message, at: waiting.at, waited: true)
         }
     }
