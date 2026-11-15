@@ -48,7 +48,7 @@ import Testing
                 opens: chat.opens.map { .turn($0) } ?? .end, anchor: chat.opens, sends: 0, above: chat.above,
                 first: { TranscriptPiece.firstRow(among: $0, of: turns) }
             ) {
-                LazyVStack(alignment: .leading, spacing: TranscriptPiece.spacing) {
+                LazyVStack(alignment: .leading, spacing: ChatSpace.turns) {
                     ForEach(TranscriptPiece.pieces(of: turns, actions: chat.actions)) { piece in
                         TranscriptPieceView(piece: piece, cards: [:], expandThinking: false)
                             .onGeometryChange(for: CGRect.self) {
@@ -59,7 +59,7 @@ import Testing
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal, 20)
+                .padding(.horizontal, ChatSpace.margin)
                 .replyLinks()
                 .replyTools(wraps: false)
             } bar: { _, _, _ in

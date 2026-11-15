@@ -2,32 +2,15 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// The sizes the list's own parts are drawn at, named here until the chat's
-/// sizes move into the design tokens.
-enum ChatListSizes {
-    /// A row's lines apart, and a placeholder's bars.
-    static let lineSpacing: CGFloat = 4
-    static let placeholderTitle: CGFloat = 15
-    static let placeholderLine: CGFloat = 12
-    static let placeholderRadius: CGFloat = 4
-    /// The Undo bar: its padding, its corner and how far it floats off the
-    /// list's edges.
-    static let undoPadding: CGFloat = 14
-    static let undoRadius: CGFloat = 16
-    static let undoInset: CGFloat = 12
-    /// A search hit's indent under its chat.
-    static let hitSpacing: CGFloat = 6
-}
-
 /// A section's heading: "Pinned" with its pin, a day as it is.
 struct SectionTitle: View {
     let title: String
 
     var body: some View {
         if title == "Pinned" {
-            Label(title, systemImage: "pin.fill").foregroundStyle(.quietText)
+            Label(title, systemImage: "pin.fill").ink(.quiet, on: .list)
         } else {
-            Text(title).foregroundStyle(.quietText)
+            Text(title).ink(.quiet, on: .list)
         }
     }
 }
@@ -41,7 +24,7 @@ struct RunningMark: View {
     var body: some View {
         ProgressView()
             .controlSize(.small)
-            .tint(selected ? Color.primary : nil)
+            .tint(selected ? ChatColours.Ink.label.color : nil)
             .accessibilityLabel("Working")
     }
 }
@@ -57,7 +40,7 @@ struct PinButton: View {
         Button(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin") {
             host.send(.pin(thread: row.id, pinned: !row.pinned))
         }
-        .tint(.orange)
+        .tint(ScreenTone.caution.fillColor)
     }
 }
 
@@ -72,7 +55,7 @@ struct ArchiveButton: View {
         Button(row.archived ? "Unarchive" : "Archive", systemImage: row.archived ? "tray.and.arrow.up" : "archivebox") {
             host.send(.archive(thread: row.id, archived: !row.archived))
         }
-        .tint(.accentFill)
+        .prominentTint()
     }
 }
 
@@ -82,51 +65,53 @@ struct UndoBar: View {
     let undo: UndoPresentation
 
     var body: some View {
-        HStack(spacing: ChatListSizes.undoPadding) {
+        HStack(spacing: ChatSpace.inset) {
             Label(undo.words, systemImage: "archivebox")
-                .font(.subheadline)
+                .font(ChatType.detail)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
             Button(undo.action) { host.send(.undoArchive) }
-                .font(.subheadline.weight(.semibold))
-                .tint(ChatColours.accent.color)
+                .font(ChatType.heading)
+                .tinted(.accent, on: .list)
         }
-        .padding(ChatListSizes.undoPadding)
-        .glassEffect(.regular, in: .rect(cornerRadius: ChatListSizes.undoRadius))
-        .padding(.horizontal, ChatListSizes.undoInset)
-        .padding(.bottom, ChatListSizes.undoInset)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .padding(ChatSpace.inset)
+        .glassEffect(.regular, in: .rect(cornerRadius: ChatRadius.card))
+        .padding(.horizontal, ChatSpace.gutter)
+        .padding(.bottom, ChatSpace.gutter)
+        .arrives(.rise)
         .accessibilityElement(children: .contain)
     }
 }
 
-/// Rows that stand in for the chats while the first read is out: the shape
-/// of a row, with nothing to read in it.
+/// Rows that stand in for the chats while the first read is out: a row's
+/// own lines in a row's own type, with bars where the words would be, so
+/// each is as tall as the chat that takes its place, at any text size.
 struct PlaceholderRows: View {
     let count: Int
 
+    /// Never read: how long each bar is.
+    private static let titles = [22, 30, 17].map { String(repeating: "x", count: $0) }
+    private static let previews = [64, 88].map { String(repeating: "x", count: $0) }
+
     var body: some View {
         ForEach(0 ..< count, id: \.self) { index in
-            VStack(alignment: .leading, spacing: ChatListSizes.lineSpacing * 2) {
-                bar(width: index % 3 == 0 ? 0.55 : index % 3 == 1 ? 0.7 : 0.45, height: ChatListSizes.placeholderTitle)
-                bar(width: 0.9, height: ChatListSizes.placeholderLine)
-                bar(width: index % 2 == 0 ? 0.6 : 0.75, height: ChatListSizes.placeholderLine)
+            VStack(alignment: .leading, spacing: ChatSpace.mark) {
+                Text(verbatim: Self.titles[index % Self.titles.count])
+                    .font(ChatType.rowTitle())
+                    .lineLimit(1)
+                Text(verbatim: Self.previews[index % Self.previews.count])
+                    .font(ChatType.detail)
+                    .lineLimit(2)
             }
-            .padding(.vertical, ChatListSizes.lineSpacing)
+            .padding(.vertical, ChatSpace.pair)
+            .redacted(reason: .placeholder)
             .shimmer()
+            .accessibilityElement(children: .ignore)
             .accessibilityHidden(index > 0)
             .accessibilityLabel("Loading chats")
         }
         .selectionDisabled()
-    }
-
-    private func bar(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: ChatListSizes.placeholderRadius)
-            .fill(.fill.secondary)
-            .frame(height: height)
-            .containerRelativeFrame(.horizontal) { length, _ in length * width }
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -139,11 +124,11 @@ struct MoreRow: View {
 
     var body: some View {
         Button(action: more) {
-            HStack(spacing: ChatListSizes.hitSpacing) {
+            HStack(spacing: ChatSpace.words) {
                 if loading { ProgressView().controlSize(.small) }
                 Text(loading ? "Loading…" : title)
-                    .font(.subheadline)
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.detail)
+                    .ink(.quiet, on: .list)
             }
             .frame(maxWidth: .infinity)
         }
@@ -171,11 +156,11 @@ struct ShelfFooter: View {
 /// The server is being asked for the messages that match.
 struct SearchingRow: View {
     var body: some View {
-        HStack(spacing: ChatListSizes.hitSpacing) {
+        HStack(spacing: ChatSpace.words) {
             ProgressView().controlSize(.small)
             Text("Searching messages…")
-                .font(.subheadline)
-                .foregroundStyle(.quietText)
+                .font(ChatType.detail)
+                .ink(.quiet, on: .list)
         }
         .listRowSeparator(.hidden)
         .selectionDisabled()
@@ -193,18 +178,18 @@ struct SearchGroups: View {
     var body: some View {
         Section {
             ForEach(groups) { group in
-                VStack(alignment: .leading, spacing: ChatListSizes.hitSpacing) {
-                    HStack(alignment: .firstTextBaseline, spacing: ChatListSizes.hitSpacing) {
+                VStack(alignment: .leading, spacing: ChatSpace.lines) {
+                    HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
                         Text(group.title)
-                            .font(.body.weight(.medium))
+                            .font(ChatType.rowTitle())
                             .lineLimit(1)
                         if let archived = group.archived {
                             Text(archived)
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.quietText)
-                                .padding(.horizontal, ChatListSizes.hitSpacing)
-                                .padding(.vertical, 2)
-                                .background(.fill.tertiary, in: .capsule)
+                                .font(ChatType.smallLabel)
+                                .ink(.quiet, on: .pill)
+                                .padding(.horizontal, ChatSpace.pillSide)
+                                .padding(.vertical, ChatSpace.pillEdge)
+                                .background(ChatColours.pillStyle, in: .capsule)
                         }
                     }
                     ForEach(group.hits) { hit in
@@ -218,15 +203,15 @@ struct SearchGroups: View {
                         .buttonStyle(.plain)
                     }
                     if let more = group.more {
-                        Text(more).font(.caption).foregroundStyle(.quietText)
+                        Text(more).font(ChatType.caption).ink(.quiet, on: .list)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, ChatSpace.pair)
                 .selectionDisabled()
                 .accessibilityElement(children: .contain)
             }
         } header: {
-            Text("Messages").foregroundStyle(.quietText)
+            Text("Messages").ink(.quiet, on: .list)
         }
     }
 }
@@ -239,20 +224,20 @@ struct SearchHitText: View {
 
     var body: some View {
         text
-            .font(.subheadline)
+            .font(ChatType.detail)
             .lineLimit(3)
             .accessibilityLabel("\(hit.who): \(hit.runs.map(\.text).joined())")
             .accessibilityAddTraits(.isButton)
     }
 
     private var text: Text {
-        var out = Text("\(hit.who)  ").fontWeight(.semibold).foregroundStyle(
-            hit.who == "You" ? AnyShapeStyle(.primary) : AnyShapeStyle(AgentColours(agent).ink))
+        let who = Text("\(hit.who)  ").fontWeight(ChatType.strong)
+        var out = hit.who == "You" ? who.ink(.label, on: .list) : who.inAgentInk(agent, on: .list)
         for run in hit.runs {
             let piece =
                 run.match
-                ? Text(run.text).fontWeight(.semibold).foregroundStyle(ChatColours.accent.color)
-                : Text(run.text).foregroundStyle(.quietText)
+                ? Text(run.text).fontWeight(ChatType.strong).ink(.accent, on: .list)
+                : Text(run.text).ink(.quiet, on: .list)
             out = Text("\(out)\(piece)")
         }
         return out
@@ -274,7 +259,7 @@ struct OlderRowsRow: View {
         Button {
             ask()
         } label: {
-            HStack(spacing: ChatListSizes.hitSpacing) {
+            HStack(spacing: ChatSpace.words) {
                 if older.loading {
                     ProgressView().controlSize(.small)
                 } else {
@@ -282,9 +267,10 @@ struct OlderRowsRow: View {
                 }
                 Text(older.label)
             }
-            .font(.caption)
-            .foregroundStyle(.quietText)
-            .frame(maxWidth: .infinity)
+            .font(ChatType.caption)
+            .ink(.quiet, on: .page)
+            .frame(maxWidth: .infinity, minHeight: ChatSize.target)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         // Asked for once the row has stood on screen a moment, and again

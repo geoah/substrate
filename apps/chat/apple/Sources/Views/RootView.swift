@@ -25,7 +25,7 @@ struct RootView: View {
                 SignInView()
             }
         }
-        .animation(.default, value: signedIn)
+        .motion(.place, value: signedIn)
         .alert("Couldn't sign out", isPresented: Binding(get: { link.signOutProblem != nil }, set: { _ in })) {
             if let fix = link.signOutProblem?.fix { Button(fix.title) { host.signOut() } }
             Button("OK", role: .cancel) {}
@@ -42,7 +42,6 @@ struct ChatSplitView: View {
     @EnvironmentObject private var updates: Updater
     @Environment(\.scenePhase) private var phase
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(macOS)
     @Environment(\.controlActiveState) private var keyState
     #endif
@@ -59,7 +58,7 @@ struct ChatSplitView: View {
         let _ = Meter.shared.count(.body, "Split")
         NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
             ChatListView(scene: scene, showSettings: $showSettings)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 420)
+                .navigationSplitViewColumnWidth(min: ChatSize.sidebar.least, ideal: ChatSize.sidebar.ideal, max: ChatSize.sidebar.most)
         } detail: {
             if let current {
                 ConversationView(key: current, scene: scene)
@@ -86,9 +85,8 @@ struct ChatSplitView: View {
         }
         .onChange(of: phase, initial: true) { _, phase in host.send(.sceneActive(scene: scene, active: phase == .active)) }
         // A reply is revealed at a steady rate unless the device asks for
-        // less motion. Said again at each sign-in, which starts the chats
-        // over.
-        .task(id: [reduceMotion, host.chats?.signedIn == true]) { host.send(.pace(!reduceMotion)) }
+        // less motion.
+        .pacesReplies()
         #if os(iOS)
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -127,7 +125,7 @@ struct NoChatView: View {
         } actions: {
             Button("New Chat") { host.send(.newChat(agent: nil, listen: false, scene: scene)) }
                 .buttonStyle(.glassProminent)
-                .tint(.accentFill)
+                .prominentTint()
         }
     }
 }

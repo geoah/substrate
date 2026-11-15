@@ -14,7 +14,6 @@ struct ChatListView: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var chats: ChatSurface? { host.chats }
 
@@ -40,17 +39,17 @@ struct ChatListView: View {
                 AccessBannerView(banner) { perform($0) }
                     // The banner's buttons are words in the accent, not
                     // words on it: the text tone, not the list's fill.
-                    .tint(ChatColours.accent.color)
+                    .tinted(.accent, on: .list)
                     .listRowSeparator(.hidden)
             }
             if let problem = host.authorizeProblem {
-                ProblemBox(title: "Access didn't change", message: problem, tint: .orange)
+                ProblemBox(title: "Access didn't change", message: problem, tint: ScreenTone.caution.color)
                     .listRowSeparator(.hidden)
             }
             if let offline = list?.offline {
                 Label(offline, systemImage: "wifi.slash")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(ChatType.detail)
+                    .ink(.quiet, on: .list)
                     .listRowSeparator(.hidden)
             } else if let failure = list?.failure {
                 // The list's one failure: a strip at its top.
@@ -71,17 +70,17 @@ struct ChatListView: View {
                             .swipeActions(edge: .leading) {
                                 if row.unread {
                                     Button("Read", systemImage: "envelope.open") { host.send(.markRead(row.id)) }
-                                        .tint(.accentFill)
+                                        .prominentTint()
                                 } else {
                                     Button("Unread", systemImage: "envelope.badge") { host.send(.markUnread(row.id)) }
-                                        .tint(.accentFill)
+                                        .prominentTint()
                                 }
                                 if flags { PinButton(row: row, short: true) }
                             }
                             .swipeActions(edge: .trailing) {
                                 if flags { ArchiveButton(row: row, short: true) }
                                 Button("Rename", systemImage: "pencil") { beginRename(row) }
-                                    .tint(.gray)
+                                    .tint(ScreenTone.quiet.fillColor)
                             }
                     }
                 } header: {
@@ -104,7 +103,7 @@ struct ChatListView: View {
             }
             if let nothing = searched?.nothingFound {
                 Text(nothing)
-                    .foregroundStyle(.secondary)
+                    .ink(.quiet, on: .list)
                     .listRowSeparator(.hidden)
             }
         }
@@ -112,7 +111,7 @@ struct ChatListView: View {
         // A row takes its new place with motion when the order changes: a
         // chat that answered, one pinned, one archived. With none where
         // the device asks for less.
-        .animation(reduceMotion ? nil : .default, value: sections.map { $0.rows.map(\.id) })
+        .motion(.place, value: sections.map { $0.rows.map(\.id) })
         // An iPad fills the focused selection with the list's tint. The
         // accent in dark mode is a text tone, and the system's white words
         // are 2.8:1 on it, so the list's tint is the accent as a fill, the
@@ -133,7 +132,7 @@ struct ChatListView: View {
                     if let action = empty.action {
                         Button(action) { host.send(.newChat(agent: nil, listen: false, scene: scene)) }
                             .buttonStyle(.glassProminent)
-                            .tint(.accentFill)
+                            .prominentTint()
                     }
                 }
             }
@@ -142,7 +141,7 @@ struct ChatListView: View {
         .safeAreaInset(edge: .bottom) {
             if let undo = list?.undo { UndoBar(undo: undo) }
         }
-        .animation(reduceMotion ? nil : .snappy, value: list?.undo)
+        .motion(.arrive, value: list?.undo)
         .searchable(text: $query, prompt: list?.searchPrompt ?? "Search chats")
         .onChange(of: query) { _, query in host.send(.search(scene: scene, query: query)) }
         .refreshable { host.send(.refresh) }
@@ -274,7 +273,7 @@ struct ReviewSheet: View {
                         firstSignIn: false, onContinue: continueReview, onCancel: { isPresented = false })
                 }
             } else {
-                ProgressView().padding(40)
+                ProgressView().padding(ChatSpace.screen)
             }
         }
         .task {
@@ -302,41 +301,42 @@ struct ThreadRowView: View {
     let row: ThreadRow
     /// The row is the list's selection, focused or not.
     var selected = false
+    @Scaled(.dot) private var dot
 
     var body: some View {
         let _ = Meter.shared.count(.body, "ThreadRow")
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+        VStack(alignment: .leading, spacing: ChatSpace.mark) {
+            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
                 if let mode = row.mode {
                     Image(systemName: Self.symbol(mode))
-                        .font(.caption)
-                        .foregroundStyle(quiet)
+                        .font(ChatType.caption)
+                        .ink(.quiet, on: .list, selected: selected)
                         .accessibilityLabel(mode)
                 }
                 Text(row.title)
-                    .font(.body.weight(row.unread ? .semibold : .medium))
+                    .font(ChatType.rowTitle(unread: row.unread))
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                Spacer(minLength: ChatSpace.mark)
                 Text(row.stamp)
-                    .font(.caption)
-                    .foregroundStyle(row.unread ? own(ChatColours.accent.color) : quiet)
+                    .font(ChatType.caption)
+                    .ink(row.unread ? .accent : .quiet, on: .list, selected: selected)
                     .monospacedDigit()
             }
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .top, spacing: ChatSpace.words) {
                 preview
-                    .font(.subheadline)
+                    .font(ChatType.detail)
                     .lineLimit(2)
-                Spacer(minLength: 4)
+                Spacer(minLength: ChatSpace.mark)
                 if let unfinished = row.unfinished {
                     UnfinishedPill(mark: unfinished, selected: selected)
                 }
                 switch row.mark {
                 case .attention?:
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundStyle(own(.orange))
+                        .ink(.mark(.caution), on: .list, selected: selected)
                         .accessibilityLabel("Waiting on you")
                 case .unread?:
-                    Circle().fill(own(ChatColours.accent.color)).frame(width: 9, height: 9).padding(.top, 5)
+                    Circle().ink(.accent, on: .list, selected: selected).frame(width: dot, height: dot).padding(.top, ChatSpace.mark)
                         .accessibilityLabel("Unread")
                 case nil:
                     // A chat at work says so where its mark would stand.
@@ -344,25 +344,18 @@ struct ThreadRowView: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, ChatSpace.pair)
         .accessibilityElement(children: .combine)
     }
 
-    /// A colour of the row's own on the list, and the system's primary
-    /// style on the selection.
-    private func own(_ color: Color) -> AnyShapeStyle {
-        selected ? AnyShapeStyle(.primary) : AnyShapeStyle(color)
-    }
-
-    /// The preview, the date and the glyph of an automated run.
-    private var quiet: AnyShapeStyle { own(.quietText) }
-
     /// The agent's name in its colour, then the start of the last reply:
-    /// one run of text, so the name costs a word, not a column.
+    /// one run of text, so the name costs a word, not a column. On the
+    /// selection both are the system's primary style, as every word of the
+    /// row is.
     private var preview: Text {
-        let name = Text(row.agentName).fontWeight(.semibold).foregroundStyle(own(AgentColours(row.agent).ink))
+        let name = Text(row.agentName).fontWeight(ChatType.strong).inAgentInk(row.agent, on: .list, selected: selected)
         guard !row.preview.isEmpty else { return name }
-        return Text("\(name) \(Text(row.preview).foregroundStyle(quiet))")
+        return Text("\(name) \(Text(row.preview).ink(.quiet, on: .list, selected: selected))")
     }
 
     private static func symbol(_ mode: String) -> String {
@@ -386,16 +379,15 @@ private struct UnfinishedPill: View {
 
     var body: some View {
         Text(mark.words)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(tone.textColor))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(tone.color.opacity(selected ? 0 : ChatColours.badge), in: .capsule)
+            .font(ChatType.smallLabel)
+            .ink(mark.tone == .bad ? .tone(.critical) : mark.tone == .warn ? .tone(.caution) : .tone(.quiet), on: .badge, selected: selected)
+            .padding(.horizontal, ChatSpace.pillSide)
+            .padding(.vertical, ChatSpace.pillEdge)
+            .background(ChatColours.badgeStyle(tone).opacity(selected ? 0 : 1), in: .capsule)
             .overlay {
-                if selected { Capsule().strokeBorder(.primary.opacity(0.6), lineWidth: 1) }
+                if selected { Capsule().strokeBorder(ChatColours.Ink.label.color.opacity(ChatColours.outline), lineWidth: ChatLine.rule) }
             }
             .fixedSize()
-            .padding(.top, 2)
     }
 
     private var tone: ScreenTone {

@@ -18,36 +18,36 @@ struct QuestionCardView: View {
     @State private var picked: [String: Set<String>] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ChatSpace.blocks) {
             Label(card.title, systemImage: "questionmark.bubble")
-                .font(.subheadline.weight(.semibold))
+                .font(ChatType.heading)
             if card.loading {
                 ProgressView().controlSize(.small)
             }
             ForEach(card.questions) { question in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(question.prompt).font(.subheadline)
+                VStack(alignment: .leading, spacing: ChatSpace.lines) {
+                    Text(question.prompt).font(ChatType.detail)
                     ForEach(question.options) { option in
                         let chosen = card.pending ? picked[question.id, default: []].contains(option.value) : option.chosen
                         Button {
                             toggle(question, option.value)
                         } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
                                 Image(
                                     systemName: question.multi
                                         ? (chosen ? "checkmark.square.fill" : "square")
                                         : (chosen ? "largecircle.fill.circle" : "circle")
                                 )
-                                .foregroundStyle(chosen ? Color.accentColor : .secondary)
-                                VStack(alignment: .leading, spacing: 1) {
+                                .ink(chosen ? .accent : .quiet, on: .card)
+                                VStack(alignment: .leading, spacing: ChatSpace.pair) {
                                     Text(option.label)
                                     if let description = option.description {
-                                        Text(description).font(.caption).foregroundStyle(.quietText)
+                                        Text(description).font(ChatType.caption).ink(.quiet, on: .card)
                                     }
                                 }
                                 Spacer(minLength: 0)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, ChatSpace.mark)
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -60,13 +60,13 @@ struct QuestionCardView: View {
                 Button {
                     host.send(.answerInWords(id), to: conversation)
                 } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
                         Image(systemName: "square.and.pencil")
                         Text(words)
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.vertical, 4)
+                    .ink(.accent, on: .card)
+                    .padding(.vertical, ChatSpace.mark)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -84,7 +84,7 @@ struct QuestionCardView: View {
                         if card.busy == "answer" { ProgressView().controlSize(.small) } else { Text(card.answer) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.accentFill)
+                    .prominentTint()
                     .disabled(card.busy != nil || !card.questions.allSatisfy { !(picked[$0.id]?.isEmpty ?? true) })
                     Button(card.dismiss) { host.send(.dismissQuestions(id)) }
                         .buttonStyle(.bordered)
@@ -92,7 +92,7 @@ struct QuestionCardView: View {
                 }
             }
         }
-        .card(tint: card.pending ? .orange : nil)
+        .card(card.pending ? .caution : nil)
         .task(id: id) { host.send(.loadCard(.question(id))) }
     }
 
@@ -125,18 +125,18 @@ struct SuggestionCardView: View {
     }
 
     private var proposed: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
             ChangeHeaderView(heading: card.panel.heading)
             if let rationale = card.rationale {
-                Text(rationale).font(.footnote).foregroundStyle(.quietText)
+                Text(rationale).font(ChatType.note).ink(.quiet, on: .card)
             }
             ForEach(card.values) { line in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(line.label).font(ChatType.label).ink(.quiet, on: .card)
                     if let before = line.before {
-                        RecordValueView(before, struck: true).font(.footnote).lineLimit(4)
+                        RecordValueView(before, struck: true).font(ChatType.note).lineLimit(4)
                     }
-                    RecordValueView(line.value).font(.footnote).lineLimit(6)
+                    RecordValueView(line.value).font(ChatType.note).lineLimit(6)
                 }
             }
             if let failure = card.failure {
@@ -145,10 +145,10 @@ struct SuggestionCardView: View {
             if let console = card.console.flatMap(URL.init(string:)) {
                 // Without `decide:` the request is not the app's to decide.
                 if let note = card.consoleNote {
-                    Text(note).font(.footnote).foregroundStyle(.quietText)
+                    Text(note).font(ChatType.note).ink(.quiet, on: .card)
                 }
                 ConsoleLink(title: "Open in the Console", destination: console)
-                    .font(.footnote.weight(.semibold))
+                    .font(ChatType.noteStrong)
             } else {
                 HStack {
                     Button {
@@ -164,7 +164,7 @@ struct SuggestionCardView: View {
                 .disabled(card.busy != nil)
             }
         }
-        .card(tint: .blue)
+        .card(.informative)
     }
 }
 
@@ -178,45 +178,45 @@ struct ApprovalCardView: View {
     let card: ApprovalCard
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
+            HStack(spacing: ChatSpace.words) {
                 Label(card.title, systemImage: symbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(card.tone == .failed ? ScreenTone.critical.textColor : Color.primary)
+                    .font(ChatType.heading)
+                    .ink(card.tone == .failed ? .tone(.critical) : .label, on: .card)
                 Spacer(minLength: 0)
                 if card.tone == .running { ProgressView().controlSize(.small) }
             }
             if card.loading {
                 ProgressView().controlSize(.small)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: ChatSpace.mark) {
                     Text(card.asks)
                     Text(card.tool).monospaced()
                 }
-                .font(.footnote)
-                .foregroundStyle(.quietText)
+                .font(ChatType.note)
+                .ink(.quiet, on: .card)
             }
             if !card.arguments.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: ChatSpace.items) {
                     ForEach(card.arguments) { argument in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(argument.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
+                        VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                            Text(argument.label).font(ChatType.label).ink(.quiet, on: .box)
                             // The model wrote it: plain text, never Markdown.
                             // While it waits every line shows: the owner
                             // approves all of it, not what fits.
                             Text(verbatim: argument.value)
-                                .font(.footnote)
+                                .font(ChatType.note)
                                 .lineLimit(card.pending ? nil : 3)
                                 .textSelection(.enabled)
                         }
                     }
                 }
-                .padding(10)
+                .padding(ChatSpace.inner)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.secondary.opacity(0.08), in: .rect(cornerRadius: 10))
+                .background(ChatColours.boxStyle, in: .rect(cornerRadius: ChatRadius.block))
             }
             if let error = card.error {
-                Text(verbatim: error).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
+                Text(verbatim: error).font(ChatType.note).ink(.tone(.critical), on: .card)
             }
             if let failure = card.failure {
                 CardFailureView(failure: failure)
@@ -229,7 +229,7 @@ struct ApprovalCardView: View {
                         if card.busy == "approve" { ProgressView().controlSize(.small) } else { Text(card.approve) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.accentFill)
+                    .prominentTint()
                     Button {
                         host.send(.decideApproval(id, approve: false))
                     } label: {
@@ -240,7 +240,7 @@ struct ApprovalCardView: View {
                 .disabled(card.busy != nil)
             }
         }
-        .card(tint: tint)
+        .card(tone)
         .task(id: id) { host.send(.loadCard(.approval(id))) }
     }
 
@@ -254,12 +254,12 @@ struct ApprovalCardView: View {
         }
     }
 
-    private var tint: Color? {
+    private var tone: ScreenTone? {
         switch card.tone {
-        case .waiting: .orange
-        case .running: .blue
-        case .done: .green
-        case .failed: .red
+        case .waiting: .caution
+        case .running: .informative
+        case .done: .positive
+        case .failed: .critical
         case .declined: nil
         }
     }
@@ -298,15 +298,15 @@ struct ResolvedCardView: View {
     let resolution: CardResolution
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ResolvedCardView.spacing) {
+        VStack(alignment: .leading, spacing: ChatSpace.items) {
             if resolution.loading {
                 ProgressView().controlSize(.small)
             }
             ForEach(Array(resolution.facts.enumerated()), id: \.offset) { _, fact in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: fact.label).font(.caption).foregroundStyle(.quietText)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(verbatim: fact.label).font(ChatType.caption).ink(.quiet, on: .page)
                     // The model's words and the person's choice: plain text.
-                    Text(verbatim: fact.value).font(.footnote).textSelection(.enabled)
+                    Text(verbatim: fact.value).font(ChatType.note).textSelection(.enabled)
                 }
                 .accessibilityElement(children: .combine)
             }
@@ -316,13 +316,13 @@ struct ResolvedCardView: View {
             if let message = resolution.repliedIn, let showMessage {
                 // Answered in a message: the chat is put at it.
                 Button(ResolvedCardView.showMessage, systemImage: "arrow.down.message") { showMessage(message) }
-                    .font(.footnote)
+                    .font(ChatType.note)
                     .buttonStyle(.borderless)
             }
             if let at = resolution.at {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ResolvedCardView.whenLabel).font(.caption).foregroundStyle(.quietText)
-                    Text(at.formatted(date: .abbreviated, time: .shortened)).font(.footnote)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(ResolvedCardView.whenLabel).font(ChatType.caption).ink(.quiet, on: .page)
+                    Text(at.formatted(date: .abbreviated, time: .shortened)).font(ChatType.note)
                 }
                 .accessibilityElement(children: .combine)
             }
@@ -332,9 +332,6 @@ struct ResolvedCardView: View {
             if resolution.loading { host.send(.loadCard(resolution.card)) }
         }
     }
-
-    /// Between two facts of a folded card.
-    static let spacing: CGFloat = 8
 
     /// Over the instant the card ended, where its record says one. Who
     /// ended it and how is the row's own line, above.
@@ -350,8 +347,8 @@ struct QueuedMark: View {
 
     var body: some View {
         Label(words, systemImage: "clock")
-            .font(.caption)
-            .foregroundStyle(.quietText)
+            .font(ChatType.caption)
+            .ink(.quiet, on: .page)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .accessibilityLabel(words)
     }
@@ -364,26 +361,26 @@ struct AnsweringNoteView: View {
     let back: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
             Image(systemName: "square.and.pencil")
                 .imageScale(.small)
-                .foregroundStyle(.quietText)
+                .ink(.quiet, on: .field)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(note.title).font(.caption.weight(.semibold))
+            VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                Text(note.title).font(ChatType.label)
                 if let prompt = note.prompt {
-                    Text(verbatim: prompt).font(.caption).foregroundStyle(.quietText).lineLimit(2)
+                    Text(verbatim: prompt).font(ChatType.caption).ink(.quiet, on: .field).lineLimit(2)
                 }
             }
             .accessibilityElement(children: .combine)
-            Spacer(minLength: 8)
+            Spacer(minLength: ChatSpace.beside)
             Button(note.back, action: back)
-                .font(.caption.weight(.semibold))
+                .font(ChatType.label)
                 .buttonStyle(.borderless)
                 .accessibilityHint("Puts the questions back in the chat")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, ChatSpace.edge)
     }
 }
 
@@ -391,11 +388,12 @@ struct AnsweringNoteView: View {
 /// and the record as its pill where there is one to open.
 struct ChangeHeaderView: View {
     let heading: ChangeHeading
+    @Scaled(.markColumn) private var column
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
+        HStack(alignment: .center, spacing: ChatSpace.words) {
             Image(systemName: symbol)
-                .frame(width: 20)
+                .frame(width: column)
             Text(heading.verb)
                 .fixedSize()
             if let record = heading.record {
@@ -403,18 +401,18 @@ struct ChangeHeaderView: View {
             } else {
                 Text(heading.words).lineLimit(1)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: ChatSpace.beside)
             if let badge = heading.badge, let label = heading.badgeLabel {
                 let applied = badge == .applied
                 Label(label, systemImage: applied ? "checkmark" : "xmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(applied ? ScreenTone.positive.textColor : Color.quietText)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background((applied ? Color.green : Color.secondary).opacity(ChatColours.badge), in: .capsule)
+                    .font(ChatType.label)
+                    .ink(applied ? .tone(.positive) : .tone(.quiet), on: .badge)
+                    .padding(.horizontal, ChatSpace.pillSide).padding(.vertical, ChatSpace.pillEdge)
+                    .background(ChatColours.badgeStyle(applied ? .positive : .quiet), in: .capsule)
                     .fixedSize()
             }
         }
-        .font(.subheadline.weight(.semibold))
+        .font(ChatType.heading)
     }
 
     private var symbol: String {
@@ -431,32 +429,32 @@ struct ChangePanel: View {
     let panel: ChangePanelPresentation
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
             ChangeHeaderView(heading: panel.heading)
             if let note = panel.note {
-                Text(note).font(.footnote).foregroundStyle(.quietText)
+                Text(note).font(ChatType.note).ink(.quiet, on: .card)
             }
             ForEach(panel.values) { line in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                    Text(line.label).font(ChatType.label).ink(.quiet, on: .card)
                     RecordValueView(line.value, struck: panel.struck)
-                        .font(.footnote)
+                        .font(ChatType.note)
                         .lineLimit(6)
                 }
             }
             if let more = panel.more {
-                Text(more).font(.caption).foregroundStyle(.quietText)
+                Text(more).font(ChatType.caption).ink(.quiet, on: .card)
             }
         }
-        .card(tint: tint)
+        .card(tone)
         .accessibilityElement(children: .combine)
     }
 
-    private var tint: Color? {
+    private var tone: ScreenTone? {
         switch panel.tint {
         case .plain: nil
-        case .applied: .green
-        case .suggested: .blue
+        case .applied: .positive
+        case .suggested: .informative
         }
     }
 }
@@ -519,7 +517,7 @@ struct ProviderKeySheet: View {
                 }
             }
         }
-        .frame(minWidth: 380, minHeight: 260)
+        .frame(minWidth: ChatSize.sheet.width, minHeight: ChatSize.sheet.height)
         .onChange(of: host.savedKey) { _, saved in
             if busy, saved == sheet.id { dismiss() }
         }

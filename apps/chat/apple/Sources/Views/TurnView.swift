@@ -30,8 +30,8 @@ struct TurnView: View, Equatable {
         case let .user(user): UserTurnView(turn: user)
         case let .trigger(words):
             Label(words, systemImage: "bolt.fill")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.quietText)
+                .font(ChatType.note)
+                .ink(.quiet, on: .page)
                 .frame(maxWidth: .infinity)
         case .assistant:
             // A reply is laid out as its pieces, which the transcript makes
@@ -40,12 +40,12 @@ struct TurnView: View, Equatable {
                 let pieces = TranscriptPiece.pieces(of: [turn])
                 ForEach(pieces) { piece in
                     TranscriptPieceView(piece: piece, cards: cards, expandThinking: expandThinking)
-                        .padding(.top, piece.id == pieces.first?.id ? 0 : TranscriptPiece.spacing)
+                        .padding(.top, piece.id == pieces.first?.id ? 0 : ChatSpace.turns)
                 }
             }
         case let .summary(summary): SummaryLine(turn: summary)
         case let .decision(line, suggestion):
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: ChatSpace.parts) {
                 OutcomeRow(line: line)
                 if let card = cards[suggestion]?.suggestion { SuggestionCardView(id: suggestion, card: card) }
             }
@@ -54,8 +54,8 @@ struct TurnView: View, Equatable {
         case let .system(text):
             Text(text)
                 .lineLimit(3)
-                .font(.caption)
-                .foregroundStyle(.quietText)
+                .font(ChatType.caption)
+                .ink(.quiet, on: .page)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -74,24 +74,24 @@ private struct UserTurnView: View {
     let turn: UserTurn
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .trailing, spacing: ChatSpace.lines) {
             if !turn.about.isEmpty {
-                HStack(spacing: 6) {
-                    Spacer(minLength: 48)
-                    Text(turn.aboutLabel).font(.caption).foregroundStyle(.quietText)
+                HStack(spacing: ChatSpace.words) {
+                    Spacer(minLength: ChatSize.bubbleGutter)
+                    Text(turn.aboutLabel).font(ChatType.caption).ink(.quiet, on: .page)
                     ForEach(turn.about) { RecordPill($0) }
                 }
-                .font(.footnote)
+                .font(ChatType.note)
                 .accessibilityElement(children: .combine)
             }
             HStack {
-                Spacer(minLength: 48)
+                Spacer(minLength: ChatSize.bubbleGutter)
                 Text(turn.text)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 20))
-                    .opacity(turn.pending ? 0.7 : 1)
+                    .padding(.horizontal, ChatSpace.inset)
+                    .padding(.vertical, ChatSpace.inner)
+                    .background(ChatColours.bubbleStyle, in: .rect(cornerRadius: ChatRadius.bubble))
+                    .opacity(turn.pending ? ChatColours.pending : 1)
                     .contextMenu {
                         Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.text) }
                     }
@@ -156,7 +156,7 @@ struct ReplyPageView: View, Equatable {
 
     var body: some View {
         let _ = Meter.shared.count(.body, "ReplyPage")
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
             if page == 0, let reasoning = reply.reasoning {
                 ReasoningView(reasoning: reasoning, expandByDefault: expandThinking, open: $thinkingOpen)
             }
@@ -215,19 +215,19 @@ struct ReplyTailView: View, Equatable {
     var body: some View {
         let _ = Meter.shared.count(.body, "ReplyTail")
         let turn = reply
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
             if let sources = turn.sources {
                 SourceListView(list: sources)
             }
             if !turn.linked.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: ChatSpace.lines) {
                     Text(turn.linkedLabel)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.quietText)
-                    WrapLayout(spacing: 6) {
+                        .font(ChatType.label)
+                        .ink(.quiet, on: .page)
+                    WrapLayout(spacing: ChatSpace.words) {
                         ForEach(turn.linked) { RecordPill($0) }
                     }
-                    .font(.footnote)
+                    .font(ChatType.note)
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(turn.linkedLabel)
@@ -257,8 +257,9 @@ struct ReplyTailView: View, Equatable {
 
 /// One lazy row of the transcript: a turn, or one of the rows a reply is
 /// laid out in (each page of its text, then what stands under it). The
-/// stack spaces its rows 22 points apart; a reply's rows stand as close as
-/// its blocks and its parts did inside one row, so `closer` is taken back.
+/// stack spaces its rows a turn apart (`ChatSpace.turns`); a reply's rows
+/// stand as close as its blocks and its parts did inside one row, so
+/// `closer` is taken back.
 struct TranscriptPiece: Identifiable {
     enum Part {
         case turn
@@ -269,11 +270,6 @@ struct TranscriptPiece: Identifiable {
         /// The line above the first turn its reader had not seen.
         case newLine(NewLine)
     }
-
-    /// The transcript's spacing, the Markdown blocks' and a turn's parts'.
-    static let spacing: CGFloat = 22
-    static let blockSpacing: CGFloat = 12
-    static let partSpacing: CGFloat = 10
 
     let id: String
     let turn: TurnPresentation
@@ -332,12 +328,12 @@ struct TranscriptPiece: Identifiable {
                 out.append(TranscriptPiece(id: turn.id, turn: turn, part: .page(0), closer: 0))
                 if reply.text != nil {
                     for page in reply.pages.indices.dropFirst() {
-                        out.append(TranscriptPiece(id: "\(turn.id)/\(page)", turn: turn, part: .page(page), closer: spacing - blockSpacing))
+                        out.append(TranscriptPiece(id: "\(turn.id)/\(page)", turn: turn, part: .page(page), closer: ChatSpace.turns - ChatSpace.blocks))
                     }
                 }
             }
             if tailed {
-                out.append(TranscriptPiece(id: "\(turn.id)/tail", turn: turn, part: .tail, closer: headed ? spacing - partSpacing : 0))
+                out.append(TranscriptPiece(id: "\(turn.id)/tail", turn: turn, part: .tail, closer: headed ? ChatSpace.turns - ChatSpace.parts : 0))
             }
         }
         return out
@@ -366,7 +362,7 @@ struct TranscriptPieceView: View {
         case let (.failure(failure), _):
             FailureView(failure: failure, act: act)
         case let (.newLine(line), _):
-            NewLineView(line: line).padding(.top, 8)
+            NewLineView(line: line).padding(.top, ChatSpace.items)
         case let (.page(page), .assistant(reply)):
             ReplyPageView(
                 id: piece.turn.id, reply: reply, page: page, expandThinking: expandThinking, actions: piece.actions, shows: piece.drawsActions, act: act
@@ -381,7 +377,7 @@ struct TranscriptPieceView: View {
             if piece.drawsActions, let actions = piece.actions {
                 // One view all the same: the turn, and Try Again under it
                 // on the side the turn stands on.
-                VStack(spacing: TranscriptPiece.partSpacing) {
+                VStack(spacing: ChatSpace.parts) {
                     TurnView(turn: piece.turn, cards: cards, expandThinking: expandThinking)
                         .equatable()
                     ReplyActionsRow(actions: actions, text: nil, trailing: piece.turn.isUsers, act: act)
@@ -416,57 +412,55 @@ struct ReasoningView: View {
     /// Kept by the row, which outlives a change of what stands in it.
     @Binding var open: Bool?
     /// About three lines of the thinking, at the text's size.
-    @ScaledMetric(relativeTo: .footnote) private var window = 58.0
+    @Scaled(.thinkingWindow) private var window
 
     var body: some View {
         let expanded = open ?? expandByDefault
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: ChatSpace.items) {
             Button {
-                withAnimation(.snappy) { open = !expanded }
+                ChatMotion.animate(.fold) { open = !expanded }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: ChatSpace.words) {
                     Image(systemName: "brain")
-                        .symbolEffect(.pulse, isActive: reasoning.thinking)
+                        .pulses(while: reasoning.thinking)
                     if reasoning.thinking {
                         Text(reasoning.label).shimmer()
                     } else {
                         Text(reasoning.label)
                     }
                     Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
+                        .font(ChatType.smallLabel)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
-                .font(.subheadline)
-                .foregroundStyle(.quietText)
+                .font(ChatType.detail)
+                .ink(.quiet, on: .page)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityValue(expanded ? "Shown" : "Hidden")
             if expanded {
                 Text(reasoning.text)
-                    .font(.subheadline)
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.detail)
+                    .ink(.quiet, on: .page)
                     .textSelection(.enabled)
-                    .padding(.leading, 12)
+                    .padding(.leading, ChatSpace.indent)
                     .overlay(alignment: .leading) {
-                        Rectangle().fill(.quaternary).frame(width: 2)
+                        Rectangle().fill(ChatColours.ruleStyle).frame(width: ChatLine.rail)
                     }
             } else if reasoning.thinking {
                 // The newest lines, the older ones fading out at the top:
                 // where the thinking has got to, in a height that holds.
                 Text(reasoning.tail)
-                    .font(.footnote)
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.note)
+                    .ink(.quiet, on: .page)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: window, alignment: .bottom)
                     .clipped()
-                    .mask {
-                        LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)], startPoint: .top, endPoint: .bottom)
-                    }
-                    .padding(.leading, 12)
+                    .mask { ChatColours.fadesFromTop }
+                    .padding(.leading, ChatSpace.indent)
                     .overlay(alignment: .leading) {
-                        Rectangle().fill(.quaternary).frame(width: 2)
+                        Rectangle().fill(ChatColours.ruleStyle).frame(width: ChatLine.rail)
                     }
                     // The label says it is thinking; its words are read
                     // when the section is opened.
@@ -505,6 +499,7 @@ struct ToolCallRow: View {
     let tool: ToolRowPresentation
     @State private var open = false
     @State private var raw = false
+    @Scaled(.markColumn) private var column
 
     /// The line, naming the record it worked on once its heading is read
     /// where nothing in the chat carried it.
@@ -514,28 +509,28 @@ struct ToolCallRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: ChatSpace.items) {
             Button {
-                withAnimation(.snappy) { open.toggle() }
+                ChatMotion.animate(.fold) { open.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: ChatSpace.beside) {
                     status
-                        .frame(width: 18)
-                    VStack(alignment: .leading, spacing: 2) {
+                        .frame(width: column)
+                    VStack(alignment: .leading, spacing: ChatSpace.pair) {
                         Text(summary)
-                            .font(.subheadline)
-                            .foregroundStyle(.quietText)
+                            .font(ChatType.detail)
+                            .ink(.quiet, on: .page)
                             .multilineTextAlignment(.leading)
                         if let label = tool.statusLabel {
                             Text(label)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(tool.status == .held ? ScreenTone.caution.textColor : Color.quietText)
+                                .font(ChatType.label)
+                                .ink(tool.status == .held ? .tone(.caution) : .quiet, on: .page)
                         }
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(ChatType.smallLabel)
+                        .ink(.faint, on: .page)
                         .rotationEffect(.degrees(open ? 90 : 0))
                 }
                 .contentShape(.rect)
@@ -543,40 +538,40 @@ struct ToolCallRow: View {
             .buttonStyle(.plain)
             .accessibilityHint(open ? "Hides the details" : "Shows the details")
             if open || (opensEnded && tool.resolution != nil) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: ChatSpace.items) {
                     // A card that ended: what was asked and what was answered.
                     if let resolution = tool.resolution { ResolvedCardView(resolution: resolution) }
                     ForEach(Array(tool.details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
                     if let link = tool.thread, let openThread {
                         Button(link.label, systemImage: "bubble.left.and.bubble.right") { openThread(link.thread) }
-                            .font(.footnote)
+                            .font(ChatType.note)
                             .buttonStyle(.borderless)
                     }
                     DisclosureGroup("Details", isExpanded: $raw) {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: ChatSpace.lines) {
                             ForEach(tool.raw, id: \.self) { line in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(line.label).font(.caption2.weight(.semibold)).foregroundStyle(.quietText)
+                                VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                                    Text(line.label).font(ChatType.smallLabel).ink(.quiet, on: .page)
                                     Text(line.value)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.quietText)
+                                        .font(ChatType.verbatim)
+                                        .ink(.quiet, on: .page)
                                         .textSelection(.enabled)
                                         .lineLimit(40)
                                 }
                             }
                         }
                     }
-                    .font(.caption)
+                    .font(ChatType.caption)
                 }
-                .padding(.leading, 26)
+                .padding(.leading, column + ChatSpace.beside)
             }
             if let sources = tool.sources {
                 SourceListView(list: sources)
-                    .padding(.leading, 26)
+                    .padding(.leading, column + ChatSpace.beside)
             }
             ForEach(Array(tool.chips.enumerated()), id: \.offset) { _, chips in
                 RecordChipsView(chips: chips)
-                    .padding(.leading, 26)
+                    .padding(.leading, column + ChatSpace.beside)
             }
         }
         .task(id: tool.unnamed?.record) {
@@ -587,10 +582,10 @@ struct ToolCallRow: View {
     @ViewBuilder private var status: some View {
         switch tool.status {
         case .running, .working: ProgressView().controlSize(.mini)
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-        case .held: Image(systemName: "hourglass.circle.fill").foregroundStyle(.orange)
-        case .declined: Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+        case .done: Image(systemName: "checkmark.circle.fill").ink(.mark(.positive), on: .page)
+        case .failed: Image(systemName: "xmark.circle.fill").ink(.mark(.critical), on: .page)
+        case .held: Image(systemName: "hourglass.circle.fill").ink(.mark(.caution), on: .page)
+        case .declined: Image(systemName: "xmark.circle.fill").ink(.mark(.quiet), on: .page)
         }
     }
 }
@@ -602,30 +597,30 @@ private struct DetailLine: View {
         switch detail {
         case let .failed(reason):
             Label(reason, systemImage: "xmark.octagon")
-                .font(.footnote)
-                .foregroundStyle(ScreenTone.critical.textColor)
+                .font(ChatType.note)
+                .ink(.tone(.critical), on: .page)
         case let .found(words, records):
-            VStack(alignment: .leading, spacing: 6) {
-                Text(words).font(.footnote).foregroundStyle(.quietText)
-                WrapLayout(spacing: 6) {
+            VStack(alignment: .leading, spacing: ChatSpace.lines) {
+                Text(words).font(ChatType.note).ink(.quiet, on: .page)
+                WrapLayout(spacing: ChatSpace.words) {
                     ForEach(records) { RecordPill($0) }
                 }
-                .font(.footnote)
+                .font(ChatType.note)
             }
         case let .changed(runs):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: ChatSpace.lines) {
                 ForEach(Array(runs.enumerated()), id: \.offset) { _, chips in RecordChipsView(chips: chips) }
             }
         case let .wrote(words):
-            Text(words).font(.footnote).foregroundStyle(.quietText)
+            Text(words).font(ChatType.note).ink(.quiet, on: .page)
         case let .reply(heading, text):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(heading).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
-                MarkdownView(text: text).font(.footnote)
+            VStack(alignment: .leading, spacing: ChatSpace.lines) {
+                Text(heading).font(ChatType.label).ink(.quiet, on: .card)
+                MarkdownView(text: text).font(ChatType.note)
             }
             .card()
         case let .output(raw):
-            Text(raw).font(.caption.monospaced()).foregroundStyle(.quietText).lineLimit(12).textSelection(.enabled)
+            Text(raw).font(ChatType.verbatim).ink(.quiet, on: .page).lineLimit(12).textSelection(.enabled)
         }
     }
 }
@@ -638,24 +633,24 @@ private struct RecordChipsView: View {
 
     var body: some View {
         let shown = all ? chips.records : Array(chips.records.prefix(RecordChips.first))
-        WrapLayout(spacing: 6) {
+        WrapLayout(spacing: ChatSpace.words) {
             if let lead = chips.lead {
-                Text(lead).foregroundStyle(.quietText)
+                Text(lead).ink(.quiet, on: .page)
             }
             ForEach(Array(shown.enumerated()), id: \.offset) { _, chip in
                 RecordPill(chip.record, title: chip.title)
             }
             if let more = chips.more(shown: shown.count) {
                 if chips.records.count > shown.count {
-                    Button(more) { withAnimation(.snappy) { all = true } }
+                    Button(more) { ChatMotion.animate(.fold) { all = true } }
                         .buttonStyle(.borderless)
                         .accessibilityHint("Shows the rest")
                 } else {
-                    Text(more).foregroundStyle(.quietText)
+                    Text(more).ink(.quiet, on: .page)
                 }
             }
         }
-        .font(.footnote)
+        .font(ChatType.note)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(chips.label)
     }
@@ -666,23 +661,23 @@ private struct SummaryLine: View {
     @State private var open = false
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Rectangle().fill(.quaternary).frame(height: 1)
+        VStack(spacing: ChatSpace.items) {
+            HStack(spacing: ChatSpace.apart) {
+                Rectangle().fill(ChatColours.ruleStyle).frame(height: ChatLine.rule)
                 Button {
-                    withAnimation(.snappy) { open.toggle() }
+                    ChatMotion.animate(.fold) { open.toggle() }
                 } label: {
                     Label(turn.label, systemImage: "rectangle.compress.vertical")
-                        .font(.caption)
-                        .foregroundStyle(.quietText)
+                        .font(ChatType.caption)
+                        .ink(.quiet, on: .page)
                         .fixedSize()
                 }
                 .buttonStyle(.plain)
                 .disabled(turn.content.isEmpty)
-                Rectangle().fill(.quaternary).frame(height: 1)
+                Rectangle().fill(ChatColours.ruleStyle).frame(height: ChatLine.rule)
             }
             if open, !turn.content.isEmpty {
-                MarkdownView(text: turn.content).font(.footnote).foregroundStyle(.quietText).card()
+                MarkdownView(text: turn.content).font(ChatType.note).ink(.quiet, on: .card).card()
             }
         }
     }
@@ -692,15 +687,16 @@ private struct SummaryLine: View {
 /// the words.
 private struct OutcomeRow: View {
     let line: OutcomeLine
+    @Scaled(.markColumn) private var column
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: ChatSpace.beside) {
             Image(systemName: line.done ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(line.done ? Color.green : Color.secondary)
-                .frame(width: 18)
+                .ink(line.done ? .mark(.positive) : .mark(.quiet), on: .page)
+                .frame(width: column)
             Text(line.text)
-                .font(.subheadline)
-                .foregroundStyle(.quietText)
+                .font(ChatType.detail)
+                .ink(.quiet, on: .page)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -710,26 +706,21 @@ private struct OutcomeRow: View {
 
 /// Three dots while a reply has not begun.
 struct TypingDots: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Scaled(.dot) private var dot
     @State private var phase = 0
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: ChatSpace.mark) {
             ForEach(0 ..< 3) { i in
                 Circle()
-                    .fill(.secondary)
-                    .frame(width: 7, height: 7)
-                    .opacity(phase == i ? 1 : 0.35)
+                    .ink(.quiet, on: .page)
+                    .frame(width: dot, height: dot)
+                    .opacity(phase == i ? 1 : ChatColours.dimmed)
             }
         }
-        .padding(.vertical, 6)
-        .task {
-            guard !reduceMotion else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(320))
-                withAnimation(.easeInOut(duration: 0.25)) { phase = (phase + 1) % 3 }
-            }
-        }
+        .padding(.vertical, ChatSpace.lines)
+        // Still under Reduce Motion: the first dot lit, the others dim.
+        .task { await ChatMotion.beats { phase = (phase + 1) % 3 } }
         .accessibilityLabel("Answering")
     }
 }

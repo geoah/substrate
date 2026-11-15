@@ -48,7 +48,7 @@ struct MarkdownView: View {
         // By position: the block being written keeps its view, and with it
         // where its code or its table was scrolled to. A finished block is
         // an equal value there, which is not drawn again.
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: ChatSpace.blocks) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 BlockView(block: row.block, code: row.code[...])
             }
@@ -232,8 +232,8 @@ func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString 
             }
         }
         if run.inlinePresentationIntent?.contains(.code) == true {
-            out[run.range].font = .system(.body, design: .monospaced)
-            out[run.range].backgroundColor = Color.secondary.opacity(0.14)
+            out[run.range].font = ChatType.inlineCode
+            out[run.range].backgroundColor = ChatColours.inlineCodeStyle
         }
     }
     return out
@@ -265,44 +265,47 @@ private struct BlockView: View {
                 .fixedSize(horizontal: false, vertical: true)
         case let .heading(level, text):
             inline(text, missing: missing)
-                .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
-                .padding(.top, level <= 2 ? 6 : 2)
+                .font(ChatType.heading(level: level))
+                .padding(.top, level <= 2 ? ChatSpace.lines : ChatSpace.pair)
                 .accessibilityAddTraits(.isHeader)
         case let .code(language, text, _):
             CodeBlockView(language: language, text: text, code: code.first)
         case let .quote(blocks):
             let colours = colours(blocks, from: code.startIndex)
-            HStack(alignment: .top, spacing: 10) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(.tertiary)
-                    .frame(width: 3)
-                VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: ChatSpace.indent - ChatLine.rail) {
+                Capsule()
+                    .fill(ChatColours.railStyle)
+                    .frame(width: ChatLine.rail)
+                VStack(alignment: .leading, spacing: ChatSpace.parts) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in BlockView(block: block, code: colours[index]) }
                 }
-                .foregroundStyle(.secondary)
+                // Quoted words are quiet, and still read: the system's
+                // secondary label is 3.4:1 on a white page.
+                .ink(.quiet, on: .page, .card)
             }
         case let .list(ordered, start, items):
             // Each item's code follows the code of the items before it.
             let starts = items.reduce(into: [code.startIndex]) { starts, item in
                 starts.append((starts.last ?? 0) + item.blocks.reduce(0) { $0 + $1.codeCount })
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: ChatSpace.lines) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Group {
-                            if let checked = item.checked {
-                                Image(systemName: checked ? "checkmark.square.fill" : "square")
-                                    .foregroundStyle(checked ? Color.accentColor : .secondary)
-                            } else if ordered {
-                                Text("\(start + index).").monospacedDigit()
-                            } else {
-                                Text("•")
-                            }
+                    HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
+                        if let checked = item.checked {
+                            Image(systemName: checked ? "checkmark.square.fill" : "square")
+                                .ink(checked ? .accent : .quiet, on: .page, .card)
+                        } else if ordered {
+                            // As wide as the list's last number, at the
+                            // text's size, so every item starts in one
+                            // column however many there are.
+                            Text("\(start + items.count - 1).").monospacedDigit().hidden()
+                                .overlay(alignment: .trailing) { Text("\(start + index).").monospacedDigit().fixedSize() }
+                                .ink(.quiet, on: .page, .card)
+                        } else {
+                            Text("•").ink(.quiet, on: .page, .card)
                         }
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: ordered ? 22 : 12, alignment: .trailing)
                         let colours = colours(item.blocks, from: starts[index])
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: ChatSpace.lines) {
                             ForEach(Array(item.blocks.enumerated()), id: \.offset) { at, block in BlockView(block: block, code: colours[at]) }
                         }
                     }
@@ -311,7 +314,7 @@ private struct BlockView: View {
         case let .table(header, alignments, rows):
             TableBlockView(header: header, alignments: alignments, rows: rows)
         case .rule:
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, ChatSpace.mark)
         }
     }
 }

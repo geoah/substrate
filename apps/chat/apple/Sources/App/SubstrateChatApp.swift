@@ -59,7 +59,7 @@ struct SubstrateChatApp: App {
                 .onChange(of: host.chats?.offered) { _, _ in ChatShortcuts.updateAppShortcutParameters() }
         }
         #if os(macOS)
-        .defaultSize(width: 1080, height: 760)
+        .defaultSize(ChatSize.window)
         .windowToolbarStyle(.unified)
         .commands {
             ChatCommands(host: host)
@@ -73,11 +73,11 @@ struct SubstrateChatApp: App {
                 SettingsView()
                     .environment(host)
                     .environmentObject(updates)
-                    .frame(width: 560, height: 620)
+                    .frame(width: ChatSize.settings.width, height: ChatSize.settings.height)
             } else {
                 Text("Sign in to change settings.")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 360, height: 160)
+                    .ink(.quiet, on: .page)
+                    .frame(width: ChatSize.settingsEmpty.width, height: ChatSize.settingsEmpty.height)
             }
         }
         #endif

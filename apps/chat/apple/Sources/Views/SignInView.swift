@@ -55,7 +55,7 @@ private struct PasswordDoor: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: ChatSpace.blocks) {
             field("Name", systemImage: "person.crop.circle") {
                 TextField("you.example.com", text: $repository)
                     .textContentType(.username)
@@ -103,44 +103,22 @@ private struct PasswordDoor: View {
 
             if let problem {
                 ProblemBox(title: "Couldn't sign in", message: problem)
-                    .card(tint: .red)
-                    .padding(.top, 16)
+                    .card(.critical)
+                    .padding(.top, ChatSpace.edge)
             }
 
-            Button(action: signIn) {
-                HStack(spacing: 8) {
-                    if busy { ProgressView().controlSize(.small) }
-                    Text("Sign In")
-                }
-                .frame(maxWidth: .infinity, minHeight: 30)
-            }
-            .buttonStyle(.borderedProminent)
-            // White on the accent as a fill: on the dark mode's accent,
-            // which is a text tone, it is 2.8:1.
-            .tint(.accentFill)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .disabled(busy || !ready)
-            .keyboardShortcut(.defaultAction)
-            .padding(.top, 16)
+            // The connect screen's own button, as its fields are its own.
+            ConnectButton("Sign In", busy: busy, action: signIn)
+                .disabled(busy || !ready)
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, ChatSpace.edge)
         }
         .disabled(busy)
         .onAppear { focus = repository.isEmpty ? .repository : .password }
     }
 
     private func field(_ label: String, systemImage: String, @ViewBuilder content: () -> some View) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-            content()
-                .textFieldStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 50)
-        .background(.fill.tertiary, in: .rect(cornerRadius: 14))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(label)
+        ConnectField(label, systemImage: systemImage, content: content)
     }
 
     private func signIn() {
@@ -177,33 +155,34 @@ private struct PasswordDoor: View {
 struct NoChatAccessView: View {
     @Environment(ChatHost.self) private var host
     @State private var changingAccess = false
+    @Scaled(.appMark) private var mark
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: ChatSpace.margin) {
             Image("AppMark")
                 .resizable()
-                .frame(width: 72, height: 72)
+                .frame(width: mark, height: mark)
                 .accessibilityHidden(true)
             Text("Substrate Chat can't talk to your assistants")
-                .font(.title2.weight(.semibold))
+                .font(ChatType.title)
                 .multilineTextAlignment(.center)
             Text("The approval on \(host.chats?.host ?? "your substrate") left out talking to your agents. Change its access and keep that one checked.")
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .ink(.quiet, on: .page)
             if let problem = host.authorizeProblem {
                 ProblemBox(title: "Access didn't change", message: problem)
-                    .card(tint: .red)
+                    .card(.critical)
             }
             Button {
                 changingAccess = true
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: ChatSpace.beside) {
                     if host.authorizing { ProgressView().controlSize(.small) }
                     Text("Change Access…")
                 }
             }
             .buttonStyle(.glassProminent)
-            .tint(.accentFill)
+            .prominentTint()
             .controlSize(.large)
             .disabled(host.authorizing && !WebAuthenticator.opensBrowser)
             if host.authorizing, WebAuthenticator.opensBrowser {
@@ -213,8 +192,8 @@ struct NoChatAccessView: View {
             Button("Sign Out", role: .destructive) { host.signOut() }
                 .buttonStyle(.borderless)
         }
-        .padding(32)
-        .frame(maxWidth: 440)
+        .padding(ChatSpace.screen)
+        .frame(maxWidth: ChatSize.door)
         .sheet(isPresented: $changingAccess) { ReviewSheet(isPresented: $changingAccess, changingAccess: true) }
     }
 }

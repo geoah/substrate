@@ -41,11 +41,11 @@ struct NewLineView: View {
     let line: NewLine
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: ChatSpace.apart) {
             rule
             Text(line.label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
+                .font(ChatType.label)
+                .ink(.accent, on: .page)
             rule
         }
         .accessibilityElement(children: .ignore)
@@ -54,7 +54,7 @@ struct NewLineView: View {
     }
 
     private var rule: some View {
-        Rectangle().fill(Color.accentColor.opacity(0.5)).frame(height: 1)
+        Rectangle().fill(ChatColours.newRule).frame(height: ChatLine.rule)
     }
 }
 
@@ -66,17 +66,17 @@ struct NotificationOfferView: View {
     let offer: NotificationOfferPresentation
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
+            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
                 Image(systemName: "bell.badge")
-                    .foregroundStyle(Color.accentColor)
+                    .ink(.accent, on: .card)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
                     Text(offer.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(ChatType.heading)
                     Text(offer.message)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(ChatType.detail)
+                        .ink(.quiet, on: .card)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
@@ -84,8 +84,8 @@ struct NotificationOfferView: View {
             // Side by side, or one above the other where the text size
             // leaves no room.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { buttons }
-                VStack(alignment: .leading, spacing: 8) { buttons }
+                HStack(spacing: ChatSpace.apart) { buttons }
+                VStack(alignment: .leading, spacing: ChatSpace.items) { buttons }
             }
         }
         .card()
@@ -94,6 +94,7 @@ struct NotificationOfferView: View {
     @ViewBuilder private var buttons: some View {
         Button(offer.allow) { host.send(.notifications(allow: true)) }
             .buttonStyle(.borderedProminent)
+            .prominentTint()
         Button(offer.decline) { host.send(.notifications(allow: false)) }
             .buttonStyle(.bordered)
     }

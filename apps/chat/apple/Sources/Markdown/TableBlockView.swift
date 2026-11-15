@@ -2,20 +2,6 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// The sizes a table is drawn with, at the text's size.
-struct TableMetrics {
-    /// The space inside a cell, and the first and last column's to the
-    /// table's edge.
-    static let cellInset = EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10)
-    static let edgeInset: CGFloat = 12
-    static let radius: CGFloat = 12
-    /// Between two cards, and between two lines of one.
-    static let cardSpacing: CGFloat = 8
-    static let lineSpacing: CGFloat = 6
-    /// A hairline between rows, and beside the held column.
-    static let rule: CGFloat = 0.5
-}
-
 /// A reply's table: at its natural width where that fits, its wide columns
 /// wrapped where that makes it fit, and otherwise scrolled sideways with
 /// its first column held in place. At the accessibility text sizes each row
@@ -59,20 +45,20 @@ struct TableBlockView: View {
             TableGrid(columns: header.count, room: scroll.room, metrics: metrics) {
                 ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
                     self.cell(cell, column: column, row: 0)
-                        .font(.subheadline.weight(.semibold))
+                        .font(ChatType.heading)
                         .accessibilityAddTraits(.isHeader)
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { row, cells in
                     ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
                         self.cell(cell, column: column, row: row + 1)
-                            .font(.subheadline)
+                            .font(ChatType.detail)
                     }
                 }
             }
             // The fill is the table's own, as wide as its columns: one
             // narrower than its room is a card of its own width, and one
             // that scrolls is rounded where the scroll view cuts it.
-            .background(ChatColours.tableFill.color, in: .rect(cornerRadius: TableMetrics.radius))
+            .background(ChatColours.tableStyle, in: .rect(cornerRadius: ChatRadius.block))
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .onScrollGeometryChange(for: Scrolled.self) { geometry in
@@ -80,7 +66,7 @@ struct TableBlockView: View {
         } action: { _, now in
             if now != scroll { scroll = now }
         }
-        .clipShape(.rect(cornerRadius: TableMetrics.radius))
+        .clipShape(.rect(cornerRadius: ChatRadius.block))
     }
 
     /// One cell, filling its place in the grid.
@@ -88,14 +74,16 @@ struct TableBlockView: View {
         let first = column == 0
         return inline(text, missing: missing)
             .multilineTextAlignment(textAlignment(column))
-            .padding(TableMetrics.cellInset)
-            .padding(.leading, first ? TableMetrics.edgeInset - TableMetrics.cellInset.leading : 0)
-            .padding(.trailing, column == header.count - 1 ? TableMetrics.edgeInset - TableMetrics.cellInset.trailing : 0)
+            // A cell's words from its edges, and the first and last
+            // column's from the table's.
+            .padding(.vertical, ChatSpace.lines)
+            .padding(.leading, first ? ChatSpace.blockInset : ChatSpace.inner)
+            .padding(.trailing, column == header.count - 1 ? ChatSpace.blockInset : ChatSpace.inner)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Alignment(horizontal: alignment(column), vertical: .top))
             // A line above every row but the header's first, the header's
             // own a little stronger.
             .overlay(alignment: .top) {
-                if row > 0 { Rectangle().fill(Color.secondary.opacity(row == 1 ? 0.35 : 0.18)).frame(height: TableMetrics.rule) }
+                if row > 0 { Rectangle().fill(row == 1 ? ChatColours.tableRule.header : ChatColours.tableRule.row).frame(height: ChatLine.hairline) }
             }
             .modifier(HeldColumn(held: first, scrolls: scroll.scrolls))
     }
@@ -114,9 +102,9 @@ struct TableBlockView: View {
         func body(content: Content) -> some View {
             if held, scrolls {
                 content
-                    .background(ChatColours.tableFill.color)
+                    .background(ChatColours.tableStyle)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: TableMetrics.rule)
+                        Rectangle().fill(ChatColours.tableRule.held).frame(width: ChatLine.hairline)
                     }
                     .visualEffect { content, proxy in
                         content.offset(x: max(0, -proxy.frame(in: .scrollView(axis: .horizontal)).minX))
@@ -133,27 +121,27 @@ struct TableBlockView: View {
     /// One card for each row: each header beside its value, the header's
     /// column as wide as the widest header and no more than its share.
     private var cards: some View {
-        VStack(alignment: .leading, spacing: TableMetrics.cardSpacing) {
+        VStack(alignment: .leading, spacing: ChatSpace.items) {
             // A table with no row yet (its header alone, as one being
             // written is for a moment) is one card of its headers.
             ForEach(Array((rows.isEmpty ? [[]] : rows).enumerated()), id: \.offset) { _, cells in
                 TableGrid(columns: 2, room: 0, metrics: metrics, shares: true) {
                     ForEach(Array(header.enumerated()), id: \.offset) { column, name in
                         inline(name, missing: missing)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.quietText)
-                            .padding(.trailing, TableMetrics.cellInset.trailing)
-                            .padding(.vertical, TableMetrics.lineSpacing / 2)
+                            .font(ChatType.heading)
+                            .ink(.quiet, on: .table)
+                            .padding(.trailing, ChatSpace.inner)
+                            .padding(.vertical, ChatSpace.lines / 2)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         inline(column < cells.count ? cells[column] : "", missing: missing)
-                            .font(.subheadline)
-                            .padding(.vertical, TableMetrics.lineSpacing / 2)
+                            .font(ChatType.detail)
+                            .padding(.vertical, ChatSpace.lines / 2)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
-                .padding(TableMetrics.edgeInset)
+                .padding(ChatSpace.blockInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ChatColours.tableFill.color, in: .rect(cornerRadius: TableMetrics.radius))
+                .background(ChatColours.tableStyle, in: .rect(cornerRadius: ChatRadius.block))
                 // A card is read in its order: each header, then its value.
                 .accessibilityElement(children: .contain)
             }

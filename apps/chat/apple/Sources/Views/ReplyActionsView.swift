@@ -2,20 +2,6 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// The sizes the row under a reply is drawn with.
-enum ReplyActionMetrics {
-    /// The least a control may be to touch.
-    static let target: CGFloat = CodeMetrics.target
-    /// How far the row is drawn into the space above and below it: its
-    /// marks are small and its targets are not, and a row a target high
-    /// would stand apart from the reply it belongs to.
-    static let tuck: CGFloat = 8
-    /// A mark's width at the usual text size: its target is wider, and
-    /// the row is moved back by half the difference, so the first mark and
-    /// not its target's edge stands under the reply's first letter.
-    static let mark: CGFloat = 16
-}
-
 /// What stands under the last reply of a chat: Copy, Try Again or Continue
 /// where the run can go on and its card does not offer that, and Share. A
 /// row of small marks, each a whole target to touch and labelled for
@@ -31,8 +17,10 @@ struct ReplyActionsRow: View, Equatable {
     var trailing = false
     /// What Try Again and Continue do.
     var act: (FailureAction) -> Void = { _ in }
-    /// A mark's width at the text's size.
-    @ScaledMetric(relativeTo: .subheadline) private var mark = ReplyActionMetrics.mark
+    /// A mark's width at the text's size: its target is wider, and the
+    /// row is moved back by half the difference, so the first mark and not
+    /// its target's edge stands under the reply's first letter.
+    @Scaled(.actionMark) private var mark
 
     static func == (lhs: ReplyActionsRow, rhs: ReplyActionsRow) -> Bool {
         // A reply being written has other text at every flush, which only
@@ -52,7 +40,7 @@ struct ReplyActionsRow: View, Equatable {
             if actions.whole, let text {
                 ShareLink(item: text) {
                     Image(systemName: "square.and.arrow.up")
-                        .foregroundStyle(.quietText)
+                        .ink(.quiet, on: .page)
                         .barTarget()
                 }
                 .buttonStyle(.borderless)
@@ -60,10 +48,13 @@ struct ReplyActionsRow: View, Equatable {
                 .help(actions.shareLabel)
             }
         }
-        .font(.subheadline)
-        .frame(minHeight: ReplyActionMetrics.target)
-        .padding(.leading, actions.copies ? -max(0, (ReplyActionMetrics.target - mark) / 2) : 0)
-        .padding(.vertical, -ReplyActionMetrics.tuck)
+        .font(ChatType.detail)
+        .frame(minHeight: ChatSize.target)
+        .padding(.leading, actions.copies ? -max(0, (ChatSize.target - mark) / 2) : 0)
+        // Drawn into the space above and below it: its marks are small
+        // and its targets are not, and a row a target high would stand
+        // apart from the reply it belongs to.
+        .padding(.vertical, -ChatSpace.items)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
         .accessibilityElement(children: .contain)
     }
@@ -97,7 +88,7 @@ private struct ResumeButton: View {
     private func label(at now: Date) -> some View {
         let enabled = button.enabled(at: now)
         return Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: ChatSpace.mark) {
                 if button.busy {
                     ProgressView().controlSize(.small)
                 } else {
@@ -105,9 +96,9 @@ private struct ResumeButton: View {
                 }
                 Text(button.title(at: now)).monospacedDigit()
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(enabled ? Color.accentColor : .quietText)
-            .padding(.horizontal, 10)
+            .font(ChatType.heading)
+            .ink(enabled ? .accent : .quiet, on: .page)
+            .padding(.horizontal, ChatSpace.inner)
             .barTarget()
         }
         .buttonStyle(.borderless)

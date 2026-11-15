@@ -9,8 +9,7 @@ import SwiftUI
 /// whose words they are. Never an alert.
 struct FailureView: View {
     @Environment(\.colorScheme) private var scheme
-    @ScaledMetric(relativeTo: .subheadline) private var symbolWidth = 22.0
-    @ScaledMetric(relativeTo: .subheadline) private var pad = 14.0
+    @Scaled(.markColumn) private var symbolWidth
     let failure: FailurePresentation
     let act: (FailureAction) -> Void
     @State private var open: Bool
@@ -25,8 +24,8 @@ struct FailureView: View {
     private var palette: FailurePalette { .of(failure.tone, dark: scheme == .dark) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        VStack(alignment: .leading, spacing: ChatSpace.parts) {
+            HStack(alignment: .firstTextBaseline, spacing: ChatSpace.beside) {
                 Group {
                     if failure.working {
                         ProgressView().controlSize(.small)
@@ -37,13 +36,13 @@ struct FailureView: View {
                 .frame(width: symbolWidth, alignment: .center)
                 .accessibilityHidden(true)
                 // One element, its sentence the label: the note follows it.
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
                     Text(failure.sentence)
-                        .font(.subheadline.weight(.semibold))
+                        .font(ChatType.heading)
                         .foregroundStyle(Color(palette.ink))
                     if let note = failure.note {
                         Text(note)
-                            .font(.subheadline)
+                            .font(ChatType.detail)
                             .foregroundStyle(Color(palette.soft))
                     }
                 }
@@ -60,12 +59,15 @@ struct FailureView: View {
                         act(dismiss)
                     } label: {
                         Image(systemName: edits ? "square.and.pencil" : "xmark")
-                            .font(.footnote.weight(.semibold))
+                            .font(ChatType.noteStrong)
                             .foregroundStyle(Color(palette.soft))
-                            .frame(minWidth: 28, minHeight: 28)
+                            .frame(minWidth: ChatSize.target, minHeight: ChatSize.target, alignment: .topTrailing)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    // The mark stands at the card's corner; its room to
+                    // touch reaches down and in from it.
+                    .frame(width: symbolWidth, height: symbolWidth, alignment: .topTrailing)
                     .accessibilityLabel(edits ? "Edit Message" : "Dismiss")
                     .help(edits ? "Edit Message" : "Dismiss")
                 }
@@ -74,31 +76,31 @@ struct FailureView: View {
                 // Under the words, past the symbol; one above the other
                 // where the text size leaves no room side by side.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) { controls }
-                    VStack(alignment: .leading, spacing: 8) { controls }
+                    HStack(spacing: ChatSpace.inset) { controls }
+                    VStack(alignment: .leading, spacing: ChatSpace.items) { controls }
                 }
-                .padding(.leading, symbolWidth + 10)
+                .padding(.leading, symbolWidth + ChatSpace.beside)
             }
             if open, let details = failure.details {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: ChatSpace.pair) {
                     Text(details.label)
-                        .font(.caption.weight(.semibold))
+                        .font(ChatType.label)
                         .foregroundStyle(Color(palette.soft))
                     Text(details.text)
-                        .font(.caption.monospaced())
+                        .font(ChatType.verbatim)
                         .foregroundStyle(Color(palette.soft))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.leading, symbolWidth + 10)
+                .padding(.leading, symbolWidth + ChatSpace.beside)
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(pad)
+        .padding(ChatSpace.inset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(palette.fill), in: .rect(cornerRadius: 16))
+        .background(Color(palette.fill), in: .rect(cornerRadius: ChatRadius.card))
         .overlay {
-            RoundedRectangle(cornerRadius: 16).strokeBorder(Color(palette.edge), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: ChatRadius.card).strokeBorder(Color(palette.edge), lineWidth: ChatLine.hairline)
         }
         .accessibilityElement(children: .contain)
         .onChange(of: failure.id) { _, _ in open = false }
@@ -110,17 +112,17 @@ struct FailureView: View {
         }
         if let details = failure.details {
             Button {
-                withAnimation(.snappy) { open.toggle() }
+                ChatMotion.animate(.fold) { open.toggle() }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: ChatSpace.mark) {
                     Text(details.title)
                     Image(systemName: "chevron.right")
                         .imageScale(.small)
                         .rotationEffect(.degrees(open ? 90 : 0))
                 }
-                .font(.footnote.weight(.medium))
+                .font(ChatType.noteStrong)
                 .foregroundStyle(Color(palette.accent))
-                .frame(minHeight: 32)
+                .frame(minHeight: ChatSize.target)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -160,7 +162,7 @@ private struct FailureButtonView: View {
     private func label(at now: Date) -> some View {
         let enabled = button.enabled(at: now)
         return Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: ChatSpace.words) {
                 if button.busy {
                     ProgressView().controlSize(.small)
                 }
@@ -170,12 +172,15 @@ private struct FailureButtonView: View {
                     Image(systemName: ExternalMark.symbol).imageScale(.small)
                 }
             }
-            .font(.subheadline.weight(.semibold))
+            .font(ChatType.heading)
             .foregroundStyle(Color(enabled ? palette.onAccent : palette.soft))
-            .padding(.horizontal, 14)
-            .frame(minHeight: 34)
+            .padding(.horizontal, ChatSpace.inset)
+            .padding(.vertical, ChatSpace.items)
             .background(Color(enabled ? palette.accent : palette.idle), in: .capsule)
-            .contentShape(.capsule)
+            // The capsule is as tall as its words; its room to touch is a
+            // whole target.
+            .frame(minHeight: ChatSize.target)
+            .contentShape(.rect)
         }
         .buttonStyle(FailureButtonStyle())
         .disabled(!enabled)
@@ -190,7 +195,7 @@ private struct FailureButtonView: View {
 /// contrast: the system's dimming of a disabled label would undo that.
 private struct FailureButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.7 : 1)
+        configuration.label.opacity(configuration.isPressed ? ChatColours.pending : 1)
     }
 }
 

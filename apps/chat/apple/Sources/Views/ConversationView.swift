@@ -45,13 +45,11 @@ struct ConversationView: View {
             looked: { atBottom = $0 },
             released: { host.send(.followEnded(key: key, by: $0)) }
         ) {
-            LazyVStack(alignment: .leading, spacing: 22) {
+            LazyVStack(alignment: .leading, spacing: ChatSpace.turns) {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
             }
             .scrollTargetLayout()
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
+            .transcriptMargins()
             .environment(\.recordTitles, screen.titles)
             .environment(\.openThread, OpenThreadAction(host: host, scene: scene))
             .environment(\.conversationKey, key)
@@ -61,24 +59,19 @@ struct ConversationView: View {
             }
             .replyLinks()
             .replyTools(wraps: screen.wrapsCode)
-            .frame(maxWidth: 780)
-            .frame(maxWidth: .infinity)
+            .readingMeasure()
         } bar: { atEnd, seen, jump in
-            VStack(spacing: 8) {
+            VStack(spacing: ChatSpace.items) {
                 // A failure of the chat as a whole: one strip, directly
                 // above the composer.
                 if let strip = screen.failures.strip {
                     FailureView(failure: strip, act: act)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: 820)
-                        .transition(.opacity)
+                        .overComposer()
                 }
                 // Asked once a first reply settled, in the app's own words.
                 if let offer = host.chats?.notificationOffer {
                     NotificationOfferView(offer: offer)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: 820)
-                        .transition(.opacity)
+                        .overComposer()
                 }
                 ComposerBar(
                     key: key, screen: screen, dictation: dictation, atBottom: atEnd,
@@ -507,7 +500,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             // scroll view says when a move of the app's own ends, so it is
             // also given no longer than the motion takes.
             reach.moving = Date().addingTimeInterval(0.45)
-            withAnimation(.snappy) { go(to: end) }
+            ChatMotion.animate(.place) { go(to: end) }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(500))
                 hold()
@@ -708,16 +701,16 @@ struct TranscriptRows: View {
         }
         ConversationStatus(screen: screen, key: key)
         if let technical = screen.technical {
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: ChatSpace.beside, verticalSpacing: ChatSpace.pair) {
                 ForEach(technical, id: \.self) { fact in
                     GridRow {
-                        Text(fact.label).fontWeight(.semibold)
+                        Text(fact.label).fontWeight(ChatType.strong)
                         Text(fact.value).monospaced(fact.verbatim).textSelection(.enabled)
                     }
                 }
             }
-            .font(.caption2)
-            .foregroundStyle(.quietText)
+            .font(ChatType.small)
+            .ink(.quiet, on: .page)
         }
     }
 }
@@ -730,7 +723,7 @@ private struct NewChatHeroView: View {
     let addKey: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: ChatSpace.inset) {
             if let empty = hero.empty {
                 ContentUnavailableView {
                     Label(hero.title, systemImage: "person.crop.circle.badge.questionmark")
@@ -739,34 +732,37 @@ private struct NewChatHeroView: View {
                 }
             } else {
                 Text(hero.title)
-                    .font(.title.weight(.bold))
+                    .font(ChatType.title)
+                    .accessibilityAddTraits(.isHeader)
                 if let description = hero.description {
                     Text(description)
-                        .foregroundStyle(.quietText)
+                        .ink(.quiet, on: .page)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let keyless = hero.keyless {
                     KeylessCalloutView(callout: keyless) { addKey(keyless.provider) }
-                        .padding(.top, 6)
+                        .padding(.top, ChatSpace.lines)
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: ChatSpace.items) {
                     ForEach(hero.prompts, id: \.self) { prompt in
                         Button {
                             pick(prompt)
                         } label: {
                             Text(prompt)
-                                .font(.subheadline)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                                .background(.fill.tertiary, in: .capsule)
+                                .font(ChatType.detail)
+                                .multilineTextAlignment(.leading)
+                                .padding(.horizontal, ChatSpace.inset)
+                                .padding(.vertical, ChatSpace.inner)
+                                .frame(minHeight: ChatSize.target)
+                                .background(ChatColours.pillStyle, in: .rect(cornerRadius: ChatSize.target / 2))
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 6)
+                .padding(.top, ChatSpace.lines)
             }
         }
-        .padding(.top, 24)
+        .padding(.top, ChatSpace.turns)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -783,17 +779,17 @@ private struct ConversationStatus: View {
             switch note.kind {
             case .partial:
                 Label(note.message, systemImage: "text.badge.minus")
-                    .font(.footnote)
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.note)
+                    .ink(.quiet, on: .page)
             case .background:
-                HStack(spacing: 10) {
+                HStack(spacing: ChatSpace.beside) {
                     ProgressView().controlSize(.small)
                     Text(note.message)
-                        .font(.subheadline)
-                        .foregroundStyle(.quietText)
+                        .font(ChatType.detail)
+                        .ink(.quiet, on: .page)
                 }
             case .deleted:
-                ProblemBox(title: note.title, message: note.message, tint: .secondary, systemImage: "trash")
+                ProblemBox(title: note.title, message: note.message, tint: ChatColours.neutral, systemImage: "trash")
                     .card()
             }
         }

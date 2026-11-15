@@ -20,6 +20,9 @@ extension ChatColours {
 
     static let codeFill = DesignTokens.gray.over(page, opacity: codeTint)
     static let tableFill = DesignTokens.gray.over(page, opacity: tableTint)
+    /// The fills as SwiftUI draws them, each made once.
+    static let codeStyle = codeFill.color
+    static let tableStyle = tableFill.color
 
     /// A token's colour: Xcode's and GitHub's hues, each at a tone that
     /// reads on the fill.
@@ -38,12 +41,9 @@ extension ChatColours {
 
     /// The pairings a code block and a table draw.
     static var codePairs: [Pair] {
-        CodeToken.allCases.map { Pair(name: "code: a \($0.rawValue) on a code block", text: code($0), fill: codeFill) } + [
-            Pair(name: "code: plain code on a code block", text: label, fill: codeFill),
-            Pair(name: "code: a block's language and its buttons", text: DesignTokens.quietText, fill: codeFill),
-            Pair(name: "a table's words", text: label, fill: tableFill),
-            Pair(name: "a table's header beside its value, in a card", text: DesignTokens.quietText, fill: tableFill),
-            Pair(name: "a link in a table", text: accent, fill: tableFill),
-        ]
+        // What stands on a code block and a table in the chat's own inks
+        // (plain code, a block's language, a table's words, a link in one)
+        // is in `uses`; these are the highlighter's own.
+        CodeToken.allCases.map { Pair(name: "code: a \($0.rawValue) on a code block", text: code($0), fill: codeFill) }
     }
 }

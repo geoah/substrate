@@ -20,7 +20,7 @@ struct GuidanceSectionView: View {
                 LabeledContent(section.instructions.title, value: section.instructions.count)
             }
             if let problem = section.problem {
-                Text(problem).font(.footnote).foregroundStyle(.red)
+                Text(problem).font(ChatType.note).ink(.tone(.critical), on: .form)
             }
         } header: {
             Text(section.title)
@@ -45,12 +45,12 @@ struct GuidanceListView: View {
             Form {
                 Section {
                     if let loading = section.loading {
-                        HStack(spacing: 8) {
+                        HStack(spacing: ChatSpace.beside) {
                             ProgressView().controlSize(.small)
-                            Text(loading).foregroundStyle(.secondary)
+                            Text(loading).ink(.quiet, on: .form)
                         }
                     } else if shown.rows.isEmpty {
-                        Text(shown.empty).foregroundStyle(.secondary)
+                        Text(shown.empty).ink(.quiet, on: .form)
                     }
                     ForEach(shown.rows) { row in
                         GuidanceRowView(
@@ -100,26 +100,26 @@ private struct GuidanceRowView: View {
     @Binding var active: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: ChatSpace.apart) {
+            VStack(alignment: .leading, spacing: ChatSpace.mark) {
                 Text(row.text)
-                    .foregroundStyle(row.active ? .primary : .secondary)
+                    .ink(row.active ? .label : .quiet, on: .form)
                     .lineLimit(6)
-                HStack(spacing: 10) {
+                WrapLayout(spacing: ChatSpace.apart) {
                     ForEach(row.facts, id: \.self) { fact in
-                        HStack(spacing: 3) {
-                            Text(fact.label).fontWeight(.semibold)
+                        HStack(spacing: ChatSpace.mark) {
+                            Text(fact.label).fontWeight(ChatType.strong)
                             Text(fact.value)
                         }
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(ChatType.caption)
+                .ink(.quiet, on: .form)
                 if let problem = row.problem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(ChatType.caption).ink(.tone(.critical), on: .form)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: ChatSpace.beside)
             if row.busy {
                 ProgressView().controlSize(.small)
             } else {
@@ -161,7 +161,7 @@ private struct GuidanceEditor: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 240)
+        .frame(minWidth: ChatSize.sheet.width, minHeight: ChatSize.sheet.height)
         #endif
     }
 }

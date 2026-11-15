@@ -7,17 +7,6 @@ extension MeterPoint {
     static let paint = MeterPoint("paint")
 }
 
-/// The sizes a code block is drawn with.
-enum CodeMetrics {
-    static let font = Font.system(.callout, design: .monospaced)
-    /// The space around the code, and around the bar above it.
-    static let inset: CGFloat = 12
-    static let barInset: CGFloat = 7
-    static let radius: CGFloat = 12
-    /// The least a control may be to touch, whatever it looks.
-    static let target: CGFloat = 44
-}
-
 /// A fenced block: its language, the switch that wraps its lines where one
 /// overflows, Copy, and the code in the colours its row carries. A long
 /// line scrolls sideways unless its reader chose to wrap, a choice kept on
@@ -38,7 +27,7 @@ struct CodeBlockView: View {
         let _ = source.text = text
         VStack(alignment: .leading, spacing: 0) {
             CodeBar(language: language, offers: layout.offers, wrap: wrap, source: source).equatable()
-            Divider().opacity(0.5)
+            Rectangle().fill(ChatColours.codeEdge).frame(height: ChatLine.hairline)
             if layout.wraps {
                 lines.frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -46,19 +35,19 @@ struct CodeBlockView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) {
-            $0.size.width - 2 * CodeMetrics.inset
+            $0.size.width - 2 * ChatSpace.blockInset
         } action: { width in
             if abs(width - room) > 0.5 { room = width }
         }
-        .background(ChatColours.codeFill.color, in: .rect(cornerRadius: CodeMetrics.radius))
-        .overlay { RoundedRectangle(cornerRadius: CodeMetrics.radius).strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5) }
+        .background(ChatColours.codeStyle, in: .rect(cornerRadius: ChatRadius.block))
+        .overlay { RoundedRectangle(cornerRadius: ChatRadius.block).strokeBorder(ChatColours.codeEdge, lineWidth: ChatLine.hairline) }
     }
 
     private var lines: some View {
         CodeText(text: text, code: code)
             .equatable()
             .textSelection(.enabled)
-            .padding(CodeMetrics.inset)
+            .padding(ChatSpace.blockInset)
     }
 }
 
@@ -78,6 +67,9 @@ private struct CodeBar: View, Equatable {
     let offers: Bool
     let wrap: CodeWrapChoice
     let source: CodeSource
+    /// The bar keeps its height at the text's size: its words, and room
+    /// above and below them.
+    @Scaled(.codeBar) private var height
 
     static func == (lhs: CodeBar, rhs: CodeBar) -> Bool {
         lhs.language == rhs.language && lhs.offers == rhs.offers && lhs.wrap == rhs.wrap && lhs.source === rhs.source
@@ -86,16 +78,16 @@ private struct CodeBar: View, Equatable {
     var body: some View {
         HStack(spacing: 0) {
             Text(language ?? "code")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.quietText)
-            Spacer(minLength: 8)
+                .font(ChatType.label)
+                .ink(.quiet, on: .code)
+            Spacer(minLength: ChatSpace.beside)
             if offers {
                 Button {
                     if let set = wrap.set { set(!wrap.on) }
                 } label: {
                     Image(systemName: "text.word.spacing")
                         .symbolVariant(wrap.on ? .fill : .none)
-                        .foregroundStyle(wrap.on ? Color.accentColor : .quietText)
+                        .ink(wrap.on ? .accent : .quiet, on: .code)
                         .barTarget()
                 }
                 .buttonStyle(.borderless)
@@ -106,24 +98,19 @@ private struct CodeBar: View, Equatable {
             }
             CopyButton(label: "Copy Code") { source.text }
         }
-        .font(.caption)
-        .padding(.leading, CodeMetrics.inset)
+        .font(ChatType.caption)
+        .padding(.leading, ChatSpace.blockInset)
         // The bar keeps its height; a control's room to touch reaches
         // past it.
-        .frame(height: CodeMetrics.barHeight)
+        .frame(height: height)
     }
-}
-
-extension CodeMetrics {
-    /// The bar above the code: its words, and room above and below them.
-    static let barHeight: CGFloat = 30
 }
 
 extension View {
     /// A small control's label: its room to touch is a whole target,
     /// whatever its mark's size and however low the bar it sits in.
     func barTarget() -> some View {
-        frame(minWidth: CodeMetrics.target, minHeight: CodeMetrics.target)
+        frame(minWidth: ChatSize.target, minHeight: ChatSize.target)
             .contentShape(.rect)
     }
 }
@@ -145,10 +132,10 @@ struct CodeText: View, Equatable {
         // or none) is its text and nothing more to make.
         if let runs = code?.runs, !runs.isEmpty {
             Text(Meter.shared.time(.paint) { made.text(text, runs: runs) })
-                .font(CodeMetrics.font)
+                .font(ChatType.code)
         } else {
             Text(verbatim: text)
-                .font(CodeMetrics.font)
+                .font(ChatType.code)
         }
     }
 }
@@ -188,8 +175,6 @@ final class CodePaint {
     /// Each token's colour and the two fonts, made once: a colour made at
     /// each run would be another colour to everything that compares them.
     static let colours = Dictionary(uniqueKeysWithValues: CodeToken.allCases.map { ($0, ChatColours.code($0).color) })
-    static let keyword = CodeMetrics.font.weight(.semibold)
-    static let comment = CodeMetrics.font.italic()
 
     /// Some of a block's bytes as text, with the runs that lie in them:
     /// `from` is where the bytes start in the block.
@@ -203,8 +188,8 @@ final class CodePaint {
             out[start ..< end].foregroundColor = colours[run.token]
             // Not by its colour alone: a keyword is heavier, a comment
             // slanted.
-            if run.token == .keyword { out[start ..< end].font = keyword }
-            if run.token == .comment { out[start ..< end].font = comment }
+            if run.token == .keyword { out[start ..< end].font = ChatType.codeKeyword }
+            if run.token == .comment { out[start ..< end].font = ChatType.codeComment }
             at = end
             offset = run.start + run.length
         }
@@ -224,9 +209,6 @@ struct CopyButton: View {
     @State private var done = false
     @State private var presses = 0
 
-    /// How long it says so.
-    static let shown: Duration = .seconds(1.5)
-
     var body: some View {
         Button {
             copyToPasteboard(text())
@@ -235,13 +217,13 @@ struct CopyButton: View {
             AccessibilityNotification.Announcement(copied).post()
             let press = presses
             Task {
-                try? await Task.sleep(for: Self.shown)
+                try? await Task.sleep(for: ChatMotion.confirms)
                 if press == presses { done = false }
             }
         } label: {
             Image(systemName: done ? "checkmark" : "doc.on.doc")
-                .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(.quietText)
+                .changes(.mark)
+                .ink(.quiet, on: .page, .code)
                 .barTarget()
         }
         .buttonStyle(.borderless)
