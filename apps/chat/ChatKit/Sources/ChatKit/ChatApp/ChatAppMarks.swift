@@ -211,7 +211,7 @@ extension ChatApp {
         // following the kind too.
         if !state.marksKnown {
             state.marksKnown = true
-            if state.watching { watch(&state) }
+            if state.watching { widen(&state, by: Kinds.threadMark) }
         }
         return learned
     }
@@ -429,13 +429,23 @@ extension ChatApp {
         for thread in state.announced.sorted() {
             if visible.contains(thread) {
                 state.announced.remove(thread)
-            } else if !state.notifies(thread), !state.mayWait(thread), !state.failedActions.contains(thread) {
-                // (Nothing may wait: a card posted a moment ago, ahead of
-                // the row that counts it, is not taken back by that row.)
-                // Archived since, here or on another device: what it
-                // notified is put away with it. Also where no list holds
-                // its row any more and its mark, read by name, says so: a
-                // chat that waits is always in a list.
+            } else if !state.notifies(thread) {
+                // Archived since, here or on another device, or archived
+                // and no longer waiting: what it notified is put away with
+                // it. Also where no list holds its row any more and its
+                // mark, read by name, says so: a chat that waits is always
+                // in a list.
+                guard !state.mayWait(thread), !state.failedActions.contains(thread) else {
+                    // Something may still wait (a card posted a moment
+                    // ago, ahead of the row that counts it, is not taken
+                    // back by that row; nor is one the pending lists still
+                    // hold), or an action left its word: those stand. The
+                    // reply's own does not. It was said because the chat
+                    // waited, and by the row's count, which is what says a
+                    // reply may be notified at all, it no longer does.
+                    readElsewhere(&state, thread)
+                    continue
+                }
                 state.announced.remove(thread)
                 state.asks.append(.cancelGroup(thread))
             } else if let row = state.thread(thread), !row.running, state.marked(thread), !state.unread(row), !state.failedUnseen(row) {

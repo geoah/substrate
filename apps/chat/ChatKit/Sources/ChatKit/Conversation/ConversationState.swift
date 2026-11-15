@@ -220,6 +220,18 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// while a run may still read one: a run that ends without doing so
     /// leaves it an ordinary message in the thread.
     var queued: [Queued] = []
+    /// What the stream being read has said is queued, and not yet said
+    /// taken, while it may be saying its turn again from the start: how the
+    /// turn stood at some moment before now, which is not drawn. A stream
+    /// joined again says a message queued before it says the same message
+    /// taken, and one cut between the two would leave a message a call
+    /// read long ago drawn as waiting. They are queued once the stream is
+    /// known to have caught up with its turn (`caught`), or has ended.
+    var recalled: [Queued] = []
+    /// The stream being read has said everything its turn had done by some
+    /// moment this conversation knows of, so what it says of a queue from
+    /// here is said as it happens (`Conversation.catchUp`).
+    var caught = false
     /// The messages the server said a model call read, by id, so a stream
     /// joined again that says one queued once more does not draw it so.
     var taken: Set<String> = []

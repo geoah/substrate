@@ -53,6 +53,13 @@ extension Conversation {
     /// written by a call that read it, which is the one thing a tool's
     /// event does not say: the result of a call under way when the message
     /// was sent may carry an ordinal past it.
+    ///
+    /// A stream may be saying its turn again from the start (an attach, a
+    /// send into a running turn, a send's repeat), and nothing on the wire
+    /// says where that ends and the present begins. So a message it says is
+    /// queued is drawn so only once the stream is known to have caught up
+    /// (`catchUp`); until then it is kept apart (`recalled`), and drawn as
+    /// the ordinary message its row is.
     func hear(_ state: inout State, _ event: AgentEvent, replied: Int) {
         switch event.kind {
         case .messageQueued:
@@ -60,19 +67,45 @@ extension Conversation {
             // Read by a reply the rows already hold: said queued again
             // only because the stream is said again from its start.
             if let ordinal = event.turn, ordinal < replied { return take(&state, [id]) }
+            // The message this send carried was written a moment ago, and
+            // the stream says what its turn has done in the order it did
+            // it: what it said was queued before this, and has not said
+            // taken, was queued when this message was written.
+            if case let .send(run)? = state.run, run.id == id { catchUp(&state) }
             if let held = state.queued.firstIndex(where: { $0.id == id }) {
                 if let ordinal = event.turn { state.queued[held].ordinal = ordinal }
-            } else {
+            } else if state.caught {
                 state.queued.append(State.Queued(id: id, ordinal: event.turn))
+            } else if let held = state.recalled.firstIndex(where: { $0.id == id }) {
+                if let ordinal = event.turn { state.recalled[held].ordinal = ordinal }
+            } else {
+                state.recalled.append(State.Queued(id: id, ordinal: event.turn))
             }
         case .messageTaken:
             if let id = event.id { take(&state, [id]) }
         case .delta, .reasoning:
-            guard let turn = event.turn, !state.queued.isEmpty else { return }
-            take(&state, state.queued.filter { ($0.ordinal ?? .max) < turn }.map(\.id))
+            guard let turn = event.turn, !state.queued.isEmpty || !state.recalled.isEmpty else { return }
+            take(&state, (state.queued + state.recalled).filter { ($0.ordinal ?? .max) < turn }.map(\.id))
+        case .heartbeat:
+            // Sent only into a stream that has gone quiet, which one still
+            // saying what its turn did before never is.
+            catchUp(&state)
         default:
             break
         }
+    }
+
+    /// The stream has caught up with its turn: what it said was queued and
+    /// has not said taken since is queued, and what it says from here is
+    /// said as it happens. Known at three moments: a send that started its
+    /// own turn is answered with that turn from its first event (`named`);
+    /// the stream says the message this send carried was written; and a
+    /// heartbeat.
+    func catchUp(_ state: inout State) {
+        state.caught = true
+        guard !state.recalled.isEmpty else { return }
+        state.queued += state.recalled.filter { said in !state.queued.contains { $0.id == said.id } }
+        state.recalled = []
     }
 
     /// A model call read these messages: none is queued any more, and none
@@ -80,6 +113,7 @@ extension Conversation {
     func take(_ state: inout State, _ ids: [String]) {
         guard !ids.isEmpty else { return }
         state.queued.removeAll { ids.contains($0.id) }
+        state.recalled.removeAll { ids.contains($0.id) }
         state.taken.formUnion(ids)
         // What a replay could say again is this run's: a few are all.
         if state.taken.count > 64 { state.taken = Set(ids) }
@@ -88,9 +122,9 @@ extension Conversation {
     /// Rows this conversation read: a reply's row past a queued message's
     /// ordinal is one that read it.
     func read(_ state: inout State, queuedIn rows: [Record]) {
-        guard !state.queued.isEmpty else { return }
+        guard !state.queued.isEmpty || !state.recalled.isEmpty else { return }
         let replied = Self.replied(rows)
-        take(&state, state.queued.filter { ($0.ordinal ?? .max) < replied }.map(\.id))
+        take(&state, (state.queued + state.recalled).filter { ($0.ordinal ?? .max) < replied }.map(\.id))
     }
 
     /// The newest ordinal a reply's row carries, or -1.
@@ -103,7 +137,11 @@ extension Conversation {
     /// looked for once its rows are read (`follows`); a stop or a failure
     /// starts nothing, and the card at the chat's end says how many
     /// messages it left.
+    ///
+    /// A stream that says how its run ended has said all the run did: what
+    /// it said was queued and never said taken was not read.
     func ended(_ state: inout State, queueAfter status: String?) {
+        catchUp(&state)
         guard !state.queued.isEmpty else { return }
         if status == "ok" || status == "overbudget" {
             state.follows = true
@@ -129,7 +167,8 @@ extension Conversation {
     /// Nothing is queued where no run goes on: whatever a conversation
     /// held is an ordinary message of the thread, which its rows show.
     func quieten(_ state: inout State) {
-        guard state.phase == .idle || state.phase == .handingOver, !state.queued.isEmpty else { return }
+        guard state.phase == .idle || state.phase == .handingOver, !state.queued.isEmpty || !state.recalled.isEmpty else { return }
         state.queued = []
+        state.recalled = []
     }
 }

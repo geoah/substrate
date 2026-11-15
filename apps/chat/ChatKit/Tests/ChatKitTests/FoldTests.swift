@@ -508,6 +508,97 @@ struct TurnFoldTests {
         #expect(TurnFold.fold(StoredTurns(transcript(of: [old, mine])), live).turns.map(\.id) == ["m0", "sent-1"])
     }
 
+    /// What the seeded runs found (seed 1171 at 101 steps, `agents` 7; and
+    /// 6523 before it): the device held rows a launch old when "Yes" was
+    /// sent under no id, and a "Yes" another launch had sent stood past
+    /// their end. Past what was held is then no proof. The stream names the
+    /// first row of the run the message started, and the message is the
+    /// last of its words before that row with no reply between.
+    @Test func aMessageSentUnderNoIdIsTheRowItsRunCameAfterWhateverWasHeldWhenItWasSent() {
+        let held = [messageRow("m0", "user", "Hello", turn: 0), messageRow("m1", "assistant", "Hi.", turn: 1)]
+        // Written since the rows held, by a launch before: the same words.
+        let twin = [messageRow("m2", "user", "Yes", turn: 2), messageRow("m3", "assistant", "Good.", turn: 3)]
+        let mine = messageRow("u4", "user", "Yes", turn: 4)
+        let reply = messageRow("m5", "assistant", "Good again.", turn: 5)
+        for baseline in [1, nil] {
+            // The run's first piece says its row: ordinal 5.
+            let live = live(sending: "Yes", baseline: baseline, deltas("Good again.", turn: 5))
+            // The twin and its reply are read before the message's own row.
+            var folded = TurnFold.fold(StoredTurns(transcript(of: held + twin)), live)
+            #expect(folded.turns.map(\.id) == ["m0", "m1", "m2", "m3", "sent-1", "turn-5"], "with \(String(describing: baseline)) held")
+            #expect(folded.claims.isEmpty && folded.unsure.isEmpty)
+            // Its row is read: it is the message, and the twin stays itself.
+            folded = TurnFold.fold(StoredTurns(transcript(of: held + twin + [mine, reply])), live)
+            #expect(folded.turns.map(\.id) == ["m0", "m1", "m2", "m3", "sent-1", "turn-5"])
+            #expect(folded.claims == ["u4": "sent-1", "m5": "turn-5"] && folded.left.isEmpty)
+            // And a conversation's own read keeps that, for good.
+            var kept = live
+            var aliases: [String: String] = [:]
+            TurnFold.settle(held + twin + [mine, reply], &kept, aliases: &aliases, ended: false)
+            #expect(aliases == ["u4": "sent-1", "m5": "turn-5"] && kept.isEmpty)
+        }
+        // A reply that is only a call names its row through the call.
+        let call = [messageRow("m5", "assistant", "", turn: 5, calls: ["a"]), messageRow("m6", "tool", "{}", turn: 6, answers: "a")]
+        let calling = live(sending: "Yes", baseline: 1, [.toolStarted("a", turn: 6)])
+        #expect(TurnFold.fold(StoredTurns(transcript(of: held + twin)), calling).turns.map(\.id) == ["m0", "m1", "m2", "m3", "sent-1", "call-a"])
+        #expect(TurnFold.fold(StoredTurns(transcript(of: held + twin + [mine] + call)), calling).claims == ["u4": "sent-1", "m5": "call-a"])
+    }
+
+    /// Before the stream has named anything of the run, a row of the same
+    /// words past what was held is the best guess there is, and is drawn as
+    /// the message so nothing stands twice. It is a guess: a conversation's
+    /// own read gives the row no id for good while the run goes on, and
+    /// the stream's first piece then says which row it is.
+    @Test func aMessagePairedByItsWordsAloneIsNotNamedForGoodWhileItsRunGoesOn() {
+        let held = [messageRow("m0", "user", "Hello", turn: 0), messageRow("m1", "assistant", "Hi.", turn: 1)]
+        let twin = [messageRow("m2", "user", "Yes", turn: 2), messageRow("m3", "assistant", "Good.", turn: 3)]
+        let mine = messageRow("u4", "user", "Yes", turn: 4)
+        var live = live(sending: "Yes", baseline: 1, [])
+        let folded = TurnFold.fold(StoredTurns(transcript(of: held + twin + [mine])), live)
+        #expect(folded.claims == ["m2": "sent-1"] && folded.unsure == ["sent-1"])
+        #expect(folded.turns.count { $0.content == "Yes" } == 2)
+        // An attach's read, the run still going: nothing is kept of the guess.
+        var aliases: [String: String] = [:]
+        TurnFold.settle(held + twin + [mine], &live, aliases: &aliases, ended: false)
+        #expect(aliases.isEmpty && live.turns.map(\.id) == ["sent-1"])
+        // The stream says the run's first row, and the message is its own.
+        live.hear(deltas("Good again.", turn: 5))
+        let named = TurnFold.fold(StoredTurns(transcript(of: held + twin + [mine]), aliases: aliases), live)
+        #expect(named.turns.map(\.id) == ["m0", "m1", "m2", "m3", "sent-1", "turn-5"] && named.claims == ["u4": "sent-1"])
+        TurnFold.settle(held + twin + [mine, messageRow("m5", "assistant", "Good again.", turn: 5)], &live, aliases: &aliases, ended: true)
+        #expect(aliases == ["u4": "sent-1", "m5": "turn-5"] && live.isEmpty)
+        // A run that ends having named nothing leaves the rows as the
+        // whole truth, and the guess is what stands.
+        var silent = self.live(sending: "Yes", baseline: 3, [])
+        var names: [String: String] = [:]
+        TurnFold.settle(held + twin + [mine], &silent, aliases: &names, ended: true)
+        #expect(names == ["u4": "sent-1"] && silent.isEmpty)
+    }
+
+    /// Only the message's own stream names its run. A stream joined later
+    /// may be another run's (a turn another device resumed, after the one
+    /// the message started was stopped): what it names says nothing of
+    /// where the message stands, and the message is still found by what
+    /// was held when it was sent (seed 485 at 11 steps, while this was
+    /// being written).
+    @Test func aStreamJoinedLaterNamesNothingOfTheRunAMessageStarted() {
+        let rows = [
+            messageRow("m0", "user", "Hello", turn: 0), messageRow("m1", "assistant", "Hi.", turn: 1), messageRow("u2", "user", "Yes", turn: 2),
+            messageRow("m3", "assistant", "Good.", turn: 3),
+        ]
+        var live = live(sending: "Yes", baseline: 1, [])
+        live.begin(replaying: true)
+        live.hear(deltas("And more.", turn: 5))
+        #expect(live.sent["sent-1"]?.first == nil)
+        let folded = TurnFold.fold(StoredTurns(transcript(of: rows)), live)
+        #expect(folded.turns.map(\.id) == ["m0", "m1", "sent-1", "m3", "turn-5"] && folded.unsure == ["sent-1"])
+        // A new chat's first message is the first of its words there is.
+        var first = self.live(sending: "Hello", baseline: -1, [])
+        var aliases: [String: String] = [:]
+        TurnFold.settle(rows, &first, aliases: &aliases, ended: false)
+        #expect(aliases == ["m0": "sent-1"] && first.isEmpty)
+    }
+
     /// Where the server takes a message's id (`agents` 3), the message is
     /// drawn under it from the press and its row has it: the two are paired
     /// by that id alone, whatever the words and wherever the row stands.

@@ -25,6 +25,11 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// has happened. What a transcript on screen is kept at.
         var above: String?
         var grown = 0
+        /// The server said these rows to this launch. Rows from the folder
+        /// are as old as the launch that wrote them, whatever version they
+        /// carry, until a list read in this launch says the thread has not
+        /// moved since.
+        var heard = false
     }
 
     /// One conversation the list keeps, and what it knows of it.
@@ -178,6 +183,13 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// A question's, a suggestion's or an approval's card, as last read and
     /// acted on.
     struct Card: Codable, Equatable, Sendable {
+        /// The card as it was asked for: kept from the moment its record
+        /// is, before any read of it is answered, so a row of the feed
+        /// that says the record moved while that read was out reads it
+        /// again (`watchRow`). A read answered before the move and landing
+        /// after it would otherwise be the last word: a card waiting here
+        /// that was ended elsewhere.
+        var asked: CardReference?
         var record: Record?
         /// A suggestion's target, for its values before.
         var target: Record?
@@ -267,6 +279,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var opened: Bool { disk != nil }
     /// Something to draw: the cache, or a first read.
     var loaded = false
+    /// The server answered a refresh in this launch: the chats' rows are
+    /// its own, and no longer only the folder's.
+    var refreshed = false
     var refreshing = false
     /// The list's one failure, drawn at its top: a refresh that failed, or
     /// the change feed ended. A second replaces the first.
@@ -369,6 +384,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// token reaches it, so the watch may follow it. A watch naming a kind
     /// an older server lacks is refused whole.
     var approvalsKnown = false
+    /// The kinds the watch was opened again to follow as well, until it is
+    /// open: each is read once more then (`ChatApp.widen`).
+    var watchGains: Set<String> = []
     var seen: [String: String] = [:]
     /// The `records` feature's revision, from the server's discovery
     /// document; nil until it is read.

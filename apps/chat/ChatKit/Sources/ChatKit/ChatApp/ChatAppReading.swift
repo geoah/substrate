@@ -214,6 +214,17 @@ extension ChatAppState {
         return !row.running && held.version == row.record.version && !held.full
     }
 
+    /// Whether the rows held of a thread say where it stood, for a message
+    /// sent under no id, which is found among the rows by its words past
+    /// that place: only rows the server said to this launch, or the
+    /// folder's where a list this launch read says the thread has not moved
+    /// since they were written. The folder's rows alone are a launch old: a
+    /// message another launch sent after them is past their end too, and
+    /// would be taken for the one just sent.
+    func knows(_ held: Held, of thread: String?) -> Bool {
+        held.heard || (refreshed && thread.map(isPrefetched) == true)
+    }
+
     /// Rows read under the thread's current version, a whole transcript or
     /// a prefetch's window: a prefetch has nothing to add.
     func isPrefetched(_ thread: String) -> Bool {

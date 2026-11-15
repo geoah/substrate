@@ -11,9 +11,18 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// from an older one with the same words.
     struct Sent: Codable, Hashable, Sendable {
         /// The newest ordinal held of the thread before the send; nil
-        /// while its rows were unread or stale.
+        /// while its rows were unread or stale, the folder's from a launch
+        /// before among them (`ChatAppState.knows`).
         var baseline: Int?
         var at: Date
+        /// The first ordinal the message's own stream named, and the call
+        /// that carried it where a call did: a row of the run the message
+        /// started, which its own row stands directly before. A message
+        /// with no id starts its run or is refused, so its send's stream
+        /// is that run's from the first event; a stream joined later may
+        /// be another run's, and names nothing here.
+        var first: Int?
+        var call: String?
     }
 
     /// One pass over a turn's stream: a send's, or one attach's replay and
@@ -31,6 +40,9 @@ struct LiveRows: Codable, Hashable, Sendable {
         /// The replay lost events (`truncated`): a piece with no position
         /// can only go after what is held.
         var lost = false
+        /// The message this pass's send carried under no id: what the pass
+        /// names first is of the run it started (`Sent.first`).
+        var sender: String?
     }
 
     var turns: [Turn] = []
@@ -94,7 +106,10 @@ struct LiveRows: Codable, Hashable, Sendable {
         }
         let turn = id ?? "sent-\(seq)"
         turns.append(Turn(id: turn, role: .user, content: message, pending: true))
-        if id == nil { sent[turn] = Sent(baseline: baseline, at: at) }
+        if id == nil {
+            sent[turn] = Sent(baseline: baseline, at: at)
+            pass.sender = turn
+        }
         if joining, id != nil {
             joined.insert(turn)
             waiting.insert(turn)
@@ -115,7 +130,18 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// event that says again what is held changes nothing.
     @discardableResult
     mutating func apply(_ event: AgentEvent, seq: Int, now: Date) -> Bool {
-        if let ordinal = event.turn { pass.seen = max(pass.seen, ordinal) }
+        if let ordinal = event.turn {
+            pass.seen = max(pass.seen, ordinal)
+            if let sender = pass.sender, sent[sender] != nil, sent[sender]?.first == nil {
+                switch event.kind {
+                case .delta, .reasoning: sent[sender]?.first = ordinal
+                case .toolStarted, .toolFinished:
+                    sent[sender]?.first = ordinal
+                    sent[sender]?.call = event.id
+                default: break
+                }
+            }
+        }
         switch event.kind {
         case .reasoning:
             guard let piece = event.text, !piece.isEmpty else { return false }

@@ -130,8 +130,10 @@ extension Conversation {
             // The server took the message: the optimistic turn is confirmed.
             next.provisional.confirm()
             // Its stream is the running turn's, said from its start as an
-            // attach's is: written over what is held of it.
-            if run.joins { next.provisional.begin(replaying: true) }
+            // attach's is: written over what is held of it. The first copy
+            // of a send that started its own turn is answered with that
+            // turn as it happens; a repeat's answer says it again.
+            if run.joins { next.provisional.begin(replaying: true) } else if run.id == nil || next.copies <= 1 { catchUp(&next) }
             if run.id != nil {
                 forget(&next, taken: true)
                 next.lastFailure = nil
@@ -384,6 +386,9 @@ extension Conversation {
         state.asks += ["retry", "pollTimer", "poll", "stop", "stopWait", "check", "repeat"].map { .cancel($0) }
         state.polling = false
         state.pollAgain = false
+        // A new stream says its turn's queue again, from wherever it starts.
+        state.recalled = []
+        state.caught = false
         // A check the run leaves can no longer say what it found.
         if let lost = state.lost {
             state.lost = nil

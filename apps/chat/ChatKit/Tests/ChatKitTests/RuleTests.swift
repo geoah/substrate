@@ -248,6 +248,36 @@ struct SevenRules {
         state.transcripts["t1"]?.full = true
         #expect(!state.isCurrent("t1"))
     }
+
+    /// A message sent under no id is looked for among the rows past where
+    /// its thread stood when it was sent (`LiveRows.Sent.baseline`, and the
+    /// delivery check's). The folder's rows say where it stood a launch
+    /// ago: a message that launch sent after them, in the same words, is
+    /// past their end too (seed 1171 of the seeded runs, at `agents` 7).
+    /// So a conversation is told where its thread stands only by rows the
+    /// server said to this launch, or by the folder's once a list this
+    /// launch read says the thread has not moved since.
+    @Test func theFoldersRowsSayWhereAThreadStandsOnlyOnceThisLaunchHasHeardTheServer() {
+        var state = signedInState()
+        state.chats = [Record(id: "t1", kind: Kinds.thread, properties: ["mode": "chat", "status": "ok"], version: 3)]
+        let key = ChildKey("c1")
+        state.conversations[key] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1")
+        let rows = [messageRow("m0", "user", "Hello", turn: 0), messageRow("m1", "assistant", "Hi.", turn: 1)]
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        // From the folder, under a list that is the folder's too.
+        state.transcripts["t1"] = .init(records: rows, turns: transcript(of: rows), version: 3, full: false)
+        #expect(app.children(in: state)[key]?.newestTurn == nil)
+        // The server answered a refresh, and the thread is as the rows
+        // were read under.
+        state.refreshed = true
+        #expect(app.children(in: state)[key]?.newestTurn == 1)
+        // It moved since: the rows are older than the thread.
+        state.chats[0].version = 4
+        #expect(app.children(in: state)[key]?.newestTurn == nil)
+        // Rows the server said to this launch stand, whatever the list says.
+        state.transcripts["t1"]?.heard = true
+        #expect(app.children(in: state)[key]?.newestTurn == 1)
+    }
 }
 
 @Suite("The conversation's run", .timeLimit(.minutes(10)))
@@ -717,4 +747,93 @@ final class Seen: @unchecked Sendable {
     private var kept: [Int] = []
     func add(_ count: Int) { lock.withLock { kept.append(count) } }
     var counts: [Int] { lock.withLock { kept } }
+}
+
+/// What the change feed does not promise, and the app must not lean on.
+/// Each was a test that timed out on a busy machine
+/// (`aCardAnotherPersonEndedNeverSaysYou`, about one run in four hundred
+/// with three hundred beside it; `oneResolvedOnAnotherDeviceFoldsWhenTheFeedSaysSo`
+/// on Linux): a card ended on another device went on waiting here, because
+/// the row that said so reached nobody.
+@Suite("What the feed does not promise")
+struct FeedOrder {
+    let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+    let approval = WatchRow(seq: 12, kind: Kinds.approval, recordID: "p1", op: "patch")
+
+    private func watching() -> ChatAppState {
+        var state = signedInState()
+        state.online = true
+        state.appActive = true
+        state.watching = true
+        state.recordsRevision = 8
+        state.agentsRevision = 7
+        return state
+    }
+
+    private func kinds(_ state: ChatAppState) -> [String]? {
+        state.asks.lazy.compactMap { if case let .watch(_, _, kinds) = $0 { kinds } else { nil } }.first
+    }
+
+    /// The watch's cache moves its bookmark past a row only once the
+    /// engine has taken the row. A watch that is replaced has what it says
+    /// dropped: had it told its cache first, the row would be past the
+    /// bookmark the next watch resumes from, and on no stream again.
+    @Test func aRowIsPastTheBookmarkOnlyOnceTheEngineTookIt() throws {
+        let state = try app.apply(.init(.watchRow(approval)), to: watching())
+        let disk = try #require(state.disk)
+        #expect(state.asks.contains(.noteRow(disk, approval)))
+        #expect(state.feedBatch == [.init(kind: Kinds.approval, id: "p1")])
+    }
+
+    /// A watch opened again to follow one more kind resumes from a
+    /// bookmark the kinds before it moved, past whatever a record of the
+    /// new kind did meanwhile. So the kind is read once more when the
+    /// watch that follows it is open, and a card of it on screen with it,
+    /// since one that ended is in no pending list. The word of the watch
+    /// before, which may still be opening, says nothing of the kind.
+    @Test func aKindTheWatchGainsIsReadAgainOnceTheWatchThatFollowsItIsOpen() throws {
+        let card = Record(
+            id: "p1", kind: Kinds.approval, properties: ["state": "pending", "thread": ["ref": .string("\(Kinds.thread)/t1")], "tool": "gmail_send"],
+            version: 1)
+        var state = try app.apply(.init(.cardAsked(.approval("p1"))), to: watching())
+        state = try app.apply(.init(.cardsRead(.init(interactions: [], requests: [], approvals: [card]))), to: state)
+        let wide = try #require(kinds(state))
+        #expect(state.watchGains == [Kinds.approval] && wide.contains(Kinds.approval))
+        // The watch before it opens late: nothing is concluded from it.
+        state = try app.apply(.init(.watchOpened(fresh: false, kinds: wide.filter { $0 != Kinds.approval })), to: state)
+        #expect(state.watchGains == [Kinds.approval] && state.feedBatch.isEmpty)
+        state = try app.apply(.init(.watchOpened(fresh: false, kinds: wide)), to: state)
+        #expect(state.watchGains.isEmpty && state.feedBatch == [.init(kind: Kinds.approval, id: "")])
+        #expect(state.asks.contains(.readCard(.approval("p1"), target: false)) && state.asks.contains(.feedWait(seconds: 0)))
+    }
+
+    /// A card is kept from the moment its record is asked for. A row that
+    /// says the record moved while that read is out reads it again, and
+    /// the read answered before the move is dropped for the newer one.
+    @Test func aRowOfACardWhoseFirstReadIsStillOutReadsItAgain() throws {
+        var state = try app.apply(.init(.cardAsked(.approval("p1"))), to: watching())
+        #expect(state.cards["p1"]?.asked == .approval("p1") && state.cards["p1"]?.record == nil)
+        state = try app.apply(.init(.watchRow(approval)), to: state)
+        #expect(state.asks.contains(.readCard(.approval("p1"), target: false)))
+        #expect(app.key(of: .init(ask: .readCard(.approval("p1"), target: false))) == "card:p1")
+    }
+
+    /// The cache is told of a row and of a record read again in the order
+    /// the engine asked, whichever piece of work comes to run first: a row
+    /// told after its record was read is still to be read again.
+    @Test func theCacheIsToldInTheOrderTheEngineAsked() async throws {
+        let storage = ChatStorage(base: temporaryFolder("feed"))
+        let lease = await storage.open(identity).value
+        let cache = try #require(storage.records(lease))
+        await cache.bookmark(WatchCursor(seq: 10, generation: "g"))
+        var asked: [Task<Void, Never>] = []
+        for round in 0 ..< 50 {
+            let row = WatchRow(seq: 11 + round, kind: Kinds.approval, recordID: "p1", op: "patch")
+            asked.append(storage.cached(lease) { cache in await cache.refreshed(Kinds.approval, "p1", as: nil) })
+            asked.append(storage.cached(lease) { cache in await cache.apply(row) })
+        }
+        for task in asked { await task.value }
+        #expect(await cache.stale == ["\(Kinds.approval)/p1"])
+        #expect(await cache.cursor == WatchCursor(seq: 60, generation: "g"))
+    }
 }

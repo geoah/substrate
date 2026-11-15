@@ -101,9 +101,9 @@ struct SeededRun {
         /// that keeps neither.
         case flags = "a flag is never written but where the person set it"
         case found = "a search draws a message under the chat that holds it"
-        /// Known (below): a message sent under no id is found among the
-        /// rows by its words, and where the rows held when it was sent were
-        /// unread it may be paired with an older row of the same words.
+        /// A message sent under no id is found among the rows by its words:
+        /// it is the row the run it started came after, whatever older row
+        /// holds the same words (`TurnFold`).
         case mispaired = "a message sent under no id is drawn as its own row, not an older one of the same words"
         /// A message sent while the assistant works (`ConversationQueue`).
         /// It is drawn as queued only while the server holds it in a turn
@@ -1372,15 +1372,13 @@ struct SeededRun {
                     let what =
                         "\(name) draws the row \(row.id) (\(row.role), turn \(row.turn)) under \(turn.id): it draws \(drawn.map { "\($0.id)=\($0.text)" }) over the rows "
                         + "\(server.rows(of: thread).map { "\($0.id)=\($0.content)" })"
-                    // Known: a message sent under no id whose words an older
-                    // row of the thread holds too, sent before the rows
-                    // were read, is paired with that row. What is drawn is
-                    // the server's rows; one bubble's id is the other's.
+                    // A message sent under no id whose words an older row
+                    // of the thread holds too is its own row, the one its
+                    // run came after, and never the older one.
                     let older =
                         turn.id.hasPrefix("sent-") && row.role == "user"
                         && server.rows(of: thread).contains { $0.id.hasPrefix("u") && $0.content == row.content && $0.turn > row.turn }
-                    guard older else { return broke(.fold, what) }
-                    if noted[.mispaired] == nil { noted[.mispaired] = broke(.mispaired, what) }
+                    return broke(older ? .mispaired : .fold, what)
                 }
             }
         }
@@ -1512,13 +1510,7 @@ struct SeededRun {
             guard let name = request.thread, Self.flag(state, name, \.archived, \.archived) == true, let thread = state.thread(name),
                 thread.waiting == 0
             else { continue }
-            // Known, and noted so the rest of the seed is still held to
-            // every other rule (`known`); a chat drawn or counted while
-            // archived, above, is not.
-            if noted[.archived] == nil {
-                noted[.archived] = broke(
-                    .archived, "a notification of \(name)'s reply stands while the app holds the chat archived with nothing waiting")
-            }
+            return broke(.archived, "a notification of \(name)'s reply stands while the app holds the chat archived with nothing waiting")
         }
         // A pinned chat the app holds the row of is drawn, in the pinned
         // section; and nothing else is drawn there.
@@ -1624,11 +1616,8 @@ struct SeededRun {
         // taken back however the app came to hear of it.
         for (id, request) in rig.notifications.pending.sorted(by: { $0.key < $1.key }) where id.hasSuffix("|reply") {
             guard let name = request.thread, server.mark(of: name)?.archived == true, server.waiting(name) == 0 else { continue }
-            // The same known break, seen once everything has settled.
-            if noted[.archived] == nil {
-                noted[.archived] = broke(
-                    .archived, "a notification of \(name)'s reply stands at the end, and the server holds the chat archived with nothing waiting")
-            }
+            return broke(
+                .archived, "a notification of \(name)'s reply stands at the end, and the server holds the chat archived with nothing waiting")
         }
         let pinned = Set(presentation.list.sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
         let shown = Set(want.filter { server.mark(of: $0)?.pinned == true })
@@ -1657,9 +1646,7 @@ struct SeededRun {
             // lost its stream says nothing of a queue until it reads one
             // again (seed 215, with the list's steps beside these).
             if drewRead[key]?.contains(turn.id) == true, server.wasTaken(turn.id) {
-                // Known (above): noted, and the run goes on under every
-                // other rule, this rule's other breaks among them.
-                if noted[.queued] == nil { noted[.queued] = broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read") }
+                return broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read")
             }
         }
         for id in live.queued.map(\.id) where screen.turns.filter({ $0.id == id }).count != 1 {

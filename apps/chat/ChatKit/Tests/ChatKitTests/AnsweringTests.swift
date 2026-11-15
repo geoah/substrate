@@ -275,6 +275,89 @@ struct QueuedMessages {
         #expect(await app.said(key) == app.server.spoken(in: "t1").map(\.content))
     }
 
+    /// What the seeded runs found (seed 9435 at 39 steps, `agents` 7): a
+    /// conversation that joins a run knowing nothing of it (a launch, a
+    /// sign-in again) hears the turn from its start, where a message a
+    /// call read long ago is first said queued. A stream cut between that
+    /// and the word that it was taken left the message drawn as waiting
+    /// until the next stream. A stream that may be saying its turn again
+    /// says how the turn stood before now, which is not drawn.
+    @Test func aChatThatJoinsARunAnewDrawsNoMessageQueuedThatACallHasRead() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1), .tool(.query), .call, .piece(0), .piece(1), .piece(2)])
+        app.work()
+        try await app.until { screen, _ in screen.turns.count == 2 }
+        try await app.say("And the mint?", key)
+        try await app.until { _, live in live.queued.count == 1 }
+        app.work(3)
+        try await app.until { _, live in live.queued.isEmpty }
+        let message = try #require(app.server.rows(of: "t1").first { $0.content == "And the mint?" }?.id)
+        #expect(app.server.wasTaken(message) && app.server.running("t1"))
+        await app.rig.runtime.close()
+
+        // Launched again while the run goes on. Its first stream ends
+        // after `thread`, the reply's first piece and `messageQueued`.
+        app.server.fail("events|t1", with: .stream(.init(cutAfter: 3)))
+        let again = app.relaunched()
+        try await again.signIn()
+        await again.harness.send(.show(thread: "t1", scene: "s"))
+        let shown = try #require(await again.harness.state.scenes["s"]?.current)
+        let (frames, watching) = await again.frames(shown)
+        defer { watching.cancel() }
+        // The stream dropped, and the chat waits to ask for it again.
+        try await again.harness.until { _ in
+            guard let live = await again.live(shown) else { return false }
+            return live.recalled.map(\.id) == [message] && live.phase == .streaming && app.server.exchanges(about: "t1") == 0
+        }
+        #expect(await again.live(shown)?.queued.isEmpty == true)
+        #expect(await again.conversation(shown)?.composer.queued == nil)
+        // The next stream says the rest: a call read it.
+        try await again.harness.until(advancing: 1) { _ in
+            guard let live = await again.live(shown) else { return false }
+            return live.taken.contains(message) && live.connected
+        }
+        #expect(await again.live(shown)?.recalled.isEmpty == true)
+        app.server.finishTurns()
+        try await again.harness.until(advancing: 6) { _ in await again.live(shown)?.phase == .idle && !app.server.running("t1") }
+        for frame in frames.all {
+            #expect(frame.turns.allSatisfy { if case let .user(said) = $0.body { said.queued == nil } else { true } })
+        }
+    }
+
+    /// The same stream, of a message no call has read yet: it is drawn
+    /// queued once the stream is known to have caught up with its turn,
+    /// which a heartbeat says (it is sent only into a stream gone quiet),
+    /// and the word that the run ended.
+    @Test func aQueueAStreamSaidAgainTellsOfIsDrawnOnceTheStreamHasCaughtUp() throws {
+        let conversation = Conversation(
+            key: ChildKey("c"), seed: .init(thread: "t1", agent: helper, draft: "", listen: false), facts: nil, online: true, keyless: nil,
+            newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0, continuing: nil, agents: 6, sendsIDs: true)
+        var state = conversation.initialState
+        var queued = AgentEvent(kind: .messageQueued)
+        (queued.id, queued.turn, queued.text) = ("m2", 2, "And the mint?")
+        conversation.hear(&state, queued, replied: -1)
+        #expect(state.queued.isEmpty && state.recalled.map(\.id) == ["m2"])
+        conversation.hear(&state, AgentEvent(kind: .heartbeat), replied: -1)
+        #expect(state.queued.map(\.id) == ["m2"] && state.recalled.isEmpty && state.caught)
+        // From here the stream says what happens as it does.
+        (queued.id, queued.turn) = ("m3", 3)
+        conversation.hear(&state, queued, replied: -1)
+        #expect(state.queued.map(\.id) == ["m2", "m3"])
+        // A run that says it was stopped left both unread, said or not
+        // while the stream was still catching up.
+        var late = conversation.initialState
+        conversation.hear(&late, queued, replied: -1)
+        conversation.ended(&late, queueAfter: "stopped")
+        #expect(late.unread == 1 && late.queued.isEmpty && late.recalled.isEmpty)
+        // And a reply's piece past a message's ordinal read it, wherever
+        // the message is kept.
+        var read = conversation.initialState
+        conversation.hear(&read, queued, replied: -1)
+        conversation.hear(&read, .delta("So", turn: 4, at: 0), replied: -1)
+        #expect(read.recalled.isEmpty && read.taken == ["m3"])
+    }
+
     @Test func belowTheRevisionOnlyStopIsOfferedUntilTheReplyEnds() async throws {
         let app = Answering(agents: 5)
         try await app.signIn()
@@ -1691,6 +1774,46 @@ struct OneNotification {
         state.asks = []
         state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: state)
         #expect(!state.asks.contains(.cancelGroup("t1")) && state.announced == ["t1"])
+    }
+
+    /// What the seeded runs found (seed 30167 at 45 steps on a server at
+    /// `agents` 7, and seed 20442 at 101): an archived chat waits on a
+    /// card, so a reply in it is notified. The card is answered on another
+    /// device, and the chat's row says nothing waits, while this device
+    /// still holds the card among the pending ones (or what an action
+    /// could not do still stands for the chat). Those keep what is theirs:
+    /// a card's notification kept too long is the cheaper mistake. The
+    /// reply's own was said because the chat waited, by the row's count,
+    /// and by that count it goes.
+    @Test(arguments: [false, true])
+    func aReplyNotifiedWhileAnArchivedChatWaitedGoesOnceItsRowSaysNothingWaits(action: Bool) throws {
+        var state = start()
+        state.recordsRevision = 9
+        state.marks = ["t1": ThreadMark(readThrough: "m0", version: 1, archived: true)]
+        // The card was said in a launch before this one.
+        state.interactions = [card]
+        state.notified = ["card|\(Kinds.interaction)/i1"]
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        #expect(posted(state).map(\.id) == ["chat|t1|reply"] && state.announced == ["t1"] && state.replySaid == ["t1"])
+        if action { app.noteFailed(&state, "t1") }
+        // Answered elsewhere: the row counts nothing, and the pending
+        // list on this device has not been read again.
+        var answered = row(running: false, version: 3)
+        answered.properties["waitingOnPerson"] = nil
+        answered.version = 4
+        if action { state.interactions = [] }
+        state.asks = []
+        state = try app.apply(.init(.threadFetched(answered)), to: state)
+        #expect(!state.notifies("t1") && (state.mayWait("t1") || state.failedActions == ["t1"]))
+        #expect(state.asks.contains(.cancelNotification("chat|t1|reply")) && state.replySaid.isEmpty)
+        // What else stands for the chat is not taken with it.
+        #expect(!state.asks.contains(.cancelGroup("t1")) && state.announced == ["t1"])
+        // Once nothing may wait and nothing else stands, the rest goes.
+        if !action {
+            state.asks = []
+            state = try app.apply(.init(.cardsRead(.init(interactions: [], requests: [], approvals: []))), to: state)
+            #expect(state.asks.contains(.cancelGroup("t1")) && state.announced.isEmpty)
+        }
     }
 
     /// The one predicate: an archived chat is silent, for a reply and for
