@@ -255,6 +255,7 @@ struct SearchHitText: View {
 /// may be fewer than a screen). Never again for a read that brought none.
 struct OlderRowsRow: View {
     @Environment(ChatHost.self) private var host
+    @Environment(\.transcriptWhole) private var whole
     let older: OlderRows
     let thread: String?
     /// How many times rows have arrived above the transcript.
@@ -284,8 +285,11 @@ struct OlderRowsRow: View {
         // put back where they were, so this row comes on screen for that
         // moment at every arrival, and asking then read a whole thread
         // in, page after page, for a reader who reached its top once.
+        // And only in a lazy stack, whose rows are made as they come on
+        // screen: in one laid out whole this row is there from the start,
+        // wherever its reader is, and is pressed to ask.
         .task(id: arrived) {
-            guard (try? await Task.sleep(for: Self.dwell)) != nil else { return }
+            guard !whole, (try? await Task.sleep(for: Self.dwell)) != nil else { return }
             ask()
         }
     }
