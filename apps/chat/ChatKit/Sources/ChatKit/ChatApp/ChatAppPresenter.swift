@@ -517,7 +517,12 @@ extension ChatApp {
         }
         // A card that ended is the mark on the call that asked; and what
         // the stream still holds unread is said under its message.
-        let folded = Self.queued(CardPresenter.fold(turns, cards: shown), live: live)
+        var folded = Self.queued(CardPresenter.fold(turns, cards: shown), live: live)
+        // A call that says how its card ended says it once: the line the
+        // rows hold for the same outcome is not drawn under it again.
+        let ended = CardPresenter.ended(folded)
+        let said = Set(scan.said.filter { ended.contains($0.value) }.keys)
+        if !said.isEmpty { folded.removeAll { said.contains($0.id) } }
         // A decided suggestion whose call the transcript holds is drawn
         // there: the decision's own line stands without a second card.
         for (id, card) in shown where card.suggestion?.decided == true && scan.proposals[id] != nil { shown[id] = nil }
@@ -526,12 +531,19 @@ extension ChatApp {
         // gave it.
         var newLine = Self.newLine(held, from: state.conversations[key]?.newFrom)
         if let row = newLine?.turn, let drawn = claims[row] ?? live.aliases[row] { newLine?.turn = drawn }
+        // A line that is not drawn holds nothing: the "New" line, and a
+        // chat opened at a message, stand at the first turn drawn after it.
+        let stands = { (turn: String) -> String in
+            guard said.contains(turn), let at = all.firstIndex(where: { $0.id == turn }) else { return turn }
+            return all[at...].first { !said.contains($0.id) }?.id ?? turn
+        }
+        if let row = newLine?.turn { newLine?.turn = stands(row) }
         let drawn = { (row: String) in claims[row] ?? live.aliases[row] ?? row }
         // Opened at a message, from a search: the turn of that row, once
         // the rows held have it.
         let entry = state.conversations[key]
-        let at = entry?.opensAt.flatMap { message in held?.turns.first { $0.row == message || $0.id == message }?.id }.map(drawn)
-        let above = held?.above.map { RowsAbove(turn: drawn($0), count: held?.grown ?? 0) }
+        let at = entry?.opensAt.flatMap { message in held?.turns.first { $0.row == message || $0.id == message }?.id }.map(drawn).map(stands)
+        let above = held?.above.map { RowsAbove(turn: stands(drawn($0)), count: held?.grown ?? 0) }
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
@@ -539,7 +551,7 @@ extension ChatApp {
             agent: live.agent, agentName: live.name, hero: hero,
             older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false),
             turns: folded, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
-            failures: failures(state, live: live, row: row, all: all, turns: turns), technical: technical,
+            failures: failures(state, live: live, row: row, all: all, turns: folded), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, draftReplaced: live.draftReplaced, draftBefore: live.draftBefore,
@@ -657,13 +669,24 @@ extension ChatApp {
         var answers: [String: InteractionNotice] = [:]
         var asked: [String] = []
         var interactions: [String] = []
+        /// The card each outcome line is about, by the line's turn.
+        var said: [String: String] = [:]
 
         init(_ turns: [Turn]) {
             proposals = CardPresenter.proposals(turns)
             for turn in turns {
-                if let decision = decisionNotice(turn) { decisions[decision.requestID] = decision }
-                if let ended = approvalNotice(turn) { approvals[ended.approvalID] = ended }
-                if let answer = interactionNotice(turn) { answers[answer.interactionID] = answer }
+                if let decision = decisionNotice(turn) {
+                    decisions[decision.requestID] = decision
+                    said[turn.id] = decision.requestID
+                }
+                if let ended = approvalNotice(turn) {
+                    approvals[ended.approvalID] = ended
+                    said[turn.id] = ended.approvalID
+                }
+                if let answer = interactionNotice(turn) {
+                    answers[answer.interactionID] = answer
+                    said[turn.id] = answer.interactionID
+                }
                 for call in turn.tools {
                     if let interaction = interactionID(of: call) { interactions.append(interaction) }
                     if let approval = approvalID(of: call) { asked.append(approval) }
@@ -678,6 +701,7 @@ extension ChatApp {
             decisions.merge(later.decisions) { _, new in new }
             approvals.merge(later.approvals) { _, new in new }
             answers.merge(later.answers) { _, new in new }
+            said.merge(later.said) { _, new in new }
             asked += later.asked
             interactions += later.interactions
         }
