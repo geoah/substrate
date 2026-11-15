@@ -1,7 +1,9 @@
 /// What stands under the last reply of a chat: Copy; Try Again or Continue
 /// where the run can go on and its card does not already offer that; and
 /// Share and Select Text once the reply is whole. Older replies keep Copy,
-/// Select Text and Share behind a long press.
+/// Select Text and Share behind a long press. Where there is no reply to
+/// stand under and the run can be tried again beside its card's button, it
+/// is Try Again alone, under the chat's last turn.
 ///
 /// It is read from the screen's own turns and failures, so it is decided in
 /// one place with them: whether a run can be tried again, and under which
@@ -38,16 +40,16 @@ public struct ReplyActions: Codable, Hashable, Sendable {
     /// the reply before it an older one, and a call that only ran tools
     /// leaves the words before it the last said. Where the run's card names
     /// a Try Again beside its button and no reply has words, it stands
-    /// under the assistant's last turn alone.
+    /// alone under the chat's last turn, the card's own: the assistant's,
+    /// or the person's message where the run ended before the assistant
+    /// said or did anything.
     public init?(under turns: [TurnPresentation], failures: ScreenFailures) {
         var said: (id: String, reply: AssistantTurn)?
-        var last: String?
         scan: for turn in turns.reversed() {
             switch turn.body {
             case .user, .trigger:
                 break scan
             case let .assistant(reply):
-                if last == nil { last = turn.id }
                 if reply.text != nil {
                     said = (turn.id, reply)
                     break scan
@@ -59,8 +61,8 @@ public struct ReplyActions: Codable, Hashable, Sendable {
         let resume = turns.last.flatMap { failures.turns[$0.id]?.resume }
         if let said {
             self.init(turn: said.id, copies: true, whole: !said.reply.live, resume: resume)
-        } else if let last, let resume {
-            self.init(turn: last, copies: false, whole: false, resume: resume)
+        } else if let last = turns.last, let resume {
+            self.init(turn: last.id, copies: false, whole: false, resume: resume)
         } else {
             return nil
         }

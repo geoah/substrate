@@ -134,7 +134,9 @@ struct TableBlockView: View {
     /// column as wide as the widest header and no more than its share.
     private var cards: some View {
         VStack(alignment: .leading, spacing: TableMetrics.cardSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, cells in
+            // A table with no row yet (its header alone, as one being
+            // written is for a moment) is one card of its headers.
+            ForEach(Array((rows.isEmpty ? [[]] : rows).enumerated()), id: \.offset) { _, cells in
                 TableGrid(columns: 2, room: 0, metrics: metrics, shares: true) {
                     ForEach(Array(header.enumerated()), id: \.offset) { column, name in
                         inline(name, missing: missing)

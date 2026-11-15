@@ -967,7 +967,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   after it, so while a run's next call thinks or runs tools the row stays
   where the last words are. Older replies keep the same behind a long
   press: Copy, Select Text and Share, and the last reply's long press
-  offers what its row does.
+  offers what its row does. Where a run ended before the assistant said
+  or did anything, its card stands at the person's message, and a Try
+  Again the card names beside its button stands alone under that
+  message, on its side.
 - **Select Text** opens the reply in a sheet, in the system's own text
   view, where a selection runs across the whole of it: a reply's rows are
   separate views, and a SwiftUI text on an iPhone selects nothing less
@@ -1945,7 +1948,10 @@ button and Details stack where the text size leaves no room side by side.
 - A reply's code (`CodeHighlightTests`, over `CodeFixtures`, a sample of
   each language with what it lets run over lines and what is easy to
   colour wrongly): each sample's colours, token by token, as they were
-  read by eye once; what is left plain; a diff by its hunk's counts; and,
+  read by eye once; what is left plain; what runs over lines closing
+  where it should (a brace in a string inside a template's interpolation,
+  a here-document under a quoted word, an attribute's value over two
+  lines); a diff by its hunk's counts; and,
   at every prefix of every sample, that colouring from the lines kept is
   what reading the prefix whole makes, that every finished line is
   coloured as it stays, and that the runs are in order, inside one line
@@ -1958,7 +1964,8 @@ button and Details stack where the text size leaves no room side by side.
   against a table that must name every cause, and never in two places;
   where the row stands (not under a reply with a message after it, not
   moving while a call only runs tools, under the last turn alone for a
-  run that said nothing); Copy alone while a reply is written. The seeded
+  run that said nothing, the person's message included); Copy alone
+  while a reply is written. The seeded
   runs hold the same after every step (`offered`). A table's layout and
   the wrap rule are numbers (`TableLayoutTests`): what fits, what wraps
   to fit, what scrolls and how wide the held column is, cards at the
@@ -1967,12 +1974,14 @@ button and Details stack where the text size leaves no room side by side.
 - As drawn (`apple/Tests/ReplyPartsTests.swift`, the app's own views in a
   window, read from the accessibility tree): the switch to wrap on the
   blocks with a long line and on no other, and none in a room wide enough;
-  every cell of three tables in the grid and in cards; a table narrower
+  every cell of three tables in the grid and in cards, and a table with
+  no row yet as its headers in both; a table narrower
   than, as wide as and wider than its room; the row under a reply through
   a whole run (Copy from the first words, Share once it is whole, one of
   each, the content never shorter, and the settled reply as tall as the
   frame before); Try Again once, on the card or under the reply, for
-  every card of the table of causes; code made into coloured text a line
+  every card of the table of causes, and under the person's message
+  where the run ended before any reply; code made into coloured text a line
   at a time equal to making it whole; and the text opened for selecting
   holding every word the reply draws and no Markdown marker.
 - What draws what (`PartsTests`, `DraftTests`): a delta makes its own

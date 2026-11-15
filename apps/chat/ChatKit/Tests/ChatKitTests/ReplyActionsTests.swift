@@ -190,9 +190,18 @@ struct ReplyActionsTests {
         #expect(ReplyActions(under: turns, failures: failures) == ReplyActions(turn: "m2", copies: false, whole: false, resume: failures.turns["m2"]?.resume))
         // With nothing to run again there is nothing to stand there.
         #expect(ReplyActions(under: turns, failures: ScreenFailures()) == nil)
-        // A card at a message of the person's has no reply to stand under.
+        // A run that ended before the assistant said or did anything has
+        // its card at the person's message, and Try Again under it: after
+        // the key is replaced there is still a way on.
         let unanswered = ScreenFailures(turns: ["m1": FailurePresenter.present(Self.run(RunCause.providerKeyRefused.rawValue), Self.context())])
-        #expect(ReplyActions(under: Self.turns([Self.asked]), failures: unanswered) == nil)
+        #expect(
+            ReplyActions(under: Self.turns([Self.asked]), failures: unanswered)
+                == ReplyActions(turn: "m1", copies: false, whole: false, resume: unanswered.turns["m1"]?.resume))
+        // Not where the card's own button runs it again, and not under an
+        // older message.
+        let overloaded = ScreenFailures(turns: ["m1": FailurePresenter.present(Self.run(RunCause.providerOverloaded.rawValue), Self.context())])
+        #expect(ReplyActions(under: Self.turns([Self.asked]), failures: overloaded) == nil)
+        #expect(ReplyActions(under: Self.turns([Self.asked, Self.answered]), failures: unanswered)?.resume == nil)
     }
 
     // MARK: On the runtime

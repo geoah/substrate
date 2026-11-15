@@ -73,6 +73,9 @@ import Testing
         var stop: Int?
         /// The card at the reply, where its run did not finish.
         var failure: FailurePresentation?
+        /// The run ended before the assistant said anything: the chat's
+        /// last turn is the person's message.
+        var unanswered = false
         var wraps = false
         /// The text is at an accessibility size, as far as a Mac draws
         /// one: the layout is that size's, the letters are not.
@@ -90,6 +93,7 @@ import Testing
             Part(name: "actions-settled", reply: ChatFixtures.short),
             Part(name: "actions-writing", reply: ChatFixtures.short, stop: ChatFixtures.short.count - 30),
             Part(name: "actions-try-again", reply: ChatFixtures.short, failure: FailureFixtures.keyRefused),
+            Part(name: "actions-try-again-alone", reply: ChatFixtures.short, failure: FailureFixtures.keyRefused, unanswered: true),
             Part(name: "code-long-lines", reply: ChatFixtures.longLines),
             Part(name: "code-long-lines-wrapped", reply: ChatFixtures.longLines, wraps: true),
             Part(name: "tables", reply: ChatFixtures.tables),
@@ -241,6 +245,7 @@ import Testing
                 // As tall as what it holds: laid out once to know.
                 let shown = view(host, key, streaming: false) { screen in
                     screen.wrapsCode = part.wraps
+                    if part.unanswered { screen.turns.removeLast() }
                     if let failure = part.failure, let last = screen.turns.last { screen.failures.turns[last.id] = failure }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
