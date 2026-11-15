@@ -177,6 +177,9 @@ enum Measure {
         rows.append(("a reply being written made into blocks, ms per step (longest)", { cell($0, "write", time: true) }))
         rows.append(("inline Markdown made into text, per step", { cell($0, "inline", time: false) }))
         rows.append(("inline Markdown, ms per step (longest)", { cell($0, "inline", time: true) }))
+        rows.append(("code blocks read for their colours, per step", { cell($0, "highlight", time: false) }))
+        rows.append(("code read for its colours, ms per step (longest)", { cell($0, "highlight", time: true) }))
+        rows.append(("code made into coloured text on the main thread, ms per step (longest)", { cell($0, "paint", time: true) }))
         rows.append(("key to drawn, ms (longest)", { cell($0, "key", time: true) }))
 
         var out = "Measured on \(machine), build `\(label)`, the reply written \(pace.perSecond) characters a second.\n"

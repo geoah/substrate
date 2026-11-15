@@ -59,6 +59,7 @@ struct ConversationView: View {
                 if let thread = screen.thread { host.send(.open(thread: thread, message: message, scene: scene)) }
             }
             .replyLinks()
+            .replyTools(wraps: screen.wrapsCode)
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         } bar: { atEnd, seen, jump in
@@ -669,7 +670,7 @@ struct TranscriptRows: View {
         if let older = screen.older { OlderRowsRow(older: older, thread: screen.thread, arrived: screen.above?.count ?? 0) }
         // A turn's failure is a card at that turn, a row under its last;
         // the "New" line is a row above the first turn that was not read.
-        ForEach(TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine)) { piece in
+        ForEach(TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine, actions: screen.replyActions)) { piece in
             TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking, act: act)
         }
         if screen.typing {

@@ -61,6 +61,45 @@ import Testing
         ("chat-streaming-fence", ChatFixtures.reply, cut(after: "let due = try await client.list(")),
     ]
 
+    /// What stands in and under a reply, each at an iPhone's width and at
+    /// the width an iPad's transcript keeps, in light and in dark: the row
+    /// under the last reply in each of its states, every language the
+    /// highlighter reads (two to a picture), a block with long lines
+    /// scrolled and wrapped, and the tables, as a grid and as cards.
+    struct Part {
+        var name: String
+        var reply: String
+        /// Where the stream stops; nil is the settled reply.
+        var stop: Int?
+        /// The card at the reply, where its run did not finish.
+        var failure: FailurePresentation?
+        var wraps = false
+        /// The text is at an accessibility size, as far as a Mac draws
+        /// one: the layout is that size's, the letters are not.
+        var large = false
+    }
+
+    static var parts: [Part] {
+        let languages = CodeFixtures.all.map(\.language)
+        let code = stride(from: 0, to: languages.count, by: 2).map { index in
+            Part(
+                name: "code-\(languages[index ..< min(index + 2, languages.count)].joined(separator: "-"))",
+                reply: CodeFixtures.reply(Array(languages[index ..< min(index + 2, languages.count)])))
+        }
+        return [
+            Part(name: "actions-settled", reply: ChatFixtures.short),
+            Part(name: "actions-writing", reply: ChatFixtures.short, stop: ChatFixtures.short.count - 30),
+            Part(name: "actions-try-again", reply: ChatFixtures.short, failure: FailureFixtures.keyRefused),
+            Part(name: "code-long-lines", reply: ChatFixtures.longLines),
+            Part(name: "code-long-lines-wrapped", reply: ChatFixtures.longLines, wraps: true),
+            Part(name: "tables", reply: ChatFixtures.tables),
+            Part(name: "tables-cards", reply: ChatFixtures.tables, large: true),
+        ] + code
+    }
+
+    /// The width an iPad's and a Mac's transcript keeps.
+    static let wide: CGFloat = 780
+
     /// A host on the fixture showing one chat, once its transcript is the
     /// one the picture is of.
     func host(reply: String = ChatFixtures.reply, stop: Int?) async throws -> (ChatHost, ChildKey) {
@@ -97,8 +136,12 @@ import Testing
     /// margins and spacing: an offscreen drawing holds nothing a scroll view
     /// draws, nor the glass of the composer over it. A reply still being
     /// written is held at its end, as the screen follows it.
-    func view(_ host: ChatHost, _ key: ChildKey, streaming: Bool) -> some View {
-        let screen = host.conversation(key)
+    func view(_ host: ChatHost, _ key: ChildKey, streaming: Bool, change: (inout ConversationScreen) -> Void = { _ in }) -> some View {
+        var screen = host.conversation(key)
+        if var changed = screen {
+            change(&changed)
+            screen = changed
+        }
         return VStack(alignment: .leading, spacing: 22) {
             if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
         }
@@ -107,6 +150,7 @@ import Testing
         .padding(.bottom, 16)
         .environment(\.recordTitles, screen?.titles ?? [:])
         .replyLinks()
+        .replyTools(wraps: screen?.wrapsCode ?? false)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: .infinity, alignment: streaming ? .bottom : .top)
         .clipped()
@@ -187,6 +231,52 @@ import Testing
                 }
             }
         }
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil), .timeLimit(.minutes(10)))
+    func everyPartOfAReplyDraws() async throws {
+        for part in Self.parts {
+            let (host, key) = try await host(reply: part.reply, stop: part.stop)
+            for (device, width) in [("iphone", OffscreenDrawing.phone.width), ("ipad", Self.wide)] {
+                // As tall as what it holds: laid out once to know.
+                let shown = view(host, key, streaming: false) { screen in
+                    screen.wrapsCode = part.wraps
+                    if let failure = part.failure, let last = screen.turns.last { screen.failures.turns[last.id] = failure }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .environment(\.dynamicTypeSize, part.large ? .accessibility3 : .large)
+                let height = try await Self.height(of: shown, width: width)
+                for scheme in [ColorScheme.light, .dark] {
+                    Attachment.record(
+                        try await OffscreenDrawing.png(shown, size: CGSize(width: width, height: height), scheme: scheme),
+                        named: "\(part.name)-\(device)-\(scheme == .dark ? "dark" : "light").png")
+                }
+            }
+        }
+    }
+
+    /// How tall `view` is at `width`, once what it measures of itself (a
+    /// column of code, a table's room) has settled.
+    static func height(of view: some View, width: CGFloat) async throws -> CGFloat {
+        let measured = HandoverTests.Measured()
+        let hosting = NSHostingView(
+            rootView: view.frame(width: width).fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
+                    measured.height = $0
+                })
+        hosting.sizingOptions = []
+        hosting.frame = CGRect(x: 0, y: 0, width: width, height: 4000)
+        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        for _ in 0 ..< 6 {
+            hosting.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        window.contentView = nil
+        return max(120, measured.height.rounded(.up))
     }
 
     @Test func everyPlaceHasAFailureToDraw() {

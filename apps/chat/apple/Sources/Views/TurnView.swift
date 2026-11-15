@@ -109,13 +109,17 @@ private struct UserTurnView: View {
 /// a flush lays out the last of them alone. Drawn again only when its own
 /// blocks change.
 struct ReplyPageView: View, Equatable {
-    @Environment(ChatHost.self) private var host
-    @Environment(\.conversationKey) private var conversation
     /// The turn's id.
     let id: String
     let reply: AssistantTurn
     let page: Int
     let expandThinking: Bool
+    /// What stands under this reply where it is the chat's last: its long
+    /// press offers the same, and its last row draws it (`shows`).
+    var actions: ReplyActions?
+    var shows = false
+    /// What Try Again and Continue do.
+    var act: (FailureAction) -> Void = { _ in }
     /// The Thinking section as its reader left it: open, shut, or as the
     /// setting says.
     @State private var thinkingOpen: Bool?
@@ -139,7 +143,7 @@ struct ReplyPageView: View, Equatable {
 
     static func == (lhs: ReplyPageView, rhs: ReplyPageView) -> Bool {
         guard lhs.id == rhs.id, lhs.page == rhs.page, lhs.reply.live == rhs.reply.live, lhs.rows == rhs.rows,
-            lhs.reply.missing == rhs.reply.missing
+            lhs.reply.missing == rhs.reply.missing, lhs.actions == rhs.actions, lhs.shows == rhs.shows
         else { return false }
         // A finished reply's menu shares its whole text; one being written
         // reads the text when the menu is used.
@@ -160,12 +164,12 @@ struct ReplyPageView: View, Equatable {
                 MarkdownView(rows: rows, missing: Set(reply.missing))
                     .textSelection(.enabled)
                     .accessibilityAddTraits(reply.live ? .updatesFrequently : [])
-                    .contextMenu {
-                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(written()) }
-                        if !reply.live, let text = reply.text { ShareLink(item: text) }
-                    }
+                    .contextMenu { ReplyMenu(id: id, reply: reply, actions: actions, act: act) }
             } else if page == 0, reply.typing {
                 TypingDots()
+            }
+            if shows, let actions {
+                ReplyActionsRow(actions: actions, text: reply.text, act: act).equatable()
             }
         }
         // The window gives its height to the answer: while the answer is
@@ -187,16 +191,6 @@ struct ReplyPageView: View, Equatable {
         reply.live && !windowed && page == 0 && reply.tools.isEmpty && reply.sources == nil
     }
 
-    /// The reply's text as it stands now: this row may have been drawn
-    /// many pieces ago.
-    private func written() -> String {
-        if reply.live, let conversation, let turns = host.conversation(conversation)?.turns,
-            case let .assistant(now)? = turns.last(where: { $0.id == id })?.body
-        {
-            return now.text ?? ""
-        }
-        return reply.text ?? ""
-    }
 }
 
 /// What stands under a reply's text: the pages it cites, the records it
@@ -204,9 +198,16 @@ struct ReplyPageView: View, Equatable {
 struct ReplyTailView: View, Equatable {
     let reply: AssistantTurn
     let cards: [String: CardPresentation]
+    /// What stands under this reply where it is the chat's last, drawn
+    /// here: under everything else that stands under its text.
+    var actions: ReplyActions?
+    /// What Try Again and Continue do.
+    var act: (FailureAction) -> Void = { _ in }
 
     static func == (lhs: ReplyTailView, rhs: ReplyTailView) -> Bool {
-        lhs.reply.sources == rhs.reply.sources && lhs.reply.linked == rhs.reply.linked
+        // The row under it shares the reply's whole text once it is whole.
+        lhs.actions == rhs.actions && (lhs.actions?.whole != true || lhs.reply.text == rhs.reply.text)
+            && lhs.reply.sources == rhs.reply.sources && lhs.reply.linked == rhs.reply.linked
             && lhs.reply.linkedLabel == rhs.reply.linkedLabel && lhs.reply.tools == rhs.reply.tools
             && lhs.reply.tools.compactMap(\.cardID).map { lhs.cards[$0] } == rhs.reply.tools.compactMap(\.cardID).map { rhs.cards[$0] }
     }
@@ -246,6 +247,9 @@ struct ReplyTailView: View, Equatable {
                     EmptyView()
                 }
             }
+            if let actions {
+                ReplyActionsRow(actions: actions, text: reply.text, act: act).equatable()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -275,6 +279,13 @@ struct TranscriptPiece: Identifiable {
     let turn: TurnPresentation
     let part: Part
     let closer: CGFloat
+    /// What stands under this turn's reply, where it is the chat's last:
+    /// on each of the reply's rows, for its long press, and drawn by the
+    /// last of them (`drawsActions`). Part of that row, not a row of its
+    /// own, so it is there from the reply's first words and takes nothing
+    /// from the stack when the next reply has it.
+    var actions: ReplyActions?
+    var drawsActions = false
 
     /// - Parameters:
     ///   - failures: by a turn's id, the card drawn under it. It is a row
@@ -284,8 +295,9 @@ struct TranscriptPiece: Identifiable {
     ///   - newLine: the line drawn above the first turn that was not read,
     ///     a row of its own for the same reason, and the row such a chat
     ///     opens at.
+    ///   - actions: what stands under the chat's last reply.
     static func pieces(
-        of turns: [TurnPresentation], failures: [String: FailurePresentation] = [:], newLine: NewLine? = nil
+        of turns: [TurnPresentation], failures: [String: FailurePresentation] = [:], newLine: NewLine? = nil, actions: ReplyActions? = nil
     ) -> [TranscriptPiece] {
         var out: [TranscriptPiece] = []
         out.reserveCapacity(turns.count)
@@ -304,6 +316,13 @@ struct TranscriptPiece: Identifiable {
             }
             let tailed = reply.sources != nil || !reply.linked.isEmpty || !reply.tools.isEmpty
             let headed = reply.reasoning != nil || reply.text != nil || reply.typing || !tailed
+            let first = out.count
+            defer {
+                if let actions, actions.turn == turn.id, out.count > first {
+                    for index in first ..< out.count { out[index].actions = actions }
+                    out[out.count - 1].drawsActions = true
+                }
+            }
             if headed {
                 // The first keeps the turn's id: the row it was before it
                 // grew another.
@@ -346,11 +365,13 @@ struct TranscriptPieceView: View {
         case let (.newLine(line), _):
             NewLineView(line: line).padding(.top, 8)
         case let (.page(page), .assistant(reply)):
-            ReplyPageView(id: piece.turn.id, reply: reply, page: page, expandThinking: expandThinking)
-                .equatable()
-                .padding(.top, -piece.closer)
+            ReplyPageView(
+                id: piece.turn.id, reply: reply, page: page, expandThinking: expandThinking, actions: piece.actions, shows: piece.drawsActions, act: act
+            )
+            .equatable()
+            .padding(.top, -piece.closer)
         case let (.tail, .assistant(reply)):
-            ReplyTailView(reply: reply, cards: cards)
+            ReplyTailView(reply: reply, cards: cards, actions: piece.drawsActions ? piece.actions : nil, act: act)
                 .equatable()
                 .padding(.top, -piece.closer)
         default:
