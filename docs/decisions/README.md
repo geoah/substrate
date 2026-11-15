@@ -470,6 +470,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0324](0324-a-start-takes-every-writer-lease-before-it-migrates-and-a-retaken-lease-checks-the-migrations.md) | A start takes every writer lease before it migrates, and a retaken lease checks the migrations | accepted |
 | [0325](0325-a-database-has-one-writer-process-and-a-retaken-lease-checks-who-else-started.md) | A database has one writer process, and a retaken lease checks who else started | accepted |
 | [0326](0326-a-repository-whose-first-open-fails-is-set-aside-like-one-the-start-sets-aside.md) | A repository whose first open fails is set aside, like one the start sets aside | accepted |
+| [0327](0327-a-chat-message-may-name-the-question-it-answers-and-a-resolved-card-links-the-hand-that-resolved-it.md) | A chat message may name the question it answers, and a resolved card links the hand that resolved it | accepted |
 | [0330](0330-an-erasure-longer-than-the-passs-bounds-is-done-in-steps.md) | An erasure longer than the pass's bounds is done in steps | accepted |
 | [0331](0331-a-resync-restates-a-former-id-that-stands-under-its-owner-without-writing-it-twice.md) | A resync restates a former id that stands under its owner without writing it twice | accepted |
 | [0333](0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md) | A mirror of an outside service keeps all of its history | accepted |
