@@ -6,20 +6,25 @@ import SubstrateDevice
 /// here; an app adds its own beside them (a view's body, a parse).
 public struct MeterPoint: Sendable {
     public let name: StaticString
+    /// Timed for an app's own record of what it cost a person (`Meter.keep`),
+    /// whether or not a measurement is on: for the few points reached a
+    /// handful of times a second, never one a view's body reaches.
+    public let kept: Bool
 
-    public init(_ name: StaticString) {
+    public init(_ name: StaticString, kept: Bool = false) {
         self.name = name
+        self.kept = kept
     }
 
     /// One presenter run; its detail is the controller's type.
     public static let present = MeterPoint("present")
     /// The tree presented and sent to its readers, on the runtime's executor.
-    public static let flush = MeterPoint("flush")
+    public static let flush = MeterPoint("flush", kept: true)
     /// The part of a flush that compares the tree with the one before and
     /// hands it to each reader.
     public static let publish = MeterPoint("publish")
     /// A published tree taken by `PresentationModel` on the main actor.
-    public static let republish = MeterPoint("republish")
+    public static let republish = MeterPoint("republish", kept: true)
     /// A view's body evaluated; its detail is the view.
     public static let body = MeterPoint("body")
     /// One pass of the main run loop that did work, from waking to waiting
@@ -32,6 +37,12 @@ public struct MeterPoint: Sendable {
 /// signposts where it names a sink. Off, which it is unless something calls
 /// `start`, a call takes one lock that nothing holds, reads no clock, builds
 /// no detail and records nothing.
+///
+///
+/// Beside a measurement, an app may keep the figures of the points marked
+/// `kept` for as long as it runs (`keep`, read with `takeKept`): by point
+/// alone, with no detail and no signpost, so a kept point costs two reads of
+/// the clock and one lock, and every other point what it costs while off.
 ///
 /// One for the process: a view's body has no environment to reach one
 /// through without reading it. A test that asserts what one runtime did
@@ -56,6 +67,12 @@ public final class Meter: @unchecked Sendable {
         public var point: String
         public var detail: String
         public var stat: Stat
+
+        public init(point: String, detail: String, stat: Stat) {
+            self.point = point
+            self.detail = detail
+            self.stat = stat
+        }
     }
 
     fileprivate struct Key: Hashable {
@@ -63,13 +80,15 @@ public final class Meter: @unchecked Sendable {
         var detail: String
     }
 
-    /// An interval begun while the meter was on.
+    /// An interval begun while the meter was on, or of a kept point.
     public struct Span {
-        fileprivate var key: Key
+        fileprivate var key: Key?
         fileprivate var began: UInt64
         fileprivate var end: (@Sendable () -> Void)?
         /// The measurement it began in: it counts in no other.
         fileprivate var run: Int
+        /// The kept point it is of, by name; nil for any other.
+        fileprivate var kept: String?
     }
 
     private let lock = NSLock()
@@ -78,6 +97,8 @@ public final class Meter: @unchecked Sendable {
     private var run = 0
     private var signposts: (any Signposts)?
     private var stats: [Key: Stat] = [:]
+    private var keeping = false
+    private var keptStats: [String: Stat] = [:]
 
     public init() {}
 
@@ -86,6 +107,21 @@ public final class Meter: @unchecked Sendable {
     /// The measurement under way, and its sink, which may be none; nil
     /// while the meter is off.
     private var current: (run: Int, sink: (any Signposts)?)? { lock.withLock { on ? (run, signposts) : nil } }
+
+    /// Keeps the figures of the kept points from here on, measurement or
+    /// none.
+    public func keep() { lock.withLock { keeping = true } }
+
+    /// What the kept points cost since `keep` or the last call, by point;
+    /// counting goes on from nothing.
+    public func takeKept() -> [Entry] {
+        let taken = lock.withLock {
+            let taken = keptStats
+            keptStats = [:]
+            return taken
+        }
+        return taken.map { Entry(point: $0.key, detail: "", stat: $0.value) }.sorted { $0.point < $1.point }
+    }
 
     /// Starts counting from nothing, into `signposts` as well where a
     /// profiler should draw the intervals.
@@ -131,20 +167,32 @@ public final class Meter: @unchecked Sendable {
         }
     }
 
-    /// Begins an interval; nil while the meter is off.
+    /// Begins an interval; nil while the meter is off and the point is
+    /// not one being kept.
     public func begin(_ point: MeterPoint, _ detail: @autoclosure () -> String = "") -> Span? {
-        guard let current else { return nil }
+        let (current, keeps) = lock.withLock { (on ? (run, signposts) : nil, keeping && point.kept) }
+        guard current != nil || keeps else { return nil }
+        let kept = keeps ? "\(point.name)" : nil
+        guard let current else { return Span(key: nil, began: Self.now, end: nil, run: 0, kept: kept) }
         let detail = detail()
         return Span(
-            key: Key(point: "\(point.name)", detail: detail), began: Self.now, end: current.sink?.begin(point.name, detail),
-            run: current.run)
+            key: Key(point: "\(point.name)", detail: detail), began: Self.now, end: current.1?.begin(point.name, detail),
+            run: current.0, kept: kept)
     }
 
     public func end(_ span: Span?) {
         guard let span else { return }
         let took = Self.now - span.began
         span.end?()
-        add(span.key, nanoseconds: took, run: span.run)
+        if let key = span.key { add(key, nanoseconds: took, run: span.run) }
+        guard let kept = span.kept else { return }
+        lock.withLock {
+            var stat = keptStats[kept, default: Stat()]
+            stat.count += 1
+            stat.nanoseconds += took
+            stat.longest = max(stat.longest, took)
+            keptStats[kept] = stat
+        }
     }
 
     /// Times `body` as one interval of `point`.

@@ -75,6 +75,37 @@ private final class RecordedSignposts: Signposts, @unchecked Sendable {
         #expect(meter.stop().map(\.point) == ["body"])
     }
 
+    /// What an app keeps for its own record, with no measurement on: the
+    /// kept points alone, by point, with no detail built and no signpost.
+    @Test func keepingItTimesTheKeptPointsAloneWhateverAMeasurementDoes() {
+        let meter = Meter()
+        var built = 0
+        func detail() -> String {
+            built += 1
+            return "row"
+        }
+        // Not kept until asked.
+        meter.time(.flush) {}
+        #expect(meter.takeKept().isEmpty)
+        meter.keep()
+        meter.time(.flush, detail()) {}
+        meter.time(.flush) {}
+        meter.time(.present, detail()) {}
+        meter.count(.body, detail())
+        #expect(built == 0 && meter.take().isEmpty)
+        let kept = meter.takeKept()
+        #expect(kept.map { "\($0.point) \($0.detail) \($0.stat.count)" } == ["flush  2"])
+        #expect(meter.takeKept().isEmpty)
+        // Beside a measurement, each is counted in its own figures, and a
+        // measurement that stops takes nothing from what is kept.
+        meter.start()
+        meter.time(.flush, "List") {}
+        meter.time(.present, "List") {}
+        #expect(meter.stop().map { "\($0.point) \($0.detail)" } == ["flush List", "present List"])
+        meter.time(.flush) {}
+        #expect(meter.takeKept().map(\.stat.count) == [2])
+    }
+
     @Test func theRuntimeTimesItsPresentersItsFlushesAndItsPublishes() async throws {
         // The process's meter: other suites' runtimes count into it too
         // while it is on, so only this controller's own lines are read.
