@@ -5,7 +5,12 @@
  * unread is derived each time the list is drawn.
  *
  * A thread with no `lastMessage` settled on a server from before marks, or
- * holds no message; it is never unread unless its mark says so. */
+ * holds no message; it is never unread unless its mark says so.
+ *
+ * The same mark says whether the person pinned or archived the chat
+ * (decision 0322). They may do either from the list, to a chat they never
+ * opened, so a mark may hold no `readThrough`: that chat is as unread as one
+ * with no mark. */
 
 import type { SubstrateRecord } from "@/lib/api/types"
 import { refId } from "@/lib/tools"
@@ -64,4 +69,44 @@ export function readThroughToWrite(
 export function threadWaiting(thread: SubstrateRecord): number {
   const n = thread.properties.waitingOnPerson
   return typeof n === "number" && n > 0 ? n : 0
+}
+
+/** Whether the person pinned the chat this mark is of. */
+export function markPinned(mark: SubstrateRecord | undefined): boolean {
+  return mark?.properties.pinned === true
+}
+
+/** Whether the person archived the chat this mark is of. */
+export function markArchived(mark: SubstrateRecord | undefined): boolean {
+  return mark?.properties.archived === true
+}
+
+/** The chat list's three parts, from the rows read and the person's own
+ * flags, each in the order the rows came in:
+ *
+ * - `archived`: what the Archived view lists;
+ * - `pinned`: the pinned chats, above the rest; an archived chat is never
+ *   here, whatever its pin says, and takes its place again when it is
+ *   unarchived;
+ * - `listed`: every other chat the list shows. An archived chat is in it
+ *   only while it waits on a person: an archive hides a chat, never a
+ *   question, a suggested change or a call that needs an answer. */
+export function chatSections<Row extends { thread: SubstrateRecord }>(
+  rows: readonly Row[],
+  flags: { pinned: ReadonlySet<string>; archived: ReadonlySet<string> }
+): { pinned: Row[]; listed: Row[]; archived: Row[] } {
+  const out = {
+    pinned: [] as Row[],
+    listed: [] as Row[],
+    archived: [] as Row[],
+  }
+  for (const row of rows) {
+    const id = row.thread.id
+    if (flags.archived.has(id)) {
+      out.archived.push(row)
+      if (threadWaiting(row.thread) > 0) out.listed.push(row)
+    } else if (flags.pinned.has(id)) out.pinned.push(row)
+    else out.listed.push(row)
+  }
+  return out
 }

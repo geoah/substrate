@@ -1,13 +1,14 @@
-/** The signed-in person's read state over the chats a page lists (decision
- * 0313): which are unread, the two actions a person takes on one, and the
- * write that follows reading the chat that is open.
+/** The signed-in person's marks over the chats a page lists (decisions 0313
+ * and 0322): which are unread, pinned and archived, the actions a person
+ * takes on one, and the write that follows reading the chat that is open.
  *
  * The open chat is read when it has settled and its window has been in
  * front for a moment; the write waits a little longer, so a run of replies
  * is one write, and leaving the chat sends it at once. A mark another
  * device wrote arrives on the change feed: the marks and the thread rows
  * are read again together, since a mark that reads through a reply this
- * page has not heard of yet would otherwise look unread.
+ * page has not heard of yet would otherwise look unread, and a chat pinned
+ * or archived elsewhere belongs to another part of the list.
  *
  * A server from before marks does not know the kind: nothing is unread,
  * nothing is written, and no stream is opened. */
@@ -32,6 +33,8 @@ import {
 } from "@/lib/api/thread-marks"
 import type { Page, SubstrateRecord } from "@/lib/api/types"
 import {
+  markArchived,
+  markPinned,
   marksByThread,
   readThroughToWrite,
   threadLastMessage,
@@ -57,13 +60,24 @@ function useInFront(): boolean {
   )
 }
 
+/** What a write of a mark may change. */
+type ThreadMarkChange = Parameters<typeof writeThreadMark>[1]
+
 export interface ThreadMarks {
   /** The ids of the listed chats that are unread. */
   unread: ReadonlySet<string>
-  /** Whether the server keeps marks; false hides the two actions. */
+  /** The ids of the listed chats the person pinned, and archived. */
+  pinned: ReadonlySet<string>
+  archived: ReadonlySet<string>
+  /** Whether the server keeps marks; false hides every action. */
   supported: boolean
   markUnread: (thread: string) => void
   markRead: (thread: string) => void
+  /** Pins or unpins a chat, archives or unarchives one. Each settles true
+   * once the server stored it and false when the write failed, which the
+   * person is told: they asked for it. */
+  setPinned: (thread: string, on: boolean) => Promise<boolean>
+  setArchived: (thread: string, on: boolean) => Promise<boolean>
 }
 
 export function useThreadMarks(
@@ -96,6 +110,15 @@ export function useThreadMarks(
       if (threadUnread(thread, marks.get(thread.id))) out.add(thread.id)
     return out
   }, [threads, marks, supported])
+  const [pinned, archived] = useMemo(() => {
+    const pins = new Set<string>()
+    const archives = new Set<string>()
+    for (const [thread, mark] of marks) {
+      if (markPinned(mark)) pins.add(thread)
+      if (markArchived(mark)) archives.add(thread)
+    }
+    return [pins, archives]
+  }, [marks])
 
   /** The stored mark a write answered, put into every cached read of marks
    * so the list follows before the feed says so. */
@@ -118,22 +141,41 @@ export function useThreadMarks(
   // One thread's writes go out one after another, in the order they were
   // made: a read already sent would otherwise land after a Mark as Unread
   // made a moment later, and clear it.
-  const sending = useRef(new Map<string, Promise<void>>())
+  const sending = useRef(new Map<string, Promise<boolean>>())
   const write = useCallback(
-    (thread: string, change: Parameters<typeof writeThreadMark>[1]) => {
-      const before = sending.current.get(thread) ?? Promise.resolve()
+    (thread: string, change: ThreadMarkChange): Promise<boolean> => {
+      const before = sending.current.get(thread) ?? Promise.resolve(true)
       // A read that fails is tried again the next time the chat is opened;
       // it is nothing the person can act on.
       const sent = before
         .then(() => writeThreadMark(thread, change))
-        .then(keep, () => {})
+        .then(
+          (mark) => {
+            keep(mark)
+            return true
+          },
+          () => false
+        )
         .finally(() => {
           if (sending.current.get(thread) === sent)
             sending.current.delete(thread)
         })
       sending.current.set(thread, sent)
+      return sent
     },
     [keep]
+  )
+  // A pin or an archive moves the chat to another part of the list, each
+  // part its own read narrowed by the server: they are read again once the
+  // mark is stored, whether or not the feed is there to say so.
+  const flag = useCallback(
+    async (thread: string, change: ThreadMarkChange) => {
+      const stored = await write(thread, change)
+      if (stored)
+        void queryClient.invalidateQueries({ queryKey: [...THREAD_LISTS_KEY] })
+      return stored
+    },
+    [write, queryClient]
   )
 
   // Mark as Unread on the chat that is open would be undone by reading it a
@@ -157,7 +199,7 @@ export function useThreadMarks(
     if (!q) return
     clearTimeout(q.timer)
     queued.current = undefined
-    write(q.thread, { readThrough: q.message })
+    void write(q.thread, { readThrough: q.message })
   }, [write])
   useEffect(() => {
     if (!openId || !want || !inFront) return
@@ -197,7 +239,7 @@ export function useThreadMarks(
         }
         setKept(openKey)
       }
-      write(thread, { markedUnread: true })
+      void write(thread, { markedUnread: true })
     },
     [openId, openKey, write]
   )
@@ -207,9 +249,26 @@ export function useThreadMarks(
         threads.find((t) => t.id === thread) ??
         (open?.id === thread ? open : undefined)
       const last = listed && threadLastMessage(listed)
-      write(thread, last ? { readThrough: last } : { markedUnread: false })
+      void write(thread, last ? { readThrough: last } : { markedUnread: false })
     },
     [threads, open, write]
   )
-  return { unread, supported, markUnread, markRead }
+  const setPinned = useCallback(
+    (thread: string, on: boolean) => flag(thread, { pinned: on }),
+    [flag]
+  )
+  const setArchived = useCallback(
+    (thread: string, on: boolean) => flag(thread, { archived: on }),
+    [flag]
+  )
+  return {
+    unread,
+    pinned,
+    archived,
+    supported,
+    markUnread,
+    markRead,
+    setPinned,
+    setArchived,
+  }
 }
