@@ -1398,6 +1398,40 @@ struct ArchivedAnswering {
         app.server.finishTurns()
     }
 
+    /// Two replies into one chat, both heard before its row is read: the
+    /// conversation is handed one reply at a time, so the second goes when
+    /// the first has, and neither is lost (seed 657 at 53 steps lost the
+    /// first, once a reply waited for a row).
+    @Test func twoRepliesIntoOneChatGoOneAfterTheOther() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1)])
+        await app.rig.harness.send(.back(scene: "s"))
+        app.server.finishTurns()
+        try await app.rig.harness.until(advancing: 6) { _ in
+            let live = await app.rig.live(key)
+            return !app.server.running("t1") && (live == nil || live?.phase == .idle)
+        }
+        app.server.plan([.piece(0)])
+        app.server.plan([.piece(0)])
+        let again = ChatRig([], transport: app.server.connect(), clock: app.rig.clock, ids: app.ids)
+        let replies = ["On my way", "Five minutes"].map { text in
+            NotificationResponse(
+                id: "pushed", category: ChatNotifications.replyCategory, action: .named("reply"),
+                userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: text)
+        }
+        for reply in replies { again.notifications.respond(reply) }
+        try await again.signIn()
+        try await again.harness.until(advancing: 0.5) { _ in
+            app.server.finishTurns()
+            return replies.allSatisfy { again.notifications.calls.contains(.finished($0)) }
+        }
+        #expect(app.server.userRows(saying: "On my way") == 1 && app.server.userRows(saying: "Five minutes") == 1)
+        let said = app.server.rows(of: "t1").filter { $0.role == "user" }.map(\.content)
+        #expect(said.suffix(2) == ["On my way", "Five minutes"])
+        app.server.finishTurns()
+    }
+
     /// The engine alone: the mark read beside a reply from a notification
     /// says the chat was archived, which the device had not heard. The
     /// archive ends, by the person's own write.
