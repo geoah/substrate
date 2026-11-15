@@ -296,7 +296,9 @@ func threadRecordsWhere(ctx context.Context, x dbx, b *builder, alias string, ki
 // word and nothing has answered it, so it is not what a chat is unread for.
 // The rows alone decide, so the loop's settle, a stop's and the recovery's
 // after a crash name the same message. A thread that holds nothing but such
-// messages (a new chat whose first call failed) names the newest of them.
+// messages (a new chat whose first call failed) names the newest of them. A
+// row with no ordinal, from before rows carried one, is no such message: it
+// keeps the last place, as it had.
 func (t *txn) newestMessage(threadID string) (string, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
@@ -312,10 +314,10 @@ func (t *txn) newestMessage(threadID string) (string, error) {
 		SELECT e.id FROM records e
 		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
 		  AND coalesce(e.props->>'role', '') <> `+b.arg(msgRoleSummary)+`
-		ORDER BY (e.props->>'role' = 'user' AND (e.props->>'turn')::bigint > (
+		ORDER BY coalesce(e.props->>'role' = 'user' AND (e.props->>'turn')::bigint > (
 		           SELECT coalesce(max((a.props->>'turn')::bigint), -1) FROM records a
 		           WHERE a.kind = `+kind+` AND a.deleted_at IS NULL AND `+replies+`
-		             AND a.props->>'role' = 'assistant')) NULLS FIRST,
+		             AND a.props->>'role' = 'assistant'), false),
 		         (e.props->>'turn')::bigint DESC NULLS LAST, e.created_at DESC, e.id DESC LIMIT 1`,
 		b.args...)
 	if err != nil {
@@ -350,6 +352,22 @@ func (t *txn) stampLastMessage(sp *applySpec, row *erow, accepted []string) ([]s
 	want := referenceValueOf(vocabulary.RecordPath(typeMessage, last))
 	if jsonEqual(row.Props[propThreadLastMessage], want) {
 		return accepted, nil
+	}
+	// It never moves back, as a mark does not (prepareThreadMark): a mark
+	// that reads through the message it names could not follow it. A thread
+	// may name a message newestMessage now passes over (one the upgrade
+	// seeded, a person's message with no reply after it); it keeps naming it
+	// until a later message takes its place.
+	if stored := referenceTargetOf(row, propThreadLastMessage); stored.Kind == typeMessage && stored.ID != "" {
+		was, live, err := t.messagePlaceIn(stored.ID, row.ID)
+		if err != nil {
+			return accepted, err
+		}
+		if now, ok, err := t.messagePlaceIn(last, row.ID); err != nil {
+			return accepted, err
+		} else if live && ok && now.before(was) {
+			return accepted, nil
+		}
 	}
 	row.Props[propThreadLastMessage] = want
 	return append(accepted, propThreadLastMessage), nil

@@ -921,6 +921,101 @@ func TestAQueuedMessageIsNotTheThreadsLastMessage(t *testing.T) {
 	if n := waitingOf(t, ds, thread); n != 0 {
 		t.Fatalf("queued messages count as %d things waiting on a person", n)
 	}
+
+	// A row from before rows carried an ordinal is no message waiting for an
+	// answer: it does not come before the reply.
+	if _, err := ds.putInternal(ctx, substrate.ActorSystem, substrate.PutInput{Kind: typeMessage, ID: fid("no-ordinal"), Properties: map[string]any{
+		"role": "user", "content": "from before ordinals", "turn": 0, msgRelThread: thread,
+	}}); err != nil {
+		t.Fatalf("plant a row: %v", err)
+	}
+	if _, err := ds.db.ExecContext(ctx, `UPDATE records SET props = props - 'turn' WHERE kind = $1 AND id = $2`, typeMessage, fid("no-ordinal")); err != nil {
+		t.Fatal(err)
+	}
+	loseTheRun(t, ds, thread)
+	if got := lastMessageOf(t, ds, thread); got != partial {
+		t.Fatalf("with a user row that carries no ordinal lastMessage is %s, want the reply %s", got, partial)
+	}
+
+	// It never moves back. A thread may name a message this rule passes
+	// over (the upgrade seeded the newest row, whatever it was), and a mark
+	// that reads through it could not follow it to an earlier one: a settle
+	// that writes nothing newer leaves it where it is.
+	if _, err := ds.db.ExecContext(ctx, `UPDATE records SET props = props || jsonb_build_object('lastMessage', jsonb_build_object('ref', $3::text))
+		WHERE kind = $1 AND id = $2`, typeThread, thread, vocabulary.RecordPath(typeMessage, "q2")); err != nil {
+		t.Fatal(err)
+	}
+	fake.script("chat", fakeTurn{status: 500})
+	if _, err := ds.ContinueAgentTurn(ctx, substrate.ActorPerson, thread, nil); err == nil {
+		t.Fatal("the failing continue answered no error")
+	}
+	if got := lastMessageOf(t, ds, thread); got != "q2" {
+		t.Fatalf("after a settle that wrote nothing newer lastMessage went back to %s, want it still %s", got, "q2")
+	}
+	// A later reply takes its place.
+	fake.script("chat", fakeTurn{content: "here"})
+	if cont, err := ds.ContinueAgentTurn(ctx, substrate.ActorPerson, thread, nil); err != nil || cont.Reply != "here" {
+		t.Fatalf("continue = %+v, %v", cont, err)
+	}
+	if got := lastMessageOf(t, ds, thread); got != replyRow(t, ds, thread) || got == partial {
+		t.Fatalf("after a reply lastMessage is %s, want the reply %s", got, replyRow(t, ds, thread))
+	}
+}
+
+// The turn waiting messages start is held to the senders its starter read,
+// so it claims the thread only while those very messages wait there. Where
+// another turn has read them and left one of another sender's, it runs
+// nothing: that turn's own settle starts what its message asks for.
+func TestTheNextTurnRunsOnlyForTheMessagesItWasStartedFor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("chat", fakeTurn{status: 500})
+	if _, _, err := sendChat(ds, substrate.ChatInput{Message: "hi", MessageID: "m0"}); err == nil {
+		t.Fatal("the failing turn answered no error")
+	}
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: "m0"})
+	if err != nil || row == nil {
+		t.Fatalf("the message: %v", err)
+	}
+	thread := referenceID(row.Props[msgRelThread])
+	ag, err := ds.registry().ResolveAgent(chatter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := func(status string, startsFrom ...string) error {
+		t.Helper()
+		if _, err := ds.db.ExecContext(ctx, `UPDATE records SET props = props || jsonb_build_object('status', $3::text) WHERE kind = $1 AND id = $2`,
+			typeThread, thread, status); err != nil {
+			t.Fatal(err)
+		}
+		held := substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
+		in := agentInvocation{mode: agentModeChat, threadID: thread, resume: true, unanswered: true, startsFrom: startsFrom}
+		return ds.resumeChatTurn(held, ag, in, deferredResume{thread: thread, resolution: "m0", sent: true}, nil)
+	}
+	// Other messages than the ones waiting, and a thread that did not settle
+	// on its own: nothing runs.
+	for what, err := range map[string]error{
+		"a turn started for another message":      start(threadOK, "another"),
+		"a turn started for one message of two":   start(threadOK),
+		"a turn started on a thread that failed":  start(threadError, "m0"),
+		"a turn started on a thread a stop holds": start(threadStopped, "m0"),
+	} {
+		if !errors.Is(err, errNothingUnanswered) && !errors.Is(err, errResumeStopped) {
+			t.Errorf("%s = %v, want it refused", what, err)
+		}
+	}
+	if n := len(fake.requestsOf("chat")); n != 1 {
+		t.Fatalf("%d model calls, want only the first turn's", n)
+	}
+	// The very messages, on a thread that settled on its own: it runs.
+	fake.script("chat", fakeTurn{content: "hello"})
+	if err := start(threadOK, "m0"); err != nil {
+		t.Fatalf("the turn started for the message that waits: %v", err)
+	}
+	if !slices.Contains(assistantContents(t, ds, thread), "hello") {
+		t.Fatal("the turn did not answer")
+	}
 }
 
 // A run that ends on its own with a message unread names its own reply, and

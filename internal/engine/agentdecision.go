@@ -423,10 +423,11 @@ func (ds *dataset) continueThreadFrom(ctx context.Context, r deferredResume, ope
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
 	}
+	var startsFrom []string
 	if r.sent {
 		// The turn reads every message that waits, so it is held to each of
 		// their senders, from before its first read (its pinned context) on.
-		if ctx, err = ds.heldToUnanswered(ctx, threadID); err != nil {
+		if ctx, startsFrom, err = ds.heldToUnanswered(ctx, threadID); err != nil {
 			ds.svc.log.Warn("substrate: resume: whom the waiting messages act for was not read", "thread", threadID, "error", err)
 			return
 		}
@@ -444,7 +445,7 @@ func (ds *dataset) continueThreadFrom(ctx context.Context, r deferredResume, ope
 	}
 	defer release()
 	mode, _ := row.Props["mode"].(string)
-	in := agentInvocation{mode: mode, threadID: threadID, resume: true, unanswered: r.sent}
+	in := agentInvocation{mode: mode, threadID: threadID, resume: true, unanswered: r.sent, startsFrom: startsFrom}
 	if mode == agentModeChat {
 		err = ds.resumeChatTurn(ctx, ag, in, r, opened)
 	} else {
