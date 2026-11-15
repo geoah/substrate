@@ -469,6 +469,21 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var acting: [String: Act] = [:]
     var acted: Set<String> = []
     var deferred: [Deferred] = []
+    /// The cards whose notification waits for their turn to settle, by id
+    /// (`ChatAppAttention.swift`).
+    var heldCards: [String: Record] = [:]
+    /// The card notifications that stand, by thread: taken back once
+    /// nothing waits in the chat.
+    var attention: [String: [String]] = [:]
+    /// The settle each card's notification stands for, by the card's id:
+    /// its thread's `finishedAt`. A later reply in the chat is its own.
+    var cardSaid: [String: String] = [:]
+    /// The threads a reply's own notification stands for, of the ones in
+    /// `announced`: a read takes it back where a card's must stay.
+    var replySaid: Set<String> = []
+    /// The threads a notification says an action could not be done in:
+    /// each stands until its chat is opened here.
+    var failedActions: Set<String> = []
     /// A reply typed into a notification that could be neither sent nor
     /// written down in its time, by thread: the folder was not read yet.
     /// It goes into the thread's draft when the folder is.

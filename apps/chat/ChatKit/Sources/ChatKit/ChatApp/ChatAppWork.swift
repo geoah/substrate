@@ -226,6 +226,13 @@ extension ChatApp {
                 guard let client = await source.current(), let marks = await Self.marks(client, threads: threads) else { return nil }
                 return Event(.marksRead(marks))
             }
+        case let .confirmMark(thread):
+            // A read that fails changes nothing: the next list read reads
+            // the mark of a thread a conversation is on.
+            return .once {
+                guard let client = await source.current(), let marks = await Self.marks(client, threads: [thread], full: false) else { return nil }
+                return Event(.markConfirmed(thread: thread, marks))
+            }
         case let .sight(thread, message):
             return .once {
                 guard await pause(Self.sightSeconds) else { return nil }
@@ -479,6 +486,8 @@ extension ChatApp {
             return Self.device(notifications) { await $0.register(categories) }
         case let .actionWait(id, seconds):
             return .once { await pause(seconds) ? Event(.actionDue(id)) : nil }
+        case let .cardHold(id, seconds):
+            return .once { await pause(seconds) ? Event(.cardHoldDue(id)) : nil }
         case let .finishAction(response, cancel, notify, keep):
             // Its place among the drafts' writes, taken now (`saveDrafts`).
             let ticket = keep.map { _ in storage.draftsTicket() }

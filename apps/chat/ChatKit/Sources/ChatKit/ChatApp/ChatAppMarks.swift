@@ -107,7 +107,9 @@ extension ChatAppState {
     /// thread listed, as an app's token must name them.
     var cardThreads: [String] {
         guard readsMarks else { return threadIDs }
-        return (chats + automated + others.values.sorted { $0.id < $1.id }).filter { ChatThread(record: $0).waiting > 0 }.map(\.id)
+        // Every list's rows: an archived chat that waits is in none but
+        // the one of the chats that wait.
+        return (held + others.values.sorted { $0.id < $1.id }).filter { ChatThread(record: $0).waiting > 0 }.map(\.id)
     }
 
     /// The marks worth keeping on the device: those of the threads held.
@@ -427,7 +429,7 @@ extension ChatApp {
         for thread in state.announced.sorted() {
             if visible.contains(thread) {
                 state.announced.remove(thread)
-            } else if state.thread(thread).map({ !state.notifies($0) }) ?? state.archived(thread) {
+            } else if !state.notifies(thread) {
                 // Archived since, here or on another device: what it
                 // notified is put away with it. Also where no list holds
                 // its row any more and its mark, read by name, says so: a
@@ -435,6 +437,14 @@ extension ChatApp {
                 state.announced.remove(thread)
                 state.asks.append(.cancelGroup(thread))
             } else if let row = state.thread(thread), !row.running, state.marked(thread), !state.unread(row), !state.failedUnseen(row) {
+                // A read answers a reply's notification. A card's stands
+                // while its chat waits, and what an action could not do
+                // until the chat is opened here: where either does, the
+                // reply's own goes alone (`readElsewhere`).
+                guard !state.mayWait(thread), !state.failedActions.contains(thread) else {
+                    readElsewhere(&state, thread)
+                    continue
+                }
                 state.announced.remove(thread)
                 state.asks.append(.cancelGroup(thread))
             }

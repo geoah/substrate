@@ -28,6 +28,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case notificationActed(NotificationResponse, key: ChildKey, message: String, at: Date)
     /// The time an action from a notification may take has passed.
     case actionDue(String)
+    /// A card's notification was held as long as it may be.
+    case cardHoldDue(String)
     case phase(AppPhase)
     case paced(Bool)
 
@@ -40,6 +42,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case featuresRead(agents: Int, records: Int)
     /// The person's marks of some threads, read on their own.
     case marksRead(Marks)
+    /// The mark of a thread the person spoke in from a notification, read
+    /// after they did.
+    case markConfirmed(thread: String, Marks)
     case threadsRead(Threads)
     case agentsRead(agents: [Record], providers: [Record]?, models: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)

@@ -80,6 +80,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
 
     /// The person's marks of these threads.
     case readMarks([String])
+    /// The person's mark of a thread they just spoke in from outside the
+    /// app, read on its own: what the device holds of it may be old.
+    case confirmMark(String)
     /// Wakes the engine once the end of a chat has been on screen a second.
     case sight(thread: String, message: String)
     /// Wakes the engine when the next mark's write is due.
@@ -95,6 +98,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case categories([NotificationCategory])
     /// Wakes the engine when an action from a notification has had its time.
     case actionWait(String, seconds: Double)
+    /// Wakes the engine when a card's notification was held long enough
+    /// for its turn to settle.
+    case cardHold(String, seconds: Double)
     /// An action from a notification is over: its own notification is
     /// taken back or what it could not do is said, and only then is the
     /// device told, which may suspend the app at that word. `keep` is

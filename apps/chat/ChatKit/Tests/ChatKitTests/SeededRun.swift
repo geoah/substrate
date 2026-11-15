@@ -669,6 +669,8 @@ struct SeededRun {
             // an id, and never lost.
             sent[words] = (1, true, server.chatRequests(saying: words))
             ever[words, default: 1] += 0
+            // And theirs to follow again, where the chat was archived.
+            if let thread = note.thread { spokeIn.insert(thread) }
         case ChatNotifications.approvalCategory:
             action = numbers.chance(0.6) ? ChatNotifications.Action.approve.id : ChatNotifications.Action.decline.id
         case ChatNotifications.openCategory:
@@ -1516,7 +1518,11 @@ struct SeededRun {
             if live.phase == .idle || live.phase == .handingOver {
                 return broke(.queued, "\(name) draws \(turn.id) as queued while no run goes on in it")
             }
-            if drewRead[key]?.contains(turn.id) == true {
+            // Drawn plain between two times it is drawn queued is no
+            // fault where the server still holds it unread: a chat that
+            // lost its stream says nothing of a queue until it reads one
+            // again (seed 215, with the list's steps beside these).
+            if drewRead[key]?.contains(turn.id) == true, server.wasTaken(turn.id) {
                 return broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read")
             }
         }

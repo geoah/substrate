@@ -40,7 +40,7 @@ extension ChatApp {
             next.backgroundRun = nil
             if let disk = next.disk, disk.scheduled(run) {
                 if let threads { apply(&next, threads: threads) }
-                if let cards { apply(&next, cards: cards) }
+                if let cards { apply(&next, cards: cards, holds: false) }
             }
             next.asks.append(.finishRun(run, success: threads != nil))
         case let .backgroundExpired(id):
@@ -121,6 +121,16 @@ extension ChatApp {
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
             announceLearned(&next, learned)
+        case let .markConfirmed(thread, marks):
+            // The person replied in this chat from a notification, and
+            // what the device held of its mark may have been old: archived
+            // on another device a moment before, it is theirs to follow
+            // again (decision 0322), which this read is in time to say.
+            guard !marks.unserved else { break }
+            let learned = apply(&next, marks: marks)
+            for thread in marks.threads { noteBehind(&next, thread) }
+            announceLearned(&next, learned)
+            spoke(&next, in: thread)
         case let .endShown(scene, key, shown):
             if shown {
                 next.scenes[scene]?.atEnd = key
@@ -413,6 +423,7 @@ extension ChatApp {
             acted(&next, response, key: key, message: message, at: at)
         case let .actionDue(stamp):
             actionDue(&next, stamp)
+        case let .cardHoldDue(id): cardHoldDue(&next, id)
         }
         // What came on screen is read: at once where the device keeps what
         // is unread, and once its end was looked at where the server does.
@@ -420,6 +431,7 @@ extension ChatApp {
             for thread in next.visibleThreads.subtracting(state.visibleThreads) { markSeen(&next, thread) }
         }
         settleMarks(&next)
+        settleAttention(&next)
         return next
     }
 
@@ -736,18 +748,24 @@ extension ChatApp {
     /// a device beside this one stays quiet.
     func announce(_ state: inout State, _ thread: ChatThread) {
         guard !thread.running, let finished = thread.record["finishedAt"]?.string else { return }
+        // A turn that ended waiting on a card is said by the card's
+        // notification, which carries the reply: one, not two. Read
+        // before a card held for this row is posted with it.
+        let carried = state.preferences.notifyAttention && carried(&state, thread, finished: finished)
+        attend(&state, settled: thread)
         let key = "reply|\(thread.id)|\(finished)"
         guard !state.notified.contains(key) else { return }
         if state.readsMarks, !state.marked(thread.id) { return }
         state.notified.insert(key)
         // A reply in a chat its person archived reaches nobody, but while
         // the chat waits on a person.
-        guard state.notifies(thread) else { return }
+        guard state.notifies(thread.id, row: thread) else { return }
+        if carried { return }
         // A stop is the owner's own act; an error says so rather than
         // offering the turn before it as the answer.
         guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
             thread.status != "stopped", thread.status == "error" || thread.record["lastReply"]?.text != nil,
-            state.marks == nil || state.unread(thread) || state.failedUnseen(thread), state.mayNotify(thread.id)
+            state.marks == nil || state.unread(thread) || state.failedUnseen(thread)
         else { return }
         // Reply with text where a message goes under an id of its own.
         let request = ChatNotifications.reply(
@@ -755,9 +773,10 @@ extension ChatApp {
             title: state.title(thread), failed: notificationWords(state, thread: thread), replies: state.sendsIDs)
         state.asks.append(state.marks == nil ? .notify(request) : .notifyHeld(request, seconds: Self.notifyHold))
         state.announced.insert(thread.id)
+        state.replySaid.insert(thread.id)
     }
 
-    func apply(_ state: inout State, cards: ChatAppStep.Cards) {
+    func apply(_ state: inout State, cards: ChatAppStep.Cards, holds: Bool = true) {
         state.interactions = cards.interactions
         state.requests = cards.requests
         state.approvals = cards.approvals ?? []
@@ -772,27 +791,7 @@ extension ChatApp {
         for record in state.approvals where (state.cards[record.id]?.record?.version ?? .max) < record.version {
             state.cards[record.id]?.record = record
         }
-        for record in cards.interactions + cards.requests + state.approvals {
-            let key = "card|\(record.kind)/\(record.id)"
-            guard !state.notified.contains(key) else { continue }
-            state.notified.insert(key)
-            let thread = record["thread"]?.referenceID
-            guard state.baselined, state.preferences.notifyAttention, !(thread.map(state.visibleThreads.contains) ?? false),
-                state.mayNotify(thread)
-            else { continue }
-            let row = thread.flatMap { state.thread($0) }
-            // An approval names the agent that asked, a sub-agent included.
-            let asker = record.kind == Kinds.approval ? referent(record["agent"], pin: Kinds.agent) : nil
-            let who = agentName(asker ?? row?.agentID ?? record["proposer"]?.string ?? "Your agent")
-            // With the categories as they stand with this record among
-            // them: its options are its own category's actions.
-            state.asks.append(
-                .notifyCard(
-                    ChatNotifications.attention(
-                        record: record, thread: thread, agent: who,
-                        title: row.map(state.title) ?? "A chat"),
-                    categories: ChatNotifications.categories(for: cards.interactions)))
-        }
+        attend(&state, holds: holds)
     }
 
     // MARK: Transcripts

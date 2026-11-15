@@ -18,9 +18,11 @@ struct Answering {
     /// The ids of this world: a launch after another mints none again.
     let ids = SequentialIDs()
 
-    init(agents: Int = 6) {
+    /// - Parameter records: 9 for a server that keeps a person's pins and
+    ///   archives, 8 for one that keeps their marks alone.
+    init(agents: Int = 6, records: Int = 8) {
         let clock = TestClock()
-        server = SeededServer(seed: 1, clock: clock, revision: agents)
+        server = SeededServer(seed: 1, clock: clock, revision: agents, records: records)
         rig = ChatRig([], transport: server.connect(), clock: clock, ids: ids)
         self.agents = agents
     }
@@ -220,6 +222,26 @@ struct QueuedMessages {
         #expect(await app.said(key) == ["Hi", "r1.0 ", "And the mint?"])
         #expect(await app.rig.live(key)?.unread == 1)
         #expect(await app.rig.card(key)?.button?.title == "Try Again")
+    }
+
+    /// A chat opened at a message, as a search's hit opens it, while that
+    /// message is queued: it is drawn at its place, and says so.
+    @Test func aChatOpenedAtAQueuedMessageDrawsItQueued() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1), .piece(2)])
+        app.work(2)
+        try await app.until { screen, _ in screen.streaming && screen.composer.queues }
+        try await app.say("And the mint?", key)
+        try await app.until { screen, _ in screen.composer.queued != nil }
+        let message = try #require(app.server.rows(of: "t1").first { $0.content == "And the mint?" })
+        await app.rig.harness.send(.open(thread: "t1", message: message.id, scene: "s"))
+        try await app.until { screen, _ in screen.opens != .end }
+        let screen = try await app.screen(key)
+        #expect(screen.opens == .turn(message.id))
+        #expect(await app.said(key).contains("And the mint? (queued)") && screen.turns.contains { $0.id == message.id })
+        app.server.finishTurns()
+        try await app.settled(key)
     }
 
     @Test func oneSentFromAnotherDeviceIsDrawnTooAndSeveralKeepTheirOrder() async throws {
@@ -426,6 +448,36 @@ struct FoldedCards {
         #expect(answered.cards["i1"]?.busy == "answer")
         answered = try app.apply(.init(.questionsDismissed("i1")), to: state)
         #expect(answered.asks.contains(.writeCard("i1", kind: Kinds.interaction, properties: ["state": "dismissed"], ifVersion: 3)))
+    }
+
+    /// A search's hit opens a chat at a message. The line the rows hold
+    /// for an answer is not drawn where its call says the outcome, so a
+    /// chat opened at that row stands at the turn drawn after it, which is
+    /// there; and the call above it carries the outcome.
+    @Test func aChatOpenedAtAnOutcomesRowStandsAtTheNextTurnDrawn() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let (key, id) = try await asked(app)
+        let question = try #require(try await app.screen(key).cards[id]?.question?.questions.first)
+        await app.rig.harness.send(.answer(question: id, picks: [question.id: [question.options[0].value]]))
+        try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
+        app.server.plan([.piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let line = try #require(app.server.rows(of: "t1").first { $0.role == "system" })
+        let reply = try #require(app.server.rows(of: "t1").first { $0.role == "assistant" && $0.turn > line.turn })
+        await app.rig.harness.send(.open(thread: "t1", message: line.id, scene: "s"))
+        try await app.until { screen, _ in screen.opens != .end }
+        let screen = try await app.screen(key)
+        guard case let .turn(at) = screen.opens else {
+            Issue.record("the chat opens at no turn")
+            return
+        }
+        #expect(!screen.turns.contains { $0.id == line.id } && screen.turns.contains { $0.id == at })
+        // The reply that followed the answer, under the id it is drawn by.
+        let drawn = try #require(screen.turns.first { $0.id == at })
+        if case let .assistant(turn) = drawn.body { #expect(turn.text == reply.content) } else { Issue.record("it stands at \(drawn.body)") }
+        #expect(await app.tools(key).first?.resolution?.mark == .done)
     }
 
     @Test func oneResolvedOnAnotherDeviceFoldsWhenTheFeedSaysSo() async throws {
@@ -879,7 +931,8 @@ struct NotificationActions {
         let note = try #require(notes["chat|t1|card|\(card.id)"])
         // Enough to decide: what would run, with what, to whom.
         #expect(note.category == ChatNotifications.approvalCategory)
-        #expect(note.body == "Wants your approval to run gmail_send.\nSubject: Subject \(card.id)\nTo: ada@example.com")
+        #expect(note.body == "r3.0\nWants your approval to run gmail_send.\nSubject: Subject \(card.id)\nTo: ada@example.com")
+        #expect(notes["chat|t1|reply"] == nil)
         #expect(note.userInfo[ChatNotifications.versionKey] == "1" && note.userInfo[ChatNotifications.cardKey] == card.id)
         let response = respond(app, note, "approve")
         try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
@@ -919,7 +972,10 @@ struct NotificationActions {
         }
         // Its options are its own category's actions, registered before
         // it was shown.
-        #expect(note.category == ChatNotifications.questionCategory(card.id) && note.body == card.questions[0].prompt)
+        // It is the one notification of that turn, so it says what the
+        // reply said above what it asks.
+        #expect(note.category == ChatNotifications.questionCategory(card.id) && note.body == "r3.0\n" + card.questions[0].prompt)
+        #expect(notes["chat|t1|reply"] == nil)
         let category = try #require(app.rig.notifications.categories.first { $0.id == note.category })
         #expect(category.actions.map(\.title) == card.questions[0].options.map { "Option \($0)" })
         let calls = app.rig.notifications.calls
@@ -962,6 +1018,356 @@ struct NotificationActions {
         let first = NotificationResponse(id: "chat|t1|reply", category: nil, action: .named("reply"), userInfo: ["nonce": "a"], text: "Hi")
         let next = NotificationResponse(id: "chat|t1|reply", category: nil, action: .named("reply"), userInfo: ["nonce": "b"], text: "Hi")
         #expect(ChatNotifications.stamp(first) != ChatNotifications.stamp(next))
+    }
+}
+
+/// Answering beside the list's pins and archives (decision 0322): an
+/// archived chat is silent but while it waits, a person's own message ends
+/// its archive, and one notification says a turn that ended on a card.
+@Suite("Answering in a list that archives", .timeLimit(.minutes(10)))
+struct ArchivedAnswering {
+    private func pending(_ app: Answering) -> [String: NotificationRequest] { app.rig.notifications.pending }
+
+    /// The person archives a chat the list holds: the list is read first,
+    /// since a chat just started is not in it yet.
+    private func archive(_ app: Answering, _ thread: String) async throws {
+        await app.rig.harness.send(.refresh)
+        try await app.rig.harness.until(advancing: 1) { harness in
+            let state = await harness.state
+            return !state.refreshing && state.thread(thread) != nil
+        }
+        await app.rig.harness.send(.archive(thread: thread, archived: true))
+        try await app.rig.harness.until(advancing: 1) { _ in app.server.mark(of: thread)?.archived == true }
+        try await caughtUp(app)
+    }
+
+    /// Whatever the watch reported has been read again, and every write of
+    /// a mark answered.
+    private func caughtUp(_ app: Answering) async throws {
+        try await app.rig.harness.until(advancing: 1) { harness in
+            let state = await harness.state
+            return state.feedBatch.isEmpty && state.feedApplying == nil && !state.refreshing && state.markSending.isEmpty && state.marking.isEmpty
+        }
+    }
+
+    /// The whole of it, with no list refresh asked for: an archived chat
+    /// comes to wait on a card, so it is listed, counted and notified for;
+    /// the card answered from its notification, it waits no more, and is
+    /// in no list, count or notification again.
+    @Test func aCardPutsAnArchivedChatInTheListAndAnsweredFromItsNotificationTakesItOut() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        try await app.rig.harness.until { harness in await harness.state.flags }
+        _ = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        await app.rig.harness.send(.back(scene: "s"))
+        try await archive(app, "t1")
+        #expect(await app.rig.listed() == [])
+        // Its turn ends on a question, with nobody looking.
+        app.server.finishTurns()
+        try await app.rig.harness.until(advancing: 1) { harness in
+            let state = await harness.state
+            return state.waiting.contains { $0.id == "t1" } && pending(app).keys.contains { $0.hasPrefix("chat|t1|card|") }
+        }
+        try await caughtUp(app)
+        let card = try #require(app.server.allCards.first)
+        #expect(await app.rig.listed() == ["t1"])
+        #expect(await app.rig.harness.presentation.unread == 1)
+        // One notification: the card's, which says the reply too.
+        let note = try #require(pending(app)["chat|t1|card|\(card.id)"])
+        #expect(pending(app).keys.filter { $0.hasPrefix("chat|t1|") } == [note.id] && note.body?.hasPrefix("r3.0\n") == true)
+        #expect(await app.rig.harness.state.announced == ["t1"])
+
+        // Answered from the notification, where it can be; else on another
+        // device. Either way nothing waits in the chat.
+        if note.category == ChatNotifications.questionCategory(card.id) {
+            app.rig.notifications.respond(
+                NotificationResponse(id: note.id, category: note.category, action: .named("option.0"), userInfo: note.userInfo))
+        } else {
+            app.server.elsewhere(card: card.id, accept: true)
+        }
+        try await app.rig.harness.until(advancing: 1) { _ in app.server.card(card.id)?.pending == false }
+        app.server.finishTurns()
+        try await app.rig.harness.until(advancing: 6) { harness in
+            let state = await harness.state
+            return !app.server.running("t1") && !state.waiting.contains { $0.id == "t1" } && state.thread("t1")?.running != true
+        }
+        try await caughtUp(app)
+        #expect(app.server.card(card.id)?.resolutions == 1 && app.server.mark(of: "t1")?.archived == true)
+        #expect(await app.rig.listed() == [])
+        #expect(await app.rig.harness.presentation.unread == 0)
+        // The reply that followed the answer is an archived chat's: silent.
+        // and nothing is kept as standing for it.
+        try await app.rig.harness.until(advancing: 6) { harness in
+            let state = await harness.state
+            return state.announced.isEmpty && !pending(app).keys.contains { $0.hasPrefix("chat|t1|") }
+        }
+    }
+
+    @Test func aMessageSentWhileAnArchivedChatsReplyRunsEndsItsArchiveAndIsNotHeld() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        try await app.rig.harness.until { harness in await harness.state.flags }
+        let key = try await app.chat([.piece(0), .piece(1), .piece(2)])
+        app.work(2)
+        try await app.until { screen, _ in screen.streaming && screen.composer.queues }
+        try await archive(app, "t1")
+        app.server.plan([.piece(0)])
+        try await app.say("And the mint?", key)
+        // The message is written at once, and the archive ends with it.
+        try await app.rig.harness.until(advancing: 1) { _ in
+            app.server.userRows(saying: "And the mint?") == 1 && app.server.mark(of: "t1")?.archived == false
+        }
+        app.server.finishTurns()
+        try await app.settled(key)
+        #expect(app.server.userRows(saying: "And the mint?") == 1 && app.server.chatRequests(saying: "And the mint?") == 1)
+    }
+
+    @Test func anAnswerInThePersonsOwnWordsEndsAnArchivedChatsArchive() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        try await app.rig.harness.until { harness in await harness.state.flags }
+        let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let card = try #require(app.server.allCards.first)
+        try await archive(app, "t1")
+        try await app.rig.send(.answerInWords(card.id), to: key)
+        app.server.plan([.piece(0)])
+        try await app.say("Thursday, after eleven", key)
+        try await app.rig.harness.until(advancing: 1) { _ in
+            app.server.userRows(saying: "Thursday, after eleven") == 1 && app.server.mark(of: "t1")?.archived == false
+                && app.server.card(card.id)?.state == "dismissed"
+        }
+        app.server.finishTurns()
+    }
+
+    /// The case a device cannot see coming: its notification stands, the
+    /// chat is archived on another device, and the reply typed into the
+    /// notification launches the app, which last knew the chat as not
+    /// archived. The reply goes, once, and the archive ends with it.
+    @Test func aReplyFromANotificationIntoAChatArchivedOnAnotherDeviceEndsItsArchive() async throws {
+        let app = Answering(records: 9)
+        try await app.signIn()
+        try await app.rig.harness.until { harness in await harness.state.flags }
+        let key = try await app.chat([.piece(0), .piece(1)])
+        await app.rig.harness.send(.back(scene: "s"))
+        app.server.finishTurns()
+        try await app.rig.harness.until(advancing: 6) { _ in
+            let live = await app.rig.live(key)
+            return !app.server.running("t1") && (live == nil || live?.phase == .idle)
+        }
+        await app.rig.harness.send(.refresh)
+        try await app.rig.harness.until(advancing: 6) { harness in
+            let state = await harness.state
+            return !state.refreshing && pending(app)["chat|t1|reply"] != nil
+        }
+        let note = try #require(pending(app)["chat|t1|reply"])
+        // The app is gone; the chat is archived elsewhere; the reply's
+        // action launches the app again.
+        let again = app.relaunched()
+        app.server.elsewhere("t1", archived: true)
+        app.server.plan([.piece(0)])
+        let response = NotificationResponse(id: note.id, category: note.category, action: .named("reply"), userInfo: note.userInfo, text: "On my way")
+        again.notifications.respond(response)
+        try await again.signIn()
+        try await again.harness.until(advancing: 0.5) { _ in
+            again.notifications.calls.contains(.finished(response)) && app.server.mark(of: "t1")?.archived == false
+        }
+        #expect(app.server.userRows(saying: "On my way") == 1)
+        #expect(!again.notifications.calls.contains { if case let .schedule(request) = $0 { request.id == "chat|t1|failed" } else { false } })
+        app.server.finishTurns()
+    }
+
+    /// The engine alone: the mark read beside a reply from a notification
+    /// says the chat was archived, which the device had not heard. The
+    /// archive ends, by the person's own write.
+    @Test func aMarkReadBesideAReplySaysTheChatWasArchivedAndTheArchiveEnds() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        state.recordsRevision = 9
+        state.agentsRevision = 6
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1)]
+        state.chats = [Record(id: "t1", kind: Kinds.thread, properties: ["status": "ok", "agent": ["ref": .string("\(Kinds.agent)/\(helper)")]], version: 2)]
+        #expect(state.flags && !state.archived("t1"))
+        let response = NotificationResponse(
+            id: "chat|t1|reply", category: ChatNotifications.replyCategory, action: .named("reply"),
+            userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: "On my way")
+        state = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m9", at: Date(timeIntervalSince1970: 0))), to: state)
+        #expect(state.asks.contains(.confirmMark("t1")))
+        let mark = Record(
+            id: "t1.me", kind: Kinds.threadMark,
+            properties: ["thread": ["ref": .string("\(Kinds.thread)/t1")], "readThrough": "m1", "archived": true], version: 2)
+        state.asks = []
+        state = try app.apply(.init(.markConfirmed(thread: "t1", .init(threads: ["t1"], records: [mark]))), to: state)
+        #expect(state.marking["t1"]?.archived == false || state.markSending["t1"]?.archived == false)
+        #expect(!state.archived("t1"))
+    }
+}
+
+/// One notification for a turn that ends waiting on a card, on the engine
+/// alone: the card's, with what the reply said, whichever of the card and
+/// the thread's row is read first.
+@Suite("A turn that ends on a card is one notification")
+struct OneNotification {
+    let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+    let asked = "2026-11-15T10:00:05Z"
+
+    private func start() -> ChatAppState {
+        var state = signedInState()
+        state.baselined = true
+        state.recordsRevision = 8
+        state.agentsRevision = 6
+        state.marks = ["t1": ThreadMark(readThrough: "m0", version: 1)]
+        state.chats = [row(running: true, version: 2)]
+        return state
+    }
+
+    private func row(running: Bool, version: Int, finished: String = "2026-11-15T10:00:06Z", reply: String = "One thing before I book it.") -> Record {
+        var properties: [String: JSONValue] = [
+            "status": .string(running ? "running" : "ok"), "agent": ["ref": .string("\(Kinds.agent)/\(helper)")], "mode": "chat",
+            "lastMessage": ["ref": .string("\(Kinds.message)/m\(version)")],
+        ]
+        if !running {
+            properties["finishedAt"] = .string(finished)
+            properties["lastReply"] = .string(reply)
+            properties["waitingOnPerson"] = 1
+        }
+        return Record(id: "t1", kind: Kinds.thread, properties: properties, version: version)
+    }
+
+    private var card: Record {
+        var record = Record(
+            id: "i1", kind: Kinds.interaction,
+            properties: [
+                "state": "pending", "thread": ["ref": .string("\(Kinds.thread)/t1")],
+                "questions": [["id": "q1", "prompt": "Which morning?", "options": [["value": "tue", "label": "Tuesday"]]]],
+            ], version: 1)
+        record.createdAt = asked
+        return record
+    }
+
+    private func posted(_ state: ChatAppState) -> [NotificationRequest] {
+        state.asks.compactMap { ask -> NotificationRequest? in
+            switch ask {
+            case let .notifyCard(request, _), let .notify(request), let .notifyHeld(request, _): request
+            default: nil
+            }
+        }
+    }
+
+    @Test func theCardReadFirstWaitsForItsTurnToSettleAndSaysTheReply() throws {
+        var state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: start())
+        // Its turn still runs: held, a few seconds at most.
+        #expect(posted(state).isEmpty && state.asks.contains(.cardHold("i1", seconds: ChatApp.cardHold)))
+        state.asks = []
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        let notes = posted(state)
+        #expect(notes.map(\.id) == ["chat|t1|card|i1"] && notes.first?.body == "One thing before I book it.\nWhich morning?")
+        #expect(state.announced == ["t1"] && state.asks.contains(.cancel("cardHold:i1")))
+    }
+
+    @Test func theRowReadFirstIsSaidByTheCardThatFollowsIt() throws {
+        var state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: start())
+        // The reply's own waits for a mark, as any reply's does.
+        #expect(posted(state).map(\.id) == ["chat|t1|reply"])
+        state.asks = []
+        state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: state)
+        // The card's is posted with the reply, and the reply's own is
+        // taken back before it is shown.
+        #expect(posted(state).map(\.id) == ["chat|t1|card|i1"] && posted(state).first?.body == "One thing before I book it.\nWhich morning?")
+        #expect(state.asks.contains(.cancelNotification("chat|t1|reply")))
+    }
+
+    @Test func aCardHeldAsLongAsItMayBeIsPostedAloneAndItsTurnsEndSaysNothingMore() throws {
+        var state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: start())
+        state.asks = []
+        state = try app.apply(.init(.cardHoldDue("i1")), to: state)
+        #expect(posted(state).map(\.id) == ["chat|t1|card|i1"] && posted(state).first?.body == "Which morning?")
+        state.asks = []
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        #expect(posted(state).isEmpty)
+    }
+
+    /// A card stands for the turn that asked and no later one: a reply to
+    /// a message sent while the card still waits is news of its own.
+    @Test func aLaterReplyWhileTheCardStillWaitsNotifiesAsAnyReplyDoes() throws {
+        var state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: start())
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        state.asks = []
+        state = try app.apply(.init(.threadFetched(row(running: true, version: 4))), to: state)
+        state = try app.apply(
+            .init(.threadFetched(row(running: false, version: 5, finished: "2026-11-15T10:03:00Z", reply: "Noted, after eleven."))), to: state)
+        #expect(posted(state).map(\.id) == ["chat|t1|reply"] && posted(state).first?.body == "Noted, after eleven.")
+    }
+
+    /// A read on another device answers a reply's notification. A card's
+    /// stands while its chat waits, and goes once nothing does.
+    @Test func aCardsNotificationStandsThroughAReadAndGoesWhenNothingWaits() throws {
+        var state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: start())
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        state.asks = []
+        // Read on another device: the mark is at the newest message.
+        let read = Record(
+            id: "t1.me", kind: Kinds.threadMark,
+            properties: ["thread": ["ref": .string("\(Kinds.thread)/t1")], "readThrough": "m3"], version: 2)
+        state = try app.apply(.init(.marksRead(.init(threads: ["t1"], records: [read]))), to: state)
+        #expect(!state.asks.contains(.cancelGroup("t1")) && state.announced == ["t1"])
+        // Answered there: the row says nothing waits, and the pending
+        // lists hold it no more.
+        var answered = row(running: false, version: 6, finished: "2026-11-15T10:05:00Z", reply: "Booked.")
+        answered.properties["waitingOnPerson"] = nil
+        answered.properties["lastMessage"] = ["ref": .string("\(Kinds.message)/m3")]
+        state.asks = []
+        state = try app.apply(.init(.cardsRead(.init(interactions: [], requests: [], approvals: []))), to: state)
+        state = try app.apply(.init(.threadFetched(answered)), to: state)
+        // Read, and nothing waits: everything the chat notified goes.
+        #expect(state.asks.contains(.cancelGroup("t1")) && state.attention.isEmpty && state.announced.isEmpty)
+    }
+
+    /// Answered on another device, with the reply that followed unread:
+    /// the card's notification goes on its own, and the chat's reply is
+    /// news as any is.
+    @Test func aCardAnsweredElsewhereTakesItsOwnNotificationBack() throws {
+        var state = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: start())
+        state = try app.apply(.init(.threadFetched(row(running: false, version: 3))), to: state)
+        state.asks = []
+        state = try app.apply(.init(.cardsRead(.init(interactions: [], requests: [], approvals: []))), to: state)
+        #expect(!state.asks.contains(.cancelNotification("chat|t1|card|i1")))
+        var answered = row(running: false, version: 6, finished: "2026-11-15T10:05:00Z", reply: "Booked.")
+        answered.properties["waitingOnPerson"] = nil
+        state = try app.apply(.init(.threadFetched(answered)), to: state)
+        #expect(state.asks.contains(.cancelNotification("chat|t1|card|i1")) && state.attention.isEmpty)
+        #expect(posted(state).map(\.id) == ["chat|t1|reply"] && state.announced == ["t1"])
+    }
+
+    /// The one predicate: an archived chat is silent, for a reply and for
+    /// what a card's action could not do once the card no longer waits;
+    /// a card is itself what waits, and is said.
+    @Test func anArchivedChatIsNotifiedForOnlyWhileItWaits() throws {
+        var state = start()
+        state.recordsRevision = 9
+        state.marks = ["t1": ThreadMark(readThrough: "m0", version: 1, archived: true)]
+        #expect(state.flags && state.archived("t1"))
+        #expect(!state.notifies("t1") && state.notifies("t1", waits: true) && state.notifies(nil))
+        // A row that counts something waiting, or a card among the pending.
+        #expect(state.notifies("t1", row: ChatThread(record: row(running: false, version: 3))))
+        // Where the server counts what waits, the row held is its word: a
+        // pending list may still hold a card answered on another device.
+        // With no row held, a card among the pending ones says it.
+        state.interactions = [card]
+        #expect(!state.notifies("t1") && state.mayWait("t1"))
+        var unlisted = state
+        unlisted.chats = []
+        #expect(unlisted.notifies("t1"))
+        // Its card notifies; its reply does not.
+        state.interactions = []
+        var quiet = try app.apply(.init(.threadFetched(row(running: true, version: 3))), to: state)
+        var settled = row(running: false, version: 4)
+        settled.properties["waitingOnPerson"] = nil
+        quiet = try app.apply(.init(.threadFetched(settled)), to: quiet)
+        #expect(posted(quiet).isEmpty)
+        let asking = try app.apply(.init(.cardsRead(.init(interactions: [card], requests: [], approvals: []))), to: quiet)
+        #expect(posted(asking).map(\.id) == ["chat|t1|card|i1"])
     }
 }
 

@@ -68,6 +68,10 @@ extension ChatApp {
             if state.conversations[child] == nil { converse(&state, thread, key: child) }
             state.conversations[child]?.reply = Conversation.Reply(id: message, text: text, at: at)
             act.reply = child
+            // The app may have been away: a chat archived on another
+            // device meanwhile is not known to be. Its mark is read beside
+            // the send, which never waits for it.
+            if state.flags, !state.archived(thread) { state.asks.append(.confirmMark(thread)) }
         case .approve, .decline, .option:
             guard let id = response.userInfo[ChatNotifications.cardKey], let version = response.userInfo[ChatNotifications.versionKey].flatMap(Int.init)
             else {
@@ -178,6 +182,7 @@ extension ChatApp {
         } else if outcome.failure == nil, let thread = state.conversations[key]?.thread {
             // It arrived after the app said it had not: that is taken back.
             state.asks.append(.cancelNotification(Self.failedID(thread)))
+            state.failedActions.remove(thread)
         }
     }
 
@@ -209,6 +214,12 @@ extension ChatApp {
                 thread: act.thread, agent: agentName(row?.agentID ?? ""), title: row.map(state.title) ?? "A chat", sentence: words.sentence,
                 kept: unsaved.map { "Your reply was not sent or saved. You wrote: “\($0)”" }
                     ?? (act.card == nil ? "Your reply is kept in the chat." : "Open the chat to answer it there."))
+        }
+        // A card's failure is said only in a chat that may be notified
+        // for, as the card's own was; a reply's is the person's own words
+        // not sent, which wait on them wherever they wrote them.
+        if said != nil {
+            if state.notifies(act.thread, waits: act.card == nil) { noteFailed(&state, act.thread) } else { said = nil }
         }
         let keep = failure == nil ? nil : state.disk.map { KeptDrafts(lease: $0, drafts: state.drafts) }
         state.asks.append(.finishAction(act.response, cancel: failure == nil ? act.response.id : nil, notify: said, keep: keep))

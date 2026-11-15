@@ -387,8 +387,8 @@ struct PinsAndArchives {
         #expect(await rig.harness.presentation.unread == 1)
         #expect(rig.badge == 1)
         // The one test of it, for whatever posts a notification of a thread.
-        #expect(state.notifies(try #require(state.thread("c002"))) == false)
-        #expect(state.notifies(try #require(state.thread("c003"))))
+        #expect(state.notifies("c002") == false)
+        #expect(state.notifies("c003"))
     }
 
     @Test func archivingAChatTakesBackWhatItNotified() async throws {
