@@ -324,7 +324,7 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		}
 		r.fail("holders")
 		defer r.heal()
-		_, err = r.ds.heldToUnanswered(context.Background(), referenceID(row.Props[msgRelThread]))
+		_, _, err = r.ds.heldToUnanswered(context.Background(), referenceID(row.Props[msgRelThread]))
 		return errRefused(err)
 	},
 	"agentdecision.go:recordResolution": func(t *testing.T, r *runsRepository) (bool, string) {

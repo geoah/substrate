@@ -259,8 +259,11 @@ type agentInvocation struct {
 	// unanswered marks the turn that messages sent while the last one ran
 	// start (agentqueue.go): it claims the thread only while its newest
 	// turn is still a person's message, so a turn that read them meanwhile
-	// is not followed by one with nothing to answer.
+	// is not followed by one with nothing to answer. startsFrom are those
+	// messages as the turn's starter read them, to whose senders it is held:
+	// the claim finds the same ones waiting, or runs nothing.
 	unanswered bool
+	startsFrom []string
 	// stopHub is the detached chat turn this run belongs to: the root's own
 	// hub, and the same hub on every sub-agent run under it. A run that has
 	// one is stopped with it, and writes and settles on bounded contexts its
@@ -1915,14 +1918,19 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		// Or one that holds a message nothing answered: one sent while the
 		// last turn ran, whose own turn never started (decision 0318).
 		if l.in.continued && status == threadOK || l.in.unanswered {
-			waiting, err := t.unansweredMessage(l.in.threadID)
+			waiting, err := t.unansweredMessages(l.in.threadID)
 			if err != nil {
 				return err
 			}
-			if l.in.unanswered && !waiting {
+			// The turn those messages start is the one a settle that left
+			// them asked for: the thread is as that settle left it, and
+			// holds the very messages whose senders the turn is held to.
+			// Anything else is another turn's doing, and that turn's settle
+			// starts what its own messages ask for.
+			if l.in.unanswered && (status != threadOK && status != threadOverBudget || !slices.Equal(waiting, l.in.startsFrom)) {
 				return errNothingUnanswered
 			}
-			if l.in.continued && !waiting {
+			if l.in.continued && len(waiting) == 0 {
 				cut, err := t.lastReplyCut(l.in.threadID)
 				if err != nil {
 					return err
@@ -1947,29 +1955,51 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 }
 
 // errNothingUnanswered ends the turn that messages sent while the last one
-// ran would start, where another turn read them first.
-var errNothingUnanswered = errors.New("the thread holds no message waiting for an answer")
+// ran would start, where the thread no longer holds those messages
+// unanswered as its starter read them: another turn read them first, or
+// left others.
+var errNothingUnanswered = errors.New("the thread does not hold the messages this turn was started for, waiting for an answer")
 
-// unansweredMessage reports whether the thread holds a person's message that
-// no reply came after: a user row whose ordinal is past every assistant
-// row's. By ordinal, never by creation: a message sent while a reply
-// streamed was created before the reply's row and is the later turn, and
-// the results of calls under way when it was sent come after it.
-func (t *txn) unansweredMessage(threadID string) (bool, error) {
+// unansweredMessages are the ids of the thread's messages of a person that
+// no reply came after, oldest first: the user rows whose ordinal is past
+// every assistant row's (unansweredRows reads the same off loaded rows). By
+// ordinal, never by creation: a message sent while a reply streamed was
+// created before the reply's row and is the later turn, and the results of
+// calls under way when it was sent come after it.
+func (t *txn) unansweredMessages(threadID string) ([]string, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
 	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	var waiting bool
-	err = t.row(`
-		SELECT coalesce(max((e.props->>'turn')::bigint) FILTER (WHERE e.props->>'role' = 'user'), -1)
-		     > coalesce(max((e.props->>'turn')::bigint) FILTER (WHERE e.props->>'role' = 'assistant'), -1)
-		FROM records e
-		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
-		b.args...).Scan(&waiting)
-	return waiting, err
+	replies, err := threadMessagesWhere(t.ctx, t.tx, b, "a", threadID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := t.query(`
+		SELECT e.id FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' = 'user'
+		  AND (e.props->>'turn')::bigint > (
+		    SELECT coalesce(max((a.props->>'turn')::bigint), -1) FROM records a
+		    WHERE a.kind = `+kind+` AND a.deleted_at IS NULL AND `+replies+`
+		      AND a.props->>'role' = 'assistant')
+		ORDER BY (e.props->>'turn')::bigint, e.created_at, e.id`,
+		b.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // lastReplyCut reports whether the thread's newest turn is an assistant

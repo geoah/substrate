@@ -1376,7 +1376,10 @@ failed before any reply, and after a turn that left a
 [message sent meanwhile](#a-message-while-a-turn-runs) unread, the thread
 still names what it named, or what the turn wrote before it ended; in a chat
 that holds no other message it names the message that was sent. The rows
-alone decide, so the settle after a crash names the same message. A row written into a
+alone decide, so the settle after a crash names the same message. And it
+never moves back to an earlier message, as a mark does not: a thread the
+upgrade left naming a person's unanswered message keeps naming it until a
+later message takes its place. A row written into a
 settled thread between runs (a decision's report, a finished background
 job's) does not move it until the run it starts settles.
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -512,27 +513,31 @@ func (ds *dataset) readQueuedRow(ctx context.Context, id string) (*erow, error) 
 
 // heldToUnanswered is ctx with the senders of the thread's unanswered
 // messages added to whom the turn it starts is held to (run.go): the persons
-// and the tokens each row's `heldTo` names. The thread is settled, so the
-// set cannot grow before the turn claims it, and a claim that finds it
-// answered runs nothing.
-func (ds *dataset) heldToUnanswered(ctx context.Context, threadID string) (context.Context, error) {
+// and the tokens each row's `heldTo` names. It answers those messages' ids,
+// oldest first, which the turn's claim holds the thread to (claimThread): a
+// thread another turn took meanwhile may hold other messages, of senders
+// this context does not name.
+func (ds *dataset) heldToUnanswered(ctx context.Context, threadID string) (context.Context, []string, error) {
 	rows, err := ds.threadRows(ctx, threadID)
 	if err != nil {
-		return ctx, err
+		return ctx, nil, err
 	}
 	ctx, joiners := withRunJoiners(ctx)
+	var ids []string
 	for _, r := range unansweredRows(rows) {
 		persons, tokens, err := ds.storedHolders(ctx, r.props[propHeldTo])
 		if err != nil {
-			return ctx, err
+			return ctx, nil, err
 		}
 		joiners.add(persons, tokens...)
+		ids = append(ids, r.id)
 	}
-	return ctx, nil
+	return ctx, ids, nil
 }
 
-// unansweredRows are the user rows no reply came after: those whose ordinal
-// is past every assistant row's, as unansweredMessage reads them.
+// unansweredRows are the user rows no reply came after, oldest first: those
+// whose ordinal is past every assistant row's, as unansweredMessages reads
+// them.
 func unansweredRows(rows []threadRow) []threadRow {
 	replied := -1
 	turnOf := func(r threadRow) int {
@@ -553,6 +558,7 @@ func unansweredRows(rows []threadRow) []threadRow {
 			out = append(out, r)
 		}
 	}
+	slices.SortStableFunc(out, func(a, b threadRow) int { return turnOf(a) - turnOf(b) })
 	return out
 }
 

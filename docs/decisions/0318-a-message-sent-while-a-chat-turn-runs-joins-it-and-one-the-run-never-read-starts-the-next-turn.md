@@ -57,7 +57,8 @@ read it.
 **A message the run never read** (sent during the final answer, or when a
 budget ended the run) starts the next turn itself where the run settled `ok`
 or `overbudget`: a new run, with budgets of its own, held to the sender of
-every message it starts from. Going on inside the first run would let messages hold one run, its
+every message it starts from, which claims the thread only while those very
+messages wait on it. Going on inside the first run would let messages hold one run, its
 slot and its lifecycle lock open without end. A run that was stopped, or
 failed, starts nothing: the stop is the later word, so 0169's rule stands,
 and a failure is not retried unasked. The message stays in the thread, and
@@ -80,7 +81,9 @@ holds anything else, so a queued message never makes a chat unread. A run
 that ends with one unread names what it wrote last (its reply, a reply cut
 short, a tool row), or what the thread named before where it wrote nothing;
 the turn the message starts then names its own reply. The rule reads the
-rows alone, so the settle after a crash names the same. It moves 0313's
+rows alone, so the settle after a crash names the same, and `lastMessage`
+never moves back, so a mark the upgrade seeded on such a message stays
+read. It moves 0313's
 case of a call that failed before any reply: the thread keeps naming the
 reply before the message, and names the message only in a chat that holds
 nothing else. `waitingOnPerson` counts no message.
@@ -155,7 +158,8 @@ same shape. A client that sends no id sees no change.
 `TestTheNextTurnReadsItsPinnedContextUnderEverySender`,
 `TestAQueuedMessageIsNotTheThreadsLastMessage`,
 `TestTheNextTurnMovesLastMessageToItsReply`,
-`TestAnUnansweredMessageGetsItsTurnAfterARestart`;
+`TestAnUnansweredMessageGetsItsTurnAfterARestart`,
+`TestTheNextTurnRunsOnlyForTheMessagesItWasStartedFor`;
 `TestReplayReadsAQueuedMessageWhereTheModelDid` in
 `internal/engine/agentqueue_test.go`;
 `TestASteeredConversationIsOneEachWireAccepts` in
