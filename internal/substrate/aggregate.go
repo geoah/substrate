@@ -813,6 +813,8 @@ func AggregateFilterArm(f Filter) string {
 		return "ambiguous"
 	case f.Referencing != nil:
 		return "referencing"
+	case f.ReferencedBy != nil:
+		return "referencedBy"
 	}
 	names := make([]string, 0, len(f.Properties))
 	for name := range f.Properties {

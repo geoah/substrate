@@ -54,7 +54,45 @@ func (s *scopedDataset) holdQuery(ctx context.Context, q substrate.Query) (subst
 			}
 		}
 	}
+	if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
+		return q, false, err
+	}
 	return q, true, nil
+}
+
+// holdReferencedBy holds a `referencedBy` arm to the grant (decision 0322).
+// The arm answers whether a record of its kind points at each listed row, so
+// that kind must be one the grant reads whole, and a condition on one of its
+// references must name records the grant reads, as a list of that kind is
+// held. onThreads says the list is of the threads the agent verbs reach row
+// by row. There a kind those verbs reach through its thread (a message, an
+// interaction, an approval, a person's mark) may point through `thread`:
+// every row listed is a thread the grant reaches, and it reaches what hangs
+// off such a thread.
+func (s *scopedDataset) holdReferencedBy(ctx context.Context, rb *substrate.ReferencedBy, onThreads bool) error {
+	if rb == nil {
+		return nil
+	}
+	kind := s.local(rb.Kind)
+	whole, err := s.reads(ctx, kind)
+	if err != nil {
+		return err
+	}
+	if !whole {
+		gated, err := s.rowGated(ctx, kind)
+		if err != nil {
+			return err
+		}
+		if !gated {
+			return errUnknownKind(kind)
+		}
+		byThread := kind == kindMessage || kind == kindInteraction || kind == kindApproval || kind == kindThreadMark
+		if !onThreads || !byThread || rb.Property != "thread" {
+			return fmt.Errorf("%w: an app's token names %s in filter.referencedBy only on a list of %s, through `thread`",
+				substrate.ErrForbidden, kind, kindThread)
+		}
+	}
+	return s.checkReferenceFilters(ctx, []string{kind}, rb.Properties)
 }
 
 // refuseRowGated refuses a read that names a kind the agent verbs reach row

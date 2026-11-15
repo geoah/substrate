@@ -142,6 +142,15 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			}
 			q.Filter.Kinds = kinds
 		}
+		if rb := q.Filter.ReferencedBy; rb != nil && rb.Kind != "" {
+			kinds, ok := h.resolveKinds(w, r, ds, []string{rb.Kind})
+			if !ok {
+				return
+			}
+			by := *rb
+			by.Kind = kinds[0]
+			q.Filter.ReferencedBy = &by
+		}
 		// `at` bounded on both ends is the WINDOW read (internal/window): the rows
 		// in the window plus the occurrences computed from every series among
 		// the kinds in play, one page. One bound alone is a plain list.
@@ -295,6 +304,8 @@ func rankedFilterArm(f substrate.Filter) string {
 		return "ambiguous"
 	case f.Referencing != nil:
 		return "referencing"
+	case f.ReferencedBy != nil:
+		return "referencedBy"
 	}
 	return ""
 }

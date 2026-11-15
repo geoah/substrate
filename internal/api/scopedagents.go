@@ -297,6 +297,9 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 	if q.Filter.Referencing != nil {
 		return nil, fmt.Errorf("%w: an app's token reads %s without a referencing filter", substrate.ErrForbidden, kind)
 	}
+	if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, kind == kindThread); err != nil {
+		return nil, err
+	}
 	if q.Filter.Implements != "" || len(q.Filter.Purposes) > 0 {
 		_, any, err := s.narrowByRegistry(ctx, q.Filter.Kinds, q.Filter.Implements, q.Filter.Purposes)
 		if err != nil {

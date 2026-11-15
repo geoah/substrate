@@ -314,6 +314,9 @@ type builder struct {
 	// then may a reference filter be answered from refs: a where over a row
 	// not yet written (mappingwhere.go) has no refs rows to find.
 	overRecords bool
+	// list says the clauses are the records list's own filter, the one read
+	// `referencedBy` narrows (referencedby.go).
+	list bool
 	// viaRefs says a reference filter was answered from refs, which only a
 	// plan made for its values can drive well (planWithValues).
 	viaRefs bool
@@ -418,7 +421,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	b := &builder{overRecords: true}
+	b := &builder{overRecords: true, list: true}
 	types, err := ds.buildFilter(ctx, tx, b, q.Filter)
 	if err != nil {
 		return nil, err
@@ -826,6 +829,11 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 	}
 	if f.Referencing != nil {
 		if err := ds.condReferencing(ctx, x, b, f.Referencing); err != nil {
+			return nil, err
+		}
+	}
+	if f.ReferencedBy != nil {
+		if err := ds.condReferencedBy(ctx, x, b, types, f.ReferencedBy); err != nil {
 			return nil, err
 		}
 	}

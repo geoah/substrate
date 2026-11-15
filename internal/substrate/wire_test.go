@@ -55,6 +55,7 @@ var wireTypes = map[string]any{
 	"ErasureKept":         ErasureKept{},
 	"ReferenceSite":       ReferenceSite{},
 	"Referencing":         Referencing{},
+	"ReferencedBy":        ReferencedBy{},
 	"RankedPage":          RankedPage{},
 	"Scores":              Scores{},
 	"PropertyMark":        PropertyMark{},

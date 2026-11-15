@@ -855,7 +855,9 @@ export interface Cond {
  * `deleted` absent means live records only; `orphaned` picks the mapping
  * targets the engine marked (sources all gone, nothing above the machine
  * tier holding a property); `ambiguous` picks the mapping sources a probe
- * with several candidates left unlinked; `referencing` is the reverse read.
+ * with several candidates left unlinked; `referencing` is the reverse read,
+ * and `referencedBy` narrows a list by the records of another kind that
+ * point at each row (a list alone takes it).
  * A state property filters through `properties` like any other. */
 export interface RecordFilter {
   /** Words against the record's whole search index (every text the kind
@@ -874,6 +876,22 @@ export interface RecordFilter {
   orphaned?: boolean
   ambiguous?: boolean
   referencing?: Referencing
+  referencedBy?: ReferencedBy
+}
+
+/** A list narrowed by the records that point at each row
+ * (`substrate.ReferencedBy`, from revision 9 of `records`): the live records
+ * of `kind` whose single reference `property` holds the listed record and
+ * that meet every condition in `properties`, which are conditions on the
+ * pointing record (`me` included). `exists` absent or true keeps a record at
+ * least one of them points at; false keeps a record none points at. It is
+ * how the chat list leaves out the threads its reader archived: the fact is
+ * on their mark of the thread, not on the thread. */
+export interface ReferencedBy {
+  kind: string
+  property: string
+  properties?: Record<string, Cond>
+  exists?: boolean
 }
 
 /** The targets of a reverse read (`substrate.Referencing`): the records

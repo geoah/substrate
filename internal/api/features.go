@@ -126,7 +126,9 @@ var featureTable = []feature{
 	// what remains of its erasure (`erasure`, decision 0304).
 	// Revision 8: `me` in a filter's condition on a reference to an actor,
 	// the person the request acts for (decision 0313).
-	{name: "records", stability: substrate.StabilityStable, revision: 8, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 9: the `referencedBy` filter arm, a list narrowed by the
+	// records of another kind that point at each row (decision 0322).
+	{name: "records", stability: substrate.StabilityStable, revision: 9, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",

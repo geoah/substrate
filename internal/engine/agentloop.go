@@ -3259,6 +3259,8 @@ func rankedFilterArm(f substrate.Filter) string {
 		return "deleted"
 	case f.Referencing != nil:
 		return "referencing"
+	case f.ReferencedBy != nil:
+		return "referencedBy"
 	}
 	return ""
 }

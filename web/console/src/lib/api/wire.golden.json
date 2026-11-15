@@ -997,6 +997,7 @@
     "orphaned": false,
     "properties": false,
     "purposes": false,
+    "referencedBy": false,
     "referencing": false,
     "search": false
   },
@@ -1013,6 +1014,12 @@
   },
   "ReferenceSite": {
     "path": false,
+    "property": true
+  },
+  "ReferencedBy": {
+    "exists": false,
+    "kind": true,
+    "properties": false,
     "property": true
   },
   "Referencing": {

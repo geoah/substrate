@@ -354,5 +354,5 @@ func scalarValue(s string) any {
 
 func filterIsZero(f substrate.Filter) bool {
 	return f.Search == "" && len(f.Kinds) == 0 && f.Implements == "" && len(f.IDs) == 0 &&
-		len(f.Properties) == 0 && len(f.Labels) == 0 && f.Deleted == nil && f.Referencing == nil
+		len(f.Properties) == 0 && len(f.Labels) == 0 && f.Deleted == nil && f.Referencing == nil && f.ReferencedBy == nil
 }

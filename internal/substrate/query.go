@@ -85,6 +85,30 @@ type Filter struct {
 	// its canonical id and every former id, so a pointer written before a
 	// merge still counts.
 	Referencing *Referencing `json:"referencing,omitempty"`
+	// ReferencedBy narrows to the records a record of one other kind points
+	// at, or to the records none does: `referencing` the other way round
+	// (decision record 0322). A list alone takes it: the ranked read, the
+	// tail, the window read and the aggregate refuse it by name.
+	ReferencedBy *ReferencedBy `json:"referencedBy,omitempty"`
+}
+
+// ReferencedBy names the records that point: the live records of Kind whose
+// single reference Property holds the listed record, and that meet every
+// condition in Properties, which are conditions on the pointing record in
+// the grammar Filter.Properties takes (`me` included). Exists nil or true
+// keeps a record at least one of them points at; false keeps a record none
+// points at. A pointer written under an id the record had before a merge
+// counts, as it does for Referencing.
+//
+// It is how a list is narrowed by a fact kept on another record about each
+// row: a person's own mark of a thread says whether they archived it, so
+// "the threads I have not archived" is the threads no mark of mine with
+// `archived: true` points at.
+type ReferencedBy struct {
+	Kind       string          `json:"kind"`
+	Property   string          `json:"property"`
+	Properties map[string]Cond `json:"properties,omitempty"`
+	Exists     *bool           `json:"exists,omitempty"`
 }
 
 // MaxReferencingTargets bounds Referencing.Refs. Each target costs a
