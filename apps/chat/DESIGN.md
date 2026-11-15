@@ -1339,7 +1339,13 @@ bubble is a tinted fill. The transcript softens under the composer with
   On iOS the move is to the content's own end (`scrollTo(y:)`): the
   system's move to the bottom edge overshoots by the composer's inset when
   the insets change. On a Mac the bottom edge is exact and is what is
-  used.
+  used. A Mac's scroll view says nothing of a wheel or a trackpad as a
+  touch's phases do, so the events themselves are watched: from the first
+  one turned up the transcript is yours, however little it has moved. It
+  has come to rest a quarter of a second after the last event, and never
+  while fingers lie on the trackpad. The glide after a flick lets go of
+  nothing, so a send or Jump to Latest made while it lasts keeps the end.
+  `scrollDismissesKeyboard(.interactively)`.
 
   **A chat opens with its rows on screen, whatever their heights.** A
   lazy stack guesses the height of every row it has not laid out, from
@@ -1377,17 +1383,29 @@ bubble is a tinted fill. The transcript softens under the composer with
     and is never sent there from the top of rows it has just been given.
   - **A move to the end (`go(to:)`) is by the place only for the last of
     the way**: while the last row's end is within the room's height of
-    where it would stand, and the place within the room's height of
-    where the scroll view stands. From further off it asks for the last
-    row (`TranscriptScroll.last`: the last piece, or the last card under
-    them), which the stack finds exactly where the rows between are laid
-    out, as they are when a reader comes down from among them.
+    where it would stand, and the place within twice the room's height
+    of where the scroll view stands. From further off it asks for the last
+    row (`TranscriptRows.lastRow`), which the stack finds exactly where
+    the rows between are laid out, as they are when a reader comes down
+    from among them. That row is the last that says where it stands: a
+    turn's last piece, or the card, the note or the technical details
+    under the turns, so that nothing but a line of dots is ever under
+    it; the details at the largest text size are several rooms high, and
+    a move that went by the last turn would have stopped above them. And
+    there is none before the turns are held, whatever is drawn under
+    where they will be.
   - **A transcript that follows its end and has no row on screen is made
     anew** (`startOver`), whole where it holds sixty turns or fewer
-    (`fewAtMost`), a few times at most. Which rows are on screen is the
-    rows' own word (`RowPlaces`, an iPhone's and an iPad's): the scroll
-    view's list of them is told once a frame, and told twice in one it
-    has stayed empty over drawn rows.
+    (`fewAtMost`), three times at most, counted until one made anew has
+    rested two seconds with a row on screen or a finger moves it. Which
+    rows are on screen is the rows' own word (`RowPlaces`, an iPhone's
+    and an iPad's): the scroll view's list of them is told once a frame,
+    and told twice in one it has stayed empty over drawn rows. A row
+    that leaves takes its own word with it and no other's
+    (`RowPlaces.left`): a scroll view made anew draws its rows under the
+    ids of the ones it replaces, which leave after, and a place taken
+    back by id left the new transcript with no row to its name, to be
+    made anew twice more.
 
   A long chat's stack stays lazy, with rows by the hundred to guess
   from; twenty opens of the fixture's chat of 1,100 rows at the largest
@@ -1404,13 +1422,14 @@ bubble is a tinted fill. The transcript softens under the composer with
   reply at the usual size too, which the app's demo door never showed,
   since its rows arrive within a frame. A Mac's scroll view is sent to
   its edge, and a window no screen shows draws nothing a scroll view
-  holds, so the Mac's test host can neither meet the fault nor see it. A Mac's scroll view says nothing of a wheel or a trackpad as a
-  touch's phases do, so the events themselves are watched: from the first
-  one turned up the transcript is yours, however little it has moved. It
-  has come to rest a quarter of a second after the last event, and never
-  while fingers lie on the trackpad. The glide after a flick lets go of
-  nothing, so a send or Jump to Latest made while it lasts keeps the end.
-  `scrollDismissesKeyboard(.interactively)`.
+  holds, so the Mac's test host can neither meet the fault nor see it.
+  A second test there (`aSendFromTheTopComesToTheEnd`) opens a chat with
+  the technical details on, which stand under the last turn and are
+  there before the turns are, and sends from its top: a chat of two
+  turns in a window short enough that the details are more than three
+  times the room high, and the chat of 200 turns. A last row named
+  before the turns were held opened the long chat 54 points past its
+  end, which it caught; the send came to the end either way.
 - **Where it opens**: a chat with more than the person had read opens at
   the first turn they had not, under a "New" line; where all of that fits
   on one screen the scroll stops at the end, as a chat with nothing new
