@@ -273,7 +273,8 @@ extension ChatApp {
                     let query = ChatLists.older(thread, before: before)
                     let page = try await client.list(query)
                     return Event(
-                        .olderRowsRead(thread: thread, epoch: epoch, rows: page.records.reversed(), more: page.records.count >= query.first))
+                        .olderRowsRead(
+                            thread: thread, epoch: epoch, before: before, rows: page.records.reversed(), more: page.records.count >= query.first))
                 } catch {
                     return Task.isCancelled ? nil : Event(.olderRowsFailed(thread: thread, epoch: epoch))
                 }

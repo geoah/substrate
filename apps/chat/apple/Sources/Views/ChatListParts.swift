@@ -32,11 +32,16 @@ struct SectionTitle: View {
     }
 }
 
-/// A chat at work: a small spinner where its mark would stand.
+/// A chat at work: a small spinner where its mark would stand. On the
+/// selection it is drawn in the system's primary style, as the row's words
+/// are: the list's tint is the selection's own fill.
 struct RunningMark: View {
+    var selected = false
+
     var body: some View {
         ProgressView()
             .controlSize(.small)
+            .tint(selected ? Color.primary : nil)
             .accessibilityLabel("Working")
     }
 }

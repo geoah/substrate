@@ -199,6 +199,33 @@ struct OlderRowsOfAChat {
         #expect(await rig.conversation(key)?.older == nil)
     }
 
+    @Test func olderRowsAskedForFromAWindowSinceReplacedSayNothingOfTheOneHeld() {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        func row(_ n: Int) -> Record {
+            Record(
+                id: "m\(n)", kind: Kinds.message,
+                properties: ["role": n % 2 == 0 ? "user" : "assistant", "content": .string("Message \(n)"), "turn": .number(Decimal(n))])
+        }
+        var state = ChatAppState()
+        state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: nil, online: true))
+        // A window read ahead (its newest hundred), opened at a message far
+        // above it: the rows before are asked for from its first row.
+        state.transcripts["t"] = ChatAppState.Held(records: (600 ..< 700).map(row), turns: [], version: 1, full: true)
+        state.seeking["t"] = ChatAppState.Seek(message: "m41")
+        app.seek(&state, "t")
+        #expect(state.asks.contains(.readOlder(thread: "t", before: 600, epoch: 0)))
+        // The chat's own read of its newest five hundred lands first.
+        state.transcripts["t"] = ChatAppState.Held(records: (200 ..< 700).map(row), turns: [], version: 1, full: true)
+        state.asks = []
+        app.olderRead(&state, thread: "t", epoch: 0, before: 600, rows: (401 ... 600).map(row), more: true)
+        // The late answer is of another window: the one held still has
+        // rows before it, and the message is still looked for.
+        #expect(state.transcripts["t"]?.full == true && state.transcripts["t"]?.records.count == 500)
+        #expect(state.asks.contains(.readOlder(thread: "t", before: 200, epoch: 0)))
+        app.olderRead(&state, thread: "t", epoch: 0, before: 200, rows: (1 ... 200).map(row), more: true)
+        #expect(state.transcripts["t"]?.records.first?.id == "m1" && state.seeking["t"] == nil)
+    }
+
     @Test func aReadOfTheOlderRowsIsOnePageAndSaysWhenMoreStand() async throws {
         let server = MarkServer()
         server.chat("big", messages: 900, readThrough: "big-m900")

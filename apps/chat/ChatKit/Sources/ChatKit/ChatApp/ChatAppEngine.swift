@@ -106,7 +106,8 @@ extension ChatApp {
         case let .searchFailed(scene, query, failure, unserved):
             searchFailed(&next, scene: scene, query: query, failure, unserved: unserved)
         case let .olderRowsAsked(thread): older(&next, thread)
-        case let .olderRowsRead(thread, epoch, rows, more): olderRead(&next, thread: thread, epoch: epoch, rows: rows, more: more)
+        case let .olderRowsRead(thread, epoch, before, rows, more):
+            olderRead(&next, thread: thread, epoch: epoch, before: before, rows: rows, more: more)
         case let .olderRowsFailed(thread, epoch):
             if next.readEpochs[thread, default: 0] == epoch {
                 next.olderReading.remove(thread)

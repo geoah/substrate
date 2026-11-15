@@ -54,9 +54,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// `compacted`: the server can no longer go on from the cursor, and
     /// the list is read again from its start.
     case pageFailed(part: ChatLists.Part, after: String?, Failure, compacted: Bool)
-    /// The rows of a thread before the ones held; `more` where the read
-    /// filled its window.
-    case olderRowsRead(thread: String, epoch: Int, rows: [Record], more: Bool)
+    /// The rows of a thread before the row whose ordinal is `before`;
+    /// `more` where the read filled its window.
+    case olderRowsRead(thread: String, epoch: Int, before: Int, rows: [Record], more: Bool)
     case olderRowsFailed(thread: String, epoch: Int)
     /// The messages a window's search found, the rows of the chats they
     /// are in where no list holds them, and the person's marks of those.
