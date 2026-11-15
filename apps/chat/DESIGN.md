@@ -2730,6 +2730,7 @@ flush of the stream, or a key typed:
 | Row | What it is |
 | --- | ---------- |
 | main thread | every pass of the main run loop from waking to waiting again, summed, per step; and the longest pass |
+| main thread while … is written | the same passes while a reply is written, each filed under the kind of the block the reply ends on as it is drawn (a paragraph, a list, code, a table): the time of one pass and how many there were, so a cost that is one kind's shows |
 | presenter | each controller's presenter, by its type: time per step, the longest run, and runs per step |
 | flush, publish | the tree presented and sent, on the runtime's executor; the half of a publish the model does on the main thread |
 | body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a row of a reply's text and what stands under it, its Markdown, a Markdown block, the composer |
@@ -2740,6 +2741,16 @@ flush of the stream, or a key typed:
 The numbers are a machine's: the table's first line says which, and a
 simulator is not a device. The counts (runs, evaluations, parses per step)
 are the same on any machine.
+
+Two runs of one build differ: on a simulator on this project's Mac by
+about 0.4 ms a step, 0.5 ms a key and 25 ms an opening (the spread of
+five to thirteen runs of one build, 2026-11-15). A difference between
+two heads smaller than that is read from several runs of each, taken in
+turn, never from one pair. With `SUBSTRATE_CHAT_MEASURE_TYPING` set
+beside it (on a simulator, `SIMCTL_CHILD_SUBSTRATE_CHAT_MEASURE_TYPING=1`
+before the task) the run opens the first chat and types, and writes no
+reply: half a minute a run, for a cost that is a key's or an opening's
+alone.
 
 ### Looking at a state
 

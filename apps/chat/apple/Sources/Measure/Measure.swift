@@ -83,7 +83,12 @@ enum Measure {
         var phases: [Phase] = []
         var opened: [String] = []
         var shown: ChildKey?
-        for (name, thread, held) in [("a 16 KB reply into 200 turns", ChatFixtures.long, 200), ("a 16 KB reply into 500 rows", ChatFixtures.full, 500)] {
+        // `SUBSTRATE_CHAT_MEASURE=…` with `SUBSTRATE_CHAT_MEASURE_TYPING` set
+        // opens the first chat and types, and writes no reply: a run of
+        // half a minute, for a cost that is a key's alone.
+        let typing = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_MEASURE_TYPING"] != nil
+        let chats = [("a 16 KB reply into 200 turns", ChatFixtures.long, 200), ("a 16 KB reply into 500 rows", ChatFixtures.full, 500)]
+        for (name, thread, held) in typing ? Array(chats.prefix(1)) : chats {
             var passes = MainPasses()
             Meter.shared.start(signposts: signposts)
             host.send(.show(thread: thread, scene: scene))
@@ -103,6 +108,7 @@ enum Measure {
                 String(
                     format: "Opening the chat of %d rows: %d turn bodies evaluated, %.0f ms of main thread.", held,
                     opening.stat("body", "Turn")?.count ?? 0, opening.stat("main")?.milliseconds ?? 0))
+            if typing { continue }
             // Each pass is filed under the kind of the block the reply ends
             // on as it is drawn: what is being written.
             passes = MainPasses { Self.writing(host.conversation(key)) }
