@@ -758,12 +758,18 @@ records their chats are made of:
   its own permissions, so it reads and writes what it would in the
   owner's chat. A chat's `context` may name only records the app's own
   token reads; any other path is refused with the `404 not_found` a read
-  of it would answer, before the agent runs;
+  of it would answer, before the agent runs. A chat's `repliesTo` names a
+  pending question of the thread it is sent to, which the message then
+  answers in the person's own words
+  ([a message that answers a question](agents.md#a-message-that-answers-a-question));
 - the threads (`substrate.reamde.dev/llm/thread`) whose `agent` matches: list,
   read, and `PATCH` of `subject` alone, to rename one;
 - their messages (`…/llm/message`) and interactions (`…/llm/interaction`):
   list and read, and an interaction's `PATCH` of `state` (`answered` with
-  `answers`, or `dismissed`) with `ifVersion`, as the console sends it;
+  `answers`, or `dismissed`) with `ifVersion`, as the console sends it. A
+  resolved interaction, approval and change request links the person the
+  token acted for, not the app, as whose hand resolved it
+  ([who resolved it](agents.md#who-resolved-it));
 - the person's marks of those threads (`…/llm/threadmark`), which say how
   far they have read each ([read state](agents.md#read-state)): list and
   read, a create (`POST /api/v1/records` naming the `thread`, or a `PUT` at
@@ -807,7 +813,19 @@ archived ones and the pinned ones without naming a thread. Any other kind in
 the arm must be one a `read:` scope reaches whole, and a list of another
 kind may not name one of these four: both answer `403`.
 Any other property in a patch, a label, a create or a delete answers `403`.
-A search never reaches these kinds.
+
+An app searches what its `agents:` scope reaches with the list's
+[`filter.search`](api.md#the-filter-grammar) predicate, which narrows a list
+and keeps its order: the messages of the threads it names
+(`{"kinds":["substrate.reamde.dev/llm/message"],"search":"tomatoes","properties":{"thread":{"in":["<thread id>","<thread id>"]}}}`),
+and its threads by what they are called, with none named
+(`{"kinds":["substrate.reamde.dev/llm/thread"],"search":"tomatoes"}`). The
+rules above hold the search as they hold any list: a thread of another agent
+answers `404`, a message list with no thread answers `403`, and no row of
+another agent or another kind comes back. The ranked read (`q`) never
+reaches these kinds and answers `403`: it ranks over every record of a kind
+and reads a bounded share of the matches, with no thread to narrow by, so
+what it left out would say something about chats the token cannot read.
 
 ### Follow changes
 
