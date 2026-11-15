@@ -1263,7 +1263,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   ones that arrived. On an iPhone and an iPad the row is put back where
   it stood, to the point: each row says where it stands in the scroll
   view (`placed`, `RowPlaces`), and the row is put at the point of itself
-  that stands it there (`RowsBefore.fraction`). A row of a reply is about
+  that stands it there (`RowsBefore.fraction`; a row exactly as tall as
+  the room has no such point, and the row under it is put back in its
+  stead). A row that leaves the screen takes its place with it, so the
+  places held are those of the rows drawn. A row of a reply is about
   a screen and a half, a table or a block of code in it the taller for
   it, and a reader part way down one when rows arrive keeps their line.
   On a Mac a row is kept by its top, so that reader is put at the start

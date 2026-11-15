@@ -159,6 +159,23 @@ import Testing
         #expect(RowsBefore.fraction(top: -5, height: 620.4, room: 620) == nil)
     }
 
+    /// A row as tall as the room, part way up the screen: no point of it
+    /// says where it stood, so the row under it is put back in its stead,
+    /// where that one stood.
+    @Test func aRowAsTallAsTheRoomIsKeptByTheRowUnderIt() throws {
+        let frames = [
+            "tall": CGRect(x: 0, y: -300, width: 390, height: 620), "under": CGRect(x: 0, y: 342, width: 390, height: 80),
+            "last": CGRect(x: 0, y: 444, width: 390, height: 900),
+        ]
+        let place = try #require(RowsBefore.place(of: "tall", among: frames, room: 620))
+        #expect(place.row == "under" && abs(place.y * (620 - 80) - 342) < 0.001)
+        // Its own point where it has one, and nothing for a row that
+        // never said where it stands or stands alone.
+        #expect(RowsBefore.place(of: "under", among: frames, room: 620)?.row == "under")
+        #expect(RowsBefore.place(of: "gone", among: frames, room: 620) == nil)
+        #expect(RowsBefore.place(of: "tall", among: ["tall": CGRect(x: 0, y: -300, width: 390, height: 620)], room: 620) == nil)
+    }
+
     @Test(.timeLimit(.minutes(5)))
     func rowsThatArriveAboveATableAndCodeLeaveTheirReaderWhereTheyAre() async throws {
         let (chat, stage, older) = try await staged()

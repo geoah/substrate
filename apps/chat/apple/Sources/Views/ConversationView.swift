@@ -340,8 +340,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         position = ScrollPosition(idType: String.self)
         // Where the row stood, which inside a row taller than the screen
         // is not its top.
-        let anchor = before.anchor(of: row, room: reach.measure.room)
-        DispatchQueue.main.async { reader.scrollTo(row, anchor: anchor) }
+        let place = before.anchor(of: row, room: reach.measure.room)
+        DispatchQueue.main.async { reader.scrollTo(place.row, anchor: place.anchor) }
     }
 
     private var scroll: some View {
