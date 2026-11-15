@@ -165,10 +165,12 @@ extension Conversation {
     }
 
     /// The conversation is left with no stream: one dropped and is asked
-    /// for again, now or after a wait, or the run has none. What it held
-    /// as queued it no longer knows: a call may read a message while
-    /// nothing can say so. It calls nothing queued, and the next stream
-    /// says what is, from the turn's start (`hear`).
+    /// for again, now or after a wait, one is let go for the next run's
+    /// (a send into the running turn too), or the run has none. What it
+    /// held as queued it no longer knows: a call may read a message while
+    /// nothing can say so, and the turn may end and the next stream be
+    /// another turn's, which says nothing of it. It calls nothing queued,
+    /// and the next stream says what is, from its turn's start (`hear`).
     func deafen(_ state: inout State) {
         state.queued = []
         state.recalled = []

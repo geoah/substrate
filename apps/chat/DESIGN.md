@@ -332,6 +332,19 @@ is a chat's, the composer sends while a reply streams (`Conversation.queues`,
   call has read, also where its stream is cut between the two words; and
   a message another device queued is drawn as waiting from the next
   heartbeat at the latest, ten seconds.
+- **Queued is said only under an open stream.** A message is drawn as
+  queued only while a stream of its turn is open, that stream has said so
+  and has not taken it back (`ConversationState.hears`). While a
+  conversation has no stream (it is not connected, it waits to ask again,
+  a send's request is on its way) it does not know whether a call has
+  read the message, and says nothing it cannot know: the message is drawn
+  as sent, and where the stream dropped the composer's status says
+  Reconnecting. A stream that is
+  let go takes what it said of the queue with it (`Conversation.deafen`):
+  one that dropped, and the one a send into the running turn replaces.
+  The next stream says its turn's queue again from the start, so the word
+  returns only where it is still true; and where the turn ended unheard
+  and the next stream is another turn's, nothing says it.
 - **A turn this conversation was not reading.** A message sent into a
   thread may meet a turn already running there. Its rows so far were drawn
   from the rows, under their own ids, so the send's replay of those
@@ -2279,22 +2292,22 @@ no outcome depends on how long they took.
   starts; a runtime that honoured the hook for some enqueues and not for
   others could pass it, and would be caught only where the run is met.
   A rule the app is known to break is listed in `SeededRun.known`, noted
-  and not failed, and an entry that no longer fails must not stay. It
-  holds one: a message drawn queued, as the app last heard, while its
-  conversation has no stream to hear on and a call reads the message in
-  that time (seed 4487 at 40 steps on a server at `agents` 6). The check
-  notes it only where the conversation is not connected or waits to ask
-  for its stream again, and breaks the run anywhere else. Its first four
-  entries were the two models of a turn, gone with them; the three after
-  them each have a plain test beside the seed that found them:
-  a message sent under no id paired with an older row of the same words
-  (seed 1171 at 101 steps on a server at `agents` 7; `FoldTests`), a
-  message a call had read drawn queued again by a chat that joined its
-  run anew (seed 9435 at 39 steps; `AnsweringTests`), and a reply's
-  notification standing for an archived chat with nothing waiting (seeds
-  30167 at 45 steps and 20442 at 101; `AnsweringTests`). A kill may take
-  a draft typed inside its save's pause and a send without an id still on
-  its way, and nothing else.
+  and not failed, and an entry that no longer fails must not stay. It is
+  empty. Its first four entries were the two models of a turn, gone with
+  them; the ones after them each have a plain test beside the seed that
+  found them: a message sent under no id paired with an older row of the
+  same words (seed 1171 at 101 steps on a server at `agents` 7;
+  `FoldTests`), a message a call had read drawn queued again by a chat
+  that joined its run anew (seed 9435 at 39 steps), one drawn queued, as
+  the app last heard, while its conversation had no stream to hear on
+  (seed 4487 at 40 steps) and one a stream let go had said was queued,
+  drawn so under the next turn's stream (seed 6008 at 22 steps; all three
+  in `AnsweringTests`), and a reply's notification standing for an
+  archived chat with nothing waiting (seeds 30167 at 45 steps and 20442
+  at 101; `AnsweringTests`). A message drawn queued by a conversation
+  with no stream open, or one a call has read, breaks the run. A kill
+  may take a draft typed inside its save's pause and a send without an id
+  still on its way, and nothing else.
 - The diagnostics file by a seed (`SeededRun.discreet`). The seeded
   server's every sentence is a canary (`SeededServer.said`: an envelope's
   message, a thread's reason, a failed turn's error), and so is every
@@ -2354,7 +2367,7 @@ no outcome depends on how long they took.
   in their own words, taps an option, approves, declines, tries a card
   again, and answers from a notification. After every step: a message is
   drawn queued only while the server holds it unread in a run that goes
-  on, and never twice; a card the server holds resolved is never drawn
+  on and the conversation has that run's stream open, and never twice; a card the server holds resolved is never drawn
   waiting once the app holds the record at that version; a card that
   waits is never hidden, but aside while it is answered in words; no card
   is resolved twice on the server; and an action from a notification is

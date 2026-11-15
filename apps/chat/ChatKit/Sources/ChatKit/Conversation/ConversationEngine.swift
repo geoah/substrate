@@ -386,9 +386,10 @@ extension Conversation {
         state.asks += ["retry", "pollTimer", "poll", "stop", "stopWait", "check", "repeat"].map { .cancel($0) }
         state.polling = false
         state.pollAgain = false
-        // A new stream says its turn's queue again, from wherever it starts.
-        state.recalled = []
-        state.caught = false
+        // The stream before is let go, and a call may read a message
+        // before the next is open: the new one says its turn's queue again
+        // from the start, a send into a running turn's too.
+        deafen(&state)
         // A check the run leaves can no longer say what it found.
         if let lost = state.lost {
             state.lost = nil
@@ -774,7 +775,6 @@ extension Conversation {
         state.stopping = false
         state.phase = .streaming
         state.connected = false
-        deafen(&state)
         state.run = .attach(State.Attach(attempt: attempt))
         state.asks.append(.attach(thread: thread))
     }
