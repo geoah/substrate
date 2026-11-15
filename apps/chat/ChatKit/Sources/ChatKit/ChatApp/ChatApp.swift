@@ -341,7 +341,17 @@ public struct ChatApp: LinkedApp {
         if state.marks != nil, state.readState != previous.readState {
             taken.formUnion(previous.unreadThreads.subtracting(state.unreadThreads).filter { state.thread($0)?.running == false })
         }
-        for thread in taken.sorted() { asks.append(.cancelGroup(thread)) }
+        for thread in taken.sorted() {
+            // Opened here, everything the chat notified goes. Read on
+            // another device, the reply's own goes: a card's stands while
+            // its chat may wait, and what an action could not do until the
+            // chat is opened here.
+            if !state.visibleThreads.contains(thread), state.mayWait(thread) || state.failedActions.contains(thread) {
+                asks.append(.cancelNotification(ChatNotifications.replyID(thread)))
+            } else {
+                asks.append(.cancelGroup(thread))
+            }
+        }
         // The questions a notification can answer changed, or the folder
         // was just read: each one's options are its category's actions.
         let answerable = { (state: State) in state.interactions.filter { ChatNotifications.answerable($0) != nil } }

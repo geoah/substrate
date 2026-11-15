@@ -429,7 +429,9 @@ extension ChatApp {
         for thread in state.announced.sorted() {
             if visible.contains(thread) {
                 state.announced.remove(thread)
-            } else if !state.notifies(thread), !state.failedActions.contains(thread) {
+            } else if !state.notifies(thread), !state.mayWait(thread), !state.failedActions.contains(thread) {
+                // (Nothing may wait: a card posted a moment ago, ahead of
+                // the row that counts it, is not taken back by that row.)
                 // Archived since, here or on another device: what it
                 // notified is put away with it. Also where no list holds
                 // its row any more and its mark, read by name, says so: a
