@@ -1003,7 +1003,17 @@ panel on the right.
   with nothing more to say than its check mark does not open. With Technical
   details on, every line opens and adds the function and the request and
   response verbatim. Only what you act on sits under the line whether it is
-  open or not: a suggested change and a batch of questions. A job an agent
+  open or not: a suggested change and a batch of questions. A batch of
+  questions offers its options with **Answer**, **Dismiss**, and **Answer
+  in your own words**: that puts the cursor in the message box, which says
+  which question the next message answers, and sending it answers the
+  question with the message, so the agent replies once
+  ([a message that answers a question](agents.md#a-message-that-answers-a-question)).
+  On a server from before that, the button is not offered. A question, a
+  suggested change and a call that waited for approval each say who resolved
+  them once resolved (**Answered by** You, a person's name where you may
+  read actors, or Someone else; [who resolved it](agents.md#who-resolved-it));
+  one resolved before the server kept that says only how it ended. A job an agent
   ran in the background says when it ended ("Librarian finished in the
   background"), and its call's line shows what it answered. A thread a
   trigger started opens with the record whose change started it.

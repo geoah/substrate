@@ -389,7 +389,8 @@ entry could name only a function.
   a batch of at most eight questions and returns the record id, not an answer.
   The run continues without one; the answer arrives in a later turn, when the
   user answers the interaction and the thread resumes, so the model must not
-  poll for it.
+  poll for it. A person may answer in a chat message instead of with the
+  options ([a message that answers a question](#a-message-that-answers-a-question)).
 - **`substrate.reamde.dev/core/vocabulary`** declares or changes kinds: one
   call is `{documents, plan}`, `documents` a list of declaration documents
   (`{kind, metadata: {id}, data}`, the envelope `/vocabulary/apply` takes),
@@ -727,7 +728,9 @@ which the replayed system row is what the model reacts to — on the wire it
 travels as user content, since the system slot belongs to the agent's prompt.
 Resume is bounded, because a resume is a paid turn: the agent's own
 `resume: never` withholds it (the system row still lands), a resolution the
-thread's own agent performed never resumes that thread, and a per-thread
+thread's own agent performed never resumes that thread, a question dismissed
+while a chat turn already answers its person's later message starts no turn
+of its own ([below](#a-message-that-answers-a-question)), and a per-thread
 budget caps resumes at 20 resolutions an hour, past which the sweep or the
 next continuation picks the rows up. A thread that is mid-turn refuses the
 lease and picks the decision up on its next continuation, and a request no
@@ -838,6 +841,59 @@ to the function run the body, and a function body that calls one through the
 host inside an agent's chain is refused. Nothing yet lets an agent, trigger
 or workflow skip the wait; [the plan](plans/approvals.md) is standing
 approvals the owner grants by name.
+
+### Who resolved it
+
+A question, a call waiting for approval and a change request each end by
+somebody's hand, and each links the [actor](api.md#actors) of that hand
+beside the time it already kept
+([decision 0327](decisions/0327-a-chat-message-may-name-the-question-it-answers-and-a-resolved-card-links-the-hand-that-resolved-it.md)):
+
+| Kind | The time | The hand |
+| --- | --- | --- |
+| `substrate.reamde.dev/llm/interaction` | `resolvedAt` | `resolvedBy` |
+| `substrate.reamde.dev/llm/approval` | `decidedAt` | `decidedBy` |
+| `substrate.reamde.dev/core/recordpatchrequest` | `decidedAt` | `decidedBy` |
+
+```yaml
+kind: substrate.reamde.dev/llm/interaction
+metadata:
+  id: 01m7f0kq2ye8bbv0h1t3mqk4wd
+data:
+  properties:
+    state: answered
+    resolvedAt: "2026-11-15T09:41:07.412Z"
+    resolvedBy:
+      ref: substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0
+```
+
+The server stamps the link in the write that moves the record out of its
+waiting state (`pending`, or `proposed` for a change request), from the hand
+that made it: the person, or the person an app's token acts for. A change
+request a function or an agent decided links that function's or agent's
+actor, and one a [policy](#the-policy-door) rule decided links nobody: its
+`policy` names the rule. No write sets the link. A value a write sends is
+refused unless it is the stored one, and an approved call's later moves
+(`running`, `done`, `failed`) leave it as it was.
+
+A client says "you" or "someone else" without reading an actor. The link is
+a reference value, so it reaches every reader of the record, and `me` in a
+filter stands for the actor of the person the request acts for
+([read state](#read-state)). The cards of one thread that the caller
+resolved are one list read for each kind:
+
+```http
+GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/interaction"],"properties":{"thread":{"eq":"<thread id>"},"resolvedBy":{"eq":"me"}}}&first=100
+```
+
+A resolved record that is not in that answer, and holds a link, was resolved
+by somebody else. Their name is the actor record's `name`, which a person
+reads only where their roles read actors ([roles](auth.md#roles)); anyone
+else knows only that it was not them. A record resolved before the link was
+kept holds none, and says nothing about whose hand it was: no migration
+fills it. The link arrives with revision 7 of the `agents`
+[feature](api.md#the-features); a server below it does not declare the
+properties, and answers a filter on one `422 validation`.
 
 ## Sub-agents, budgets, and the emit ceiling
 
@@ -2174,7 +2230,8 @@ Two sends are refused as before, `409 conflict` with the reason
 thread that is not a chat turn's (a sub-agent's, a call's, a triggered
 run's). A thread that waits on the person (a question, an approval) is not
 running, so a message to it is an ordinary send: it starts a turn, and it
-neither answers nor dismisses what is waiting. A message cannot be withdrawn
+neither answers nor dismisses what is waiting, unless it names the question
+it answers ([below](#a-message-that-answers-a-question)). A message cannot be withdrawn
 once it is sent. A queued message moves neither of the two facts a chat list
 reads off the thread: it is never the thread's `lastMessage`
 ([threads](#threads-messages-and-cost)), so it does not make the chat unread
@@ -2186,6 +2243,74 @@ answers it, so a client that orders by `turn` shows it there. Its row is
 created at once, so a reader that orders by `createdAt` sees it early: a
 replay to the model moves a `user` row behind every row created after it
 under a smaller `turn`, which is where the model read it.
+
+### A message that answers a question
+
+An agent's question ([`ask`](#tools)) takes option values and no prose. A
+person who would rather answer in their own words sends a chat message that
+names the question
+([decision 0327](decisions/0327-a-chat-message-may-name-the-question-it-answers-and-a-resolved-card-links-the-hand-that-resolved-it.md)):
+
+```json
+{"thread": "01k9z3v8q4c0d5m2r7w1x6y8ab", "messageId": "0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03", "message": "Neither: Thursday morning.", "repliesTo": "01m7f0kq2ye8bbv0h1t3mqk4wd"}
+```
+
+`repliesTo` is the id of a pending `llm/interaction` of that thread. It
+needs `thread` and `messageId`. The transaction that writes the message
+moves the interaction from `pending` to `replied`, as the sender, and stamps
+`repliedIn` (a reference to the message), `resolvedAt` and
+[`resolvedBy`](#who-resolved-it). So the message is the one event:
+
+- **One turn follows.** No resolution row is written and nothing is resumed
+  for the question. The turn that reads the message is the continuation, and
+  the request is answered with its stream, as any send is.
+- **The model is told.** The message's [turn context](#turn-context) gains
+  an `answers:` entry that names the interaction and says the message is its
+  answer and the question is closed. It is stored on the row, so a replay
+  sends the same bytes.
+- **While the run that asked still goes**, the message
+  [joins that run](#a-message-while-a-turn-runs): the question is resolved
+  when the row is written, and the call that reads the message reads the
+  entry. A message that run never read starts the next turn, once.
+- **One question.** A thread may hold several pending questions. A message
+  answers the one it names, and the thread's `waitingOnPerson` comes down by
+  one.
+- **A repeat** is found by its `messageId` before anything else is read. It
+  resolves nothing and runs nothing.
+- **A question resolved meanwhile**, on another device, is left as it is.
+  The message is sent as any other, with no entry, and the request is
+  answered as usual: the person's words are not refused for a card that
+  moved. A client reads the interaction again to draw it.
+
+| The request | The answer |
+| --- | --- |
+| `repliesTo` with no `thread`, or with no `messageId`, or not a record id | `422 validation`, nothing written |
+| `repliesTo` names an interaction of another thread, or nothing | `422 validation` in the same words for both, nothing written |
+| the sender's roles, or an app's grant, do not write the interaction | `403 forbidden`, nothing written |
+| a `PATCH` of an interaction to `replied` | `403 forbidden`: only the send reaches the state |
+
+A question a sub-agent asked is its own thread's. A message into the
+conversation above it cannot name it; a message into the sub-agent's thread
+answers it there, in one turn of that thread.
+
+A `replied` interaction holds no `answers`. `answered` still means an option
+chosen for every question, and `dismissed` that the batch was declined. A
+client that does not know `replied` draws it as it draws any state it does
+not know.
+
+**A client from before `repliesTo`** sends the words as an ordinary message
+and then dismisses the question. Both requests work as they did. The second
+turn they used to cost is not run in the case that order produces: a
+dismissal that lands while a chat turn runs on the thread, after its person
+sent a message there since the question was asked, writes its
+`interactionDismissed` row and starts no turn. The next turn's replay reads
+the row. A dismissal into a settled thread resumes it as before, and so does
+one with no later message from the person.
+
+`repliesTo` and the `replied` state arrive with revision 7 of the `agents`
+[feature](api.md#the-features). A server below it refuses the field as
+unknown (`400 bad_request`), so a client reads the revision first and falls
+back to a message and a dismissal there.
 
 ### Continue
 
