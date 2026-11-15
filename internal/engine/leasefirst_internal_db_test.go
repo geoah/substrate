@@ -606,6 +606,7 @@ var directGoroutines = map[string]launches{
 	"functions.go (*dataset).ProcessTriggers":    {1, "the schedule lane of one trigger pass, which the pass waits for; the pass is a call its caller makes, and reads its triggers when it starts"},
 	"functions.go (*dataset).scheduleLane":       {1, "one schedule's firing inside a trigger pass, which the lane waits for"},
 	"scope.go closeRepositoryPool":               {1, "the shutdown's close of the repository pool; it writes nothing"},
+	"conversion.go convertPage":                  {1, "the workers that convert one page of a conversion's walk, which the walk waits for before it writes; they write nothing"},
 	"archive.go (*dataset).startArchiver":        {1, "a cancel when the service shuts down"},
 	"compactpass.go (*dataset).startCompactor":   {1, "a cancel when the service shuts down"},
 	"agents.go (*dataset).ChatAgent":             {1, "a cancel when the service shuts down"},

@@ -32,8 +32,10 @@ package engine
 // the dialect the step sees its lines in.
 //
 // A LINE IS CONVERTED ONCE BY EACH STEP, in that step's walk over the table:
-// a step's Line sees every line exactly once, in seq order, as the steps
-// below it left it, and nothing else calls it. Its Declarations are read
+// a step's Line sees every line exactly once, as the steps below it left it,
+// and nothing else calls it. The walk reads the table a page at a time in seq
+// order and converts a page's lines on every core at once, so a Line keeps
+// nothing from one line to the next. Its Declarations are read
 // from the table those walks wrote, never by running a step's Line again. No
 // copy of the history is ever held to the table across a conversion
 // (decision 0279): whether an archive is this database's is decided by what
@@ -46,7 +48,8 @@ package engine
 // 0262). The boot check runs it on a repository the table holds below this
 // binary's dialect, and on an import after the source's sealed rows and lines
 // went in and before they fold. ONE TRANSACTION, under the
-// changelog lock, walks the table once for each step, in step order,
+// changelog lock, walks the table once for each step, in step order (but a
+// step that rewrites no line, which is walked only as the first),
 // rewriting every row whose line the step changed, then runs every step's
 // Carry in order, and raises the stamp to the last step's dialect. Where a
 // step changed a line of the repository, or a step says the fold must be
@@ -95,8 +98,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -113,8 +119,10 @@ type conversionStep struct {
 	// the step's file, `conversion_NNNN_<name>.go`.
 	Name string
 	// Line rewrites one history line in place. It is called once for every
-	// line, in seq order, in the step's own walk over the table, and must
-	// leave a line already in its dialect unchanged.
+	// line, in the step's own walk over the table, and must leave a line
+	// already in its dialect unchanged. The walk converts a page's lines on
+	// every core at once (convertPage), so Line reads nothing but the line
+	// and what its pass was built with, and writes nothing but the line.
 	//
 	// A compacted history has gaps, and a line may carry state entries
 	// (compact.go): a `state` stands for its record's every earlier effect,
@@ -142,6 +150,11 @@ type conversionStep struct {
 	// empty. A step that rewrites lines needs no flag: a changed line
 	// rebuilds the fold whatever the steps say.
 	Refolds bool
+	// RewritesNoLine says the step only raises the stamp: its Line leaves
+	// every line as it found it. Its walk would rewrite nothing and only
+	// hold each row to its checksum again, so a conversion walks it only
+	// where no step before it in the same conversion walked the table.
+	RewritesNoLine bool
 }
 
 // conversionRepository is the repository a step converts.
@@ -236,8 +249,17 @@ var conversionSteps = []conversionStep{
 	// The local namespace rewrites the lines that spell the repository's
 	// name, so the records are rebuilt for it without Refolds.
 	{Dialect: localNamespaceDialect, Name: "local_namespace", ForRepository: convertLocalNamespace},
-	conversionStateEntries,
-	conversionErasures,
+	// Steps 7 and 8 only raise the stamp: no line before them holds what
+	// their dialects add (their files say why).
+	rewritingNoLine(conversionStateEntries),
+	rewritingNoLine(conversionErasures),
+}
+
+// rewritingNoLine is step, said to rewrite no line (RewritesNoLine). A landed
+// step's file is frozen, so the chain says it here.
+func rewritingNoLine(step conversionStep) conversionStep {
+	step.RewritesNoLine = true
+	return step
 }
 
 // The conversion's steps, as the import's test seam names them
@@ -349,26 +371,33 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 	}
 	ds.svc.log.Info("substrate: converting the changelog",
 		"repository", ds.scope.Repository, "from", stored, "to", target, "steps", conversionNames(steps), "head", head)
-	prog := ds.svc.progress("converting the changelog", "repository", ds.scope.Repository, "head", head*int64(len(steps)))
+	walks := walkedSteps(steps)
+	prog := ds.svc.progress("converting the changelog", "repository", ds.scope.Repository, "head", head*int64(walks))
 	// One walk per step, in step order, over the whole table, in this one
-	// transaction: a step's Line sees every line once, in seq order, as the
-	// steps below it left it, and the step after reads the table they wrote
-	// (its Declarations included), so no line is converted outside a walk.
+	// transaction: a step's Line sees every line once, as the steps below it
+	// left it, and the step after reads the table they wrote (its
+	// Declarations included), so no line is converted outside a walk. A step
+	// that rewrites no line is walked only where it is the first (walkStep).
 	// How many line rewrites the steps made, summed over the steps: a count
 	// and nothing per line, since a history from the last release has every
 	// line rewritten and may hold tens of millions.
 	var rewrites int64
+	walked := 0
 	passes := make([]conversionPass, 0, len(steps))
-	for i, step := range steps {
+	for _, step := range steps {
 		pass, err := ds.conversionPass(ctx, tx, step)
 		if err != nil {
 			return false, err
 		}
 		passes = append(passes, pass)
-		n, err := ds.walkConversionStep(ctx, t, step, pass, head, int64(i)*head, prog)
+		if !walkStep(step, walked) {
+			continue
+		}
+		n, err := ds.walkConversionStep(ctx, t, step, pass, head, int64(walked)*head, prog)
 		if err != nil {
 			return false, err
 		}
+		walked++
 		rewrites += n
 	}
 	for i, pass := range passes {
@@ -418,9 +447,29 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 	return true, nil
 }
 
-// walkConversionStep runs one step's Line over every line of the table, in
-// seq order, writes back each line it changed with its new checksum, and
-// returns how many it changed. A step may not move a line's seq or txn.
+// walkStep reports whether a conversion walks step, walked being how many
+// steps before it in the same conversion walked the table. A step that
+// rewrites no line is walked only as the first, so every conversion holds
+// every row to its checksum once (historyUnsettled counts on it).
+func walkStep(step conversionStep, walked int) bool {
+	return !step.RewritesNoLine || walked == 0
+}
+
+// walkedSteps is how many of steps a conversion walks.
+func walkedSteps(steps []conversionStep) int {
+	n := 0
+	for _, s := range steps {
+		if walkStep(s, n) {
+			n++
+		}
+	}
+	return n
+}
+
+// walkConversionStep runs one step's Line over every line of the table, a
+// page at a time in seq order, writes back each line it changed with its new
+// checksum, and returns how many it changed. A step may not move a line's seq
+// or txn.
 func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversionStep, pass conversionPass, head, done int64, prog *progress) (int64, error) {
 	var rewritten int64
 	if err := t.planEveryStatement(); err != nil {
@@ -434,45 +483,135 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 		if len(page) == 0 {
 			break
 		}
-		for _, row := range page {
-			e, err := walkedLine(row)
-			if err != nil {
-				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
+		lines := convertPage(page, step, pass.Line)
+		// The first line that failed, in seq order, is the one a walk a line
+		// at a time would have stopped at.
+		for _, l := range lines {
+			if l.err != nil {
+				return 0, l.err
 			}
-			seq, txnSeq := e.Seq, e.Txn
-			after = seq
-			if err := pass.Line(&e); err != nil {
-				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)
-			}
-			if e.Seq != seq || e.Txn != txnSeq {
-				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)
-			}
-			_, sum, err := changelogfile.Encode(e)
-			if err != nil {
-				return 0, fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
-			}
-			// The row was held to its stored checksum before the step ran,
-			// so an unchanged checksum is a line the step left as it found
-			// it, and keeps the checksum it had.
-			if bytes.Equal(row.hash, sum[:]) {
-				continue
-			}
-			var causedBy sql.NullInt64
-			if e.CausedByOK {
-				causedBy = sql.NullInt64{Int64: e.CausedBy, Valid: true}
-			}
-			if _, err := t.exec(`
-				UPDATE changelog SET ts = $2, actor = $3, on_behalf_of = $4, principal = $5, op = $6, record_id = $7,
-					kind = $8, payload = $9::jsonb, caused_by = $10, txn = $11, hash = $12
-				WHERE seq = $1`,
-				e.Seq, e.TS, e.Actor, e.OnBehalfOf, lineToken(e), e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
-				return 0, fmt.Errorf("substrate/engine: convert seq %d: %w", e.Seq, err)
-			}
-			rewritten++
 		}
+		n, err := writeConvertedPage(t, lines)
+		if err != nil {
+			return 0, err
+		}
+		rewritten += n
+		after = page[len(page)-1].entry.Seq
 		prog.tick(changelogfile.Position{Seq: done + after})
 	}
 	return rewritten, nil
+}
+
+// convertedLine is one row of a page as a step left it: the line, its
+// checksum and whether the step changed it, or why the step could not
+// convert it.
+type convertedLine struct {
+	e       changelogfile.Entry
+	sum     [32]byte
+	changed bool
+	err     error
+}
+
+// convertPage runs line over every row of a page, the rows spread over the
+// machine's cores, and returns them in the page's order. Holding a row to
+// its checksum and encoding the line the step left are most of what a walk
+// costs, and a step's Line reads nothing but its line (conversionStep), so
+// the lines of a page convert independently of each other.
+func convertPage(page []checksumRow, step conversionStep, line func(*changelogfile.Entry) error) []convertedLine {
+	out := make([]convertedLine, len(page))
+	workers := min(runtime.GOMAXPROCS(0), len(page))
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			for i := w; i < len(page); i += workers {
+				out[i] = convertRow(page[i], step, line)
+			}
+		})
+	}
+	wg.Wait()
+	return out
+}
+
+// convertRow is one row through one step.
+func convertRow(row checksumRow, step conversionStep, line func(*changelogfile.Entry) error) convertedLine {
+	e, err := walkedLine(row)
+	if err != nil {
+		return convertedLine{err: fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)}
+	}
+	seq, txnSeq := e.Seq, e.Txn
+	if err := line(&e); err != nil {
+		return convertedLine{err: fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)}
+	}
+	if e.Seq != seq || e.Txn != txnSeq {
+		return convertedLine{err: fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)}
+	}
+	_, sum, err := changelogfile.Encode(e)
+	if err != nil {
+		return convertedLine{err: fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)}
+	}
+	// The row was held to its stored checksum before the step ran, so an
+	// unchanged checksum is a line the step left as it found it, and keeps
+	// the checksum it had.
+	return convertedLine{e: e, sum: sum, changed: !bytes.Equal(row.hash, sum[:])}
+}
+
+// writeConvertedPage writes back every line of a page the step changed, with
+// its new checksum, in one statement, and returns how many: a step that
+// rewrites every line of a long history would otherwise spend a round trip on
+// each.
+func writeConvertedPage(t *txn, lines []convertedLine) (int64, error) {
+	var (
+		seqs, txns                                        []int64
+		ts                                                []time.Time
+		actors, behalf, tokens, ops, ids, kinds, payloads []string
+		causedBy                                          []*int64
+		hashes                                            [][]byte
+	)
+	for _, l := range lines {
+		if !l.changed {
+			continue
+		}
+		e := l.e
+		seqs = append(seqs, e.Seq)
+		ts = append(ts, e.TS)
+		actors = append(actors, e.Actor)
+		behalf = append(behalf, e.OnBehalfOf)
+		tokens = append(tokens, lineToken(e))
+		ops = append(ops, e.Op)
+		ids = append(ids, e.RecordID)
+		kinds = append(kinds, e.Kind)
+		payloads = append(payloads, string(e.Payload))
+		var cause *int64
+		if e.CausedByOK {
+			cause = &e.CausedBy
+		}
+		causedBy = append(causedBy, cause)
+		txns = append(txns, e.Txn)
+		hashes = append(hashes, l.sum[:])
+	}
+	if len(seqs) == 0 {
+		return 0, nil
+	}
+	res, err := t.exec(`
+		UPDATE changelog AS c SET ts = u.ts, actor = u.actor, on_behalf_of = u.on_behalf_of, principal = u.principal,
+			op = u.op, record_id = u.record_id, kind = u.kind, payload = u.payload::jsonb, caused_by = u.caused_by,
+			txn = u.txn, hash = u.hash
+		FROM unnest($1::bigint[], $2::timestamptz[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],
+			$8::text[], $9::text[], $10::bigint[], $11::bigint[], $12::bytea[])
+			AS u(seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, caused_by, txn, hash)
+		WHERE c.seq = u.seq`,
+		seqs, ts, actors, behalf, tokens, ops, ids, kinds, payloads, causedBy, txns, hashes)
+	if err != nil {
+		return 0, fmt.Errorf("substrate/engine: convert seqs %d to %d: %w", seqs[0], seqs[len(seqs)-1], err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n != int64(len(seqs)) {
+		return 0, fmt.Errorf("substrate/engine: convert seqs %d to %d: %d of %d rows written", seqs[0], seqs[len(seqs)-1], n, len(seqs))
+	}
+	return n, nil
 }
 
 // lineFrame is the key set a row's line was encoded in, which only its

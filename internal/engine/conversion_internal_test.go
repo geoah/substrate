@@ -150,3 +150,87 @@ func editedLine(e changelogfile.Entry, edit func(*changelogfile.Entry)) changelo
 	edit(&e)
 	return e
 }
+
+// A page converts on every core and comes back in seq order: each line as
+// the step left it, flagged changed only where its checksum moved, and a walk
+// stops at the first line in seq order that does not convert, as a walk a
+// line at a time would.
+func TestAPageConvertsInOrderAndStopsAtItsFirstFailure(t *testing.T) {
+	t.Parallel()
+	ts := time.Date(2026, 11, 15, 3, 0, 0, 0, time.UTC)
+	actor := vocabulary.ActorID(substrate.ActorSystem)
+	var page []checksumRow
+	for seq := int64(1); seq <= 2*rebuildBatch; seq++ {
+		e := changelogfile.Entry{Seq: seq, Txn: seq, TS: ts, Actor: actor, Op: "put", Kind: "k.example.com/p/k", RecordID: fmt.Sprintf("r%d", seq), Payload: []byte(`{}`)}
+		_, sum, err := changelogfile.Encode(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page = append(page, checksumRow{entry: pendingEntry{
+			Seq: e.Seq, TS: e.TS, Actor: e.Actor, Op: e.Op, RecordID: e.RecordID, Kind: e.Kind, Txn: e.Txn, PayloadText: e.Payload,
+		}, hash: sum[:]})
+	}
+	step := conversionStep{Dialect: 9, Name: "test"}
+	// Every third line gains a property; the rest stay as they were.
+	rewrite := func(e *changelogfile.Entry) error {
+		if e.Seq%3 == 0 {
+			e.Payload = []byte(`{"seen":true}`)
+		}
+		return nil
+	}
+	lines := convertPage(page, step, rewrite)
+	if len(lines) != len(page) {
+		t.Fatalf("%d lines came back from a page of %d", len(lines), len(page))
+	}
+	for i, l := range lines {
+		want := int64(i + 1)
+		if l.err != nil || l.e.Seq != want {
+			t.Fatalf("line %d is seq %d (%v), want seq %d", i, l.e.Seq, l.err, want)
+		}
+		if l.changed != (want%3 == 0) {
+			t.Errorf("seq %d: changed %v, want %v", want, l.changed, want%3 == 0)
+		}
+		if _, sum, _ := changelogfile.Encode(l.e); sum != l.sum {
+			t.Errorf("seq %d: the checksum is not the line's", want)
+		}
+	}
+
+	failing := func(e *changelogfile.Entry) error {
+		if e.Seq >= 400 && e.Seq%7 == 0 {
+			return fmt.Errorf("refused")
+		}
+		return nil
+	}
+	lines = convertPage(page, step, failing)
+	var first error
+	for _, l := range lines {
+		if l.err != nil {
+			first = l.err
+			break
+		}
+	}
+	if first == nil || !strings.Contains(first.Error(), "at seq 406:") {
+		t.Errorf("the first failure in seq order is %v, want seq 406's", first)
+	}
+
+	moving := func(e *changelogfile.Entry) error { e.Txn++; return nil }
+	if l := convertPage(page[:1], step, moving)[0]; l.err == nil || !strings.Contains(l.err.Error(), "moved seq 1") {
+		t.Errorf("a step that moves a line's txn converts (%v), want it refused", l.err)
+	}
+}
+
+// A step that rewrites no line is walked only where no step before it in the
+// same conversion was, so every conversion holds every row to its checksum
+// once and no more often than its rewriting steps need.
+func TestAStepThatRewritesNoLineIsWalkedOnlyFirst(t *testing.T) {
+	t.Parallel()
+	for stored, want := range map[int]int{1: 5, 2: 4, 5: 1, 6: 1, 7: 1} {
+		steps := pendingConversions(conversionSteps, stored)
+		if got := walkedSteps(steps); got != want {
+			t.Errorf("a history at dialect %d walks %d of its %d steps, want %d", stored, got, len(steps), want)
+		}
+	}
+	if got := walkedSteps(pendingConversions(conversionSteps, maxChangelogDialect)); got != 0 {
+		t.Errorf("a history at the chain's dialect walks %d steps, want none", got)
+	}
+}
