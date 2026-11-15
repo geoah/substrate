@@ -89,6 +89,8 @@ let server: {
   failWrite?: boolean
   /** How many chats a page of a list holds, where a test cuts it short. */
   window?: number
+  /** Fail every read of marks. */
+  failMarks?: boolean
 }
 
 function threadRecord(t: { id: string; title: string; waiting?: number }) {
@@ -202,6 +204,8 @@ beforeEach(() => {
         }
       }
       const kind = filter.kinds?.[0]
+      if (kind === MARK && server.failMarks)
+        return json({ error: { code: "internal", message: "no" } }, 500)
       if (kind === MARK)
         return page(
           (filter.properties?.thread?.in ?? [])
@@ -565,6 +569,61 @@ describe("the chats page, pinned and archived", () => {
     ).toBeTruthy()
     // The way back is still offered.
     expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy()
+  })
+
+  it("follows the thread rows from the oldest list read, once every list answered", async () => {
+    renderPage()
+    await chats()
+    const feed = () =>
+      watch.calls.find((c) => c.filter?.kinds?.includes(THREAD))
+    await waitFor(() => expect(feed()).toBeTruthy())
+    // Never from the server's head when the stream happens to open.
+    expect(feed()!.from).toBe(5)
+    expect(
+      watch.calls.filter((c) => c.filter?.kinds?.includes(THREAD))
+    ).toHaveLength(1)
+  })
+
+  it("brings back a chat unarchived on another device when every chat was archived", async () => {
+    for (const t of server.threads) server.marks.set(t.id, { archived: true })
+    renderPage("?agent=" + encodeURIComponent(HELPER))
+    const list = await screen.findByRole("navigation", { name: "Chats" })
+    await waitFor(() => expect(list.textContent).toContain("No chats"))
+    // No chat is listed and no mark was read, and the marks are followed
+    // all the same.
+    const feed = () => watch.calls.find((c) => c.filter?.kinds?.includes(MARK))
+    await waitFor(() => expect(feed()).toBeTruthy())
+    server.marks.set("t-mid", { archived: false })
+    act(() => feed()!.onRow({ seq: 6, kind: MARK, recordId: "t-mid.me" }))
+    await waitFor(() => expect(titles(list)).toEqual(["Middle"]), {
+      timeout: 4000,
+    })
+  })
+
+  it("goes by the list a chat came from when its marks cannot be read", async () => {
+    server.marks.set("t-old", { pinned: true })
+    server.marks.set("t-mid", { archived: true })
+    server.failMarks = true
+    renderPage()
+    const list = await chats()
+    // The server narrowed the lists by the marks the page could not read.
+    await waitFor(() =>
+      expect(
+        titles(within(list).getByRole("region", { name: "Pinned" }))
+      ).toEqual(["Oldest"])
+    )
+    expect(titles(list)).toEqual(["Oldest", "Newest"])
+    fireEvent.click(screen.getByRole("button", { name: "Archived" }))
+    const archived = await screen.findByRole("navigation", {
+      name: "Archived chats",
+    })
+    await waitFor(() => expect(titles(archived)).toEqual(["Middle"]))
+    fireEvent.click(
+      within(archived).getByRole("button", { name: "Actions: Middle" })
+    )
+    expect(
+      await screen.findByRole("menuitem", { name: "Unarchive" })
+    ).toBeTruthy()
   })
 
   it("reads one list and offers neither action on a server from before them", async () => {
