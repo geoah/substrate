@@ -143,6 +143,14 @@ function renderList(props: Partial<Parameters<typeof ThreadList>[0]> = {}) {
 
 afterEach(cleanup)
 
+/** Opens a chat row's menu and picks one of its actions. */
+async function pick(list: HTMLElement, title: string, action: string) {
+  fireEvent.click(
+    within(list).getByRole("button", { name: `Actions: ${title}` })
+  )
+  fireEvent.click(await screen.findByRole("menuitem", { name: action }))
+}
+
 describe("ThreadList", () => {
   it("marks an unread chat and offers Mark as read on it, Mark as unread on the others", async () => {
     const fresh = row(0, HELPER, "New reply")
@@ -164,23 +172,163 @@ describe("ThreadList", () => {
       within(chats).getByRole("button", { name: /^Old news/ }).dataset.unread
     ).toBeUndefined()
 
-    fireEvent.click(
-      within(chats).getByRole("button", { name: "Mark as read: New reply" })
-    )
+    await pick(chats, "New reply", "Mark as read")
     expect(onMarkRead).toHaveBeenCalledWith(fresh.thread.id)
-    fireEvent.click(
-      within(chats).getByRole("button", { name: "Mark as unread: Old news" })
-    )
+    await pick(chats, "Old news", "Mark as unread")
     expect(onMarkUnread).toHaveBeenCalledWith(seen.thread.id)
-    expect(
-      within(chats).queryByRole("button", { name: "Mark as unread: New reply" })
-    ).toBeNull()
   })
 
-  it("offers neither action where the server keeps no marks", async () => {
+  it("offers no menu where the server keeps no marks", async () => {
     renderList({ rows: [row(0, HELPER, "A chat")] })
     const chats = await screen.findByRole("navigation", { name: "Chats" })
-    expect(within(chats).queryByRole("button", { name: /^Mark as/ })).toBeNull()
+    expect(within(chats).queryByRole("button", { name: /^Actions/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Archived/ })).toBeNull()
+  })
+
+  it("pins and archives from a row's menu, and says which way each goes", async () => {
+    const plain = row(0, HELPER, "Plain")
+    const kept = row(1, HELPER, "Kept")
+    const onPin = vi.fn()
+    const onArchive = vi.fn()
+    renderList({
+      rows: [plain, kept],
+      pinned: new Set([kept.thread.id]),
+      onPin,
+      onArchive,
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    await pick(chats, "Plain", "Pin")
+    expect(onPin).toHaveBeenLastCalledWith(plain.thread.id, true)
+    await pick(chats, "Kept", "Unpin")
+    expect(onPin).toHaveBeenLastCalledWith(kept.thread.id, false)
+    await pick(chats, "Plain", "Archive")
+    expect(onArchive).toHaveBeenLastCalledWith(plain.thread.id, true)
+  })
+
+  it("puts pinned chats in a section of their own above the rest, however old", async () => {
+    // The oldest of the helper's thirty chats: past the first page.
+    const old = rows[29]
+    renderList({ pinned: new Set([old.thread.id]), onPin: vi.fn() })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const section = within(chats).getByRole("region", { name: "Pinned" })
+    expect(
+      within(section)
+        .getAllByRole("button", { name: /^Chat \d+/ })
+        .map((b) => b.textContent)
+    ).toEqual([expect.stringContaining("Chat 29")])
+    // Above the day groups, and not listed a second time among them.
+    const days = within(chats).getByText("Earlier")
+    expect(
+      section.compareDocumentPosition(days) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      within(chats).getAllByRole("button", { name: /^Chat \d+/ })
+    ).toHaveLength(CHAT_PAGE + 1)
+    fireEvent.click(within(chats).getByRole("button", { name: /Show more/ }))
+    expect(
+      within(chats).getAllByRole("button", { name: /^Chat 29/ })
+    ).toHaveLength(1)
+    // The search and the agent narrowing reach the pinned chats too.
+    fireEvent.change(screen.getByRole("textbox", { name: "Search chats" }), {
+      target: { value: "weekly" },
+    })
+    expect(within(chats).queryByRole("region", { name: "Pinned" })).toBeNull()
+  })
+
+  it("leaves an archived chat out of the list, unless it waits on you", async () => {
+    const away = row(0, HELPER, "Put away")
+    const asks = row(1, HELPER, "Put away and asking")
+    asks.thread.properties.waitingOnPerson = 1
+    const here = row(2, HELPER, "Still here")
+    const both = row(3, HELPER, "Pinned and put away")
+    renderList({
+      rows: [away, asks, here, both],
+      archived: new Set([away.thread.id, asks.thread.id, both.thread.id]),
+      pinned: new Set([both.thread.id]),
+      onPin: vi.fn(),
+      onArchive: vi.fn(),
+      onView: vi.fn(),
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    expect(
+      within(chats)
+        .getAllByRole("button")
+        .filter((b) => !b.getAttribute("aria-label"))
+        .map((b) => b.textContent)
+    ).toEqual([
+      expect.stringContaining("Put away and asking"),
+      expect.stringContaining("Still here"),
+    ])
+    // It says why it is here, and the archive wins over the pin.
+    const asking = within(chats).getByRole("button", {
+      name: /^Put away and asking/,
+    })
+    expect(asking.textContent).toContain("Waiting on you")
+    expect(asking.textContent).toContain("Archived")
+    expect(within(chats).queryByRole("region", { name: "Pinned" })).toBeNull()
+    // The agents' counts are of what the list shows.
+    expect(
+      screen.getByRole("button", { name: /All agents/ }).textContent
+    ).toContain("2")
+    await pick(chats, "Put away and asking", "Unarchive")
+  })
+
+  it("lists the archived chats in the Archived view, where one is unarchived", async () => {
+    const away = row(0, HELPER, "Put away")
+    const here = row(1, HELPER, "Still here")
+    const both = row(2, HELPER, "Pinned and put away")
+    const onArchive = vi.fn()
+    const onView = vi.fn()
+    const props = {
+      rows: [away, here, both],
+      archived: new Set([away.thread.id, both.thread.id]),
+      pinned: new Set([both.thread.id]),
+      onPin: vi.fn(),
+      onArchive,
+      onView,
+    }
+    renderList(props)
+    await screen.findByRole("navigation", { name: "Chats" })
+    fireEvent.click(screen.getByRole("button", { name: "Archived" }))
+    expect(onView).toHaveBeenLastCalledWith("archived")
+    cleanup()
+
+    renderList({ ...props, view: "archived" })
+    const archived = await screen.findByRole("navigation", {
+      name: "Archived chats",
+    })
+    expect(screen.getByRole("heading").textContent).toBe("Archived chats")
+    expect(
+      within(archived)
+        .getAllByRole("button")
+        .filter((b) => !b.getAttribute("aria-label"))
+        .map((b) => b.textContent)
+    ).toEqual([
+      expect.stringContaining("Put away"),
+      expect.stringContaining("Pinned and put away"),
+    ])
+    // A pinned one keeps its pin for when it comes back, and says so.
+    expect(
+      within(archived).getByRole("button", { name: /^Pinned:\s*Pinned and/ })
+    ).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull()
+    await pick(archived, "Put away", "Unarchive")
+    expect(onArchive).toHaveBeenLastCalledWith(away.thread.id, false)
+    fireEvent.click(screen.getByRole("button", { name: "Back to chats" }))
+    expect(onView).toHaveBeenLastCalledWith("chats")
+  })
+
+  it("says so when nothing is archived", async () => {
+    renderList({
+      rows: [row(0, HELPER, "Still here")],
+      onArchive: vi.fn(),
+      onView: vi.fn(),
+      view: "archived",
+    })
+    const archived = await screen.findByRole("navigation", {
+      name: "Archived chats",
+    })
+    expect(archived.textContent).toContain("No archived chats.")
   })
 
   it("says a chat waits on you while a question, a change or a call waits in it", async () => {

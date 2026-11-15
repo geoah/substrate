@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest"
 
 import type { SubstrateRecord } from "@/lib/api/types"
 import {
+  chatSections,
+  markArchived,
+  markPinned,
   marksByThread,
   readThroughToWrite,
   threadUnread,
@@ -104,5 +107,83 @@ describe("marksByThread and threadWaiting", () => {
   it("reads the thread's count of what waits, 0 where it says nothing", () => {
     expect(threadWaiting(thread("m1", "ok", { waitingOnPerson: 2 }))).toBe(2)
     expect(threadWaiting(thread("m1"))).toBe(0)
+  })
+})
+
+describe("a mark made by a pin or an archive, on a chat never opened", () => {
+  // The mark holds a flag and no position.
+  const pinnedOnly = record("t1.actor", {
+    thread: { ref: `${THREAD}/t1` },
+    pinned: true,
+  })
+
+  it("leaves the chat as unread as one with no mark", () => {
+    expect(markPinned(pinnedOnly)).toBe(true)
+    expect(markArchived(pinnedOnly)).toBe(false)
+    expect(threadUnread(thread("m1"), pinnedOnly)).toBe(true)
+    // Opening it reads through its newest message, as for any unread chat.
+    expect(readThroughToWrite(thread("m1"), pinnedOnly)).toBe("m1")
+  })
+
+  it("is not unread where the thread holds no newest message", () => {
+    expect(threadUnread(thread(), pinnedOnly)).toBe(false)
+    expect(threadUnread(thread("m1", "running"), pinnedOnly)).toBe(false)
+  })
+
+  it("reads a flag as off where the mark does not say, or there is none", () => {
+    expect(markPinned(undefined)).toBe(false)
+    expect(markArchived(mark("m1"))).toBe(false)
+    expect(
+      markArchived(record("t1.actor", { archived: false, pinned: false }))
+    ).toBe(false)
+  })
+})
+
+describe("chatSections", () => {
+  const row = (id: string, more = {}) => ({
+    thread: record(id, { status: "ok", ...more }),
+  })
+  const rows = [
+    row("plain"),
+    row("pinned"),
+    row("archived"),
+    row("both"),
+    row("asking", { waitingOnPerson: 1 }),
+    row("pinned-asking", { waitingOnPerson: 2 }),
+  ]
+  const flags = {
+    pinned: new Set(["pinned", "both", "pinned-asking"]),
+    archived: new Set(["archived", "both", "asking", "pinned-asking"]),
+  }
+  const ids = (list: { thread: SubstrateRecord }[]) =>
+    list.map((r) => r.thread.id)
+
+  it("puts the pinned chats in their own part, and never an archived one", () => {
+    expect(ids(chatSections(rows, flags).pinned)).toEqual(["pinned"])
+  })
+
+  it("lists an archived chat only while it waits on a person", () => {
+    expect(ids(chatSections(rows, flags).listed)).toEqual([
+      "plain",
+      "asking",
+      "pinned-asking",
+    ])
+  })
+
+  it("keeps every archived chat for the Archived view, waiting or pinned", () => {
+    expect(ids(chatSections(rows, flags).archived)).toEqual([
+      "archived",
+      "both",
+      "asking",
+      "pinned-asking",
+    ])
+  })
+
+  it("shows every chat where nothing is pinned or archived", () => {
+    const none = { pinned: new Set<string>(), archived: new Set<string>() }
+    const parts = chatSections(rows, none)
+    expect(parts.listed).toHaveLength(rows.length)
+    expect(parts.pinned).toEqual([])
+    expect(parts.archived).toEqual([])
   })
 })

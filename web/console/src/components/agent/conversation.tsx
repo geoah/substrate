@@ -409,6 +409,7 @@ export function Conversation({
   onAutoSent,
   context,
   onContextDone,
+  onSpoke,
   actions,
 }: {
   /** The agent this conversation is with; undefined while none is known. */
@@ -439,6 +440,8 @@ export function Conversation({
   context?: string[]
   /** The context was sent, or the person removed it. */
   onContextDone?: () => void
+  /** The person sent a message into this chat, or asked it to go on. */
+  onSpoke?: () => void
   /** The header's buttons. */
   actions?: ReactNode
 }) {
@@ -1023,9 +1026,13 @@ export function Conversation({
     if (!message || !to || keylessProvider) return
     // While a turn runs, what is typed joins it; a message sent again is a
     // turn of its own and waits like one.
-    if (!again && canQueue) return queueSend(text)
+    if (!again && canQueue) {
+      onSpoke?.()
+      return queueSend(text)
+    }
     // `blockedReason` says why on the composer, and the text stays there.
     if (turnBlocked) return
+    if (!again) onSpoke?.()
     // A message sent again leaves what is being typed alone.
     if (!again && text === draft) onDraft("")
     const messageId = again?.messageId ?? (ownIds ? newMessageId() : undefined)
@@ -1342,6 +1349,7 @@ export function Conversation({
     if (!thread || turnBlocked || keylessProvider) return
     // A server with no `continue` route goes on only when written to.
     if (!ownIds) return send(CONTINUE_MESSAGE)
+    onSpoke?.()
     void dropReads()
     setError(null)
     setGoOnError(null)
