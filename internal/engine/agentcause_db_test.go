@@ -24,8 +24,8 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// failureOf is the cause and wait err carries as a failed run.
-func failureOf(t *testing.T, err error) (string, int) {
+// runFailureOf is the cause and wait err carries as a failed run.
+func runFailureOf(t *testing.T, err error) (string, int) {
 	t.Helper()
 	var failure *substrate.AgentFailure
 	if !errors.As(err, &failure) {
@@ -56,7 +56,7 @@ func TestAFailedModelCallSettlesTheThreadWithItsCause(t *testing.T) {
 			fake.script("chat", tc.turn)
 			log := newEventLog()
 			_, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, chatter, substrate.ChatInput{Message: "hi"}, log.emit)
-			if cause, wait := failureOf(t, err); cause != tc.cause || wait != tc.retryAfter {
+			if cause, wait := runFailureOf(t, err); cause != tc.cause || wait != tc.retryAfter {
 				t.Fatalf("the failed turn's error carries %q after %ds, want %q after %ds: %v", cause, wait, tc.cause, tc.retryAfter, err)
 			}
 			thread := log.snapshot()[0].Thread
@@ -180,7 +180,7 @@ func TestAnOperatorPaidCallFailsWithoutNamingTheOperatorsEndpoint(t *testing.T) 
 	op.script("chat", fakeTurn{status: 429, retryAfter: "12", errBody: `{"error":{"message":"Rate limit reached at ` + op.srv.URL + ` for the operator's organization.","type":"requests","code":"rate_limit_exceeded"}}`})
 	log := newEventLog()
 	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "hi"}, log.emit)
-	if cause, wait := failureOf(t, err); cause != substrate.CauseProviderRateLimited || wait != 12 {
+	if cause, wait := runFailureOf(t, err); cause != substrate.CauseProviderRateLimited || wait != 12 {
 		t.Fatalf("the failure carries %q after %ds, want provider_rate_limited after 12s", cause, wait)
 	}
 	props := threadProps(t, ds, log.snapshot()[0].Thread)
@@ -198,7 +198,7 @@ func TestAnOperatorPaidCallFailsWithoutNamingTheOperatorsEndpoint(t *testing.T) 
 	op.srv.Close()
 	log = newEventLog()
 	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "again"}, log.emit)
-	if cause, _ := failureOf(t, err); cause != substrate.CauseProviderUnavailable {
+	if cause, _ := runFailureOf(t, err); cause != substrate.CauseProviderUnavailable {
 		t.Fatalf("a dial that failed carries %q, want provider_unavailable: %v", cause, err)
 	}
 	reason, _ = threadProps(t, ds, log.snapshot()[0].Thread)["reason"].(string)
@@ -343,7 +343,7 @@ func TestARepositorysOwnAllowanceEndsAndRefusesARunByTheAllowancesNames(t *testi
 	}
 	log := newEventLog()
 	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "hi"}, log.emit)
-	if cause, _ := failureOf(t, err); cause != substrate.CauseAllowanceSpent || !errors.Is(err, substrate.ErrAllowance) {
+	if cause, _ := runFailureOf(t, err); cause != substrate.CauseAllowanceSpent || !errors.Is(err, substrate.ErrAllowance) {
 		t.Fatalf("a call past the repository's allowance = %v with cause %q, want the allowance's error and allowance_spent", err, cause)
 	}
 	props := threadProps(t, ds, log.snapshot()[0].Thread)
