@@ -1070,9 +1070,15 @@ func (ds *dataset) compareHistories(ctx context.Context, src dirSource) error {
 		return err
 	}
 	both := min(tableHead, src.Head())
+	// One cursor for the whole walk: a Read per page opens the page's
+	// segment and reads it from its first line, which makes the walk
+	// quadratic in a segment's lines (geoah.me's 214 segments of up to 70,000
+	// lines would have taken about eight hours).
+	dir := src.log.Cursor(0)
+	defer func() { _ = dir.Close() }()
 	for after := int64(0); after < both; {
 		limit := int(min(int64(rebuildBatch), both-after))
-		entries, err := src.log.Read(after, limit)
+		entries, err := dir.Next(limit)
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
