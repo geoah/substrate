@@ -413,10 +413,10 @@ snapshot recorded or the mark each archive holds.
 Pin the image to the target tag (`ghcr.io/geoah/substrate:0.105.0`) and
 apply every env var change the notes list. Start exactly one server process,
 and only after every old one has stopped. A rolling deploy that starts the
-new process beside the old one is refused, because a repository has one
-writer. From v0.123.1 or before, see the old one gone first: no session
-whose `application_name` starts with `substrate-writer-` is left in
-`pg_stat_activity`. A server of those releases that only lost its
+new process beside the old one is refused, because a database has one
+writer process. From v0.123.1 or before, see the old one gone first: no
+session whose `application_name` starts with `substrate-writer-` is left
+in `pg_stat_activity`. A server of those releases that only lost its
 connection takes its lease back once the new start has migrated, and goes
 on under the new schema.
 
@@ -468,7 +468,8 @@ refusal by editing tables or files:
 | `migration(s) this database applied are not the ones this binary carries` | the database was migrated by a different build of the same migration | restore the backup; there is no repair |
 | `the repository recorded migrations this binary does not carry` | a newer binary already ran repository migrations on it | deploy that release or a later one |
 | `the changelog speaks a newer dialect than this binary can replay`, or `the store speaks a newer schema dialect than this binary` | the binary is older than the repository | deploy a newer binary |
-| `another process is this repository's writer` | a second server process opened the same repositories | stop every other process, then start one |
+| `another process is this database's writer` | another server process, or a writing `substratectl --dsn` command, runs against the database | stop every other process, then start one |
+| `another process is this repository's writer` | a second server process opened the same repositories, a server of a release before the database's writer lock among them | stop every other process, then start one |
 | `is not the key the DEK wrap of repository` | this host's `SUBSTRATE_CREDENTIAL_KEY` is not the key the repository was sealed under | set the original key |
 | the API answers `503 unavailable` with `Retry-After` for one repository | that repository's open was refused; the server log names it and why | fix what the log names, then restart |
 | `REFUSED to upgrade a repository's shipped vocabulary`, with the guard lines under `refused` | the seeded packages stay at their stored version; the lines name the kind, the property and the records to rewrite | rewrite those records, then restart the server |

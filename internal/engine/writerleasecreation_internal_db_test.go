@@ -11,7 +11,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"testing"
+	"time"
 )
 
 // leaseKeyFree reports whether the repository's lease key can be taken from a
@@ -129,21 +131,24 @@ func TestASecondProcessCannotClaimARepositoryMidCreation(t *testing.T) {
 	s, dsn := openBareService(t)
 	const authority = "bob.example.com"
 
-	// The second process: its own service on the same database, booted while
-	// there is nothing to lease.
-	secondIface, err := OpenForTest(t, ctx, dsn, WithDataRoot(t.TempDir()), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
+	// The second process: a lease of its own on the same database. No start
+	// of this release runs beside the first, which holds the database's
+	// writer lock (decision record 0325); a server of a release before the
+	// lock does, and asks for a repository's lease as this one does.
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		t.Fatalf("open the second process: %v", err)
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = secondIface.Close() })
-	second := secondIface.(*service)
+	t.Cleanup(func() { _ = db.Close() })
+	second := newWriterLease(db, slog.New(slog.DiscardHandler))
+	t.Cleanup(second.close)
 
 	boom := errors.New("test: the creation failed after the seed committed")
 	var claim error
 	s.testFailAfterSeed = func() error {
 		// Mid-creation the second process asks for the lease the way its own
 		// open would, and must be refused.
-		claim = second.lease.acquire(ctx, creatingID(t, s))
+		claim = second.acquire(ctx, creatingID(t, s))
 		return boom
 	}
 	if _, err := s.CreateRepository(ctx, authority); !errors.Is(err, boom) {
@@ -155,12 +160,15 @@ func TestASecondProcessCannotClaimARepositoryMidCreation(t *testing.T) {
 }
 
 // A creation that met a DYING lease must not take registration down with it.
-// The lease it releases on the way out is the last one held, and the refusal
-// has to go with it: a beat with nothing to prove returns without trying, so
-// a `lost` left standing over an empty `held` is a refusal nothing clears —
-// every later registration took a fresh lock, was refused by that stale flag,
-// released it again and failed the same way, forever, and past the recovery of
-// the database that caused it.
+// The lease it releases on the way out is the last repository's lease held,
+// and the refusal stays, because the database's writer lock went with the
+// same session (decision record 0325): the beat still has that to prove, so
+// it retakes the lock and clears the refusal. Before the lock, a beat with
+// nothing to prove returned without trying, and a `lost` left standing over
+// an empty `held` was a refusal nothing cleared — every later registration
+// took a fresh lock, was refused by that stale flag, released it again and
+// failed the same way, forever, and past the recovery of the database that
+// caused it.
 func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -185,9 +193,14 @@ func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
 	if _, err := s.CreateRepository(ctx, first); !errors.Is(err, boom) {
 		t.Fatalf("the seeded creation was expected to fail with the seam's error: %v", err)
 	}
-	// The refusal went out with the last claim.
-	if err := s.lease.err(); err != nil {
-		t.Fatalf("a lease holding nothing is still refusing writes, and no beat will clear it: %v", err)
+	// The refusal stays for the database's writer lock, and the heartbeat
+	// takes it back.
+	deadline := time.Now().Add(30 * time.Second)
+	for s.lease.err() != nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("a lease holding no repository is still refusing writes after its beats: %v", s.lease.err())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	if len(s.lease.held) != 0 {
 		t.Fatalf("the failed creation kept a claim: %v", s.lease.held)

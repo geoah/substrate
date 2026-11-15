@@ -123,8 +123,9 @@ func TestAMigrationWaitsForEveryLease(t *testing.T) {
 		pid, release := holdLease(t, raw, by.key)
 		_, err := leaseStart(t, dsn, root)
 		if !errors.Is(err, ErrRepositoryHasAnotherWriter) || !strings.Contains(err.Error(), fmt.Sprintf("pid %d", pid)) ||
-			!strings.Contains(err.Error(), "applies no migration") {
-			t.Errorf("a start with migration %d pending beside a lease held by %s: %v, want it refused naming pid %d", newest.Version, by.name, err, pid)
+			!strings.Contains(err.Error(), "applies no migration") || !strings.Contains(err.Error(), info.Authority) ||
+			!strings.Contains(err.Error(), "hashtext(current_schema() || '|writer|' || '"+by.key+"')") {
+			t.Errorf("a start with migration %d pending beside a lease held by %s: %v, want it refused naming the repository, its lock and pid %d", newest.Version, by.name, err, pid)
 		}
 		if got := schemaMigrations(t, raw); got != before {
 			t.Errorf("a refused start beside a lease held by %s changed schema_migrations:\n before %s\n after  %s", by.name, before, got)
@@ -421,7 +422,7 @@ func TestARetakeStartsAgainAReindexWhoseStopTimedOut(t *testing.T) {
 }
 
 // A database with no tables starts: there is no repository to hold, and the
-// start applies every migration.
+// start applies every migration and leaves its start mark.
 func TestAFreshDatabaseStarts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -434,7 +435,8 @@ func TestAFreshDatabaseStarts(t *testing.T) {
 	if err := ensureRoles(ctx, raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := leaseStart(t, dsn, t.TempDir()); err != nil {
+	svc, err := leaseStart(t, dsn, t.TempDir())
+	if err != nil {
 		t.Fatalf("a start on a database with no tables: %v", err)
 	}
 	migrations, err := loadMigrations()
@@ -444,6 +446,9 @@ func TestAFreshDatabaseStarts(t *testing.T) {
 	var count int
 	if err := raw.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != len(migrations) {
 		t.Errorf("a fresh start recorded %d migrations (%v), want %d", count, err, len(migrations))
+	}
+	if mark := startMarkOf(t, raw); mark == "" || mark != svc.lease.startMark {
+		t.Errorf("a fresh start left the start mark %q, and remembers %q", mark, svc.lease.startMark)
 	}
 }
 

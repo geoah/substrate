@@ -462,4 +462,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0320](0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md) | A trigger's own history is bookkeeping and keeps seven days | accepted |
 | [0321](0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md) | The repository migrations a repository ran travel with its archive | accepted |
 | [0324](0324-a-start-takes-every-writer-lease-before-it-migrates-and-a-retaken-lease-checks-the-migrations.md) | A start takes every writer lease before it migrates, and a retaken lease checks the migrations | accepted |
+| [0325](0325-a-database-has-one-writer-process-and-a-retaken-lease-checks-who-else-started.md) | A database has one writer process, and a retaken lease checks who else started | accepted |
 | [0326](0326-a-repository-whose-first-open-fails-is-set-aside-like-one-the-start-sets-aside.md) | A repository whose first open fails is set aside, like one the start sets aside | accepted |

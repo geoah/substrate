@@ -9,22 +9,34 @@ package engine
 // lease taken while the new one runs, and its retake, once the new one has
 // stopped, finds the migrations moved and stays refused (writerlease.go
 // retake).
+//
+// THE DATABASE HAS ONE WRITER PROCESS (decision record 0325). Before any of
+// that the start takes the database's writer lock, on the same session, so
+// a start is the only way a process becomes a writer and two cannot run at
+// once, whatever repositories each saw. Holding everything, it leaves a mark
+// no other start leaves, so a retake also sees a process of this release
+// that started, wrote and stopped meanwhile, and a database restored under
+// it.
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// migrateHolding takes every repository's lease and applies the pending
-// migrations on the lease's own session, so a migration's own lease check
-// (0021's) reads these leases as its session's. What schema_migrations holds
-// after it is what a retake compares.
+// migrateHolding takes the database's writer lock and every repository's
+// lease and applies the pending migrations on the lease's own session, so a
+// migration's own lease check (0021's) reads these leases as its session's,
+// and then leaves this start's mark. What schema_migrations and the mark
+// hold after it is what a retake compares.
 func (l *writerLease) migrateHolding(ctx context.Context, log *slog.Logger) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -32,6 +44,14 @@ func (l *writerLease) migrateHolding(ctx context.Context, log *slog.Logger) erro
 	if err != nil {
 		return err
 	}
+	got, holder, err := l.lockDatabase(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: take the database's writer lock: %w", err)
+	}
+	if !got {
+		return databaseWriterRefusal{holder: holder}
+	}
+	l.writer = true
 	if err := l.holdEveryRepository(ctx, conn); err != nil {
 		return err
 	}
@@ -41,7 +61,45 @@ func (l *writerLease) migrateHolding(ctx context.Context, log *slog.Logger) erro
 	if l.startedUnder, err = migrationPrint(ctx, conn); err != nil {
 		return fmt.Errorf("substrate/engine: read the migrations this start applied: %w", err)
 	}
+	mark := newStartMark()
+	if err := markStart(ctx, conn, mark); err != nil {
+		return fmt.Errorf("substrate/engine: leave the start's mark: %w", err)
+	}
+	l.startMark = mark
 	return nil
+}
+
+// newStartMark mints a start's mark: random, so no other start, and no copy
+// of the database from before this one, holds it.
+func newStartMark() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// markStart writes mark as the database's start mark. It runs only on the
+// lease's session holding the database's writer lock and every repository's
+// lease: a start refused at either leaves none, so a server whose lock it
+// met is never refused at its next retake for it (decision record 0325).
+func markStart(ctx context.Context, q dbx, mark string) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO writer_starts (mark) VALUES ($1)
+		ON CONFLICT (one) DO UPDATE SET mark = EXCLUDED.mark`, mark)
+	return err
+}
+
+// readStartMark reads the database's start mark: sql.ErrNoRows where the
+// row is gone.
+func readStartMark(ctx context.Context, q dbx) (string, error) {
+	var mark string
+	err := q.QueryRowContext(ctx, `SELECT mark FROM writer_starts`).Scan(&mark)
+	return mark, err
+}
+
+// missingTable reports whether err is Postgres's undefined_table: a table a
+// retake reads was dropped, which it reads as the database replaced.
+func missingTable(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "42P01"
 }
 
 // leaseKey is one repository as the lease reads it: its id, which is its
