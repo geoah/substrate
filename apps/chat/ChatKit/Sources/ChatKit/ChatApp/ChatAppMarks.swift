@@ -205,16 +205,19 @@ extension ChatApp {
         return learned
     }
 
-    /// A mark stored without its thread's row, a read of the marks alone
-    /// or the answer to a write: where it is ahead of the row held, the
-    /// row is read again, and until it is the chat is not called unread
-    /// for a message another device read past. A dot that went must not
-    /// come back for the time one read takes to follow another.
+    /// A mark stored without its thread's row, a read of the marks alone,
+    /// the answer to a write or the folder at a launch: where it is ahead
+    /// of the row held, the row is read again, and until it is the chat is
+    /// not called unread for a message another device read past. A dot
+    /// that went must not come back for the time one read takes to follow
+    /// another. The row is read by a read of its own, so the one that ends
+    /// the wait is known to have started after the mark was learned: a
+    /// list read under way before it may still land the older row, and a
+    /// thread opened on its own is in no list.
     func noteBehind(_ state: inout State, _ thread: String) {
         guard let mark = state.marks?[thread], let row = state.thread(thread), mark.ahead(of: row) else { return }
         state.rowsBehind.insert(thread)
-        state.feedBatch.insert(.init(kind: Kinds.thread, id: thread))
-        state.asks.append(.feedWait(seconds: 0))
+        state.asks.append(.rereadBehind(thread: thread, mark: mark.version))
     }
 
     /// A reply that settled before its chat's mark was known waited for it:
@@ -327,6 +330,11 @@ extension ChatApp {
             state.marking[thread]?.held = false
             state.marking[thread]?.due = nil
         }
+        // And for the rows still behind their marks: a read of one that
+        // failed is asked for again.
+        for thread in state.rowsBehind.sorted() {
+            if let mark = state.marks?[thread] { state.asks.append(.rereadBehind(thread: thread, mark: mark.version)) }
+        }
     }
 
     func markWritten(_ state: inout State, thread: String, sent: MarkChange, _ record: Record) {
@@ -379,6 +387,11 @@ extension ChatApp {
         for (thread, message) in seeing.sorted(by: { $0.key < $1.key }) where state.sights[thread]?.message != message {
             state.sights[thread] = State.Sight(message: message)
             state.asks.append(.sight(thread: thread, message: message))
+        }
+        // A row that caught up with its mark, by whatever read, is behind
+        // it no longer.
+        for thread in state.rowsBehind where !(state.thread(thread).map { state.marks?[thread]?.ahead(of: $0) == true } ?? false) {
+            state.rowsBehind.remove(thread)
         }
         let visible = state.visibleThreads
         // A reply notified and since read: taken back. Held by thread and

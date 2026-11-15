@@ -307,6 +307,7 @@ public struct ChatApp: LinkedApp {
         case .savePreferences: "preferences"
         case .prefetch: "prefetch"
         case let .fetchThread(thread): "fetch:\(thread)"
+        case let .rereadBehind(thread, _): "behind:\(thread)"
         case .watch: "watch"
         case .feedWait: "feedWait"
         case .applyFeed: "feedApply"

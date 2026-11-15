@@ -1238,8 +1238,9 @@ struct FoundBySeededRuns {
 
     /// A read of the marks alone brings one ahead of the row held: another
     /// device read a reply this one has no row of. The chat is not called
-    /// unread for the older message, its row is read again, and what that
-    /// read brings is told by the rule (seeds 1058, 1131).
+    /// unread for the older message, its row is read again by a read of
+    /// its own, and what that read brings is told by the rule (seeds 1058,
+    /// 1131).
     @Test func aMarkAheadOfTheRowHeldBringsNoDotBack() throws {
         var state = signedInState()
         state.recordsRevision = 8
@@ -1250,17 +1251,34 @@ struct FoundBySeededRuns {
         state = try app.apply(.init(.marksRead(ahead)), to: state)
         #expect(state.marks?["t1"]?.readThrough == "m2" && state.rowsBehind == ["t1"])
         #expect(!state.unread(ChatThread(record: state.chats[0])))
-        #expect(state.feedBatch.contains(.init(kind: Kinds.thread, id: "t1")) && state.asks.contains(.feedWait(seconds: 0)))
+        #expect(state.asks.contains(.rereadBehind(thread: "t1", mark: 2)))
 
-        // The row it speaks of arrives: read.
+        // The row it speaks of arrives, by any read: read.
         var newer = thread(["lastMessage": message("m2"), "finishedAt": "2026-10-31T10:04:00Z"]).record
         newer.version = 4
         let caught = try app.apply(.init(.threadsRead(.init(chats: [newer], automated: []))), to: state)
         #expect(caught.rowsBehind.isEmpty && !caught.unread(ChatThread(record: caught.chats[0])))
-        // The row read again is the same one: the position was taken by a
-        // device that held an older row itself, and the chat is unread.
-        let same = try app.apply(.init(.threadsRead(.init(chats: state.chats, automated: []))), to: state)
+
+        // A list read that started before the mark was learned lands the
+        // older row, with the older mark it read: no dot comes back.
+        let old = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m1", version: 1)])
+        let stale = try app.apply(.init(.threadsRead(.init(chats: state.chats, automated: [], marks: old))), to: state)
+        #expect(stale.marks?["t1"]?.readThrough == "m2" && stale.rowsBehind == ["t1"])
+        #expect(!stale.unread(ChatThread(record: stale.chats[0])))
+        // Nor by one row read on its own before it.
+        let fetched = try app.apply(.init(.threadFetched(state.chats[0])), to: state)
+        #expect(fetched.rowsBehind == ["t1"] && !fetched.unread(ChatThread(record: fetched.chats[0])))
+
+        // The read made for it answers the same row: the position was
+        // taken by a device that held an older row itself, and the chat is
+        // unread. One made for an earlier mark settles nothing.
+        let earlier = try app.apply(.init(.rowReread(thread: "t1", state.chats[0], mark: 1)), to: state)
+        #expect(earlier.rowsBehind == ["t1"])
+        let same = try app.apply(.init(.rowReread(thread: "t1", state.chats[0], mark: 2)), to: state)
         #expect(same.rowsBehind.isEmpty && same.unread(ChatThread(record: same.chats[0])))
+        // One that failed is asked for again at the next chance.
+        let again = try app.apply(.init(.phase(.active)), to: state)
+        #expect(again.asks.contains(.rereadBehind(thread: "t1", mark: 2)))
 
         // A position from before the row settled is behind it, and unread
         // at once.
@@ -1271,6 +1289,25 @@ struct FoundBySeededRuns {
         let older = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m1", version: 1, readAt: "2026-10-31T09:00:00Z")])
         behind = try app.apply(.init(.marksRead(older)), to: behind)
         #expect(behind.rowsBehind.isEmpty && behind.unread(ChatThread(record: behind.chats[0])))
+    }
+
+    /// A thread opened on its own is in no list the app reads: the row a
+    /// mark is ahead of is read by itself there too.
+    @Test func aThreadInNoListIsReadAgainByItself() throws {
+        var state = signedInState()
+        state.recordsRevision = 8
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1)]
+        state.others = ["t1": thread(["lastMessage": message("m1"), "mode": "scheduled"]).record]
+        let ahead = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m2", version: 2, readAt: "2026-10-31T10:05:00Z")])
+        state = try app.apply(.init(.marksRead(ahead)), to: state)
+        #expect(state.rowsBehind == ["t1"] && state.asks.contains(.rereadBehind(thread: "t1", mark: 2)))
+        // A list read, which does not hold it, leaves it waiting.
+        state = try app.apply(.init(.threadsRead(.init(chats: [], automated: []))), to: state)
+        #expect(state.rowsBehind == ["t1"])
+        var newer = thread(["lastMessage": message("m2"), "mode": "scheduled", "finishedAt": "2026-10-31T10:04:00Z"]).record
+        newer.version = 4
+        state = try app.apply(.init(.rowReread(thread: "t1", newer, mark: 2)), to: state)
+        #expect(state.rowsBehind.isEmpty && state.others["t1"]?.version == 4)
     }
 
     /// A list read that started before a chat existed lands without its

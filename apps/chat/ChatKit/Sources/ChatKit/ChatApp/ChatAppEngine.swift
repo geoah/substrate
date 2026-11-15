@@ -115,6 +115,12 @@ extension ChatApp {
         case let .prefetched(thread, epoch, version, rows):
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             publish(&next, thread, rows, version: version, full: rows.count >= 100)
+        case let .rowReread(thread, record, mark):
+            if let record { upsert(&next, record) }
+            // This read started after the mark was learned, so the row it
+            // brought is the one the mark is told against, by the rule. A
+            // mark learned since has asked for its own.
+            if record == nil || next.marks?[thread]?.version == mark { next.rowsBehind.remove(thread) }
         case let .threadFetched(record):
             upsert(&next, record)
             if next.readsMarks, next.marks?[record.id] == nil { next.asks.append(.readMarks([record.id])) }
@@ -412,7 +418,7 @@ extension ChatApp {
             state.marks = cached.marks
             // The folder's rows and marks as they were left: a mark that
             // was ahead of its row then still is.
-            for thread in state.threads where cached.marks?[thread.id]?.ahead(of: thread) == true { state.rowsBehind.insert(thread.id) }
+            for thread in state.threads { noteBehind(&state, thread.id) }
             // What was moved and not answered before the app stopped waits
             // for the first read the server answers.
             if cached.marks != nil {
@@ -579,9 +585,6 @@ extension ChatApp {
         }
         state.chats = threads.chats.map(newer)
         state.automated = threads.automated.map(newer)
-        // These rows are the server's as of this read: no mark it brought,
-        // or one held from before, is ahead of them.
-        state.rowsBehind.subtract((threads.chats + threads.automated).map(\.id))
         if !state.baselined {
             for record in state.chats + state.automated {
                 if let finished = record["finishedAt"]?.string {
@@ -599,7 +602,6 @@ extension ChatApp {
     /// One thread row, read on its own: a handover, a poll, a rename.
     private func upsert(_ state: inout State, _ record: Record) {
         if let held = state.thread(record.id)?.record, held.version > record.version { return }
-        state.rowsBehind.remove(record.id)
         replaceRow(&state, record)
         threadMoved(&state, record)
     }
