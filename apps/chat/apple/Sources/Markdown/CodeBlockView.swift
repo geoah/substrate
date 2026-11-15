@@ -30,37 +30,14 @@ struct CodeBlockView: View {
     let code: CodeHighlight?
     /// The width the block has, less the code's insets.
     @State private var room: CGFloat = 0
+    @State private var source = CodeSource()
 
     var body: some View {
         let layout = CodeWrap.layout(columns: code?.columns ?? 0, advance: advance, room: room, prefersWrap: wrap.on)
+        // Copy reads the code when it is pressed.
+        let _ = source.text = text
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                Text(language ?? "code")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.quietText)
-                Spacer(minLength: 8)
-                if layout.offers {
-                    Button {
-                        if let set = wrap.set { set(!wrap.on) }
-                    } label: {
-                        Image(systemName: "text.word.spacing")
-                            .symbolVariant(wrap.on ? .fill : .none)
-                            .foregroundStyle(wrap.on ? Color.accentColor : .quietText)
-                            .barTarget()
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Wrap Lines")
-                    .accessibilityValue(wrap.on ? "On" : "Off")
-                    .accessibilityAddTraits(wrap.on ? .isSelected : [])
-                    .help(wrap.on ? "Scroll long lines" : "Wrap long lines")
-                }
-                CopyButton(label: "Copy Code") { text }
-            }
-            .font(.caption)
-            .padding(.leading, CodeMetrics.inset)
-            // The bar keeps its height; a control's room to touch reaches
-            // past it.
-            .frame(height: CodeMetrics.barHeight)
+            CodeBar(language: language, offers: layout.offers, wrap: wrap, source: source).equatable()
             Divider().opacity(0.5)
             if layout.wraps {
                 lines.frame(maxWidth: .infinity, alignment: .leading)
@@ -82,6 +59,58 @@ struct CodeBlockView: View {
             .equatable()
             .textSelection(.enabled)
             .padding(CodeMetrics.inset)
+    }
+}
+
+/// A block's code as it stands, for Copy to read when it is pressed.
+@MainActor
+final class CodeSource {
+    var text = ""
+}
+
+/// The bar above a block's code: its language, the switch that wraps its
+/// lines where one overflows, and Copy. Drawn again only when one of those
+/// changes: a block being written has other code at every flush, which
+/// nothing here shows.
+private struct CodeBar: View, Equatable {
+    let language: String?
+    /// A line overflows: the switch is offered.
+    let offers: Bool
+    let wrap: CodeWrapChoice
+    let source: CodeSource
+
+    static func == (lhs: CodeBar, rhs: CodeBar) -> Bool {
+        lhs.language == rhs.language && lhs.offers == rhs.offers && lhs.wrap == rhs.wrap && lhs.source === rhs.source
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(language ?? "code")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.quietText)
+            Spacer(minLength: 8)
+            if offers {
+                Button {
+                    if let set = wrap.set { set(!wrap.on) }
+                } label: {
+                    Image(systemName: "text.word.spacing")
+                        .symbolVariant(wrap.on ? .fill : .none)
+                        .foregroundStyle(wrap.on ? Color.accentColor : .quietText)
+                        .barTarget()
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Wrap Lines")
+                .accessibilityValue(wrap.on ? "On" : "Off")
+                .accessibilityAddTraits(wrap.on ? .isSelected : [])
+                .help(wrap.on ? "Scroll long lines" : "Wrap long lines")
+            }
+            CopyButton(label: "Copy Code") { source.text }
+        }
+        .font(.caption)
+        .padding(.leading, CodeMetrics.inset)
+        // The bar keeps its height; a control's room to touch reaches
+        // past it.
+        .frame(height: CodeMetrics.barHeight)
     }
 }
 
