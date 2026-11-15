@@ -79,14 +79,14 @@ app target's, and `apps:test:linux` runs ChatKit's on Linux.
 ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
   Conversation/  one chat, a child of the list: the run, what its stream has said, Stop, the message sent again under its id, the delivery check, the poll
-  Model/         the transcript fold, the stream's rows and the one fold of both, the notices, the agents and threads, the tool words, Markdown blocks
+  Model/         the transcript fold, the stream's rows and the one fold of both, the notices, the agents and threads, the tool words, Markdown blocks, the highlighter of a reply's code
   API/           the agent streams over the kit's line stream; a failure as a value: what was attempted and why
   Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
-  Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, Settings; the one presenter of failures
+  Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, what stands under the last reply, Settings; the one presenter of failures; how a table is laid out and when code offers to wrap
 apple/Sources/
   App/       ChatHost (the one PresentationModel; the browser sign-in, Change Access, the password door), the device services, App Intents
   Views/     the split view, the list, the conversation, the composer, cards, settings, sign-in: presentations drawn, commands sent
-  Markdown/  the blocks as SwiftUI, inline spans through `AttributedString`
+  Markdown/  the blocks as SwiftUI, inline spans through `AttributedString`; a code block in its colours, a table in its layouts
   Voice/     Dictation: SpeechAnalyzer + SpeechTranscriber over AVAudioEngine
 ```
 
@@ -772,7 +772,89 @@ Two texts are still parsed where they are drawn, once each and kept: a
 compaction's summary and a sub-agent's answer under its call, which show
 only when opened and are never being written.
 
-Code blocks scroll sideways and have Copy. A link opens only when it is
+**Code is coloured where the reply is parsed.** A fenced block's row
+carries its colours as values (`MarkdownRow.code`, one `CodeHighlight` for
+each code block in the row's block, a list's and a quote's included): runs
+of a token each (keyword, string, comment, number, name, meta, and a
+diff's added and removed), by UTF-8 offset into the block's text, and the
+longest line in columns. `CodeHighlighter` makes them, in ChatKit, on the
+runtime's executor with the parse, so a finished block is an equal value
+at every flush and its view is not drawn again. It is a small reader of
+its own, with no package behind it, for the languages people paste: Swift,
+Go, Python, JavaScript and TypeScript, JSON, YAML, a shell, SQL, HTML and
+XML, CSS (SCSS and Less), Rust, Kotlin and a diff, by the name on the
+fence in any case (`ts`, `yml`, `golang`, `postgresql`…). Any other name,
+and none, is plain text.
+
+- **A line at a time.** A line's colours depend on its own bytes and on
+  what the lines before it left open (a block comment and how deep, a
+  string that runs over lines, a here-document, a YAML block scalar, an
+  HTML tag), and on nothing after it. So a finished line is coloured once
+  and for good, whatever is written after it. A reply is parsed whole at
+  each flush, and its code is coloured from the lines read at the last
+  parse (`CodeMemo`, kept beside the reply's rows and forgotten with
+  them): a line that is as it was, after the same lines, is not read
+  again, and a block being written costs its last line.
+- **It would rather leave a thing plain than colour it wrongly.** A string
+  that must close on its line and does not is not coloured, and neither is
+  the rest of that line, so a string half typed never paints its own words
+  as keywords. A word is a keyword only where the language has no other
+  use for it: not as a member (`value.default`), not before a mark that
+  follows a name (`type: string`, `get(key)`), a shell's only where a
+  command stands. A regular expression is one only after a mark no value
+  ends with, and never after `<` or `>`, where JSX closes a tag. A Rust
+  lifetime is no character. A selector that looks like a declaration
+  (`a:hover {`) is none, and neither is `12:30` a YAML key or `1.2.3` a
+  number. A here-document's body, a YAML block scalar and the body of a
+  `script` or a `style` are another language's text and are left plain.
+- **Colours** are named in `CodeColours.swift` beside the chat's others,
+  each token's on the code block's fill in light and in dark, and
+  `ColourContrast` holds every pair to 4.5:1. None carries meaning alone:
+  a keyword is also heavier and a comment slanted, and a diff's lines
+  start with their own `+` and `-`.
+- **Drawn as one text, made a line at a time** (`CodePaint`): making a
+  long block into coloured text costs about 15 microseconds a line on the
+  main thread, so the view keeps the text of the block's whole lines and
+  makes only what follows them. One text, so a selection on a Mac runs
+  across its lines.
+- **A long line scrolls sideways unless its reader chose to wrap.** The
+  switch that wraps is shown only on a block with a line longer than its
+  room: the longest line's columns (the highlighter's count, a wide
+  character two) times one column's width in the code's font, which is
+  measured once above the transcript, against the block's width
+  (`CodeWrap`). The choice is the person's, kept on the device with their
+  other choices (`ChatPreferences.wrapCode`, also "Wrap long lines of
+  code" in Settings), and is every block's.
+- **Copy says it has copied**: its mark is a check and its label "Copied"
+  for a moment, VoiceOver is told, and the device taps as it does for a
+  send. Its room to touch, and the switch's, is 44 points, whatever the
+  bar's height.
+
+**A table is laid out for the room it has** (`TableLayout`, ChatKit's rule
+over the widths the view measures; `TableGrid`, the layout that draws
+it). Each column's natural width is its widest cell on one line:
+
+- where the columns fit, they are drawn at those widths, the table a card
+  as wide as its columns;
+- where they do not but every column can have a readable width (88
+  points at the usual text size), the narrow ones keep theirs and the
+  wide ones share the rest and wrap, so a column of prose wraps and the
+  name beside it does not;
+- otherwise the table scrolls sideways with its first column held in
+  place, each column at its natural width and no wider than 260 points,
+  the held one no wider than two fifths of the room;
+- at the accessibility text sizes each row is a card, each header beside
+  its value, the headers' column as wide as the widest header and no more
+  than half.
+
+A cell is inline Markdown, a record's pill included; a column keeps the
+alignment its Markdown gave it. A column's width follows from its own
+cells alone, so a table being written moves a column only when a wider
+cell arrives in it or the room runs out. The held column is moved in the
+drawing alone (`visualEffect`), so nothing is laid out again while the
+table scrolls.
+
+A link opens only when it is
 `http`, `https`, `mailto`, a console path (`[Books](/applets/books)`, which
 opens that page of the console on the signed-in server) or a record link
 (below), and one that opens outside the app carries the external-link mark
@@ -870,8 +952,29 @@ bubble is a tinted fill. The transcript softens under the composer with
 - Title: the chat's title (tap to rename, optimistic); subtitle: "with
   <Agent>", or "Working…" while it runs.
 - **User turns**: right-aligned tinted bubbles; Copy in the context menu.
-- **Assistant turns**: full width, Markdown, no bubble; Copy and Share (Copy
-  alone while the reply is being written).
+- **Assistant turns**: full width, Markdown, no bubble.
+- **Under the last reply** stands a row of small marks (`ReplyActions`,
+  `ReplyActionsRow`): Copy; Try Again or Continue where the run can go on
+  and its card does not already offer that (below); and Share. Each is 44
+  points to touch and labelled for VoiceOver, and Copy says it has copied
+  as a code block's does. While the reply is being written the row holds
+  Copy alone, of what is there. The row is part of the reply's last row
+  of the transcript, never a row of its own: it is there from the reply's
+  first words at the height it keeps, so a reply that settles moves
+  nothing (Share arrives in the row's own height), and the reply that
+  takes it over gains what the one before gives up. The last reply is the
+  assistant's last turn that has words with no message of the person's
+  after it, so while a run's next call thinks or runs tools the row stays
+  where the last words are. Older replies keep the same behind a long
+  press: Copy, Select Text and Share, and the last reply's long press
+  offers what its row does.
+- **Select Text** opens the reply in a sheet, in the system's own text
+  view, where a selection runs across the whole of it: a reply's rows are
+  separate views, and a SwiftUI text on an iPhone selects nothing less
+  than all of itself. The sheet holds the reply as it reads, not as it
+  was written: a heading's weight, a list's marks, a table a row to a
+  line with its columns lined up by tabs, code in its fixed-width font,
+  links as links.
 - **Thinking**: while the model reasons, "Thinking…" with a shimmer over a
   window of a fixed height (about three lines, scaled with the text size)
   that shows the newest of the thinking, from the start of a word
@@ -1212,8 +1315,9 @@ the microphone, and Send, which morphs into Stop while a turn runs
   What is stored is the set the owner hid and the set they added, so a new
   primary agent appears on its own; with no choice made, the primary agents
   are offered, or all of them when none is primary.
-- **Chats**: show automated runs; expand thinking; show technical details
-  (the thread id, status and tally under the title).
+- **Chats**: show automated runs; expand thinking; wrap long lines of
+  code; show technical details (the thread id, status and tally under the
+  title).
 - **Notifications**: the two switches, the system's state with a link to its
   settings, and what the app can and cannot see.
 - **Voice**: the language.
@@ -1289,7 +1393,8 @@ may do and for how long; the app never sees the password.
 
 ### Feel and access
 
-- Haptics on send, on a reply settling on screen, on a failure appearing.
+- Haptics on send, on a copy, on a reply settling on screen, on a failure
+  appearing.
 - Springs for the send/stop morph and the growing field; rows move to the top
   animated.
 - The live turn carries `.updatesFrequently`; a settled reply is announced
@@ -1697,6 +1802,15 @@ never under the server's name.
   page (`agents/<id>`): the nearest page to a model or a spending limit.
   Each opens in the browser, and carries the external-link mark.
 - New Chat starts one with the same assistant.
+- **One place offers the run again.** Where a card's one button is the
+  run again (Try Again, Continue), that is where it is offered. Where the
+  button leads elsewhere first (Replace Key, Open in Console, Add Your Own
+  Key, Add Key), trying again is still the way on once that is done, and
+  Try Again stands under the reply, in its row of actions
+  (`FailurePresentation.resume`): the presenter that words the card says
+  so, and names it only where the card's button is another, so the two
+  never offer the same. Where asking again asks the same thing (a request
+  the provider turned down, a chat too long), it is offered nowhere.
 
 **Older turns.** A stored reply that says `cutBy`, and a message no reply
 follows, say so at that turn in a card with no button: only the newest turn
@@ -1741,7 +1855,7 @@ button and Details stack where the text size leaves no room side by side.
 6. Stop; a message sent while the assistant works, queued until a call reads it (`agents` 6).
 7. Every message under an id of its own, sent again when its answer is lost and kept across a kill; refused sends; unknown-delivery sends with the reconcile reads on a server without ids; for existing and new chats.
 8. One model of a turn from its first token to its stored row: no blink at the handover or on a return to the front; reload failure with Try Again.
-9. Markdown replies with code blocks and Copy.
+9. Markdown replies; code in its language's colours with Copy and a switch to wrap; tables laid out for their room; Copy, Share and Select Text on a reply, and Try Again or Continue under the last one.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
 12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; continued processing on iOS.
@@ -1828,6 +1942,39 @@ button and Details stack where the text size leaves no room side by side.
   the blocks of a one-shot parse; pages never move; a reply is parsed once
   for its text, once a window, and never more than 30 times a second
   whatever else presents the tree.
+- A reply's code (`CodeHighlightTests`, over `CodeFixtures`, a sample of
+  each language with what it lets run over lines and what is easy to
+  colour wrongly): each sample's colours, token by token, as they were
+  read by eye once; what is left plain; a diff by its hunk's counts; and,
+  at every prefix of every sample, that colouring from the lines kept is
+  what reading the prefix whole makes, that every finished line is
+  coloured as it stays, and that the runs are in order, inside one line
+  and never cut a character. A block of 400 lines written seven
+  characters at a time is read a line at a flush. A reply with code in a
+  list and a quote is coloured from its last parse as a one-shot parse
+  colours it, at every prefix.
+- What stands under a reply (`ReplyActionsTests`): for every cause of the
+  closed set, the run again is offered on the card, beside it or nowhere,
+  against a table that must name every cause, and never in two places;
+  where the row stands (not under a reply with a message after it, not
+  moving while a call only runs tools, under the last turn alone for a
+  run that said nothing); Copy alone while a reply is written. The seeded
+  runs hold the same after every step (`offered`). A table's layout and
+  the wrap rule are numbers (`TableLayoutTests`): what fits, what wraps
+  to fit, what scrolls and how wide the held column is, cards at the
+  accessibility sizes, and that a growing column moves no other while the
+  table fits.
+- As drawn (`apple/Tests/ReplyPartsTests.swift`, the app's own views in a
+  window, read from the accessibility tree): the switch to wrap on the
+  blocks with a long line and on no other, and none in a room wide enough;
+  every cell of three tables in the grid and in cards; a table narrower
+  than, as wide as and wider than its room; the row under a reply through
+  a whole run (Copy from the first words, Share once it is whole, one of
+  each, the content never shorter, and the settled reply as tall as the
+  frame before); Try Again once, on the card or under the reply, for
+  every card of the table of causes; code made into coloured text a line
+  at a time equal to making it whole; and the text opened for selecting
+  holding every word the reply draws and no Markdown marker.
 - What draws what (`PartsTests`, `DraftTests`): a delta makes its own
   conversation's screen and live turn again and moves that conversation's
   part alone; a state that moved makes again only the parts that read what
@@ -2091,7 +2238,14 @@ button and Details stack where the text size leaves no room side by side.
   dark: a settled reply with every block at its whole height, a reply that
   links records (each its pill inside the line, in a paragraph, a list and
   a table), and a reply caught as it is written, part way through an
-  emphasis, a table and a fenced block. The tests run inside the app, which
+  emphasis, a table and a fenced block. And what stands in and under a
+  reply (`GalleryTests.parts`), each at an iPhone's width and at the
+  width an iPad's transcript keeps: the row under the last reply settled,
+  being written and with Try Again beside a card; every language's sample,
+  two to a picture; a block with long lines scrolled and wrapped; and the
+  tables as a grid and as cards (a Mac has no Dynamic Type, so the cards
+  there are the layout at the usual letters; the largest size is a
+  simulator's to show). The tests run inside the app, which
   the Mac sandboxes, so each picture is attached to the test's result and
   taken from there.
 
@@ -2122,6 +2276,7 @@ flush of the stream, or a key typed:
 | flush, publish | the tree presented and sent, on the runtime's executor; the half of a publish the model does on the main thread |
 | body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a row of a reply's text and what stands under it, its Markdown, a Markdown block, the composer |
 | Markdown | parses per step and what one took, and what making a reply being written into blocks took in all, both on the runtime's executor; lines of inline Markdown made into styled text on the main thread |
+| code | code blocks read for their colours per step and what that took, on the runtime's executor (every block of the reply at each parse, each finished line from the lines kept); and what making a block's coloured text took on the main thread |
 | key to drawn | from the key to the end of the run loop's pass it was pressed in, which has drawn it |
 
 The numbers are a machine's: the table's first line says which, and a
@@ -2134,16 +2289,21 @@ A debug build started with `SUBSTRATE_CHAT_DEMO=<state>` signs in to
 nothing, as a measured one does, and shows one chat of the fixture's server
 held at that state: `connecting`, `thinking`, `writing`, `tool`,
 `answering`, `reconnecting`, `done`, `long` (the fixture's chat of 200
-turns, to scroll up in for Jump to Latest) or `play` (the whole run, at
-the fixture's pace). And how a person answers: `question` and `approval`
-(a card that waits), `words` (the question being answered in the person's
-own words), `folded` and `approved` (each once it ended), `queued` (a
-message a run has not read, with more typed) and `taken` (the same once a
-call read it), and `notify` (the app's three notifications that take an
-answer, posted through the device's own service; `notify-reply`,
-`notify-question` and `notify-approval` post one, for its banner to be
-pulled open). It is how the screenshots of a state that lasts a
-moment are taken; a release carries none of it. The run is
+turns, to scroll up in for Jump to Latest), `play` (the whole run, at
+the fixture's pace) or `reply:<name>` (a chat that holds one settled
+reply of the fixtures: `week`, `short`, `lines`, `tables`, `table`, or a
+language's name for its code sample). And how a person answers:
+`question` and `approval` (a card that waits), `words` (the question
+being answered in the person's own words), `folded` and `approved` (each
+once it ended), `queued` (a message a run has not read, with more typed)
+and `taken` (the same once a call read it), and `notify` (the app's three
+notifications that take an answer, posted through the device's own
+service; `notify-reply`, `notify-question` and `notify-approval` post
+one, for its banner to be pulled open). The state can be given as a
+launch argument too (`-SUBSTRATE_CHAT_DEMO <state>`), which is what a
+tool that launches the app on a simulator can pass. It is how the
+screenshots of a state that lasts a moment are taken; a release carries
+none of it. The run is
 `ChatFixtures.run(thread:)`, the lines a server at `agents` revision 5
 sends and the rows it holds after each, which `FixtureServer.script` serves
 one step at a time for the tests above.
