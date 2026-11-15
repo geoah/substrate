@@ -314,10 +314,16 @@ struct QueuedMessages {
         let shown = try #require(await again.harness.state.scenes["s"]?.current)
         let (frames, watching) = await again.frames(shown)
         defer { watching.cancel() }
-        // The stream dropped, and the chat waits to ask for it again.
-        try await again.harness.until { _ in
+        // The stream dropped, and the chat waits to ask for it again: by
+        // the wait it asked for, since a chat that has not heard its first
+        // stream yet is not connected either.
+        try await again.harness.until { harness in
             guard let live = await again.live(shown) else { return false }
-            return !live.connected && live.phase == .streaming && app.server.exchanges(about: "t1") == 0 && again.clock.sleeping > 0
+            let waits = harness.trace.contains { entry in
+                guard case let .effect(_, effect) = entry, case .wait? = (effect as? Conversation.Effect)?.ask else { return false }
+                return true
+            }
+            return waits && !live.connected && live.phase == .streaming && app.server.exchanges(about: "t1") == 0
         }
         // With no stream it knows nothing of the turn's queue, and says
         // nothing of one.
@@ -335,6 +341,45 @@ struct QueuedMessages {
         for frame in frames.all {
             #expect(frame.turns.allSatisfy { if case let .user(said) = $0.body { said.queued == nil } else { true } })
         }
+    }
+
+    /// What the seeded runs found next (seed 6008 at 22 steps, `agents`
+    /// 6): a message sent into a running turn lets that turn's stream go
+    /// for its own, and its request was lost. While it waited to go again
+    /// the turn read what it held queued and ended, unheard. The repeat
+    /// started a turn of its own, whose stream says nothing of the one
+    /// before, and the message a call had read was drawn as waiting under
+    /// an open stream. A stream let go takes what it said of the queue
+    /// with it: the next says its turn's queue again, or has none.
+    @Test func whatAStreamLetGoSaidWasQueuedIsNotDrawnSoUnderTheNext() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .piece(1), .call, .piece(0)])
+        app.work()
+        try await app.until { screen, _ in screen.turns.count == 2 }
+        try await app.say("And the mint?", key)
+        try await app.until { _, live in live.queued.count == 1 && live.hears }
+        let first = try #require(app.server.rows(of: "t1").first { $0.content == "And the mint?" }?.id)
+        // The next message's request is lost on its way, nothing written.
+        app.server.fail("chat|t1|And the tea?", with: .dropped)
+        try await app.say("And the tea?", key)
+        try await app.until(advancing: 0) { _, live in live.pending != nil && app.server.chatRequests(saying: "And the tea?") == 1 }
+        // No stream is open, so nothing is called queued.
+        #expect(await app.said(key).allSatisfy { !$0.hasSuffix("(queued)") })
+        // The turn reads the first message and ends while nothing is heard.
+        app.server.finishTurns()
+        #expect(app.server.wasTaken(first) && !app.server.running("t1"))
+        // The message goes again and starts its own turn, which has said
+        // nothing yet: its stream is open, and nothing waits in it.
+        app.server.plan([.piece(0), .piece(1)])
+        try await app.until(advancing: 2) { _, live in live.pending == nil && live.hears }
+        #expect(app.server.running("t1") && app.server.userRows(saying: "And the tea?") == 1)
+        let live = try #require(await app.rig.live(key))
+        #expect(live.queued.isEmpty && live.recalled.isEmpty)
+        #expect(await app.said(key).allSatisfy { !$0.hasSuffix("(queued)") })
+        app.server.finishTurns()
+        try await app.settled(key)
+        #expect(await app.said(key) == app.server.spoken(in: "t1").map(\.content))
     }
 
     /// The same stream, of a message no call has read yet: it is drawn
