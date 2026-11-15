@@ -341,10 +341,16 @@ extension ChatApp {
                         switch event {
                         case let .opened(cursor):
                             await cache.bookmark(cursor)
-                            yield(.watchOpened(fresh: fresh))
+                            yield(.watchOpened(fresh: fresh, kinds: kinds))
                             fresh = false
                         case let .row(row):
-                            await cache.apply(row)
+                            // The cache is told of the row by the engine
+                            // once it has taken it (`noteRow`), never
+                            // here: a watch that is replaced has what it
+                            // says dropped, and a bookmark moved past a
+                            // row nobody took would leave that row on no
+                            // stream again. The watch after it resumes
+                            // from the bookmark and says the row again.
                             yield(.watchRow(row))
                         case .relist:
                             await cache.relist()
@@ -368,10 +374,21 @@ extension ChatApp {
                 guard let client = await source.current() else { return nil }
                 return Event(.feedApplied(await Self.feed(client, plan, batch, threads: threads, named: named)))
             }
-        case let .markRefreshed(lease, keys):
+        case let .noteRow(lease, row):
+            // In the order the engine asked, with what marks a row read
+            // again: a row told again after its record was read is to be
+            // read again, whichever piece of work comes to run first.
+            let noted = storage.cached(lease) { cache in await cache.apply(row) }
             return .once {
-                guard let cache = storage.records(lease) else { return nil }
+                await noted.value
+                return nil
+            }
+        case let .markRefreshed(lease, keys):
+            let marked = storage.cached(lease) { cache in
                 for key in keys { await cache.refreshed(key.kind, key.id, as: nil) }
+            }
+            return .once {
+                await marked.value
                 return nil
             }
 

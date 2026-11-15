@@ -66,6 +66,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// Wakes the engine when Undo's few seconds have passed.
     case undoWait(thread: String, until: Date)
     case markRefreshed(Lease, [ChatAppState.WatchKey])
+    /// A row of the watch the engine took: the watch's cache marks its
+    /// record to be read again and moves its bookmark past the row.
+    case noteRow(Lease, WatchRow)
 
     case rename(thread: String, subject: String, before: Record?)
     case setKey(provider: String, key: String)

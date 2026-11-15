@@ -29,10 +29,12 @@ extension ChatAppState {
         state.waitingRun = nil
         state.disk = nil
         state.refreshing = false
+        state.refreshed = false
         state.watching = false
         state.baselined = false
         state.forgetOnSignOut = true
         state.approvalsKnown = false
+        state.watchGains = []
         state.leaving = false
         state.recoveryStarted = nil
         state.listFailure = nil

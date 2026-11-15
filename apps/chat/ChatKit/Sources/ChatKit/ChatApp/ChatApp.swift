@@ -408,7 +408,7 @@ public struct ChatApp: LinkedApp {
         case .readPermission: "permission"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
-            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification:
+            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification, .noteRow:
             nil
         }
     }
@@ -437,7 +437,8 @@ public struct ChatApp: LinkedApp {
             out[key] = Conversation(
                 key: key, seed: entry.seed, facts: facts, online: state.online,
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
-                newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
+                newestTurn: held.flatMap { state.knows($0, of: entry.thread) ? newestTurn($0.records) : nil },
+                visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
                 continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
                 landed: landed, landedOn: landedOn, draftFound: entry.draftFound, rowTurns: held.map { persistedTurns($0.records) } ?? [],

@@ -63,6 +63,8 @@ public final class ChatStorage: @unchecked Sendable {
     private var unsentWritten = 0
     private var held: [String: Holding] = [:]
     private var tail: Task<Void, Never>?
+    /// The last step asked of a record cache, under `lock`.
+    private var cacheTail: Task<Void, Never>?
     private var opens = 0
 
     private final class Holding: @unchecked Sendable {
@@ -300,6 +302,22 @@ public final class ChatStorage: @unchecked Sendable {
     /// to read again.
     func records(_ lease: Lease) -> RecordCache? {
         whileHeld(lease) { $0.records }
+    }
+
+    /// Runs `body` on the lease's record cache after every such step asked
+    /// before it: the watch's rows are noted and its re-reads marked in
+    /// the order they were asked, whichever task comes to run first.
+    @discardableResult
+    func cached(_ lease: Lease, _ body: @escaping @Sendable (RecordCache) async -> Void) -> Task<Void, Never> {
+        lock.withLock {
+            let before = cacheTail
+            let task = Task { [self] in
+                await before?.value
+                if let cache = records(lease) { await body(cache) }
+            }
+            cacheTail = task
+            return task
+        }
     }
 
     func state(_ lease: Lease) -> CachedState? {

@@ -79,7 +79,10 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case searchFailed(scene: String, query: String, Failure, unserved: Bool)
 
     // The watch
-    case watchOpened(fresh: Bool)
+    /// `kinds`: the kinds the watch that opened follows. A watch opened
+    /// again for one more kind is asked for while the one before it may
+    /// still be opening, and that one's word says nothing of the kind.
+    case watchOpened(fresh: Bool, kinds: [String] = [])
     case watchRow(WatchRow)
     /// The watch's position was refused as `compacted`, at this instant on
     /// the app's clock: the list is read again, once a minute

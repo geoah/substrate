@@ -201,7 +201,7 @@ extension ChatApp {
             if !next.deferred.isEmpty { resume(&next) }
             if next.readsMarks, next.marks?[record.id] == nil { next.asks.append(.readMarks([record.id])) }
 
-        case let .watchOpened(fresh):
+        case let .watchOpened(fresh, kinds):
             next.feedReconnecting = false
             if next.listFailure?.attempt == .feed { next.listFailure = nil }
             // Opened at the live head with no list read under it (an app
@@ -214,8 +214,26 @@ extension ChatApp {
                 ])
                 next.asks.append(.feedWait(seconds: 0))
             }
+            // Open again to follow a kind as well: that kind is read once
+            // more, the pending ones and each card of it on screen, since
+            // one that ended is in no pending list (`widen`).
+            let gained = next.watchGains.intersection(kinds)
+            if !gained.isEmpty {
+                for kind in gained.sorted() {
+                    next.feedBatch.insert(.init(kind: kind, id: ""))
+                    for id in next.cards.keys.sorted() {
+                        guard let reference = CardReference(kind: kind, id: id), reference == next.cards[id]?.asked || next.cards[id]?.record?.kind == kind
+                        else { continue }
+                        next.asks.append(.readCard(reference, target: false))
+                    }
+                }
+                next.watchGains.subtract(gained)
+                next.asks.append(.feedWait(seconds: 0))
+            }
         case let .watchRow(row):
             next.feedBatch.insert(.init(kind: row.kind, id: row.recordID))
+            // Taken: the cache's bookmark may pass it now, and not before.
+            if let disk = next.disk { next.asks.append(.noteRow(disk, row)) }
             // An approval moves under the engine once decided (running,
             // then done or failed), and the pending list no longer holds it:
             // a card on screen reads it again. So does a question or a
@@ -334,6 +352,7 @@ extension ChatApp {
 
         case let .cardAsked(reference):
             let target = (reference.isSuggestion && next.cards[reference.id]?.target == nil)
+            next.cards[reference.id, default: State.Card()].asked = reference
             next.asks.append(.readCard(reference, target: target))
         case let .cardRead(id, record, target):
             var card = next.cards[id] ?? State.Card()
@@ -664,6 +683,7 @@ extension ChatApp {
         // settles or asks is news.
         state.baselined = true
         state.loaded = true
+        state.refreshed = true
         if !state.watching { watch(&state, head: refresh.head) }
         // The server answered: the marks no list read brought are asked
         // for, and the writes that failed are tried again.
@@ -674,6 +694,21 @@ extension ChatApp {
         // Read before the server's document said it keeps the flags: the
         // lists are read again by them.
         if state.flags, refresh.threads.pinned == nil { self.refresh(&state) }
+    }
+
+    /// The watch opens again to follow one more kind, from its bookmark.
+    ///
+    /// That bookmark is no place to take the kind up from. It moved on
+    /// with every row of the kinds followed until now, past whatever a
+    /// record of this kind did since the read that first answered for the
+    /// kind: a call approved on another device in that moment is in
+    /// neither the read nor the rows after the bookmark, and its card
+    /// would wait here until the next refresh. So the kind is read once
+    /// more when the watch is open again (`watchOpened`), and from there
+    /// the watch tells of it.
+    func widen(_ state: inout State, by kind: String) {
+        state.watchGains.insert(kind)
+        watch(&state)
     }
 
     func watch(_ state: inout State, head: WatchCursor? = nil) {
@@ -802,7 +837,7 @@ extension ChatApp {
         // from its bookmark, following the kind too.
         if cards.approvals != nil, !state.approvalsKnown {
             state.approvalsKnown = true
-            if state.watching { watch(&state) }
+            if state.watching { widen(&state, by: Kinds.approval) }
         }
         // A card read before keeps the newer of the two: a list read that
         // started before the owner decided must not offer the buttons again.
@@ -846,7 +881,7 @@ extension ChatApp {
     /// version than those held are stale and dropped.
     private func publish(_ state: inout State, _ thread: String, _ rows: [Record], version: Int, full: Bool) {
         if let held = state.transcripts[thread], held.version > version { return }
-        var next = State.Held(records: rows, turns: [], version: version, full: full)
+        var next = State.Held(records: rows, turns: [], version: version, full: full, heard: true)
         // The newest rows again, under a transcript that grew at its start:
         // where the read begins inside the rows held, the ones before it
         // stay. Where it does not, more rows were written since than a

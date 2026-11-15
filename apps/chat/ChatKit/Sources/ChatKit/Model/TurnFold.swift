@@ -48,6 +48,11 @@ enum TurnFold {
         /// as none did, and the calls the stream has said more of than
         /// the rows.
         var left: [Turn]
+        /// The provisional messages paired with a row by their words alone,
+        /// before the stream has named anything of the run they started: a
+        /// guess, which a conversation's own read does not keep while the
+        /// run goes on (`settle`).
+        var unsure: Set<String> = []
 
         var turns: [Turn] { entries.map(\.turn) }
     }
@@ -79,6 +84,7 @@ enum TurnFold {
         // What the conversation goes on holding of its stream: the turns
         // no row replaced, and what the stream said past the rows.
         var held: [Turn] = []
+        var unsure: Set<String> = []
         var floor = -Double.infinity
         func keep(_ turn: Turn, at key: Double?) {
             // Among provisional turns the order they arrived in holds.
@@ -89,8 +95,20 @@ enum TurnFold {
         for turn in live.turns {
             switch turn.role {
             case .user:
-                if let index = row(of: turn, live.sent[turn.id], in: turns, not: claimed) {
+                let sent = live.sent[turn.id]
+                // The first row of the run the message started, as its own
+                // stream named it: the reply's own, where the rows hold
+                // the call that named it.
+                let run = sent.flatMap { sent in sent.call.flatMap { stored.calls[$0] }.flatMap { stored.turns[$0].ordinal } ?? sent.first }
+                if let index = row(of: turn, sent, before: run, in: turns, not: claimed) {
                     claim(index, turn.id)
+                    // A new chat's thread held nothing before its first
+                    // message (`baseline` -1), which is then the first row
+                    // of its words there is, and no guess.
+                    if let sent, run == nil, sent.baseline != -1 {
+                        unsure.insert(turn.id)
+                        held.append(turn)
+                    }
                 } else if let ordinal = turn.ordinal {
                     // A message sent while a turn ran, whose ordinal the
                     // server has said: where its row will stand.
@@ -184,19 +202,36 @@ enum TurnFold {
             entries.append(Entry(turn: turns[index], stored: changed.contains(index) ? nil : index))
         }
         entries += left[next...].map { Entry(turn: $0.turn, stored: nil) }
-        return Folded(entries: entries, claims: claims, left: held)
+        return Folded(entries: entries, claims: claims, left: held, unsure: unsure)
     }
 
     /// The stored row of a message sent from here. Sent under an id of its
     /// own (`messageId`), it is the row of that id and no other, whatever
     /// its words: the server writes the message under the id it was sent
-    /// with. Sent under none, to a server older than the id, it is the
-    /// first of its words past the newest ordinal held before the send;
-    /// where none was held, the last of its words written since the send.
-    private static func row(of turn: Turn, _ sent: LiveRows.Sent?, in turns: [Turn], not claimed: Set<Int>) -> Int? {
+    /// with. Sent under none, to a server older than the id, it is found by
+    /// its words, and by where it stands.
+    ///
+    /// Once the message's own stream has named a row of the run it started
+    /// (`run`, from `LiveRows.Sent.first`), that is exact: a message with
+    /// no id starts its run or is refused, so its row is the last of its
+    /// words before that row, with no reply between the two. An older row
+    /// of the same words has its own reply after it, and is never it,
+    /// whatever the device held when the message was sent.
+    ///
+    /// Before that there is only what the device knew at the send, which
+    /// is evidence: the first of its words past the newest ordinal held
+    /// then (`baseline`, which a row written since on another device is
+    /// also past); where the rows were unread, the last of its words
+    /// written since the send, by two clocks that need not agree.
+    private static func row(of turn: Turn, _ sent: LiveRows.Sent?, before run: Int?, in turns: [Turn], not claimed: Set<Int>) -> Int? {
         if let index = turns.firstIndex(where: { ($0.row ?? $0.id) == turn.id }) { return claimed.contains(index) ? nil : index }
         guard let sent else { return nil }
         let same = turns.indices.filter { turns[$0].role == .user && turns[$0].content == turn.content && !claimed.contains($0) }
+        if let run {
+            guard let index = same.last(where: { (turns[$0].ordinal ?? .max) < run }), let ordinal = turns[index].ordinal else { return nil }
+            let answered = turns.contains { $0.role == .assistant && ($0.ordinal ?? .min) > ordinal && ($0.ordinal ?? .max) < run }
+            return answered ? nil : index
+        }
         if let baseline = sent.baseline { return same.first { (turns[$0].ordinal ?? -1) > baseline } }
         let since = sent.at.addingTimeInterval(-5)
         return same.last { (turns[$0].createdAt ?? .distantPast) >= since }
@@ -206,10 +241,16 @@ enum TurnFold {
     /// they hold is let go, its id kept for its row; the rest stay until
     /// their rows are read. With `ended`, the run is over and its rows are
     /// read, so they are the whole truth and nothing provisional is left.
+    ///
+    /// A message paired by its words alone (`Folded.unsure`) stays held
+    /// while its run goes on, and its row keeps no id for it yet: the row
+    /// may be an older one, and a name given for good would be the older
+    /// row's for good. The stream names the run's first row, and the next
+    /// read says which row it is.
     static func settle(_ rows: [Record], _ live: inout LiveRows, aliases: inout [String: String], ended: Bool) {
         guard !live.isEmpty else { return }
         let folded = fold(StoredTurns(transcript(of: rows), aliases: aliases), live)
-        aliases.merge(folded.claims) { held, _ in held }
+        aliases.merge(folded.claims.filter { ended || !folded.unsure.contains($0.value) }) { held, _ in held }
         live.keep(ended ? [] : folded.left)
     }
 }
