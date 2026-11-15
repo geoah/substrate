@@ -492,6 +492,35 @@ struct TurnFoldTests {
         #expect(TurnFold.fold(StoredTurns(transcript(of: [old, mine])), live).turns.map(\.id) == ["m0", "sent-1"])
     }
 
+    /// Where the server takes a message's id (`agents` 3), the message is
+    /// drawn under it from the press and its row has it: the two are paired
+    /// by that id alone, whatever the words and wherever the row stands.
+    @Test func aMessageSentUnderAnIdIsTheRowOfThatIdAndNoOther() {
+        let id = "0190d6f0-0000-7000-8000-000000000001"
+        var live = LiveRows()
+        live.send("Yes", id: id, seq: 1, baseline: nil, at: Timestamp.parse("2026-10-31T10:00:00Z")!)
+        #expect(live.turns.map(\.id) == [id] && live.sent.isEmpty)
+        // An older row of the same words, written a moment ago, is not it.
+        let twin = messageRow("m0", "user", "Yes", turn: 0, createdAt: "2026-10-31T09:59:59Z")
+        var folded = TurnFold.fold(StoredTurns(transcript(of: [twin])), live)
+        #expect(folded.turns.map(\.id) == ["m0", id] && folded.claims.isEmpty)
+        // Its row is: drawn once, under the id both have, with no alias.
+        let mine = messageRow(id, "user", "Yes", turn: 2, createdAt: "2026-10-31T10:00:01Z")
+        folded = TurnFold.fold(StoredTurns(transcript(of: [twin, messageRow("m1", "assistant", "Good.", turn: 1), mine])), live)
+        #expect(folded.turns.map(\.id) == ["m0", "m1", id] && folded.claims.isEmpty)
+        #expect(folded.entries.last?.stored == 2 && folded.left.isEmpty)
+        // And a conversation's own read lets go of the turn and keeps no
+        // name for it.
+        var aliases: [String: String] = [:]
+        TurnFold.settle([twin, mine], &live, aliases: &aliases, ended: false)
+        #expect(live.isEmpty && aliases.isEmpty)
+        // The same message once more (Send Again) is the turn held.
+        live.send("Yes", id: id, seq: 2, baseline: nil, at: Timestamp.parse("2026-10-31T10:00:05Z")!)
+        live.confirm()
+        live.send("Yes", id: id, seq: 3, baseline: nil, at: Timestamp.parse("2026-10-31T10:00:09Z")!)
+        #expect(live.turns.map(\.id) == [id] && live.turns[0].pending)
+    }
+
     @Test func rowsAConversationReadLetGoOfWhatTheyHoldAndKeepItsIds() {
         var live = live(LiveRowsTests.run)
         var aliases: [String: String] = [:]
