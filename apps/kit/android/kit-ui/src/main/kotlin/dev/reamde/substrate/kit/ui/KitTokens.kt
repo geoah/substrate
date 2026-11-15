@@ -144,6 +144,7 @@ public object KitSpacing {
     public val small: Dp = 6.dp
     public val medium: Dp = 8.dp
     public val row: Dp = 10.dp
+    public val group: Dp = 12.dp
     public val card: Dp = 14.dp
     public val content: Dp = 16.dp
     public val section: Dp = 20.dp

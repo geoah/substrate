@@ -131,6 +131,7 @@ public struct AccessEndedScreen: View {
                 Text(presentation.signInAgain).frame(minWidth: 160, minHeight: 30)
             }
             .buttonStyle(.borderedProminent)
+            .prominentTint()
             .buttonBorderShape(.capsule)
             .controlSize(.large)
         }
