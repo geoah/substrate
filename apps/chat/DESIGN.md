@@ -922,7 +922,9 @@ bubble is a tinted fill. The transcript softens under the composer with
   opens at that message's turn the same way, and each time it is opened at
   one again while it is shown (`ConversationScreen.visit`); where the rows
   held do not reach the message, the rows before them are read until they
-  do, five reads at most. It stands on the scroll view's seam:
+  do, five reads at most. A transcript still to be put at its row is not
+  kept at the turn that stood first when those rows arrive, nor is one
+  put there with them. It stands on the scroll view's seam:
   `ConversationScreen.opens` names the turn, by the id the turn is drawn
   under (a row streamed in this conversation keeps the id its stream gave
   it); the line is a row of the transcript above that turn's first, which
@@ -1299,7 +1301,8 @@ Automated runs are their first fifty and do not grow.
 ## Pinned and archived chats
 
 Where the server keeps a person's `pinned` and `archived` on their mark of
-a thread (decision 0322, `records` at revision 9 or more), a chat can be
+a thread, the mark's two flags (decision 0322, `records` at revision 9 or
+more), a chat can be
 pinned and archived, from the row's swipe and its context menu on iPhone,
 iPad and Mac. Below that revision the list is every chat, neither action
 is offered, and neither property nor the filter arm is ever sent. A server
@@ -1319,10 +1322,10 @@ newest version any of them holds.
 - An archived chat is in no list, not in the unread count or the badge,
   and a reply in it notifies nobody. `ChatAppState.notifies(_:)` is the
   one test of that, for whatever posts a notification of a thread.
-- But while something in it waits on a person (`waitingOnPerson` above
-  0): then it is listed, with the waiting mark, counted and notified for
-  as if it were not archived. Its flag stays, so it leaves the list again
-  once answered.
+- While something in it waits on a person (`waitingOnPerson` above 0) it
+  is listed all the same, with the waiting mark, and counted and notified
+  for as if it were not archived. Its flag stays, so it leaves the list
+  again once answered.
 - Pinned chats stand in a section of their own above the rest, however
   old. A chat both pinned and archived is with the archived ones and keeps
   its pin.
@@ -1340,8 +1343,8 @@ newest version any of them holds.
   with no chat listed: an archived run comes back when it comes to wait,
   and a chat unarchived on another device when its mark says so.
 
-**Pin and Archive are the mark's writes.** Each reads so here at once and
-is written on the path every write of a mark takes (`ChatAppMarks.swift`):
+**Pin and Archive are the mark's writes.** Each shows on this device at
+once and is written on the path every write of a mark takes (`ChatAppMarks.swift`):
 laid over the server's mark until the server answers, one write a thread
 at a time, with whatever position the thread's mark has waiting. A write
 that fails is made again at the next chance, across a launch too, and is
@@ -1744,7 +1747,7 @@ button and Details stack where the text size leaves no room side by side.
   made once and a page makes its own rows alone. A transcript's older rows
   arrive above the ones held, a page a read, and stay through the next
   read of its newest. The four lists merge by the thread; Pin and Unpin
-  read so at once and reach the mark through a write that failed; Archive
+  show at once and reach the mark through a write that failed; Archive
   takes the row and Undo puts back the very sections; Undo stands six
   seconds; an archived chat that comes to wait is listed and leaves again
   once answered; a reply in an archived chat notifies nobody and counts
