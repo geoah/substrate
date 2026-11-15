@@ -663,6 +663,35 @@ extension OffscreenTranscript {
         #expect(chat.looked.last == false)
     }
 
+    /// Rows replaced make a lazy stack guess its heights again: the
+    /// content gets shorter and taller again in one breath, and the scroll
+    /// view passes through places it never says. None of that is the
+    /// reader moving the transcript up. (An iPhone's scroll view then
+    /// hands over, as the place before, one the view never saw, which is
+    /// what let go of the end there; this window's does not, so the test
+    /// holds the behaviour and would not have caught that.)
+    @Test(.timeLimit(.minutes(5)))
+    func contentThatShrinksAndGrowsAgainLeavesAChatThatFollowsAtItsEnd() async throws {
+        let chat = Chat(rows: 60, line: nil)
+        let stage = Stage(chat)
+        try await stage.rest()
+        // By its reader's own hand first, as a chat mostly is.
+        stage.wheel(up: 400)
+        try await stage.rest()
+        stage.wheel(up: -2000)
+        try await stage.rest()
+        #expect(abs(try #require(stage.reach).below) < 1 && chat.looked.last == true)
+        for rows in [44, 61, 47, 63, 40, 66] {
+            chat.rows = rows
+            stage.window.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        try await stage.rest()
+        let after = try #require(stage.reach)
+        #expect(abs(after.below) < 1, "let go of its end: \(after)")
+        #expect(chat.looked.last == true)
+    }
+
     /// The rows a device held may be older than the thread: the chat is
     /// shown at their end, and the rows that bring the line come after.
     @Test(.timeLimit(.minutes(5)))
