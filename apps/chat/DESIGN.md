@@ -667,6 +667,14 @@ The server has no push channel, so the app promises what it can observe:
   takes an id) and for its chat's row, which names the agent it is sent
   to. The folder keeps the list's first page alone, and an archived chat
   is in no list, so that row is read by name where the launch holds none.
+  Two replies into one chat go one after the other, in the order they
+  were typed: the conversation is handed one at a time, and a reply that
+  arrives while an earlier one into its chat still waits goes behind it
+  (`ChatApp.acted`). The row may come by a read that asks after nothing
+  (a list read brings it as the read by name does), and the reply that
+  arrived then used to meet a chat with a row and no reply under way,
+  and go first: 8 of 240 pairs in a container held to half a processor.
+  A list read asks after the replies that wait too.
 - **Inside the time a background action gets.** An action has 20 seconds
   (`ChatApp.actionSeconds`). Done, its notification is taken back. Not
   done, a new notification says so in the sentence the chat would say it
