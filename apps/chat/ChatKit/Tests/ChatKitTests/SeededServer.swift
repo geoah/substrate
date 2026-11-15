@@ -93,6 +93,7 @@ final class SeededServer: @unchecked Sendable {
         /// Lines delivered so far, the `thread` line included.
         var delivered = 0
         var fault: StreamFault
+        var thread = ""
     }
 
     /// A turn running on a thread.
@@ -106,6 +107,16 @@ final class SeededServer: @unchecked Sendable {
         /// The turn ends in a provider's failure instead of its last piece.
         var fails: Bool
         var readers: [Reader] = []
+        /// The server restarts once the turn has emitted this many events:
+        /// every stream of it ends with no word, and the server takes the
+        /// run up again.
+        var restartsAfter: Int?
+        /// The run was taken up again and this server process has no
+        /// stream of it: an attach is told `idle` and `running`. From
+        /// `agents` 5 it is given one, `unready` attaches later; below, it
+        /// has none until it settles.
+        var streamless = false
+        var unready = 0
     }
 
     private struct Thread {
@@ -150,6 +161,9 @@ final class SeededServer: @unchecked Sendable {
         var loud = false
         /// This line is sent twice.
         var duplicate: Int?
+        /// The cut is the server's own, of a reader that fell behind, and
+        /// it says so first (`lagged`, `agents` 5).
+        var lagged = false
 
         static let none = StreamFault()
     }
@@ -208,6 +222,8 @@ final class SeededServer: @unchecked Sendable {
     private var sleeping: [Int: Date] = [:]
     /// Every chat request that reached the server, by its message's text.
     private var chats: [String: Int] = [:]
+    /// The threads a stream of which sent an event twice.
+    private var twice: Set<String> = []
     /// The seeded thread the server was made on, nil when on none, and
     /// where the run was met on any other: work of a seeded run that left
     /// the run's thread, which the seed no longer orders.
@@ -381,6 +397,9 @@ final class SeededServer: @unchecked Sendable {
         { [self] place in if SeededThread.current !== home { lock.withLock { strays.append(place) } } }
     }
 
+    /// Whether a stream of the thread ever sent an event twice.
+    func repeated(_ thread: String) -> Bool { lock.withLock { twice.contains(thread) } }
+
     /// How often a chat request with this text reached the server.
     func chatRequests(saying text: String) -> Int { lock.withLock { chats[text, default: 0] } }
 
@@ -445,9 +464,20 @@ final class SeededServer: @unchecked Sendable {
         let ordinal = thread.nextTurn
         thread.nextTurn += 1
         let pieces = (0 ... numbers.below(4)).map { "r\(ordinal).\($0) " }
-        thread.turn = Turn(
-            ordinal: ordinal, remaining: pieces.map { line(["kind": "delta", "text": $0, "turn": ordinal]) },
-            fails: numbers.chance(0.12))
+        // From `agents` 5 a piece says where it belongs: the code points
+        // of the reply before it. Below, it says nothing.
+        var before = 0
+        let events = pieces.map { piece -> String in
+            defer { before += piece.unicodeScalars.count }
+            var event: [String: Any] = ["kind": "delta", "text": piece, "turn": ordinal]
+            if revision >= 5 { event["at"] = before }
+            return line(event)
+        }
+        thread.turn = Turn(ordinal: ordinal, remaining: events, fails: numbers.chance(0.12))
+        // Drawn after everything a turn drew before these were known, so
+        // what a seed's turns say is what they said.
+        if numbers.chance(0.15) { thread.turn?.restartsAfter = numbers.below(pieces.count + 1) }
+        thread.turn?.unready = numbers.below(2)
         thread.status = "running"
         thread.cause = nil
         thread.finishedAt = nil
@@ -459,6 +489,19 @@ final class SeededServer: @unchecked Sendable {
     /// One more event of the thread's turn, or its end.
     private func step(_ id: String) {
         guard var thread = threads[id], var turn = thread.turn else { return }
+        if let at = turn.restartsAfter, turn.emitted.count >= at {
+            // The server process goes and comes back: every stream of the
+            // turn ends with no word, and the run is taken up again with
+            // none.
+            turn.restartsAfter = nil
+            turn.streamless = true
+            for reader in turn.readers { reader.continuation.finish() }
+            turn.readers = []
+            thread.turn = turn
+            threads[id] = thread
+            note("a server restart under a running turn")
+            return
+        }
         if let next = turn.remaining.first, !(turn.fails && turn.remaining.count == 1) {
             turn.remaining.removeFirst()
             turn.emitted.append(next)
@@ -524,11 +567,15 @@ final class SeededServer: @unchecked Sendable {
     /// the stream is over.
     private func deliver(_ text: String, to reader: inout Reader) -> Bool {
         if let cut = reader.fault.cutAfter, reader.delivered >= cut {
+            if reader.fault.lagged { reader.continuation.yield(line(["kind": "lagged"])) }
             reader.continuation.finish(throwing: reader.fault.loud ? URLError(.networkConnectionLost) : nil)
             return false
         }
         reader.continuation.yield(text)
-        if reader.fault.duplicate == reader.delivered { reader.continuation.yield(text) }
+        if reader.fault.duplicate == reader.delivered {
+            reader.continuation.yield(text)
+            twice.insert(reader.thread)
+        }
         reader.delivered += 1
         return true
     }
@@ -655,7 +702,10 @@ final class SeededServer: @unchecked Sendable {
                 .stream(StreamFault(cutAfter: 0)), .stream(StreamFault(cutAfter: at, loud: true)), .stream(StreamFault(cutAfter: at)),
                 .stream(StreamFault(duplicate: at)), .stream(StreamFault(cutAfter: 1 + at, loud: true, duplicate: at)),
             ]
-            if numbers.chance(0.5) { faults = streams } else { faults += streams }
+            // A reader that fell behind is cut by the server itself, which
+            // from `agents` 5 says so.
+            let lagged: [Fault] = revision >= 5 ? [.stream(StreamFault(cutAfter: 1 + at, lagged: true))] : []
+            if numbers.chance(0.5) { faults = streams + lagged } else { faults += streams + lagged }
         }
         let fault = numbers.pick(faults)
         self.faults += 1
@@ -670,7 +720,13 @@ final class SeededServer: @unchecked Sendable {
         case .page: note("fault: a page of HTML")
         case .delay: note("fault: a delay")
         case let .stream(broken):
-            if broken.cutAfter == 0 { note("fault: closed before the thread event") } else if broken.cutAfter != nil { note("fault: a stream cut at an event") }
+            if broken.lagged {
+                note("fault: a reader cut off as lagged")
+            } else if broken.cutAfter == 0 {
+                note("fault: closed before the thread event")
+            } else if broken.cutAfter != nil {
+                note("fault: a stream cut at an event")
+            }
             if broken.duplicate != nil { note("fault: an event sent twice") }
         }
         // The server's own refusals took nothing; anything else may have
@@ -805,13 +861,15 @@ final class SeededServer: @unchecked Sendable {
             return ndjson(url: url) { [self] continuation in
                 lock.withLock {
                     readers += 1
-                    var reader = Reader(id: readers, continuation: continuation, fault: broken)
+                    var reader = Reader(id: readers, continuation: continuation, fault: broken, thread: thread)
                     for text in opening {
                         guard deliver(text, to: &reader) else { return nil as Int? }
                     }
                     // What the turn emitted before this reader came: an
                     // attach's replay, from the turn's start.
-                    guard var turn = threads[thread]?.turn else {
+                    // A turn this process has no stream of gives none: the
+                    // opening said so.
+                    guard var turn = threads[thread]?.turn, !turn.streamless else {
                         continuation.finish()
                         return nil
                     }
@@ -965,8 +1023,22 @@ final class SeededServer: @unchecked Sendable {
             return chat(agent, body)
         case let .events(id):
             guard let thread = threads[id] else { return refuse(404, "not_found", "substrate: not found: thread \(id)") }
-            guard thread.turn != nil else {
+            guard let turn = thread.turn else {
                 return .stream(thread: id, opening: [line(["kind": "idle", "thread": id, "status": thread.status])], fault: .none)
+            }
+            if turn.streamless {
+                // A run taken up again after a restart: from `agents` 5 it
+                // streams, once the server has given it a stream, and the
+                // replay is the turn from its start; below, an attach is
+                // told it runs for as long as it does.
+                if revision >= 5, turn.unready == 0 {
+                    threads[id]?.turn?.streamless = false
+                    note("a resumed run joined by its stream")
+                    return .stream(thread: id, opening: [], fault: .none)
+                }
+                if revision >= 5 { threads[id]?.turn?.unready -= 1 }
+                note("an attach told its run has no stream")
+                return .stream(thread: id, opening: [line(["kind": "idle", "thread": id, "status": "running"])], fault: .none)
             }
             return .stream(thread: id, opening: [], fault: .none)
         case let .stop(id):
@@ -1020,6 +1092,8 @@ final class SeededServer: @unchecked Sendable {
                 var opening = [line(["kind": "thread", "thread": thread])]
                 if threads[thread]?.turn == nil {
                     opening.append(line(["kind": "idle", "thread": thread, "status": threads[thread]?.status ?? "ok"]))
+                } else if threads[thread]?.turn?.streamless == true {
+                    opening.append(line(["kind": "idle", "thread": thread, "status": "running"]))
                 }
                 return .stream(thread: thread, opening: opening, fault: .none)
             }
