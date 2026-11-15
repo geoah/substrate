@@ -1295,7 +1295,11 @@ its `lastMessage` and its count, and each person of the repository a mark
 that reads through it. It writes one changelog line per thread and one per
 thread and person, in one transaction, before the repository serves: about
 20 seconds for 5,000 threads and four people on a laptop. After it, a
-thread nobody has a mark of has never been opened.
+thread nobody has a mark of has never been opened. It runs once for a
+repository wherever its history goes: a restore of an archive taken after it
+ran does not run it again, so each mark comes back as its person left it,
+and a restore of one taken before runs it at the restored repository's first
+open ([upgrading the binary](operations.md#upgrading-the-binary)).
 
 ### The daily spend cap
 
