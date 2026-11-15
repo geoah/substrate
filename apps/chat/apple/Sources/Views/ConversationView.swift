@@ -66,7 +66,10 @@ struct ConversationView: View {
             atBottom = bottom
         }
         .onChange(of: follow(screen)) { _, _ in
-            if atBottom { position.scrollTo(edge: .bottom) }
+            // Not while the chat has a "New" line it was not put at yet:
+            // rows that arrive after it was opened bring the line with
+            // them, and following the end would take the chat past it.
+            if atBottom, screen.newLine == nil || placedAtNew { position.scrollTo(edge: .bottom) }
         }
         // A chat with more than the person had read opens at the first of
         // it: where what is new fits on one screen the scroll stops at the
@@ -180,8 +183,10 @@ struct ConversationView: View {
         else { return }
         placedAtNew = true
         // By the id of the turn's first row, which the lazy stack knows
-        // however far up it is; the line is drawn above that row.
-        reader.scrollTo(row.id, anchor: .top)
+        // however far up it is; the line is drawn above that row. After
+        // this update, since the rows may have arrived in it and the stack
+        // has not laid them out yet.
+        DispatchQueue.main.async { reader.scrollTo(row.id, anchor: .top) }
     }
 
     private var act: (FailureAction) -> Void {
