@@ -96,7 +96,7 @@ write.
   a mark keeps its state and a week of moves
   ([0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md),
   [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
-- **Existing threads are read.** Repository migration 14
+- **Existing threads are read.** Repository migration 15
   ([0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md))
   gives every settled thread a chat list shows (every `mode` but `subagent`
   and `judge`) that holds no `lastMessage` its newest message and its count,
