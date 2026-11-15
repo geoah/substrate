@@ -1,6 +1,6 @@
 package engine
 
-// Repository migration 14 (repomigration_0014_mark_existing_threads_read.go,
+// Repository migration 15 (repomigration_0015_mark_existing_threads_read.go,
 // decision 0313): threads from before marks are given their newest message
 // and their count, every person a mark that reads through it, a second run
 // finds nothing to do, and a rebuild reproduces the fold.
@@ -95,13 +95,13 @@ func marksOf(t *testing.T, ds *dataset, thread string) map[string]*erow {
 	return out
 }
 
-// rerunMigration14 takes the migration's row out of the ledger and opens the
+// rerunMigration15 takes the migration's row out of the ledger and opens the
 // repository again, as a binary that carries it meets a repository an older
 // one wrote. It answers the dataset and how long the open took.
-func rerunMigration14(t *testing.T, r *runsRepository) (*dataset, time.Duration) {
+func rerunMigration15(t *testing.T, r *runsRepository) (*dataset, time.Duration) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := r.r.s.maint.ExecContext(ctx, `DELETE FROM repository_migrations WHERE repository = $1 AND version = 14`, r.repo); err != nil {
+	if _, err := r.r.s.maint.ExecContext(ctx, `DELETE FROM repository_migrations WHERE repository = $1 AND version = 15`, r.repo); err != nil {
 		t.Fatal(err)
 	}
 	started := time.Now()
@@ -155,7 +155,7 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 	r.ds = d.(*dataset)
 
 	before := changelogHead(t, r.ds)
-	ds, took := rerunMigration14(t, r)
+	ds, took := rerunMigration15(t, r)
 	wrote := changelogHead(t, ds) - before
 	people, err := ds.liveRowsOf(ctx, kindActor)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 			persons++
 		}
 	}
-	t.Logf("migration 14 over %d threads and %d people: the open took %s against %s with nothing to migrate, and wrote %d changelog lines",
+	t.Logf("migration 15 over %d threads and %d people: the open took %s against %s with nothing to migrate, and wrote %d changelog lines",
 		len(threads), persons, took.Round(time.Millisecond), plain.Round(time.Millisecond), wrote)
 	if persons != 4 {
 		t.Fatalf("the repository holds %d people, want the four the fixture registers", persons)
@@ -220,7 +220,7 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 
 	// A second run finds nothing to do.
 	head := changelogHead(t, ds)
-	ds, _ = rerunMigration14(t, r)
+	ds, _ = rerunMigration15(t, r)
 	if got := changelogHead(t, ds); got != head {
 		t.Fatalf("a second run of the migration wrote %d changelog lines", got-head)
 	}

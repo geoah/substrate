@@ -1,6 +1,6 @@
 package engine
 
-// Repository migration 14: every thread a chat list shows is given its
+// Repository migration 15: every thread a chat list shows is given its
 // newest message and what waits on a person in it, and every person a mark
 // that reads through it (decision 0313).
 //

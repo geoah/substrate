@@ -135,7 +135,7 @@ var refoldLedgerFloors = map[string]string{
 	"move_the_sign_in_out_of_the_repository": "0027_identities",
 	"give_every_person_admin":                "0027_identities",
 	"look_again_at_kept_deletions":           "0031_erasures",
-	"mark_existing_threads_read":             "0031_erasures",
+	"mark_existing_threads_read":             "0032_writer_starts",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

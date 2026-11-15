@@ -1289,7 +1289,7 @@ mark's latest state ([retention](api.md#retention)), since a mark moves at
 every reply its person reads.
 
 Threads from before this release are read already. At a repository's first
-open under a release that carries it, repository migration 14 gives every
+open under a release that carries it, repository migration 15 gives every
 settled thread a chat list shows (every `mode` but `subagent` and `judge`)
 its `lastMessage` and its count, and each person of the repository a mark
 that reads through it. It writes one changelog line per thread and one per
