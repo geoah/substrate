@@ -155,7 +155,19 @@ struct SeededRun {
     /// run notes one where it meets it and goes on, so the rest of the seed
     /// is still held to every other rule. An entry that no longer fails
     /// must not stay.
-    static let known: [Rule: String] = [:]
+    static let known: [Rule: String] = [
+        .queued:
+            "seed 4487 at 40 steps on a server at agents 6 or 7 (CHATKIT_REVISION=6 CHATKIT_SEED=4487 CHATKIT_STEPS=40): a message is queued "
+            + "and drawn so; the person signs in again, and the conversation made anew draws it plain until the next send joins the run, whose "
+            + "stream says it is still queued, which it is. Then the conversation is left with no stream (here it asks for the turn's again, and "
+            + "the read that comes first is held up twelve seconds), and in that time a call reads the message. Nothing can tell the app: it "
+            + "draws the message queued, as it last heard, until a stream says taken. Only that is held as known: a message drawn queued "
+            + "again while its conversation has a stream open still breaks the rule (the check notes this one only where the conversation is "
+            + "not connected, or waits to ask again). Found by the last 500,000 steps of the pass that emptied this list "
+            + "(group A11, #1468), once in them. What a person meets is a message that says it is queued for as long as the connection is down, "
+            + "where a call read it in that time. To say nothing of a queue while a stream is down would end it, and would take the word from "
+            + "every queued message at each dropped connection, the far commoner case: not decided here."
+    ]
 
     let seed: UInt64
     let scene = "s"
@@ -1635,7 +1647,15 @@ struct SeededRun {
             // lost its stream says nothing of a queue until it reads one
             // again (seed 215, with the list's steps beside these).
             if drewRead[key]?.contains(turn.id) == true, server.wasTaken(turn.id) {
-                return broke(.queued, "\(name) draws \(turn.id) as queued again after it drew it as read")
+                let what = "\(name) draws \(turn.id) as queued again after it drew it as read"
+                // Known (`known`), and only this far: the conversation
+                // has no stream to hear on (it waits to ask for one again,
+                // or has asked and no event has come), so no word that a
+                // call read the message can have reached it. With a
+                // stream open, the rule breaks.
+                let deaf = !live.connected || (waits[key] ?? []).contains { $0.key == "retry" }
+                guard deaf else { return broke(.queued, what) }
+                if noted[.queued] == nil { noted[.queued] = broke(.queued, what) }
             }
         }
         for id in live.queued.map(\.id) where screen.turns.filter({ $0.id == id }).count != 1 {
