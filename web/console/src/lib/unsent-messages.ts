@@ -23,6 +23,8 @@ export interface SentRequest {
   thread: string
   messageId: string
   context?: string[]
+  /** The question the message answers in the person's own words. */
+  repliesTo?: string
 }
 
 /** The words Continue sends to a server that has no `continue` route (below

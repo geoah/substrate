@@ -36,6 +36,7 @@ export function Composer({
   onStop,
   stopping = false,
   queues = false,
+  focusOn = 0,
 }: {
   value: string
   onChange: (value: string) => void
@@ -57,8 +58,15 @@ export function Composer({
   stopping?: boolean
   /** A turn runs and a message sent now joins it: Send stays beside Stop. */
   queues?: boolean
+  /** Puts the cursor in the box each time it changes to a new number: a
+   * card asked for the next message. */
+  focusOn?: number
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (focusOn > 0) ref.current?.focus()
+  }, [focusOn])
 
   // Grows with what is written, up to a cap past which it scrolls.
   useEffect(() => {

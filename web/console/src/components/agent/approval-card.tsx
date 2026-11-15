@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { ShieldQuestionIcon } from "lucide-react"
 
+import { ResolvedBy } from "@/components/agent/resolved-by"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -116,6 +117,13 @@ export function ApprovalCard({ id }: { id: string }) {
           <StateBadge value={view.state} className="ml-auto text-[12.5px]" />
         )}
       </div>
+      {!pending && record.data && (
+        <ResolvedBy
+          label={view.state === "denied" ? "Declined by" : "Approved by"}
+          kind="approval"
+          record={record.data}
+        />
+      )}
       <div className="flex flex-col gap-0.5 text-[13px]">
         <span>
           {agentWord(view.agent)} {pending ? "wants" : "asked"} to run{" "}

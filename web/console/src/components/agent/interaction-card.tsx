@@ -7,6 +7,13 @@
  * against the STORED option values and refuses partial batches, so this form
  * enforces completeness client-side only as a courtesy.
  *
+ * Inside a conversation the card also offers "Answer in your own words"
+ * (decision 0327): the composer takes the cursor, and the next message
+ * carries the question's id, so the server resolves the question with the
+ * message and the agent answers once. Such a question ends `replied`, with
+ * no options chosen. A resolved card says whose hand resolved it, where the
+ * record links one.
+ *
  * Question prompts and option labels are MODEL-AUTHORED and render as plain
  * untrusted text; what the submit sends is stored option VALUES, never
  * anything typed or derived from a label. */
@@ -15,6 +22,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { MessageCircleQuestionIcon } from "lucide-react"
 
+import { useQuestionReply } from "@/components/agent/question-reply"
+import { ResolvedBy } from "@/components/agent/resolved-by"
 import { StateBadge } from "@/components/identity/state-badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -87,8 +96,16 @@ function answersOf(record: SubstrateRecord): Map<string, string[]> {
   return out
 }
 
+/** What each resolved state says of the person who resolved it. */
+const RESOLVED_LABELS: Record<string, string> = {
+  answered: "Answered by",
+  replied: "Answered by",
+  dismissed: "Dismissed by",
+}
+
 export function InteractionCard({ id }: { id: string }) {
   const client = useQueryClient()
+  const reply = useQuestionReply()
   const interaction = useQuery(
     recordQueryOptions(CORE_AUTHORITY, LLM_PACKAGE_NAME, INTERACTION_KIND, id)
   )
@@ -119,6 +136,9 @@ export function InteractionCard({ id }: { id: string }) {
   const answered = answersOf(record)
   const pending = state === "pending"
   const complete = questions.every((q) => (picked.get(q.id)?.length ?? 0) > 0)
+  // The next message answers this card: its options are set aside until
+  // the message goes or the person comes back to them.
+  const replying = pending && reply?.replyingTo === id
 
   function toggle(q: Question, value: string) {
     setPicked((prev) => {
@@ -179,9 +199,21 @@ export function InteractionCard({ id }: { id: string }) {
           {pending ? "A few questions before it goes on" : "Its questions"}
         </span>
         {!pending && (
-          <StateBadge value={state} className="ml-auto text-[12.5px]" />
+          <StateBadge
+            value={state}
+            label={state === "replied" ? "Answered in a message" : undefined}
+            className="ml-auto text-[12.5px]"
+          />
         )}
       </div>
+      {!pending && RESOLVED_LABELS[state] && (
+        <ResolvedBy
+          label={RESOLVED_LABELS[state]}
+          kind="interaction"
+          record={record}
+        />
+      )}
+
       {questions.map((q) => (
         <fieldset key={q.id} className="flex flex-col gap-1">
           <legend className="mb-1 text-[13px] [overflow-wrap:anywhere]">
@@ -211,7 +243,7 @@ export function InteractionCard({ id }: { id: string }) {
                       name={`${id}-${q.id}`}
                       value={o.value}
                       checked={chosen}
-                      disabled={!pending || submitting !== null}
+                      disabled={!pending || replying || submitting !== null}
                       onChange={() => toggle(q, o.value)}
                       className="m-0 size-3.5 cursor-pointer accent-primary disabled:cursor-default"
                     />
@@ -236,8 +268,18 @@ export function InteractionCard({ id }: { id: string }) {
           That didn’t go through: {error}
         </p>
       )}
-      {pending && (
-        <div className="flex items-center gap-1.5">
+      {replying && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="text-[12.5px] text-muted-foreground">
+            Write your answer in the message box below and send it.
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => reply?.cancel()}>
+            Back to the options
+          </Button>
+        </div>
+      )}
+      {pending && !replying && (
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button
             size="sm"
             disabled={!complete || submitting !== null}
@@ -246,6 +288,18 @@ export function InteractionCard({ id }: { id: string }) {
             {submitting === "answer" && <Spinner className="size-3" />}
             Answer
           </Button>
+          {reply && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={submitting !== null}
+              onClick={() =>
+                reply.begin(id, questions.map((q) => q.prompt).join(" "))
+              }
+            >
+              Answer in your own words
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

@@ -49,6 +49,7 @@ import {
   useEffect,
   useEffectEvent,
   useId,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -66,6 +67,10 @@ import {
 import { AgentMark } from "@/components/agent/agent-mark"
 import { PendingApprovals } from "@/components/agent/approval-card"
 import { AddKeyButton } from "@/components/agent/model-key-link"
+import {
+  QuestionReplyContext,
+  type QuestionReply,
+} from "@/components/agent/question-reply"
 import { Composer } from "@/components/agent/composer"
 import { ThreadHeading } from "@/components/agent/thread-heading"
 import { ContextChips, Transcript } from "@/components/agent/transcript"
@@ -103,6 +108,7 @@ import {
   MESSAGE_DURING_RUN_REVISION,
   newMessageId,
   OWN_MESSAGE_ID_REVISION,
+  REPLY_IN_WORDS_REVISION,
   stopThread,
   STREAM_POSITIONS_REVISION,
   streamChat,
@@ -477,6 +483,34 @@ export function Conversation({
   const steers =
     !discovery.data ||
     hasFeature(discovery.data, "agents", MESSAGE_DURING_RUN_REVISION)
+  // Whether the server takes a message that names the question it answers:
+  // then a question's card offers to be answered in a message. The answer
+  // is written with the message's own id, so it needs those too.
+  const repliesInWords =
+    ownIds &&
+    (!discovery.data ||
+      hasFeature(discovery.data, "agents", REPLY_IN_WORDS_REVISION))
+  // The question the next message answers in the person's own words, and
+  // what it asked; `composerFocus` moves the cursor to the composer.
+  const [replying, setReplying] = useState<{
+    id: string
+    prompt: string
+  } | null>(null)
+  const [composerFocus, setComposerFocus] = useState(0)
+  const questionReply = useMemo<QuestionReply | null>(
+    () =>
+      repliesInWords
+        ? {
+            replyingTo: replying?.id,
+            begin: (id, prompt) => {
+              setReplying({ id, prompt })
+              setComposerFocus((n) => n + 1)
+            },
+            cancel: () => setReplying(null),
+          }
+        : null,
+    [repliesInWords, replying]
+  )
   // A continue the server refused, in the server's words.
   const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
@@ -1017,6 +1051,16 @@ export function Conversation({
     settleRun(run)
   }
 
+  // The server holds a message that answered a question in words: the
+  // composer goes back to an ordinary message, and the question's card is
+  // read again, since the message resolved it. A refusal before this kept
+  // the choice for the retry.
+  function answeredInWords(question: string) {
+    setReplying((cur) => (cur?.id === question ? null : cur))
+    void client.invalidateQueries({ queryKey: ["record"] })
+    void client.invalidateQueries({ queryKey: ["records"] })
+  }
+
   // Sends `text`, or sends an unanswered message once more as the request it
   // went out as (`again`), which cannot send it twice. Where the server
   // takes no message id, a send goes without one and is never sent again.
@@ -1044,6 +1088,13 @@ export function Conversation({
     // The thread the request names: a message sent again goes where it went,
     // whatever chat the page shows now.
     const sentTo = again ? again.thread : current
+    // The question the message answers, which only a message with an id of
+    // its own, into the question's thread, can.
+    const sentReply = again
+      ? again.repliesTo
+      : messageId && sentTo
+        ? replying?.id
+        : undefined
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
       return parts ? [parts] : []
@@ -1125,6 +1176,7 @@ export function Conversation({
                 thread: sentTo,
                 messageId,
                 ...(sentContext && { context: sentContext }),
+                ...(sentReply && { repliesTo: sentReply }),
               },
             }),
           })
@@ -1172,6 +1224,7 @@ export function Conversation({
         message,
         messageId,
         context: sentContext,
+        repliesTo: sentReply,
         onEvent: (ev) => {
           if (run !== runRef.current) return
           if (ev.kind === "thread" && ev.thread) {
@@ -1182,6 +1235,7 @@ export function Conversation({
             // The turn holds its context now; a refusal before this kept it
             // for the retry.
             if (sentContext && !again) onContextDone?.()
+            if (sentReply) answeredInWords(sentReply)
           }
           // The server already held the message and its turn has settled.
           if (ev.kind === "idle") {
@@ -1254,6 +1308,7 @@ export function Conversation({
     const to = agentId
     const messageId = newMessageId()
     const sentContext = context?.length ? context : undefined
+    const sentReply = replying?.id
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
       return parts ? [parts] : []
@@ -1294,6 +1349,7 @@ export function Conversation({
             thread,
             messageId,
             ...(sentContext && { context: sentContext }),
+            ...(sentReply && { repliesTo: sentReply }),
           },
         })
       }
@@ -1303,6 +1359,7 @@ export function Conversation({
         message,
         messageId,
         context: sentContext,
+        repliesTo: sentReply,
         onEvent: (ev) => {
           if (named || ev.kind !== "thread") return
           // The server holds the message. Its turn's stream is the one the
@@ -1310,6 +1367,7 @@ export function Conversation({
           named = true
           handle.stop()
           if (aliveRef.current && sentContext) onContextDone?.()
+          if (aliveRef.current && sentReply) answeredInWords(sentReply)
         },
         onError: (err) => {
           if (named || !aliveRef.current) return
@@ -1476,228 +1534,257 @@ export function Conversation({
       : (ended ?? cut)
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3 md:px-6">
-        {agentId && <AgentMark id={agentId} size="md" />}
-        <div className="min-w-0 flex-1">
-          <ThreadHeading
-            title={title}
-            subject={threadSubject(threadRecord)}
-            thread={current}
-          />
-          <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
-            <span>with {name}</span>
-            {technical && current && (
-              <IdText value={`${LLM_PACKAGE}/thread/${current}`} copy />
-            )}
-            {technical && threadRecord && (
-              <span className="text-faint">
-                {tallyWords(threadTally(threadRecord)).join(" · ")}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {streaming && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={stop}
-              disabled={stopping}
-            >
-              <SquareIcon />
-              {stopping ? "Stopping…" : "Stop"}
-            </Button>
-          )}
-          {actions}
-        </div>
-      </header>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div
-          ref={contentRef}
-          className="flex max-w-[860px] flex-col gap-[18px] px-4 pt-6 pb-8 md:px-8"
-        >
-          {loading && (
-            <p className="text-sm text-muted-foreground">
-              Loading the messages…
-            </p>
-          )}
-          {empty && current && (
-            <p className="text-sm text-muted-foreground">
-              This chat has no messages yet.
-            </p>
-          )}
-          {empty && !current && agentId && (
-            <div className="flex flex-col gap-3 py-6">
-              <AgentMark id={agentId} size="lg" />
-              <h2 className="text-xl font-semibold tracking-tight">{name}</h2>
-              {description && (
-                <p className="max-w-[560px] text-muted-foreground">
-                  {description}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2 pt-2">
-                {examplePrompts(agent).map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => onDraft(prompt)}
-                    className="cursor-pointer rounded-lg border bg-background px-3 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-hover hover:text-foreground"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {empty && !current && !agentId && (
-            <p className="text-sm text-muted-foreground">
-              There is no agent to chat with yet. Add a package that ships one
-              from Providers.
-            </p>
-          )}
-          <Transcript
-            turns={turns}
-            liveKey={liveKey}
-            agentId={agentId}
-            agent={agent}
-          />
-          {waitingCount > 0 && (
-            <p
-              role="status"
-              className="max-w-[70%] self-end text-right text-[12.5px] text-muted-foreground"
-            >
-              {waitingCount === 1
-                ? `${name} reads your message at its next step. If you stop it first, the message stays here and is read when you continue.`
-                : `${name} reads your ${waitingCount} messages at its next step. If you stop it first, they stay here and are read when you continue.`}
-            </p>
-          )}
-          <PendingApprovals ids={subagentApprovals} />
-          {background && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {name} is working on this chat in the background. Its answer shows
-              here when it finishes.
-            </p>
-          )}
-          {/* A turn that ended on the failure is said once, by the notice
-              below, which reads the reason the thread stored. */}
-          {error && !outcome && (
-            <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
-              {name} couldn’t answer: {error.message}
-            </div>
-          )}
-          {outcome && (
-            <UnfinishedNote
-              turn={outcome}
-              agentId={agentId}
-              onContinue={goOn}
-              blocked={
-                turnBlocked ??
-                (keylessProvider ? "Add an API key first" : undefined)
-              }
+    <QuestionReplyContext.Provider value={questionReply}>
+      <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <header className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3 md:px-6">
+          {agentId && <AgentMark id={agentId} size="md" />}
+          <div className="min-w-0 flex-1">
+            <ThreadHeading
+              title={title}
+              subject={threadSubject(threadRecord)}
+              thread={current}
             />
-          )}
-          {goOnError && outcome && (
-            <div
-              role="alert"
-              className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
-            >
-              That didn’t start. The server said: {goOnError}
-            </div>
-          )}
-          {resending && (
-            <p role="status" className="text-sm text-muted-foreground">
-              The server didn’t answer. Sending your message again…
+            <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
+              <span>with {name}</span>
+              {technical && current && (
+                <IdText value={`${LLM_PACKAGE}/thread/${current}`} copy />
+              )}
+              {technical && threadRecord && (
+                <span className="text-faint">
+                  {tallyWords(threadTally(threadRecord)).join(" · ")}
+                </span>
+              )}
             </p>
-          )}
-          {/* The one this page is sending again is said by the line above. */}
-          {outcomes
-            .filter((o) => o.id !== resendingId)
-            .map((o) => (
-              <OutcomeNote
-                key={o.id}
-                outcome={o}
-                onDiscard={() => setUnsent(unsentAt, o.id, null)}
-                onSendAgain={
-                  o.request ? () => send(o.message, o.request) : undefined
-                }
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {streaming && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={stop}
+                disabled={stopping}
+              >
+                <SquareIcon />
+                {stopping ? "Stopping…" : "Stop"}
+              </Button>
+            )}
+            {actions}
+          </div>
+        </header>
+
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            ref={contentRef}
+            className="flex max-w-[860px] flex-col gap-[18px] px-4 pt-6 pb-8 md:px-8"
+          >
+            {loading && (
+              <p className="text-sm text-muted-foreground">
+                Loading the messages…
+              </p>
+            )}
+            {empty && current && (
+              <p className="text-sm text-muted-foreground">
+                This chat has no messages yet.
+              </p>
+            )}
+            {empty && !current && agentId && (
+              <div className="flex flex-col gap-3 py-6">
+                <AgentMark id={agentId} size="lg" />
+                <h2 className="text-xl font-semibold tracking-tight">{name}</h2>
+                {description && (
+                  <p className="max-w-[560px] text-muted-foreground">
+                    {description}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {examplePrompts(agent).map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => onDraft(prompt)}
+                      className="cursor-pointer rounded-lg border bg-background px-3 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-hover hover:text-foreground"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {empty && !current && !agentId && (
+              <p className="text-sm text-muted-foreground">
+                There is no agent to chat with yet. Add a package that ships one
+                from Providers.
+              </p>
+            )}
+            <Transcript
+              turns={turns}
+              liveKey={liveKey}
+              agentId={agentId}
+              agent={agent}
+            />
+            {waitingCount > 0 && (
+              <p
+                role="status"
+                className="max-w-[70%] self-end text-right text-[12.5px] text-muted-foreground"
+              >
+                {waitingCount === 1
+                  ? `${name} reads your message at its next step. If you stop it first, the message stays here and is read when you continue.`
+                  : `${name} reads your ${waitingCount} messages at its next step. If you stop it first, they stay here and are read when you continue.`}
+              </p>
+            )}
+            <PendingApprovals ids={subagentApprovals} />
+            {background && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {name} is working on this chat in the background. Its answer
+                shows here when it finishes.
+              </p>
+            )}
+            {/* A turn that ended on the failure is said once, by the notice
+              below, which reads the reason the thread stored. */}
+            {error && !outcome && (
+              <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
+                {name} couldn’t answer: {error.message}
+              </div>
+            )}
+            {outcome && (
+              <UnfinishedNote
+                turn={outcome}
+                agentId={agentId}
+                onContinue={goOn}
                 blocked={
                   turnBlocked ??
                   (keylessProvider ? "Add an API key first" : undefined)
                 }
               />
-            ))}
-          {reloadFailed && (
-            <div
-              role="alert"
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
-            >
-              <span>
-                The conversation didn’t reload after that answer:{" "}
-                {reloadErrored
-                  ? messages.error?.message
-                  : `the read has not come back after ${RELOAD_WAIT_MS / 1000} seconds`}
-              </span>
+            )}
+            {goOnError && outcome && (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+              >
+                That didn’t start. The server said: {goOnError}
+              </div>
+            )}
+            {resending && (
+              <p role="status" className="text-sm text-muted-foreground">
+                The server didn’t answer. Sending your message again…
+              </p>
+            )}
+            {/* The one this page is sending again is said by the line above. */}
+            {outcomes
+              .filter((o) => o.id !== resendingId)
+              .map((o) => (
+                <OutcomeNote
+                  key={o.id}
+                  outcome={o}
+                  onDiscard={() => setUnsent(unsentAt, o.id, null)}
+                  onSendAgain={
+                    o.request ? () => send(o.message, o.request) : undefined
+                  }
+                  blocked={
+                    turnBlocked ??
+                    (keylessProvider ? "Add an API key first" : undefined)
+                  }
+                />
+              ))}
+            {reloadFailed && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+              >
+                <span>
+                  The conversation didn’t reload after that answer:{" "}
+                  {reloadErrored
+                    ? messages.error?.message
+                    : `the read has not come back after ${RELOAD_WAIT_MS / 1000} seconds`}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  // A read that is stuck is still "fetching": a retry replaces it.
+                  disabled={messages.isFetching && !reloadSlow}
+                  onClick={() =>
+                    void dropReads().then(() => messages.refetch())
+                  }
+                >
+                  Try again
+                </Button>
+              </div>
+            )}
+            {technical && result && (
+              <p className="text-[11.5px] text-faint tabular-nums">
+                {result.status}
+                {result.reason ? ` (${result.reason})` : ""} · {result.turns}{" "}
+                turns · {result.toolCalls} tool calls ·{" "}
+                {result.totalTokens.toLocaleString()} tokens
+                {result.costUSD ? ` · ${USD}${result.costUSD.toFixed(4)}` : ""}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <footer className="shrink-0 border-t">
+          {keylessProvider && (
+            <div className="px-4 pt-3 md:px-6">
+              <KeylessCallout provider={keylessProvider} />
+            </div>
+          )}
+          {context && context.length > 0 && (
+            <div className="flex items-center justify-between gap-2 px-4 pt-3 md:px-6">
+              <ContextChips
+                records={context.flatMap((p) => {
+                  const parts = splitRecordPath(p)
+                  return parts ? [parts] : []
+                })}
+                label="Asking about"
+                className="max-w-none justify-start"
+              />
               <Button
                 size="sm"
-                variant="outline"
-                // A read that is stuck is still "fetching": a retry replaces it.
-                disabled={messages.isFetching && !reloadSlow}
-                onClick={() => void dropReads().then(() => messages.refetch())}
+                variant="ghost"
+                onClick={() => onContextDone?.()}
               >
-                Try again
+                Remove
               </Button>
             </div>
           )}
-          {technical && result && (
-            <p className="text-[11.5px] text-faint tabular-nums">
-              {result.status}
-              {result.reason ? ` (${result.reason})` : ""} · {result.turns}{" "}
-              turns · {result.toolCalls} tool calls ·{" "}
-              {result.totalTokens.toLocaleString()} tokens
-              {result.costUSD ? ` · ${USD}${result.costUSD.toFixed(4)}` : ""}
-            </p>
+          {replying && (
+            <div
+              className="flex items-start justify-between gap-2 px-4 pt-3 md:px-6"
+              data-slot="replying-to-question"
+            >
+              <p className="min-w-0 text-[13px] [overflow-wrap:anywhere]">
+                <span className="text-muted-foreground">
+                  Answering in your own words:
+                </span>{" "}
+                {replying.prompt}
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setReplying(null)}
+              >
+                Cancel
+              </Button>
+            </div>
           )}
-        </div>
+          <Composer
+            value={draft}
+            onChange={onDraft}
+            focusOn={composerFocus}
+            onSend={() => send()}
+            onStop={streaming ? stop : undefined}
+            stopping={stopping}
+            agentId={agentId}
+            agents={current ? undefined : pickable}
+            onPickAgent={current ? undefined : onPickAgent}
+            busy={busy && !canQueue}
+            queues={canQueue}
+            blockedReason={blockedReason}
+            disabled={!agentId || Boolean(keylessProvider)}
+          />
+        </footer>
       </div>
-
-      <footer className="shrink-0 border-t">
-        {keylessProvider && (
-          <div className="px-4 pt-3 md:px-6">
-            <KeylessCallout provider={keylessProvider} />
-          </div>
-        )}
-        {context && context.length > 0 && (
-          <div className="flex items-center justify-between gap-2 px-4 pt-3 md:px-6">
-            <ContextChips
-              records={context.flatMap((p) => {
-                const parts = splitRecordPath(p)
-                return parts ? [parts] : []
-              })}
-              label="Asking about"
-              className="max-w-none justify-start"
-            />
-            <Button size="sm" variant="ghost" onClick={() => onContextDone?.()}>
-              Remove
-            </Button>
-          </div>
-        )}
-        <Composer
-          value={draft}
-          onChange={onDraft}
-          onSend={() => send()}
-          onStop={streaming ? stop : undefined}
-          stopping={stopping}
-          agentId={agentId}
-          agents={current ? undefined : pickable}
-          onPickAgent={current ? undefined : onPickAgent}
-          busy={busy && !canQueue}
-          queues={canQueue}
-          blockedReason={blockedReason}
-          disabled={!agentId || Boolean(keylessProvider)}
-        />
-      </footer>
-    </div>
+    </QuestionReplyContext.Provider>
   )
 }
