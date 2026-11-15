@@ -168,6 +168,11 @@ public struct SystemNotifications: Notifications {
         SystemNotificationDelegate.shared.responses()
     }
 
+    public func finished(_ response: NotificationResponse) async {
+        guard case .named = response.action else { return }
+        SystemNotificationDelegate.shared.waits.finish(ResponseWaits.key(response))
+    }
+
     static func category(_ category: NotificationCategory) -> UNNotificationCategory {
         let actions = category.actions.map { action -> UNNotificationAction in
             var options: UNNotificationActionOptions = []
@@ -287,6 +292,8 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     private let lock = NSLock()
     private var held: [NotificationResponse] = []
     private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
+    /// The background actions the app has not said it finished.
+    let waits = ResponseWaits()
 
     func responses() -> AsyncStream<NotificationResponse> {
         let (stream, continuation) = AsyncStream<NotificationResponse>.makeStream()
@@ -319,8 +326,15 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         notification.request.content.userInfo[Self.quietInFront] == nil ? [.banner, .list, .sound] : []
     }
 
+    /// A background action holds the app awake until the app says it is
+    /// done with it (`SystemNotifications.finished`): the system may
+    /// suspend the app the moment this returns. A tap brings the app to the
+    /// front, and a dismissal asks for nothing: both return at once.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        deliver(Self.response(response))
+        let made = Self.response(response)
+        deliver(made)
+        guard case .named = made.action else { return }
+        await waits.wait(for: ResponseWaits.key(made))
     }
 
     static func response(_ response: UNNotificationResponse) -> NotificationResponse {

@@ -616,7 +616,12 @@ struct ListRules {
         #expect(note.title == "Helper")
         #expect(note.body == "Hello")
         #expect(note.thread == "t1")
-        #expect(note.userInfo == [ChatNotifications.threadKey: "t1"])
+        // Its thread, which a tap opens, and the instant it settled, which
+        // tells this reply's notification from the next under the same id.
+        #expect(note.userInfo == [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "2026-10-31T10:00:05Z"])
+        // No server said it takes a message's id: nothing is replied to
+        // from the notification.
+        #expect(note.category == nil)
         // Shown at once, and in front too: a chat on screen never notifies.
         #expect(note.fireAt == nil && note.showsWhileActive)
         // A tap opens the chat in the window that claims it, and takes back

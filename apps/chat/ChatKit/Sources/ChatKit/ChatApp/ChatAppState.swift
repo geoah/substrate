@@ -56,6 +56,30 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// how often the chat was asked to be put at a row.
         var opensAt: String?
         var visits = 0
+        /// A reply typed into a notification, for the conversation to send:
+        /// kept until it says what became of it.
+        var reply: Conversation.Reply?
+    }
+
+    /// One action of a notification under way: answered in the background,
+    /// within `ChatApp.actionSeconds`, and then said finished to the
+    /// device, with what became of it.
+    struct Act: Codable, Equatable, Sendable {
+        var response: NotificationResponse
+        var thread: String
+        /// A reply's: the conversation that sends it.
+        var reply: ChildKey?
+        /// A card's: the record it resolves.
+        var card: CardReference?
+    }
+
+    /// An action heard before the app could act on it: the folder is not
+    /// read yet, or the server's document, which says how a reply is sent.
+    struct Deferred: Codable, Equatable, Sendable {
+        var response: NotificationResponse
+        var key: ChildKey
+        var message: String
+        var at: Date
     }
 
     /// Where a chat's unread part begins.
@@ -438,6 +462,13 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// it (inactive comes before background) until it is in front again.
     /// What a field says meanwhile is written with no wait.
     var leaving = false
+
+    /// The actions of notifications under way, by the response's stamp
+    /// (`ChatNotifications.stamp`), and every response acted on since the
+    /// launch: the same one heard twice acts once.
+    var acting: [String: Act] = [:]
+    var acted: Set<String> = []
+    var deferred: [Deferred] = []
 
     var feedBatch: Set<WatchKey> = []
     var feedApplying: Set<WatchKey>?

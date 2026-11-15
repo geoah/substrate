@@ -114,7 +114,9 @@ extension ChatApp {
                 next.olderReading.remove(thread)
                 next.seeking[thread] = nil
             }
-        case let .featuresRead(agents, records): featuresRead(&next, agents: agents, records: records)
+        case let .featuresRead(agents, records):
+            featuresRead(&next, agents: agents, records: records)
+            resume(&next)
         case let .marksRead(marks):
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
@@ -376,10 +378,14 @@ extension ChatApp {
             if record.kind == Kinds.approval, record["state"]?.string == "approved" {
                 next.asks.append(.readCard(.approval(id), target: false))
             }
+            decided(&next, card: id, failure: nil)
         case let .cardWriteFailed(id, failure):
             next.cards[id, default: State.Card()].busy = nil
             if failure.report == nil { next.cards[id]?.problem = failure }
-            if let reference = next.reference(of: id) { next.asks.append(.readCard(reference, target: false)) }
+            if let reference = next.reference(of: id) ?? next.acting.values.first(where: { $0.card?.id == id })?.card {
+                next.asks.append(.readCard(reference, target: false))
+            }
+            decided(&next, card: id, failure: failure)
         case let .setting(row, toggle, choice): setting(&next, row, toggle, choice)
         case .settingsOpened:
             next.asks.append(.readPermission)
@@ -401,6 +407,10 @@ extension ChatApp {
             if next.session != nil, response.action == .open, let thread = response.userInfo[ChatNotifications.threadKey] {
                 next.route = .thread(thread)
             }
+        case let .notificationActed(response, key, message, at):
+            acted(&next, response, key: key, message: message, at: at)
+        case let .actionDue(stamp):
+            actionDue(&next, stamp)
         }
         // What came on screen is read: at once where the device keeps what
         // is unread, and once its end was looked at where the server does.
@@ -528,6 +538,8 @@ extension ChatApp {
             backgroundRun(&state, run)
         }
         land(&state)
+        // An action of a notification heard before the folder was read.
+        resume(&state)
     }
 
     // MARK: Background work
@@ -725,11 +737,12 @@ extension ChatApp {
         // offering the turn before it as the answer.
         guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
             thread.status != "stopped", thread.status == "error" || thread.record["lastReply"]?.text != nil,
-            state.marks == nil || state.unread(thread) || state.failedUnseen(thread)
+            state.marks == nil || state.unread(thread) || state.failedUnseen(thread), state.mayNotify(thread.id)
         else { return }
+        // Reply with text where a message goes under an id of its own.
         let request = ChatNotifications.reply(
             thread: thread, agent: agentName(thread.agentID ?? ""),
-            title: state.title(thread), failed: notificationWords(state, thread: thread))
+            title: state.title(thread), failed: notificationWords(state, thread: thread), replies: state.sendsIDs)
         state.asks.append(state.marks == nil ? .notify(request) : .notifyHeld(request, seconds: Self.notifyHold))
         state.announced.insert(thread.id)
     }
@@ -754,16 +767,21 @@ extension ChatApp {
             guard !state.notified.contains(key) else { continue }
             state.notified.insert(key)
             let thread = record["thread"]?.referenceID
-            guard state.baselined, state.preferences.notifyAttention, !(thread.map(state.visibleThreads.contains) ?? false) else { continue }
+            guard state.baselined, state.preferences.notifyAttention, !(thread.map(state.visibleThreads.contains) ?? false),
+                state.mayNotify(thread)
+            else { continue }
             let row = thread.flatMap { state.thread($0) }
             // An approval names the agent that asked, a sub-agent included.
             let asker = record.kind == Kinds.approval ? referent(record["agent"], pin: Kinds.agent) : nil
             let who = agentName(asker ?? row?.agentID ?? record["proposer"]?.string ?? "Your agent")
+            // With the categories as they stand with this record among
+            // them: its options are its own category's actions.
             state.asks.append(
-                .notify(
+                .notifyCard(
                     ChatNotifications.attention(
                         record: record, thread: thread, agent: who,
-                        title: row.map(state.title) ?? "A chat")))
+                        title: row.map(state.title) ?? "A chat"),
+                    categories: ChatNotifications.categories(for: cards.interactions)))
         }
     }
 
@@ -933,7 +951,8 @@ extension ChatApp {
     /// stream drew waits for its rows, or an outcome waits to be read.
     func release(_ state: inout State) {
         let shown = Set(state.scenes.values.compactMap(\.current))
-        for (key, entry) in state.conversations where !shown.contains(key) && !entry.owns && !entry.active && entry.outcomes == 0 {
+        for (key, entry) in state.conversations
+        where !shown.contains(key) && !entry.owns && !entry.active && entry.outcomes == 0 && entry.reply == nil {
             state.conversations[key] = nil
         }
     }
@@ -1104,6 +1123,7 @@ extension ChatApp {
         // (the interaction kind: "prose belongs in chat"), and its agent
         // then hears of the dismissal beside the message.
         if let interaction = report.answered { answeredInWords(&state, interaction) }
+        if let outcome = report.replied { replied(&state, key, outcome) }
         if !shownOrBusy(state, key) { release(&state) }
     }
 
@@ -1112,7 +1132,7 @@ extension ChatApp {
     /// A card's answer or decision, written over the version read: the
     /// card says it is out, and keeps what it set, so a write that fails
     /// can be asked again.
-    private func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String) {
+    func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String) {
         var card = state.cards[id] ?? State.Card()
         card.busy = busy
         card.problem = nil
@@ -1157,7 +1177,7 @@ extension ChatApp {
 
     private func shownOrBusy(_ state: State, _ key: ChildKey) -> Bool {
         guard let entry = state.conversations[key] else { return false }
-        return state.scenes.values.contains { $0.current == key } || entry.owns || entry.active || entry.outcomes > 0
+        return state.scenes.values.contains { $0.current == key } || entry.owns || entry.active || entry.outcomes > 0 || entry.reply != nil
     }
 
     // MARK: Settings

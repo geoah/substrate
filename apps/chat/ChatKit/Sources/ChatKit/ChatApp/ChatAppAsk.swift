@@ -87,11 +87,25 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case writeMark(thread: String, MarkChange)
 
     case notify(NotificationRequest)
+    /// A notification whose actions are its own category's: the categories
+    /// are registered first, in the same piece of work, since an action's
+    /// title is read from its category when the notification is shown.
+    case notifyCard(NotificationRequest, categories: [NotificationCategory])
+    /// The categories the app's notifications name, as they stand now.
+    case categories([NotificationCategory])
+    /// Wakes the engine when an action from a notification has had its time.
+    case actionWait(String, seconds: Double)
+    /// An action from a notification is over: its own notification is
+    /// taken back or what it could not do is said, and only then is the
+    /// device told, which may suspend the app at that word.
+    case finishAction(NotificationResponse, cancel: String?, notify: NotificationRequest?)
     /// A reply's notification, shown once `seconds` passed: a mark that
     /// arrives first takes it back, so a reply read on a device beside this
     /// one does not sound here.
     case notifyHeld(NotificationRequest, seconds: Double)
     case cancelGroup(String)
+    /// Takes back the one notification of this id.
+    case cancelNotification(String)
     case cancelAllNotifications
     case badge(Int)
     case askPermission

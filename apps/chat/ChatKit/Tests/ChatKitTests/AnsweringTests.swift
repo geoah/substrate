@@ -15,13 +15,18 @@ struct Answering {
     let server: SeededServer
     let rig: ChatRig
     let agents: Int
+    /// The ids of this world: a launch after another mints none again.
+    let ids = SequentialIDs()
 
     init(agents: Int = 6) {
         let clock = TestClock()
         server = SeededServer(seed: 1, clock: clock, revision: agents)
-        rig = ChatRig([], transport: server.connect(), clock: clock)
+        rig = ChatRig([], transport: server.connect(), clock: clock, ids: ids)
         self.agents = agents
     }
+
+    /// The app launched again over the same folder.
+    func relaunched() -> ChatRig { ChatRig([], base: rig.base, transport: server.connect(), clock: rig.clock, ids: ids) }
 
     func signIn() async throws {
         try await rig.signIn()
@@ -494,7 +499,7 @@ struct FoldedCards {
         try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
         // Launched again over nothing: the rows alone say it ended, before
         // the card's record is read.
-        let again = ChatRig([], transport: app.server.connect(), clock: app.rig.clock)
+        let again = ChatRig([], transport: app.server.connect(), clock: app.rig.clock, ids: app.ids)
         try await again.signIn()
         await again.harness.send(.sceneAppeared(scene: "s", restoring: nil))
         await again.harness.send(.show(thread: "t1", scene: "s"))
@@ -618,5 +623,261 @@ struct OwnWords {
         await app.rig.harness.send(.retryCard(.question(id)))
         try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
         #expect(app.server.card(id)?.state == "dismissed")
+    }
+}
+
+@Suite("Answer from a notification", .timeLimit(.minutes(10)))
+struct NotificationActions {
+    /// A chat whose turn ran while no window showed it, settled: what the
+    /// app notified of it, by id.
+    private func away(_ app: Answering, _ steps: [SeededServer.Step]) async throws -> [String: NotificationRequest] {
+        let key = try await app.chat(steps)
+        await app.rig.harness.send(.back(scene: "s"))
+        app.server.finishTurns()
+        // Its run ends with nobody looking: the conversation hands its
+        // rows back and goes.
+        try await app.rig.harness.until(advancing: 6) { _ in
+            let live = await app.rig.live(key)
+            return !app.server.running("t1") && (live == nil || live?.phase == .idle)
+        }
+        // The list hears of it, as when the app comes to the front; a
+        // reply's notification waits five seconds for a mark.
+        await app.rig.harness.send(.refresh)
+        try await app.rig.harness.until(advancing: 6) { harness in
+            let state = await harness.state
+            return !state.refreshing && app.rig.notifications.pending.keys.contains { $0.hasPrefix("chat|t1|") }
+        }
+        await app.rig.harness.settle()
+        return app.rig.notifications.pending
+    }
+
+    private func respond(_ app: Answering, _ note: NotificationRequest, _ action: String, text: String? = nil) -> NotificationResponse {
+        let response = NotificationResponse(id: note.id, category: note.category, action: .named(action), userInfo: note.userInfo, text: text)
+        app.rig.notifications.respond(response)
+        return response
+    }
+
+    private func finished(_ app: Answering) -> [NotificationResponse] {
+        app.rig.notifications.calls.compactMap { if case let .finished(response) = $0 { response } else { nil } }
+    }
+
+    private func scheduled(_ app: Answering) -> [NotificationRequest] {
+        app.rig.notifications.calls.compactMap { if case let .schedule(request) = $0 { request } else { nil } }
+    }
+
+    @Test func aReplyIsSentUnderAnIdOfItsOwnAndItsNotificationGoes() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        #expect(note.category == ChatNotifications.replyCategory && note.body == "r1.0 r1.1")
+        #expect(app.rig.notifications.categories.first { $0.id == ChatNotifications.replyCategory }?.actions.first?.input != nil)
+
+        app.server.plan([.piece(0)])
+        let response = respond(app, note, "reply", text: "On my way")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        // The server holds it once, under an id the app minted, and the
+        // device was told only after: the notification is taken back, and
+        // nothing says it failed.
+        #expect(app.server.userRows(saying: "On my way") == 1 && app.server.chatRequests(saying: "On my way") == 1)
+        #expect(finished(app) == [response])
+        #expect(app.rig.notifications.calls.contains(.cancel(note.id)))
+        #expect(!scheduled(app).contains { $0.id == "chat|t1|failed" })
+        // It was in the folder before its request left.
+        let sent = try #require(app.server.rows(of: "t1").last { $0.role == "user" })
+        #expect(sent.content == "On my way" && sent.id.count == 36)
+        // The chat was not opened for it: the conversation that sent it is
+        // no window's.
+        #expect(await app.rig.harness.state.scenes["s"]?.current == nil)
+        app.server.finishTurns()
+    }
+
+    @Test func belowTheRevisionThatTakesAnIdNothingIsRepliedToFromANotification() async throws {
+        let app = Answering(agents: 2)
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        #expect(note.category == nil)
+    }
+
+    @Test func aReplyWhoseAnswerIsLostIsSentAgainUnderItsIdAndWrittenOnce() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        app.server.plan([.piece(0)])
+        app.server.fail("chat|t1|On my way", with: .dropped, lands: true)
+        let response = respond(app, note, "reply", text: "On my way")
+        try await app.rig.harness.until(advancing: 2) { _ in !finished(app).isEmpty }
+        #expect(app.server.userRows(saying: "On my way") == 1 && app.server.chatRequests(saying: "On my way") == 2)
+        #expect(finished(app) == [response] && !scheduled(app).contains { $0.id == "chat|t1|failed" })
+        app.server.finishTurns()
+    }
+
+    @Test func aReplyTheServerRefusesIsSaidAndKeptInTheChat() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        app.server.fail("chat|t1|On my way", with: .status(429, code: "rate_limited", retryAfter: nil))
+        let response = respond(app, note, "reply", text: "On my way")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        // What it could not do is said first, in the chat's own sentence,
+        // and the device is told after.
+        let failed = try #require(scheduled(app).first { $0.id == "chat|t1|failed" })
+        #expect(failed.body == "Your message wasn't sent. Your reply is kept in the chat." && failed.userInfo[ChatNotifications.threadKey] == "t1")
+        #expect(finished(app) == [response] && app.server.userRows(saying: "On my way") == 0)
+        let calls = app.rig.notifications.calls
+        #expect(try #require(calls.firstIndex(of: .schedule(failed))) < (try #require(calls.firstIndex(of: .finished(response)))))
+        // Opening it lands on the chat with the text kept: in the composer,
+        // and in the folder.
+        app.rig.notifications.respond(NotificationResponse(id: failed.id, category: nil, action: .open, userInfo: failed.userInfo))
+        try await app.rig.harness.until { await $0.presentation.routePending }
+        await app.rig.harness.send(.claimRoute(scene: "s"))
+        let key = try #require(await app.rig.harness.state.scenes["s"]?.current)
+        #expect(await app.rig.live(key)?.draft == "On my way")
+        #expect(await app.rig.harness.state.drafts["t1"] == "On my way")
+    }
+
+    @Test func anActionHeardTwiceRunsOnce() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        app.server.plan([.piece(0)])
+        _ = respond(app, note, "reply", text: "On my way")
+        _ = respond(app, note, "reply", text: "On my way")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        app.server.finishTurns()
+        await app.rig.harness.settle()
+        _ = respond(app, note, "reply", text: "On my way")
+        await app.rig.harness.settle()
+        #expect(app.server.userRows(saying: "On my way") == 1 && app.server.chatRequests(saying: "On my way") == 1)
+    }
+
+    @Test func anActionThatOutlivesItsTimeLeavesTheMessageStandingAndSaysSo() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        // Every copy hangs past the time an action has.
+        for _ in 0 ..< 4 { app.server.fail("chat|t1|On my way", with: .hang) }
+        let response = respond(app, note, "reply", text: "On my way")
+        try await app.rig.harness.until(advancing: 30) { _ in !finished(app).isEmpty }
+        let failed = try #require(scheduled(app).first { $0.id == "chat|t1|failed" })
+        #expect(failed.body == "No answer came back for your message. Your reply is kept in the chat.")
+        #expect(finished(app) == [response])
+        // Nothing is left half done: no copy is out, and the message
+        // stands at its place in the chat with Send Again.
+        let key = try #require(await app.rig.harness.state.key(of: "t1"))
+        try await app.rig.harness.until(advancing: 0.1) { _ in await app.rig.live(key)?.standing == true }
+        let live = try #require(await app.rig.live(key))
+        #expect(live.phase == .idle && live.run == nil && live.pending?.message == "On my way")
+        await app.rig.harness.send(.show(thread: "t1", scene: "s"))
+        #expect(try #require(await app.rig.card(key)).button?.action == .sendAgain)
+    }
+
+    @Test func aReplyHeardBeforeTheAppWasReadyWaitsAndIsSent() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let note = try #require(try await away(app, [.piece(0), .piece(1)])["chat|t1|reply"])
+        // The app is launched again by the action: its response is there
+        // before the folder or the server's document is read.
+        let again = app.relaunched()
+        app.server.plan([.piece(0)])
+        let response = NotificationResponse(id: note.id, category: note.category, action: .named("reply"), userInfo: note.userInfo, text: "On my way")
+        again.notifications.respond(response)
+        try await again.signIn()
+        try await again.harness.until(advancing: 0.1) { _ in again.notifications.calls.contains(.finished(response)) }
+        #expect(!again.notifications.calls.contains { if case let .schedule(request) = $0 { request.id == "chat|t1|failed" } else { false } })
+        #expect(app.server.userRows(saying: "On my way") == 1)
+        app.server.finishTurns()
+    }
+
+    @Test func anApprovalIsDecidedOverTheVersionItsNotificationShowed() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let notes = try await away(app, [.piece(0), .tool(.approve), .call, .piece(0)])
+        let card = try #require(app.server.allCards.first)
+        let note = try #require(notes["chat|t1|card|\(card.id)"])
+        // Enough to decide: what would run, with what, to whom.
+        #expect(note.category == ChatNotifications.approvalCategory)
+        #expect(note.body == "Wants your approval to run gmail_send.\nSubject: Subject \(card.id)\nTo: ada@example.com")
+        #expect(note.userInfo[ChatNotifications.versionKey] == "1" && note.userInfo[ChatNotifications.cardKey] == card.id)
+        let response = respond(app, note, "approve")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        #expect(app.server.card(card.id)?.state == "done" && app.server.card(card.id)?.resolutions == 1)
+        #expect(finished(app) == [response] && app.rig.notifications.calls.contains(.cancel(note.id)))
+        #expect(!scheduled(app).contains { $0.id == "chat|t1|failed" })
+        app.server.finishTurns()
+    }
+
+    @Test func oneThatChangedSinceIsRefusedAndSaidNeverDecidedUnseen() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let notes = try await away(app, [.piece(0), .tool(.approve), .call, .piece(0)])
+        let card = try #require(app.server.allCards.first)
+        let note = try #require(notes["chat|t1|card|\(card.id)"])
+        // Declined on another device meanwhile.
+        app.server.elsewhere(card: card.id, accept: false)
+        let response = respond(app, note, "approve")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        #expect(app.server.card(card.id)?.state == "denied" && app.server.card(card.id)?.resolutions == 1)
+        let failed = try #require(scheduled(app).first { $0.id == "chat|t1|failed" })
+        #expect(failed.body == "It changed since you read it. Check it again. Open the chat to answer it there.")
+        #expect(finished(app) == [response])
+        app.server.finishTurns()
+    }
+
+    @Test func aSingleQuestionOfAFewOptionsIsAnsweredByOneOfThem() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let notes = try await away(app, [.piece(0), .tool(.ask), .call, .piece(0)])
+        let card = try #require(app.server.allCards.first)
+        let note = try #require(notes["chat|t1|card|\(card.id)"])
+        guard card.questions.count == 1, card.questions[0].options.count <= 3, !card.questions[0].multi else {
+            // This seed's question is one a notification only opens.
+            #expect(note.category == nil)
+            return
+        }
+        // Its options are its own category's actions, registered before
+        // it was shown.
+        #expect(note.category == ChatNotifications.questionCategory(card.id) && note.body == card.questions[0].prompt)
+        let category = try #require(app.rig.notifications.categories.first { $0.id == note.category })
+        #expect(category.actions.map(\.title) == card.questions[0].options.map { "Option \($0)" })
+        let calls = app.rig.notifications.calls
+        let registered = try #require(calls.firstIndex { if case let .register(all) = $0 { all.contains { $0.id == note.category } } else { false } })
+        #expect(registered < (try #require(calls.firstIndex(of: .schedule(note)))))
+        let response = respond(app, note, "option.1")
+        try await app.rig.harness.until(advancing: 0.1) { _ in !finished(app).isEmpty }
+        #expect(app.server.card(card.id)?.answers == ["q1": [card.questions[0].options[1]]] && app.server.card(card.id)?.resolutions == 1)
+        #expect(finished(app) == [response])
+        app.server.finishTurns()
+    }
+
+    @Test func whatANotificationCannotShowWholeItOnlyOpens() {
+        func approval(_ body: String) -> Record {
+            Record(
+                id: "p1", kind: Kinds.approval,
+                properties: ["state": "pending", "tool": "gmail_send", "arguments": ["to": "ada@example.com", "body": .string(body)]], version: 3)
+        }
+        let short = ChatNotifications.attention(record: approval("Friday works."), thread: "t1", agent: "Moss", title: "Lunch")
+        #expect(short.category == ChatNotifications.approvalCategory && short.body?.contains("Body: Friday works.") == true)
+        let long = ChatNotifications.attention(record: approval(String(repeating: "A long body. ", count: 40)), thread: "t1", agent: "Moss", title: "Lunch")
+        #expect(long.category == ChatNotifications.openCategory)
+        #expect(long.body == "Wants your approval to run gmail_send. Open the chat to read all of what it would run with.")
+
+        func question(options: Int, multi: Bool = false, questions: Int = 1, label: String = "Yes") -> Record {
+            let option: JSONValue = ["value": "v", "label": .string(label)]
+            let one: JSONValue = ["id": "q1", "prompt": "Which day?", "multi": .bool(multi), "options": .array((0 ..< options).map { _ in option })]
+            return Record(
+                id: "i1", kind: Kinds.interaction, properties: ["state": "pending", "questions": .array((0 ..< questions).map { _ in one })], version: 1)
+        }
+        #expect(ChatNotifications.answerable(question(options: 3)) != nil)
+        // More than three options, several questions, several answers to
+        // one, or a label too long to read on a button: answered in the chat.
+        #expect(ChatNotifications.answerable(question(options: 4)) == nil)
+        #expect(ChatNotifications.answerable(question(options: 2, multi: true)) == nil)
+        #expect(ChatNotifications.answerable(question(options: 2, questions: 2)) == nil)
+        #expect(ChatNotifications.answerable(question(options: 2, label: String(repeating: "long ", count: 10))) == nil)
+        #expect(ChatNotifications.attention(record: question(options: 4), thread: "t1", agent: "Moss", title: "Lunch").category == nil)
+        // The same response is told from the next reply's under the same id.
+        let first = NotificationResponse(id: "chat|t1|reply", category: nil, action: .named("reply"), userInfo: ["nonce": "a"], text: "Hi")
+        let next = NotificationResponse(id: "chat|t1|reply", category: nil, action: .named("reply"), userInfo: ["nonce": "b"], text: "Hi")
+        #expect(ChatNotifications.stamp(first) != ChatNotifications.stamp(next))
     }
 }
