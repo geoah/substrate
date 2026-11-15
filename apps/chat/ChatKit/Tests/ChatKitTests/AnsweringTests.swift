@@ -258,10 +258,17 @@ struct QueuedMessages {
         #expect(await app.said(key) == ["Hi", "r1.0 ", "From the phone (queued)", "From here (queued)"])
         #expect(try await app.screen(key).composer.queued?.hasPrefix("2 messages are queued.") == true)
         // Away and back: the stream is joined again, said from its start,
-        // and nothing is drawn twice or queued twice.
+        // and nothing is drawn twice. What it says is queued is how the
+        // turn stood, and a call may have read either while nothing was
+        // heard: neither is called queued until the stream has caught up,
+        // which the server's heartbeat says. Then both are, as they are.
         await app.rig.harness.send(.phase(.background))
         await app.rig.harness.send(.phase(.active))
         try await app.until { _, live in if case .attach? = live.run { live.connected } else { false } }
+        #expect(await app.said(key) == ["Hi", "r1.0 ", "From the phone", "From here"])
+        #expect(try await app.screen(key).composer.queued == nil)
+        app.server.beat()
+        try await app.until { _, live in live.queued.count == 2 }
         #expect(await app.said(key) == ["Hi", "r1.0 ", "From the phone (queued)", "From here (queued)"])
         app.work(3)
         try await app.until { _, live in live.queued.isEmpty }
@@ -281,7 +288,9 @@ struct QueuedMessages {
     /// call read long ago is first said queued. A stream cut between that
     /// and the word that it was taken left the message drawn as waiting
     /// until the next stream. A stream that may be saying its turn again
-    /// says how the turn stood before now, which is not drawn.
+    /// says how the turn stood before now, which is not drawn; and a
+    /// conversation with no stream calls nothing queued (seed 4487 at 40
+    /// steps: a call read a message while nothing could say so).
     @Test func aChatThatJoinsARunAnewDrawsNoMessageQueuedThatACallHasRead() async throws {
         let app = Answering()
         try await app.signIn()
@@ -308,9 +317,12 @@ struct QueuedMessages {
         // The stream dropped, and the chat waits to ask for it again.
         try await again.harness.until { _ in
             guard let live = await again.live(shown) else { return false }
-            return live.recalled.map(\.id) == [message] && live.phase == .streaming && app.server.exchanges(about: "t1") == 0
+            return !live.connected && live.phase == .streaming && app.server.exchanges(about: "t1") == 0 && again.clock.sleeping > 0
         }
-        #expect(await again.live(shown)?.queued.isEmpty == true)
+        // With no stream it knows nothing of the turn's queue, and says
+        // nothing of one.
+        let waiting = try #require(await again.live(shown))
+        #expect(waiting.queued.isEmpty && waiting.recalled.isEmpty && !waiting.hears)
         #expect(await again.conversation(shown)?.composer.queued == nil)
         // The next stream says the rest: a call read it.
         try await again.harness.until(advancing: 1) { _ in

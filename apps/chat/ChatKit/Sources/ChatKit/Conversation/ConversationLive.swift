@@ -82,7 +82,7 @@ extension Conversation {
             phase: state.phase, stopping: state.stopping, failures: failures(state),
             deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
             unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online,
-            queued: state.queued.map(\.id), unread: state.unread, queues: queues, linksWords: linksWords, answering: state.answering,
+            queued: state.hears ? state.queued.map(\.id) : [], unread: state.unread, queues: queues, linksWords: linksWords, answering: state.answering,
             focuses: state.focuses)
     }
 

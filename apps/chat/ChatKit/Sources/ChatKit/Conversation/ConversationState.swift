@@ -216,9 +216,12 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// another conversation already has that thread, this one gives way.
     var adopted: String?
     /// The messages sent while the turn runs that no model call has read
-    /// yet, in the order they were sent: each is drawn as queued. Only
-    /// while a run may still read one: a run that ends without doing so
-    /// leaves it an ordinary message in the thread.
+    /// yet, in the order they were sent: each is drawn as queued, while a
+    /// stream is open to say otherwise (`hears`). Only while a run may
+    /// still read one: a run that ends without doing so leaves it an
+    /// ordinary message in the thread. And only as a stream said it: a
+    /// conversation left with no stream forgets them (`deafen`), since a
+    /// call may read one unheard, and the next stream says them again.
     var queued: [Queued] = []
     /// What the stream being read has said is queued, and not yet said
     /// taken, while it may be saying its turn again from the start: how the
@@ -328,6 +331,20 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var held: Int { (chatFailure != nil ? 1 : 0) + (lost != nil ? 1 : 0) + (pending != nil ? 1 : 0) }
     /// The pending message stands unsent: no copy is out and none waits.
     var standing: Bool { pending != nil && unsentFailure != nil }
+
+    /// A stream of the run is open and has said something: the only time
+    /// the conversation can know what its turn has queued. Not while a
+    /// send waits for its answer (one into a running turn included, whose
+    /// stream was let go for it), not while a stream is asked for, and not
+    /// while the conversation waits to ask again.
+    var hears: Bool {
+        guard phase == .streaming, connected else { return false }
+        switch run {
+        case let .send(run)?: return run.named
+        case .attach?: return true
+        case nil: return false
+        }
+    }
 
     /// A message the server holds that no model call has read yet: sent
     /// while a turn ran, from here or from another window or device.
