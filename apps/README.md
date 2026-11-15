@@ -965,7 +965,10 @@ says the message was not read and offers Continue
 notification is answered where it stands: a reply with a line of text, an
 approval with Approve or Decline, a single question with one of its options,
 each through the path the chat uses and inside the time the system gives a
-background action ([notifications](chat/DESIGN.md#notifications)).
+background action ([notifications](chat/DESIGN.md#notifications)). A turn
+that ends on a card is one notification, the card's, with what the reply
+said; and a reply typed into a notification ends its chat's archive, as any
+message of the person's does.
 
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest

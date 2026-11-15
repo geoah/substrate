@@ -25,6 +25,10 @@ import SubstrateRuntime
 extension ChatApp {
     /// How long a card's notification waits for its turn to settle.
     static let cardHold: Double = 3
+    /// How often the mark read beside a message is asked, and how long
+    /// between two asks (`confirmMark`).
+    static let confirmTries = 3
+    static let confirmPause: Double = 1
 
     /// The pending cards were read: each new one notifies, once.
     ///

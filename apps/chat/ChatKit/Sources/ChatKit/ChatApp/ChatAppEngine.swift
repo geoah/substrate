@@ -122,15 +122,16 @@ extension ChatApp {
             for thread in marks.threads { noteBehind(&next, thread) }
             announceLearned(&next, learned)
         case let .markConfirmed(thread, marks):
-            // The person replied in this chat from a notification, and
-            // what the device held of its mark may have been old: archived
-            // on another device a moment before, it is theirs to follow
-            // again (decision 0322), which this read is in time to say.
+            // The person spoke in this chat, and what the device held of
+            // its mark may have been old: archived on another device a
+            // moment before, or while the app was away, it is theirs to
+            // follow again (decision 0322), which this read is in time to
+            // say.
             guard !marks.unserved else { break }
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
             announceLearned(&next, learned)
-            spoke(&next, in: thread)
+            spokeBefore(&next, in: thread)
         case let .endShown(scene, key, shown):
             if shown {
                 next.scenes[scene]?.atEnd = key

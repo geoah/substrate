@@ -364,6 +364,28 @@ struct QueuedMessages {
         #expect(TurnFold.fold(stored, mine).turns.map(\.id) == ["m0", "turn-3", "q2"])
     }
 
+    /// A message that stands unsent started no turn. One that runs beside
+    /// it, resumed by an answer to a card, is drawn above it and not below:
+    /// the message is the last thing in the chat, with its card. It was
+    /// drawn before the turn, as the message that started it would be
+    /// (seed 6851 at 91 steps, once the seeded server's cards resumed
+    /// threads on their own).
+    @Test func aMessageThatStandsUnsentIsLastBesideATurnItDidNotStart() {
+        // The turn beside it has ended, and its row is read.
+        let stored = StoredTurns(
+            transcript(of: [
+                messageRow("m0", "user", "Hi", turn: 0), messageRow("m1", "assistant", "Hello.", turn: 1),
+                messageRow("m3", "assistant", "Booked. ", turn: 3),
+            ]))
+        var beside = LiveRows()
+        beside.hear([.delta("Booked. ", turn: 3, at: 0)])
+        beside.turns.append(Turn(id: "u9", role: .user, content: "And the mint?", pending: true))
+        // As the message that started the run it would stand before it.
+        #expect(TurnFold.fold(stored, beside).turns.map(\.id) == ["m0", "m1", "u9", "turn-3"])
+        beside.stands = "u9"
+        #expect(TurnFold.fold(stored, beside).turns.map(\.id) == ["m0", "m1", "turn-3", "u9"])
+    }
+
     @Test func aMessageNothingAnsweredSaysSoWithContinueWhereAServerTakesMessagesIntoATurn() {
         let ok = ChatThread(record: Record(id: "t1", kind: Kinds.thread, properties: ["status": "ok", "mode": "chat"]))
         let stopped = ChatThread(record: Record(id: "t1", kind: Kinds.thread, properties: ["status": "stopped", "mode": "chat"]))
@@ -1193,6 +1215,9 @@ struct ArchivedAnswering {
             id: "chat|t1|reply", category: ChatNotifications.replyCategory, action: .named("reply"),
             userInfo: [ChatNotifications.threadKey: "t1", ChatNotifications.nonceKey: "n"], text: "On my way")
         state = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m9", at: Date(timeIntervalSince1970: 0))), to: state)
+        // The conversation sends it, and with its word of that the mark is
+        // read beside the message.
+        spoke(app, &state, in: "t1")
         #expect(state.asks.contains(.confirmMark("t1")))
         let mark = Record(
             id: "t1.me", kind: Kinds.threadMark,
@@ -1203,6 +1228,8 @@ struct ArchivedAnswering {
         #expect(!state.archived("t1"))
     }
 }
+
+private func spoke(_ app: ChatApp, _ state: inout ChatAppState, in thread: String) { app.spoke(&state, in: thread) }
 
 /// One notification for a turn that ends waiting on a card, on the engine
 /// alone: the card's, with what the reply said, whichever of the card and

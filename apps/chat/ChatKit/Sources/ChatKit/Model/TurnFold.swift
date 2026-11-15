@@ -96,9 +96,11 @@ enum TurnFold {
                     // server has said: where its row will stand.
                     keep(turn, at: Double(ordinal))
                     held.append(turn)
-                } else if live.joined.contains(turn.id) {
+                } else if live.joined.contains(turn.id) || live.stands == turn.id {
                     // Sent into a running turn and not yet placed by the
-                    // server: after everything held.
+                    // server: after everything held. So is one that
+                    // stands unsent: a turn that runs beside it (resumed
+                    // by an answer to a card) is not one it started.
                     keep(turn, at: .greatestFiniteMagnitude / 2)
                     held.append(turn)
                 } else {

@@ -581,6 +581,20 @@ The server has no push channel, so the app promises what it can observe:
   a proposed request ("Assistant suggested a change") or a pending approval
   ("Secretary wants your approval to run gmail_send") notifies once per
   record and opens the chat that asked.
+- **A turn that ends on a card is one notification**, the card's, which is
+  the one that needs the person, with what the reply said above it where
+  that is 160 characters or fewer (`ChatAppAttention.swift`). The two are
+  read apart, the card by the pending lists and the reply by its thread's
+  row, so either may come first. A card read while its turn still runs is
+  held until the row settles, three seconds at most (`ChatApp.cardHold`),
+  and is then posted with the reply; the reply is not notified on its own.
+  A row read first schedules the reply's notification as any reply's, and
+  the card that follows takes it back and says it. A card stands for the
+  turn that asked and no later one: a reply to a message sent while an
+  older card still waits notifies as any reply does. A background refresh
+  holds nothing, since it is over before a hold would be. On a server
+  without marks a reply's notification is shown at once, so there a row
+  read first is shown and then replaced.
 - **Answered where it stands.** A reply's notification takes a line of
   text (Reply), where the server takes a message under an id of its own
   (`agents` 3 or more). An approval's takes Approve and Decline, and shows
@@ -611,7 +625,19 @@ The server has no push channel, so the app promises what it can observe:
   ("Your reply was not sent or saved. You wrote: …"), and the text becomes
   the chat's draft when the folder is read.
 - **Which chats are notified for** is asked of one predicate,
-  `ChatAppState.mayNotify`, by every notification the app posts of a chat.
+  `ChatAppState.notifies(_:row:waits:)`: a chat its person archived is
+  silent, but while something in it waits on a person
+  ([the list's rules](#chat-list)). A reply's notification asks it, a
+  card's (a card is itself what waits), what an action could not do, the
+  background refresh, and whatever takes a notification back.
+- **What stands is kept by thread** (`announced`): a reply's, a card's and
+  a failed action's alike. Each list read reads those threads by name
+  with their marks, so a notification is taken back when its chat is
+  archived or read on another device. A read answers a reply's
+  notification alone. A card's stands while its chat may still wait (the
+  row's count, or a card of it among the pending ones) and goes once
+  nothing does; what an action could not do stands until its chat is
+  opened here, since the text it kept is on this device.
 - **On iOS**, when the app leaves the screen with a turn streaming, it asks
   for a `BGContinuedProcessingTask` (iOS 26, strategy `.fail`, a fresh
   identifier each time, as Sync's `ContinuedSync`): iOS keeps the stream
@@ -1465,8 +1491,9 @@ newest version any of them holds.
 **The rules, which are the client's** (the server holds none of them):
 
 - An archived chat is in no list, not in the unread count or the badge,
-  and a reply in it notifies nobody. `ChatAppState.notifies(_:)` is the
-  one test of that, for whatever posts a notification of a thread.
+  and a reply in it notifies nobody. `ChatAppState.notifies(_:row:waits:)`
+  is the one test of that, for whatever posts a notification of a thread
+  or takes one back.
 - While something in it waits on a person (`waitingOnPerson` above 0) it
   is listed all the same, with the waiting mark, and counted and notified
   for as if it were not archived. Its flag stays, so it leaves the list
@@ -1476,7 +1503,14 @@ newest version any of them holds.
   its pin.
 - Speaking in an archived chat ends its archive: a message, Send Again,
   Try Again and Continue write `archived: false`. The message never waits
-  for that write.
+  for that write. A message sent while the assistant works and an answer
+  in the person's own words are messages like any other. So is a reply
+  typed into a notification, and since the app may have been away when
+  the chat was archived on another device, the chat's mark is read beside
+  that send (`confirmMark`), and the archive ends when the read says it
+  was archived. Answering a card (an option, Approve, Decline) is no
+  message: the chat stays archived, and leaves the list once nothing
+  waits in it.
 - Until the person's mark of a chat is read, and where that read failed,
   the list the server answered a chat in says which it is (it narrowed
   the lists by the same marks): one that came with the chats is not
@@ -1900,6 +1934,21 @@ button and Details stack where the text size leaves no room side by side.
   waits is never hidden, but aside while it is answered in words; no card
   is resolved twice on the server; and an action from a notification is
   over, with the device told, within its time.
+- Answering beside the list (`AnsweringTests.swift`, "Answering in a list
+  that archives" and "A turn that ends on a card is one notification"):
+  an archived chat that comes to wait on a card is listed, counted and
+  notified for with no list refresh, and once its card is answered from
+  the notification it is in no list, count or notification again; a
+  message sent into an archived chat's running turn, an answer in the
+  person's own words, and a reply from a notification into a chat archived
+  on another device each end the archive, and none is held for it; the one
+  notification of a turn that ends on a card, whichever of the card and
+  the row is read first, held no longer than it may be, and not standing
+  for a later reply; a card's notification kept through a read and taken
+  back once nothing waits; and the predicate. The seeded server counts
+  its cards on the thread's row (`waitingOnPerson`) and tells the feed
+  when the count moves, so the list's steps and rules and these run over
+  one server.
 - Read state by a seed (`SeededRun`, `SeededServer`): the seeded server
   keeps marks as #1405's does where its `records` revision is 8 (a sixth
   of the seeds draw 7, a server without them), names `lastMessage` as

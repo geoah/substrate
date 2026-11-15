@@ -53,6 +53,10 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// an ordinal of its own after the reply being written, so a call of
     /// that reply comes past them and is that reply's all the same.
     var waiting: Set<String> = []
+    /// A message that stands unsent, by id, where the conversation draws
+    /// one: no run is sending it, so it started none of the turns here and
+    /// stands after them all.
+    var stands: String?
     var pass = Pass()
 
     static let empty = LiveRows()
