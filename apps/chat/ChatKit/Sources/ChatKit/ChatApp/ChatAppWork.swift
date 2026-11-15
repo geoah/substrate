@@ -227,11 +227,17 @@ extension ChatApp {
                 return Event(.marksRead(marks))
             }
         case let .confirmMark(thread):
-            // A read that fails changes nothing: the next list read reads
-            // the mark of a thread a conversation is on.
+            // Asked again where it fails, a few times and a second apart:
+            // it is the one read that can say the chat was archived when
+            // its person spoke. Past that nothing changes, and the chat
+            // stays as its mark is next read.
             return .once {
-                guard let client = await source.current(), let marks = await Self.marks(client, threads: [thread], full: false) else { return nil }
-                return Event(.markConfirmed(thread: thread, marks))
+                for attempt in 0 ..< Self.confirmTries {
+                    if attempt > 0 { guard await pause(Self.confirmPause) else { return nil } }
+                    guard let client = await source.current() else { return nil }
+                    if let marks = await Self.marks(client, threads: [thread], full: false) { return Event(.markConfirmed(thread: thread, marks)) }
+                }
+                return nil
             }
         case let .sight(thread, message):
             return .once {

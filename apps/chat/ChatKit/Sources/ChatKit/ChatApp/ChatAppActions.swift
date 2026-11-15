@@ -68,10 +68,6 @@ extension ChatApp {
             if state.conversations[child] == nil { converse(&state, thread, key: child) }
             state.conversations[child]?.reply = Conversation.Reply(id: message, text: text, at: at)
             act.reply = child
-            // The app may have been away: a chat archived on another
-            // device meanwhile is not known to be. Its mark is read beside
-            // the send, which never waits for it.
-            if state.flags, !state.archived(thread) { state.asks.append(.confirmMark(thread)) }
         case .approve, .decline, .option:
             guard let id = response.userInfo[ChatNotifications.cardKey], let version = response.userInfo[ChatNotifications.versionKey].flatMap(Int.init)
             else {

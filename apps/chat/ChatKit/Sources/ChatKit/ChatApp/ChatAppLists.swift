@@ -457,7 +457,22 @@ extension ChatApp {
     /// The person spoke in a chat they archived (a message, Send Again, Try
     /// Again or Continue): they are following it again, so its archive ends
     /// with it. The message never waits for this write.
+    ///
+    /// A chat archived on another device a moment before, or while the app
+    /// was away, is not known to be archived yet: its mark is read beside
+    /// the message (`confirmMark`), and the archive ends when that read
+    /// says there was one (`spokeBefore`).
     func spoke(_ state: inout State, in thread: String) {
+        if state.archived(thread) {
+            unarchive(&state, thread)
+        } else if state.flags {
+            state.asks.append(.confirmMark(thread))
+        }
+    }
+
+    /// The mark read beside a message the person sent says what the chat
+    /// was when they spoke: archived, its archive ends.
+    func spokeBefore(_ state: inout State, in thread: String) {
         if state.archived(thread) { unarchive(&state, thread) }
     }
 

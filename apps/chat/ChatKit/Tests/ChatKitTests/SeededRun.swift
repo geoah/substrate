@@ -137,7 +137,8 @@ struct SeededRun {
             + "\"say 3.\" is sent under no id into a thread whose rows already hold a \"say 3.\" sent under an id in the launch before. The fold "
             + "(TurnFold, pairing a message sent under no id by its words) gives the new bubble's id to the older row. The transcript drawn is the "
             + "server's rows, each once; only which of the two equal bubbles keeps the id `sent-1` is wrong. Found by the list's new steps, not "
-            + "caused by them: the pairing is the send-id group's."
+            + "caused by them: the pairing is the send-id group's. That seed is of the list's branch (#1464): with the answering steps "
+            + "beside them (#1465) a seed's run is another, and seeds 1 to 7000 at 100 steps do not reach it."
     ]
 
     let seed: UInt64

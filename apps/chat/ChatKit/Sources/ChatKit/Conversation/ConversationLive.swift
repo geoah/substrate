@@ -66,6 +66,7 @@ extension Conversation {
         var unsent: String?
         if let pending = state.pending, !provisional.turns.contains(where: { $0.id == pending.id }) {
             provisional.turns.append(Turn(id: pending.id, role: .user, content: pending.message, pending: true))
+            provisional.stands = pending.id
             unsent = pending.id
         }
         return ConversationLive(

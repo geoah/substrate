@@ -80,8 +80,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
 
     /// The person's marks of these threads.
     case readMarks([String])
-    /// The person's mark of a thread they just spoke in from outside the
-    /// app, read on its own: what the device holds of it may be old.
+    /// The person's mark of a thread they just spoke in, read on its own:
+    /// what the device holds of it may be older than an archive made on
+    /// another device.
     case confirmMark(String)
     /// Wakes the engine once the end of a chat has been on screen a second.
     case sight(thread: String, message: String)
