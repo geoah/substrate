@@ -238,10 +238,10 @@ extension ChatApp {
                 next.watchGains.subtract(gained)
                 next.asks.append(.feedWait(seconds: 0))
             }
-        case let .watchRow(row):
+        case let .watchRow(row, history):
             next.feedBatch.insert(.init(kind: row.kind, id: row.recordID))
             // Taken: the cache's bookmark may pass it now, and not before.
-            if let disk = next.disk { next.asks.append(.noteRow(disk, row)) }
+            if let disk = next.disk { next.asks.append(.noteRow(disk, row, history: history)) }
             // An approval moves under the engine once decided (running,
             // then done or failed), and the pending list no longer holds it:
             // a card on screen reads it again. So does a question or a

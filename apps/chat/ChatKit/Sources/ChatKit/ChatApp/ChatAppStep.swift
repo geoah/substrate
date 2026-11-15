@@ -90,7 +90,10 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// again for one more kind is asked for while the one before it may
     /// still be opening, and that one's word says nothing of the kind.
     case watchOpened(fresh: Bool, kinds: [String] = [])
-    case watchRow(WatchRow)
+    /// `history`: the generation of the history the watch followed when it
+    /// said the row, which the cache's bookmark must still be of when the
+    /// row is noted there.
+    case watchRow(WatchRow, history: String? = nil)
     /// The watch's position was refused as `compacted`, at this instant on
     /// the app's clock: the list is read again, once a minute
     /// (`WatchFollower.recovers`).

@@ -818,6 +818,39 @@ struct FeedOrder {
         #expect(app.key(of: .init(ask: .readCard(.approval("p1"), target: false))) == "card:p1")
     }
 
+    /// A row is noted only into the history it was said in (the review's
+    /// finding). The watch itself starts its cache over and bookmarks it,
+    /// on its own task: a row of the history before, noted after that,
+    /// would move the new history's bookmark by the old one's sequence,
+    /// and the next watch would resume from a place that is nowhere.
+    @Test func aRowOfAHistoryTheCacheHasLeftIsNotNotedInTheNext() async throws {
+        let storage = ChatStorage(base: temporaryFolder("feed"))
+        let app = ChatApp(storage: storage, preferences: MemoryPreferenceStore(), platform: .macos)
+        let lease = await storage.open(identity).value
+        let cache = try #require(storage.records(lease))
+        let server = ChatServer()
+        let environment = AppEnvironment(
+            clock: TestClock(), ids: SequentialIDs(), locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
+            client: .fixed(SubstrateClient(server: origin, token: "secret", transport: server)),
+            devices: DeviceServices(transport: server, notifications: RecordedNotifications(), background: ScriptedBackground()))
+        func note(_ row: WatchRow, history: String?) async {
+            guard case let .once(work) = app.perform(.init(ask: .noteRow(lease, row, history: history)), in: environment) else { return }
+            _ = await work()
+        }
+        // The engine hands the history on with the row.
+        let taken = try app.apply(.init(.watchRow(approval, history: "old")), to: watching())
+        #expect(taken.asks.contains(.noteRow(try #require(taken.disk), approval, history: "old")))
+        // The cache started over meanwhile, in another history.
+        await cache.bookmark(WatchCursor(seq: 10, generation: "new"))
+        await note(WatchRow(seq: 1000, kind: Kinds.approval, recordID: "p1", op: "patch"), history: "old")
+        var (cursor, stale) = (await cache.cursor, await cache.stale)
+        #expect(cursor == WatchCursor(seq: 10, generation: "new") && stale.isEmpty)
+        // A row of the history it holds moves it, as before.
+        await note(WatchRow(seq: 12, kind: Kinds.approval, recordID: "p1", op: "patch"), history: "new")
+        (cursor, stale) = (await cache.cursor, await cache.stale)
+        #expect(cursor == WatchCursor(seq: 12, generation: "new") && stale == ["\(Kinds.approval)/p1"])
+    }
+
     /// The cache is told of a row and of a record read again in the order
     /// the engine asked, whichever piece of work comes to run first: a row
     /// told after its record was read is still to be read again.

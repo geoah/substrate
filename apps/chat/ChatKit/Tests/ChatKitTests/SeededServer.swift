@@ -313,6 +313,11 @@ final class SeededServer: @unchecked Sendable {
     /// them under Details and writes them nowhere, the diagnostics file
     /// least of all, which a seeded run holds it to (`SeededRun.discreet`).
     static let said = ["the server could not answer", "the token was revoked", "the run ended", "llm: overloaded_error", "unknown type"]
+    /// Every message it refused a request with, under `lock`.
+    private var refusals: Set<String> = []
+    /// Every sentence it has said in this run: the fixed ones, and each
+    /// refusal's own.
+    var sentences: [String] { lock.withLock { Self.said + refusals.sorted() } }
 
     let seed: UInt64
     let clock: TestClock
@@ -1450,6 +1455,7 @@ final class SeededServer: @unchecked Sendable {
     }
 
     private func refuse(_ status: Int, _ code: String, reason: String? = nil, _ message: String) -> Outcome {
+        refusals.insert(message)
         var payload: [String: Any] = ["code": code, "message": message]
         if let reason { payload["reason"] = reason }
         return .json(status, line(["error": payload]))

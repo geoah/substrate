@@ -352,6 +352,9 @@ extension ChatApp {
                     guard let client = await source.current(), let cache = storage.records(lease) else { return }
                     if let head { await cache.listed(RecordPage(records: [], head: head.seq, generation: head.generation), kinds: []) }
                     var fresh = await cache.cursor == nil
+                    // The history the rows are said in: the one the watch
+                    // resumed, then the one each open answers.
+                    var history = await cache.cursor?.generation
                     let follower = WatchFollower(client: client, kinds: kinds, app: ChatManifest.appName) { wait in
                         let parts = wait.components
                         try await clock.sleep(until: clock.now.addingTimeInterval(Double(parts.seconds) + Double(parts.attoseconds) / 1e18))
@@ -360,6 +363,7 @@ extension ChatApp {
                         switch event {
                         case let .opened(cursor):
                             await cache.bookmark(cursor)
+                            history = cursor.generation
                             yield(.watchOpened(fresh: fresh, kinds: kinds))
                             fresh = false
                         case let .row(row):
@@ -370,7 +374,7 @@ extension ChatApp {
                             // row nobody took would leave that row on no
                             // stream again. The watch after it resumes
                             // from the bookmark and says the row again.
-                            yield(.watchRow(row))
+                            yield(.watchRow(row, history: history))
                         case .relist:
                             await cache.relist()
                             yield(.watchRelist(at: clock.now))
@@ -393,11 +397,21 @@ extension ChatApp {
                 guard let client = await source.current() else { return nil }
                 return Event(.feedApplied(await Self.feed(client, plan, batch, threads: threads, named: named)))
             }
-        case let .noteRow(lease, row):
+        case let .noteRow(lease, row, history):
             // In the order the engine asked, with what marks a row read
             // again: a row told again after its record was read is to be
-            // read again, whichever piece of work comes to run first.
-            let noted = storage.cached(lease) { cache in await cache.apply(row) }
+            // read again, whichever piece of work comes to run first. And
+            // only into the history it was said in: the watch itself
+            // starts the cache over and bookmarks it, on its own task, and
+            // a row of the history before, noted after that, would carry
+            // its sequence into the new one.
+            let noted = storage.cached(lease) { cache in
+                if let history {
+                    let held = await cache.cursor?.generation
+                    guard held == history else { return }
+                }
+                await cache.apply(row)
+            }
             return .once {
                 await noted.value
                 return nil
