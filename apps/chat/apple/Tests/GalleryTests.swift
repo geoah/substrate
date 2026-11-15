@@ -237,6 +237,24 @@ import Testing
         }
     }
 
+    /// Share Diagnostics, over the file a chat's one settled run wrote
+    /// through the app's own runtime: what a person is shown before
+    /// anything is shared. Its lines hold when they were written, so the
+    /// picture is not the same from one run to the next.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil), .timeLimit(.minutes(5)))
+    func theDiagnosticsSheetDraws() async throws {
+        let (host, _) = try await host(stop: nil)
+        host.send(.diagnostics(shown: true))
+        try await until { (host.chats?.diagnostics?.empty == nil && host.chats?.diagnostics != nil) ? true : nil }
+        let report = try #require(host.chats?.diagnostics)
+        #expect(report.text.contains(" launch ") && !report.text.contains(Self.question) && !report.text.contains("example.com"))
+        for scheme in [ColorScheme.light, .dark] {
+            Attachment.record(
+                try await OffscreenDrawing.png(DiagnosticsSheet(version: "0.124.0").environment(host), size: OffscreenDrawing.phone, scheme: scheme),
+                named: "chat-diagnostics-iphone-\(scheme == .dark ? "dark" : "light").png")
+        }
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil), .timeLimit(.minutes(10)))
     func everyPartOfAReplyDraws() async throws {
         for part in Self.parts {

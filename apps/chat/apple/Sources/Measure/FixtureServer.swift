@@ -61,7 +61,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     }
 
     init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace(), agents: Int = 0) {
-        rows = [ChatFixtures.long: 200, ChatFixtures.full: 500]
+        rows = [ChatFixtures.long: 200, ChatFixtures.full: 500, ChatFixtures.deep: 1100]
         self.reply = reply
         self.pace = pace
         self.agents = agents
@@ -233,7 +233,11 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
             if query.contains("llm/message") {
                 // Every chat has a subject, so no read asks for opening lines.
                 guard !query.contains(#""in""#), let thread = Self.named(in: query) else { return json(ChatFixtures.page([])) }
-                return json(transcript(thread))
+                // The window the read asked for: so many rows, at or
+                // before an ordinal where it reads the rows before the
+                // ones held.
+                let first = components?.queryItems?.first { $0.name == "first" }?.value.flatMap(Int.init)
+                return json(transcript(thread, first: first, through: Self.number(after: #""lte":"#, in: query)))
             }
             if query.contains("llm/thread") { return json(query.contains(#""chat""#) ? ChatFixtures.threads() : ChatFixtures.page([])) }
             if query.contains("core/agent") { return json(ChatFixtures.agents()) }
@@ -273,11 +277,17 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         return rest.firstIndex(of: "\"").map { String(rest[..<$0]) }
     }
 
-    private func transcript(_ thread: String) -> String {
+    /// The number that follows `marker` in a filter.
+    private static func number(after marker: String, in query: String) -> Int? {
+        guard let start = query.range(of: marker) else { return nil }
+        return Int(query[start.upperBound...].prefix { $0.isNumber })
+    }
+
+    private func transcript(_ thread: String, first: Int? = nil, through: Int? = nil) -> String {
         if let page = lock.withLock({ pages[thread] }) { return page }
         if let script = lock.withLock({ scripts[thread] }) { return script.page ?? ChatFixtures.page([]) }
         let (held, turns) = lock.withLock { (rows[thread] ?? 4, answered[thread] ?? []) }
-        guard let last = turns.last else { return ChatFixtures.transcript(thread, rows: held) }
+        guard let last = turns.last else { return ChatFixtures.transcript(thread, rows: held, first: first, through: through) }
         // One answered turn is as far as a measurement goes in a chat.
         return ChatFixtures.transcript(thread, rows: held + (turns.count - 1) * 2, message: last.message, reply: last.reply)
     }
