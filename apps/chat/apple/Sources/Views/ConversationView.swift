@@ -54,6 +54,10 @@ struct ConversationView: View {
             .environment(\.recordTitles, screen.titles)
             .environment(\.openThread, OpenThreadAction(host: host, scene: scene))
             .environment(\.conversationKey, key)
+            .environment(\.showMessage) { message in
+                // A card answered in a message points at it.
+                if let thread = screen.thread { host.send(.open(thread: thread, message: message, scene: scene)) }
+            }
             .replyLinks()
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)

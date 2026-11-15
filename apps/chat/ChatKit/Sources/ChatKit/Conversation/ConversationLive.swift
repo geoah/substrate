@@ -48,6 +48,9 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     /// A message may be sent while the reply is being written: Send
     /// stands beside Stop (`agents` 6).
     var queues = false
+    /// An answer in the person's own words rides its message, which names
+    /// the questions it answers (`Conversation.linksWords`).
+    var linksWords = false
     /// The questions being answered in the person's own words.
     var answering: String?
     /// Moved when the composer's field is asked to take the cursor.
@@ -79,7 +82,8 @@ extension Conversation {
             phase: state.phase, stopping: state.stopping, failures: failures(state),
             deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
             unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online,
-            queued: state.queued.map(\.id), unread: state.unread, queues: queues, answering: state.answering, focuses: state.focuses)
+            queued: state.queued.map(\.id), unread: state.unread, queues: queues, linksWords: linksWords, answering: state.answering,
+            focuses: state.focuses)
     }
 
     /// A message is out and nothing has come back for it yet. One sent

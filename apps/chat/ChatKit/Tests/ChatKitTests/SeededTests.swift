@@ -20,18 +20,22 @@ import FoundationNetworking
 /// trace to what it prints, `CHATKIT_TRACE` keeps the trace of the whole
 /// run, `CHATKIT_WATCH=<text>` prints where that text is after each
 /// step, and `CHATKIT_MARK=<thread>` what the app and the server hold of
-/// that thread's mark.
+/// that thread's mark. `CHATKIT_REVISION=<n>` runs every seed against a
+/// server at that `agents` revision, in place of the one each seed draws:
+/// for the paths only the newest revision has.
 private struct SeedPlan {
     var seeds: [UInt64]
     var steps: Int
     var width: Int
     /// `CHATKIT_VERBOSE` prints a line per seed: what the run reached.
     var verbose: Bool
+    var revision: Int?
 
     init() {
         let environment = ProcessInfo.processInfo.environment
         func number(_ name: String) -> Int? { environment[name].flatMap(Int.init) }
         verbose = environment["CHATKIT_VERBOSE"] != nil
+        revision = number("CHATKIT_REVISION")
         steps = number("CHATKIT_STEPS") ?? 60
         width = max(1, number("CHATKIT_WIDTH") ?? 4)
         if let one = environment["CHATKIT_SEED"].flatMap(UInt64.init) {
@@ -58,7 +62,7 @@ struct SeededChat {
                 while running < plan.width, let seed = waiting.popFirst() {
                     running += 1
                     group.addTask {
-                        let run = try await SeededRun.ran(seed: seed, steps: plan.steps)
+                        let run = try await SeededRun.ran(seed: seed, revision: plan.revision, steps: plan.steps)
                         if plan.verbose { print(run.summary) }
                         return run
                     }

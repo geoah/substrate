@@ -121,6 +121,14 @@ struct SeededRun {
         /// A card is resolved by one write, whoever made it and however
         /// often it was pressed.
         case decidedOnce = "a card is resolved once"
+        /// Where a message names the questions it answers (`agents` 7),
+        /// answering in the person's own words writes no dismissal and
+        /// resumes nothing: the turn that reads the message is the only
+        /// one. A question is dismissed only where Dismiss was pressed.
+        case words = "answering in words never costs a second turn where the message names the questions"
+        /// Whose hand ended a card is the server's to say: "You" only for
+        /// a card the server links to the person the app is signed in as.
+        case hand = "a card never says You for another person's hand"
         /// An action of a notification (`ChatAppActions`): the device is
         /// told it is over within the time an action has, whatever the
         /// server does, and what it asked for happens at most once.
@@ -138,7 +146,8 @@ struct SeededRun {
             + "(TurnFold, pairing a message sent under no id by its words) gives the new bubble's id to the older row. The transcript drawn is the "
             + "server's rows, each once; only which of the two equal bubbles keeps the id `sent-1` is wrong. Found by the list's new steps, not "
             + "caused by them: the pairing is the send-id group's. That seed is of the list's branch (#1464): with the answering steps "
-            + "beside them (#1465) a seed's run is another, and seeds 1 to 7000 at 100 steps do not reach it."
+            + "beside them (#1465) a seed's run is another, and the one that reaches it is seed 1171 at 101 steps on a server at agents 7 "
+            + "(CHATKIT_REVISION=7 CHATKIT_SEED=1171 CHATKIT_STEPS=101)."
     ]
 
     let seed: UInt64
@@ -232,6 +241,10 @@ struct SeededRun {
     private var drewRead: [ChildKey: Set<String>] = [:]
     /// The cards the app drew as ended.
     private var drewEnded: Set<String> = []
+    /// The questions the person pressed Dismiss on, ever, and the ones
+    /// they answered in words before the app knew the server's revision,
+    /// which are dismissed after their message as on an older server.
+    private var pressedDismiss: Set<String> = []
     /// The actions of notifications this launch was handed, each with
     /// when: the device must be told each is over.
     private var acts: [(response: NotificationResponse, at: Date)] = []
@@ -267,7 +280,11 @@ struct SeededRun {
         // turn (`agents` 6).
         var queue = SeededNumbers(seed: seed ^ SeededNumbers.hash("queue"))
         let positioned = drawn == 3 && positions.below(2) == 0
-        let agents = revision ?? (positioned ? (queue.below(2) == 0 ? 6 : 5) : drawn)
+        // And once more: half of those also take the questions a message
+        // answers with it, and link who resolved a card (`agents` 7).
+        var words = SeededNumbers(seed: seed ^ SeededNumbers.hash("words"))
+        let joins = positioned && queue.below(2) == 0
+        let agents = revision ?? (joins ? (words.below(2) == 0 ? 7 : 6) : positioned ? 5 : drawn)
         // And of its own once more: three in four of the servers that keep
         // marks keep the flags too, and the list is read a few chats a page.
         var flags = SeededNumbers(seed: seed ^ SeededNumbers.hash("flags"))
@@ -374,6 +391,7 @@ struct SeededRun {
             let marks = [
                 "scrolls to the end": "person: scrolls to a chat's end", "scrolls up": "person: scrolls up from a chat's end",
                 "marks chat": "person: Mark as Unread or Mark as Read", "another device reads": "another device moves a mark",
+                "another person": "another person resolves a card",
                 "another device marks": "another device moves a mark", "another device pins": "another device moves a flag",
                 "another device unpins": "another device moves a flag", "another device archives": "another device moves a flag",
                 "another device unarchives": "another device moves a flag", "pins chat": "person: Pin or Unpin",
@@ -610,8 +628,11 @@ struct SeededRun {
         case "elsewhereCard":
             let card = numbers.pick(server.allCards.filter(\.pending))
             let accept = numbers.chance(0.6)
-            steps.append("another device \(accept ? "answers or approves" : "dismisses or declines") \(card.id)")
-            server.elsewhere(card: card.id, accept: accept)
+            // Mostly a device of the same person; sometimes another
+            // person of the repository.
+            let other = numbers.chance(0.3)
+            steps.append("\(other ? "another person" : "another device") \(accept ? "answers or approves" : "dismisses or declines") \(card.id)")
+            server.elsewhere(card: card.id, accept: accept, by: other ? "other" : "me")
         default:
             if let current { await press(numbers.pick(buttons(current.screen)), current.key, current.screen) }
         }
@@ -716,10 +737,20 @@ struct SeededRun {
                 await rig.harness.send(.answer(question: id, picks: picks))
             case 2:
                 steps.append("dismisses \(id)")
+                pressedDismiss.insert(id)
                 await rig.harness.send(.dismissQuestions(id))
             default:
                 steps.append("chooses to answer \(id) in their own words")
                 await tell(.answerInWords(id), key)
+                // And mostly says it at once. Now and then the questions
+                // are resolved elsewhere while the words are on their way.
+                guard numbers.chance(0.7), let now = await shown(), now.screen.composer.canSend else { break }
+                if numbers.chance(0.2) {
+                    let other = numbers.chance(0.5)
+                    steps.append("\(other ? "another person" : "another device") dismisses or declines \(id) as the words go")
+                    server.elsewhere(card: id, accept: false, by: other ? "other" : "me")
+                }
+                await send(now.key, now.screen)
             }
         case let .approval(id):
             let approve = numbers.chance(0.6)
@@ -762,6 +793,12 @@ struct SeededRun {
         sent[text] = ((held?.presses ?? 0) + 1, ids || held?.ids == true, held?.before ?? server.chatRequests(saying: text))
         typedAt[text] = nil
         ever[text, default: 1] += 0
+        // Words for questions, sent before the app had read what the server
+        // takes: they go as a message alone, and the questions are
+        // dismissed after it, as below `agents` 7.
+        if let questions = await rig.live(key)?.answering, (await rig.harness.state.agentsRevision ?? 0) < Conversation.wordsRevision {
+            pressedDismiss.insert(questions)
+        }
         let before = await rig.live(key)?.sends
         await tell(.send, key)
         // The message went: where the chat was archived, its archive ends.
@@ -1311,6 +1348,16 @@ struct SeededRun {
         for card in server.allCards where card.resolutions > 1 {
             return broke(.decidedOnce, "\(card.id) was resolved by \(card.resolutions) writes")
         }
+        if server.revision >= 7 {
+            for card in server.allCards {
+                if card.dismissals > 0, !pressedDismiss.contains(card.id) {
+                    return broke(.words, "\(card.id) was asked to be dismissed \(card.dismissals) times, and nobody pressed Dismiss on it")
+                }
+                if card.state == "replied", card.resumes > 0 {
+                    return broke(.words, "\(card.id) was replied to in a message, and its thread was resumed for it \(card.resumes) times")
+                }
+            }
+        }
         // Every action handed to this launch is said over to the device
         // once its time has passed, with room for the app to say so.
         let finished = rig.notifications.calls.compactMap { if case let .finished(response) = $0 { response } else { nil } }
@@ -1541,6 +1588,10 @@ struct SeededRun {
                 let drawn = screen.cards[id]
                 let stands = tool.attachment != nil && drawn?.stands == true
                 let held = state.cards[id]?.record
+                if let resolution = tool.resolution, resolution.label.hasPrefix("You "), truth.by != "me" {
+                    let whose = truth.by.map { "the server links it to \($0)" } ?? "the server links it to nobody"
+                    return broke(.hand, "\(name) says \"\(resolution.label)\" of \(id), and \(whose)")
+                }
                 if tool.resolution != nil {
                     drewEnded.insert(id)
                     if truth.pending { return broke(.resolved, "\(name) draws \(id) as ended, and it still waits at the server") }

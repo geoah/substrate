@@ -95,7 +95,7 @@ public struct ConversationState: Codable, Equatable, Sendable {
 
     /// What an applied event asks the runtime to do, made fresh by each.
     enum Ask: Codable, Equatable, Sendable {
-        case chat(agent: String, thread: String?, message: String, id: String?)
+        case chat(agent: String, thread: String?, message: String, id: String?, repliesTo: String? = nil)
         /// Wakes the engine to send an unanswered message again.
         case repeatWait(id: String, seconds: Double)
         /// Reads for the message a send wrote under its id.
@@ -243,13 +243,16 @@ public struct ConversationState: Codable, Equatable, Sendable {
     struct OwnAnswer: Codable, Equatable, Sendable {
         var message: String?
         var interaction: String
+        /// The message names the questions it answers (`repliesTo`): the
+        /// server resolves them with it, and nothing is dismissed.
+        var linked = false
     }
 
     /// The questions the last event learned are answered in the person's
     /// own words, by a message the server now holds: the list dismisses
     /// them, which is how the server is told (a typed message alone leaves
     /// a question waiting).
-    var answered: String?
+    var answered: Conversation.WordsAnswer?
     /// Moved when the composer's field is asked to take the cursor.
     var focuses = 0
     /// The reply typed into a notification that this conversation last
@@ -346,4 +349,8 @@ struct UnsentMessage: Codable, Hashable, Sendable {
     /// When the person pressed Send, or Send Again: no copy goes on its own
     /// later than `Conversation.repeatWindow` after it.
     var sentAt: Date
+    /// The questions the message answers in the person's own words, where
+    /// the server takes that with the message: every copy says it, one
+    /// sent after a kill too.
+    var repliesTo: String?
 }

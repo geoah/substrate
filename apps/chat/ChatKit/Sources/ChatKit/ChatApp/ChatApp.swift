@@ -387,6 +387,7 @@ public struct ChatApp: LinkedApp {
         case .categories: "categories"
         case let .actionWait(id, _): "actWait:\(id)"
         case let .cardHold(id, _): "cardHold:\(id)"
+        case let .readOwn(thread, _): "own:\(thread)"
         case .readGuidance: "guidance"
         case let .writeGuidance(reference, _, _), let .deleteGuidance(reference, _): "guidance:\(reference.path)"
         case .followRuns: "runs"

@@ -164,6 +164,16 @@ final class SeededServer: @unchecked Sendable {
         var resolvedAt: Date?
         /// How many writes resolved it: one, ever.
         var resolutions = 0
+        /// Whose hand resolved it, from `agents` 7: `me`, the person the
+        /// app is signed in as, or another person of the repository.
+        var by: String?
+        /// The message questions were answered in, in the person's own
+        /// words (`replied`, `agents` 7).
+        var repliedIn: String?
+        /// How often a write asked for it to be dismissed, taken or not.
+        var dismissals = 0
+        /// How often its resolution resumed its thread.
+        var resumes = 0
 
         var pending: Bool { state == "pending" }
     }
@@ -405,12 +415,15 @@ final class SeededServer: @unchecked Sendable {
     /// Another device of the same person resolves a card: answers its
     /// questions with each one's first option, or dismisses them; approves
     /// a call, or declines it. False where it no longer waits.
-    @discardableResult func elsewhere(card id: String, accept: Bool) -> Bool {
+    ///
+    /// - Parameter person: `me` for a device of the same person, anything
+    ///   else for another person of the repository.
+    @discardableResult func elsewhere(card id: String, accept: Bool, by person: String = "me") -> Bool {
         lock.withLock {
             guard let card = cards[id], card.pending else { return false }
             let state = card.kind == Card.approval ? (accept ? "approved" : "denied") : (accept ? "answered" : "dismissed")
             let answers = Dictionary(card.questions.map { ($0.id, Array($0.options.prefix(1))) }) { first, _ in first }
-            if case .json(200, _) = resolve(id, to: state, answers: accept ? answers : [:], ifVersion: card.version) {
+            if case .json(200, _) = resolve(id, to: state, answers: accept ? answers : [:], ifVersion: card.version, by: person) {
                 note("a card resolved on another device")
                 return true
             }
@@ -869,8 +882,10 @@ final class SeededServer: @unchecked Sendable {
     /// version read. It writes the resolution's `system` row into the
     /// thread, tells the change feed, and resumes the thread where nothing
     /// runs on it and it was not stopped.
-    private func resolve(_ id: String, to state: String, answers: [String: [String]], ifVersion: Int?) -> Outcome {
+    private func resolve(_ id: String, to state: String, answers: [String: [String]], ifVersion: Int?, by person: String = "me") -> Outcome {
         guard var card = cards[id] else { return refuse(404, "not_found", "substrate: not found: \(id)") }
+        // Only a message that names the questions marks them replied.
+        if state == "replied" { return refuse(403, "forbidden", "substrate: only a message replies to \(id)") }
         if let ifVersion, ifVersion != card.version {
             return refuse(409, "conflict", "substrate: version conflict: \(id) is at version \(card.version), not \(ifVersion)")
         }
@@ -892,6 +907,8 @@ final class SeededServer: @unchecked Sendable {
         card.version += 1
         card.resolvedAt = instant()
         card.resolutions += 1
+        // Who resolved it is linked from `agents` 7.
+        if revision >= 7 { card.by = person }
         cards[id] = card
         tell(card.kind, id)
         guard var thread = threads[card.thread] else { return .json(200, line(record(card))) }
@@ -918,6 +935,7 @@ final class SeededServer: @unchecked Sendable {
             // A stopped thread holds until its person writes again.
             if thread.status != "stopped" {
                 note("a thread resumed by a resolution")
+                cards[id]?.resumes += 1
                 start(card.thread, resumed: true)
             }
         }
@@ -931,6 +949,7 @@ final class SeededServer: @unchecked Sendable {
             properties["tool"] = card.tool
             properties["arguments"] = card.arguments
             if let at = card.resolvedAt { properties["decidedAt"] = stamp(at) }
+            if let by = card.by { properties["decidedBy"] = ["ref": "substrate.reamde.dev/core/actor/\(by)"] }
         } else {
             properties["questions"] = card.questions.map { question in
                 [
@@ -942,6 +961,8 @@ final class SeededServer: @unchecked Sendable {
                 properties["answers"] = card.questions.map { ["question": $0.id, "selected": card.answers[$0.id] ?? []] as [String: Any] }
             }
             if let at = card.resolvedAt { properties["resolvedAt"] = stamp(at) }
+            if let by = card.by { properties["resolvedBy"] = ["ref": "substrate.reamde.dev/core/actor/\(by)"] }
+            if let message = card.repliedIn { properties["repliedIn"] = ["ref": "substrate.reamde.dev/llm/message/\(message)"] }
         }
         return [
             "id": card.id, "kind": card.kind, "version": card.version, "createdAt": stamp(card.createdAt),
@@ -1525,6 +1546,7 @@ final class SeededServer: @unchecked Sendable {
             for answer in properties["answers"] as? [[String: Any]] ?? [] {
                 if let question = answer["question"] as? String { answers[question] = answer["selected"] as? [String] ?? [] }
             }
+            if properties["state"] as? String == "dismissed" { cards[id]?.dismissals += 1 }
             let done = resolve(id, to: properties["state"] as? String ?? "", answers: answers, ifVersion: body["ifVersion"] as? Int)
             if case .json(200, _) = done { note("a card resolved by the app") }
             return done
@@ -1577,6 +1599,28 @@ final class SeededServer: @unchecked Sendable {
         }
     }
 
+    /// Called under the lock, in the write of a message that names the
+    /// questions it answers: they are marked replied in it, with no row of
+    /// their own in the thread and no resume, so the turn that reads the
+    /// message is the only one. Resolved meanwhile, they are left as they
+    /// are, and the message is an ordinary one.
+    private func replied(_ id: String, in message: String, _ thread: inout Thread) {
+        guard var card = cards[id], card.pending else {
+            note("a reply in words to questions resolved meanwhile")
+            return
+        }
+        card.state = "replied"
+        card.repliedIn = message
+        card.version += 1
+        card.resolvedAt = instant()
+        card.resolutions += 1
+        card.by = "me"
+        cards[id] = card
+        tell(card.kind, id)
+        counted(&thread)
+        note("questions replied to in a message")
+    }
+
     /// A person runs four chat turns at once.
     private func capped() -> Outcome? {
         threads.values.filter { $0.turn != nil }.count >= 4 ? refuse(409, "conflict", "substrate: 4 chat turns are running: wait for one to settle") : nil
@@ -1587,7 +1631,17 @@ final class SeededServer: @unchecked Sendable {
         let text = body["message"] as? String ?? ""
         let id = body["messageId"] as? String
         if id != nil, revision < 3 { return refuse(400, "bad_request", #"unknown field "messageId""#) }
+        // A message that answers questions in the person's own words
+        // names them (`agents` 7): a server below refuses the field.
+        let repliesTo = body["repliesTo"] as? String
+        if repliesTo != nil, revision < 7 { return refuse(400, "bad_request", #"unknown field "repliesTo""#) }
         guard agent == self.agent else { return refuse(404, "not_found", "substrate: not found: agent \(agent)") }
+        if let repliesTo {
+            guard !named.isEmpty, id != nil else { return refuse(422, "validation", "repliesTo needs thread and messageId") }
+            guard let card = cards[repliesTo], card.kind == Card.interaction, card.thread == named else {
+                return refuse(422, "validation", "repliesTo names no pending interaction of the thread")
+            }
+        }
         if let id {
             // The id's record, wherever it is: this message, or another.
             for thread in order {
@@ -1639,6 +1693,7 @@ final class SeededServer: @unchecked Sendable {
                 joined.insert(id)
                 let said = line(["kind": "messageQueued", "id": id, "turn": ordinal, "text": text])
                 held.turn?.emitted.append(said)
+                if let repliesTo { replied(repliesTo, in: id, &held) }
                 threads[named] = held
                 emit(named, said)
                 var opening = [line(["kind": "thread", "thread": named])]
@@ -1652,6 +1707,7 @@ final class SeededServer: @unchecked Sendable {
         note(id == nil ? "a message written without an id" : "a message written under its id")
         add(Row(id: id ?? "u\(minted)", role: "user", content: text, turn: thread.nextTurn, createdAt: clock.now), to: &thread)
         thread.nextTurn += 1
+        if let repliesTo, let id { replied(repliesTo, in: id, &thread) }
         threads[thread.id] = thread
         start(thread.id)
         return .stream(thread: thread.id, opening: [line(["kind": "thread", "thread": thread.id])], fault: .none)
@@ -1743,6 +1799,15 @@ final class SeededServer: @unchecked Sendable {
             // The ones that wait, under the threads named where any are.
             var held = cardOrder.compactMap { cards[$0] }.filter { $0.kind == kind }
             if let state = equal("state") { held = held.filter { $0.state == state } }
+            if let thread = equal("thread") { held = held.filter { $0.thread == thread } }
+            // The person's own resolutions, asked with `me` (`agents` 7):
+            // a server below does not know the property.
+            let link = kind == Card.interaction ? "resolvedBy" : "decidedBy"
+            if properties["resolvedBy"] != nil || properties["decidedBy"] != nil {
+                guard revision >= 7, properties[link] != nil else { return refuse(422, "validation", "\(kind) declares no such property") }
+                held = held.filter { $0.by == equal(link) }
+                note("a read of the person's own resolutions")
+            }
             if let named = (properties["thread"] as? [String: Any])?["in"] as? [String] { held = held.filter { named.contains($0.thread) } }
             return page(held.prefix(first).map(record))
         case "substrate.reamde.dev/llm/threadmark":

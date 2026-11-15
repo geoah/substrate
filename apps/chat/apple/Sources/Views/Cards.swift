@@ -55,14 +55,14 @@ struct QuestionCardView: View {
                     }
                 }
             }
-            if card.pending, let conversation {
+            if card.pending, let conversation, let words = card.words {
                 // An option like the others, and the last: prose, in chat.
                 Button {
                     host.send(.answerInWords(id), to: conversation)
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "square.and.pencil")
-                        Text(card.words)
+                        Text(words)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(Color.accentColor)
@@ -269,6 +269,9 @@ extension EnvironmentValues {
     /// A call's row is drawn opened where its card ended: for a picture of
     /// what the row opens to. False in the app, where a tap opens it.
     @Entry var opensEndedCards = false
+    /// Puts the chat at one of its messages, by the message's id: set by
+    /// the conversation's view, which knows its window.
+    @Entry var showMessage: (@MainActor (String) -> Void)?
 }
 
 /// A card's answer or decision that did not go through, in the card: the one
@@ -291,6 +294,7 @@ struct CardFailureView: View {
 /// was asked is on the card's record, read when this is first shown.
 struct ResolvedCardView: View {
     @Environment(ChatHost.self) private var host
+    @Environment(\.showMessage) private var showMessage
     let resolution: CardResolution
 
     var body: some View {
@@ -308,6 +312,12 @@ struct ResolvedCardView: View {
             }
             if let panel = resolution.panel {
                 ChangePanel(panel: panel)
+            }
+            if let message = resolution.repliedIn, let showMessage {
+                // Answered in a message: the chat is put at it.
+                Button(ResolvedCardView.showMessage, systemImage: "arrow.down.message") { showMessage(message) }
+                    .font(.footnote)
+                    .buttonStyle(.borderless)
             }
             if let at = resolution.at {
                 VStack(alignment: .leading, spacing: 2) {
@@ -329,6 +339,8 @@ struct ResolvedCardView: View {
     /// Over the instant the card ended, where its record says one. Who
     /// ended it and how is the row's own line, above.
     static let whenLabel = "When"
+    /// On questions answered in a message: puts the chat at that message.
+    static let showMessage = "Show Message"
 }
 
 /// Under a message sent while a reply was being written: it waits for the

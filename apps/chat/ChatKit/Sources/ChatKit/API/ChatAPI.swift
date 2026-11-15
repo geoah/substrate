@@ -25,9 +25,18 @@ enum ChatAPI {
     /// writes nothing and runs nothing. It is left out where the server's
     /// document does not say it takes one, since an older server refuses a
     /// body field it does not know.
-    static func chatBody(thread: String?, message: String, messageID: String? = nil, context: [RecordReference], timezone: String) -> JSONValue {
+    ///
+    /// `repliesTo` is the id of questions of this thread that wait, which
+    /// the message answers in the person's own words (`agents` 7, decision
+    /// 0327): the server marks them replied in the write of the message,
+    /// and the turn that reads the message is the only one. It is left out
+    /// below that revision for the same reason.
+    static func chatBody(
+        thread: String?, message: String, messageID: String? = nil, repliesTo: String? = nil, context: [RecordReference], timezone: String
+    ) -> JSONValue {
         var body: JSONObject = ["thread": .string(thread ?? ""), "message": .string(message), "timezone": .string(timezone)]
         if let messageID { body["messageId"] = .string(messageID) }
+        if let repliesTo { body["repliesTo"] = .string(repliesTo) }
         if !context.isEmpty { body["context"] = .array(context.map { .string($0.path) }) }
         return .object(body)
     }
@@ -36,15 +45,16 @@ enum ChatAPI {
     /// run. Under a `messageID`, the same request again streams the turn
     /// the first one started, or says how its thread stands.
     static func chat(
-        _ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, timezone: String,
-        quiet: TimeInterval
+        _ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, repliesTo: String? = nil,
+        timezone: String, quiet: TimeInterval
     )
         -> AsyncThrowingStream<AgentEvent, any Error>
     {
         stream(client) {
             try client.request(
                 "POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
-                body: .jsonValue(chatBody(thread: thread, message: message, messageID: messageID, context: [], timezone: timezone)),
+                body: .jsonValue(
+                    chatBody(thread: thread, message: message, messageID: messageID, repliesTo: repliesTo, context: [], timezone: timezone)),
                 accept: "application/x-ndjson", timeout: quiet)
         }
     }

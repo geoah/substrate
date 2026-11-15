@@ -343,6 +343,13 @@ extension ChatApp {
             // said, with its button, while the card still waits.
             if card.problem?.attempt == .card || !Self.waits(card.record) { (card.problem, card.tried) = (nil, nil) }
             next.cards[id] = card
+            if let held = card.record, !Self.waits(held) {
+                // Replied in the message this device sent for it: the
+                // person's own hand. Any other is asked of the server.
+                if let message = next.wordsSent[id], held["repliedIn"]?.referenceID == message { resolvedHere(&next, id, held) }
+                next.wordsSent[id] = nil
+                askOwn(&next, held["thread"]?.referenceID)
+            }
         case let .cardFailed(id, failure):
             if failure.report == nil { next.cards[id, default: State.Card()].problem = failure }
         case let .answerAsked(id, picks):
@@ -375,6 +382,7 @@ extension ChatApp {
         case let .cardRetried(reference):
             retry(&next, reference)
         case let .cardWritten(id, record):
+            resolvedHere(&next, id, record)
             next.cards[id, default: State.Card()].record = record
             next.cards[id]?.busy = nil
             next.cards[id]?.problem = nil
@@ -425,6 +433,13 @@ extension ChatApp {
         case let .actionDue(stamp):
             actionDue(&next, stamp)
         case let .cardHoldDue(id): cardHoldDue(&next, id)
+        case let .ownRead(thread, asked, mine, whole):
+            if let mine {
+                ownRead(&next, thread: thread, asked: asked, mine: mine, whole: whole)
+            } else {
+                // Not answered: asked again when the thread is next read.
+                next.ownReading.remove(thread)
+            }
         }
         // What came on screen is read: at once where the device keeps what
         // is unread, and once its end was looked at where the server does.
@@ -842,6 +857,8 @@ extension ChatApp {
         state.transcripts[thread] = next
         state.rowsFailed[thread] = nil
         seek(&state, thread)
+        // Its rows may say a card ended: whose hand it was is asked.
+        askOwn(&state, thread)
         if let disk = state.disk {
             state.asks.append(.saveTranscript(disk, thread: thread, CachedTranscript(threadVersion: version, full: full, records: rows, openedAt: nil)))
         }
@@ -1132,7 +1149,7 @@ extension ChatApp {
         // waiting, on any server: dismissing it is how the server is told
         // (the interaction kind: "prose belongs in chat"), and its agent
         // then hears of the dismissal beside the message.
-        if let interaction = report.answered { answeredInWords(&state, interaction) }
+        if let answer = report.answered { answeredInWords(&state, answer) }
         if let outcome = report.replied { replied(&state, key, outcome) }
         if !shownOrBusy(state, key) { release(&state) }
     }
@@ -1169,7 +1186,18 @@ extension ChatApp {
     /// The questions an answer in the person's own words stands for are
     /// dismissed, where they still wait: one resolved meanwhile, here or on
     /// another device, is left as it is.
-    private func answeredInWords(_ state: inout State, _ id: String) {
+    ///
+    /// Where the message named them (`repliesTo`), the server resolved them
+    /// in the write of the message, or left them as another device had
+    /// resolved them meanwhile: nothing is dismissed, and the card is read
+    /// again for what it became.
+    private func answeredInWords(_ state: inout State, _ answer: Conversation.WordsAnswer) {
+        let id = answer.interaction
+        if answer.linked {
+            state.wordsSent[id] = answer.message
+            state.asks += [.readCard(.question(id), target: false), .cards(state.plan, threads: state.cardThreads)]
+            return
+        }
         guard let record = state.cards[id]?.record ?? state.interactions.first(where: { $0.id == id }), Self.waits(record),
             state.cards[id]?.busy == nil
         else { return }

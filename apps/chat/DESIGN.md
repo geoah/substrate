@@ -170,6 +170,8 @@ one segment, encoded exactly once: an agent's id
 | Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message, called only where `agents` is at revision 3 or more; below it, or before the document is read, the app sends "Continue where you left off." through Send, as it did before the route. The route is never probed. `409` `thread_busy` or `nothing_to_continue`: the thread is read for what it holds |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
+| Answer questions in words (`agents` 7) | the send, with `repliesTo: <interaction id>` beside `thread` and `messageId`; a server below 7 refuses the field (`400`), so it is sent only where the document says 7 |
+| Whose resolved cards are the person's (`agents` 7) | `{"kinds":["…/llm/interaction"],"properties":{"thread":{"eq":"<thread>"},"resolvedBy":{"eq":"me"}}}`, first 100; the same for `…/llm/approval` and `core/recordpatchrequest` with `decidedBy` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
 | Approve a call | `PATCH …/llm/approval/{id}` `{properties: {state: approved\|denied}, ifVersion}`; the engine runs the stored call, and the card reads the record again as the watch reports it move |
 | Add a model key | `PATCH …/llm/provider/{id}` `{properties: {apiKey}}`, a password sign-in only |
@@ -955,16 +957,33 @@ bubble is a tinted fill. The transcript softens under the composer with
   your answer", "Waiting for your approval") with the card under it. Once
   the card is answered, dismissed, applied, approved or declined, here or
   on another device, the card is gone and the same row, under the same id,
-  carries the outcome: a check or a cross and who ended it ("You answered",
+  carries the outcome: a check or a cross and how it ended ("You answered",
   "You dismissed the question", "You approved gmail_send, and it ran",
   "You declined gmail_send"). Opened, the row shows what was asked with
   what was answered, the arguments of the call, or the change as applied
   or not taken, and when. What was asked is the card's record, read when
-  the row is first opened. The wire does not say which person ended a
-  card, and a repository has one, so it is always "You". The presenter
-  moves the outcome onto the row (`CardPresenter.fold`): the transcript's
-  rows and their ids are the same before and after, so nothing above or
-  below moves but by the card's own height.
+  the row is first opened. The presenter moves the outcome onto the row
+  (`CardPresenter.fold`): the transcript's rows and their ids are the same
+  before and after, so nothing above or below moves but by the card's own
+  height.
+- **Whose hand ended it** (`agents` 7, decision 0327, `ChatAppHands.swift`).
+  A resolved card links the person who resolved it: `resolvedBy` on a
+  question, `decidedBy` on an approval and a suggestion. The app reads no
+  actors to tell its own person's from another's. It asks the server which
+  resolved cards of a thread are `me`'s, one list read per kind (`thread`
+  and `resolvedBy` or `decidedBy` equal to `me`, 100 at most), when a
+  thread's rows or one of its cards is read and a card of it ended that
+  the last such read did not cover. A card in the answer says "You". One
+  with a link that a whole answer does not hold says "Someone else"; the
+  app cannot read a name without reading actors, so it says none. One
+  with no link (resolved before the revision, or decided by a policy's
+  rule) says only how it ended ("Answered", "Dismissed", "gmail_send was
+  approved, and it ran"), and so does every card on a server below the
+  revision, every card whose record is not read yet and is not the
+  person's, and, past a first page of the person's own, every card that
+  page does not hold. A card this device resolved by its own write says
+  "You" from the write's answer. The lines the thread's rows hold for an
+  outcome say it the same way.
 - **A card whose write failed** stays, with the failure in it in the
   sentence every failure is said in, and its button: Try Again sends the
   same answer over the version read since. It is cleared when the write
@@ -972,16 +991,35 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Answer in your own words.** Beside a question's options. It takes the
   card off the transcript (the call's row says "You are answering in your
   own words"), puts the cursor in the composer, and a strip above the
-  field says what is being answered, with Show Options. What is then sent
-  is an ordinary message. A typed message answers and dismisses nothing on
-  the server, which would leave the question pending for good, so once
-  the server holds the message the app dismisses the question (`state:
-  dismissed`, over the version it read), and the call's row says "You
-  dismissed the question". The server resumes the thread on every
-  resolution, a dismissal included, so the assistant takes one more step
-  after the reply to the message. If nothing is sent (Show Options, or the
-  chat is closed), the card is back as it was; a send the server refuses
-  leaves the question waiting and the text in the field. A message typed without pressing it leaves the card standing.
+  field says what is being answered, with Show Options. If nothing is sent
+  (Show Options, or the chat is closed), the card is back as it was; a
+  send the server refuses leaves the question waiting and the text in the
+  field. A message typed without pressing it leaves the card standing.
+  What is sent depends on the server:
+  - At `agents` 7 or more (`Conversation.linksWords`), the message names
+    the questions it answers: `repliesTo`, the interaction's id, beside
+    `thread` and `messageId`. The server moves the questions to `replied`
+    in the write of the message, writes no row of its own for that and
+    resumes nothing, so the turn that reads the message is the only one.
+    The app writes no dismissal. Every copy of the message says the same
+    (`UnsentMessage.repliesTo`, in `unsent.json`), one sent again after a
+    kill too, and a repeat resolves nothing twice. It is offered only on a
+    card whose interaction's `thread` is the chat's: a sub-agent's
+    questions are another thread's and are answered there. Questions
+    resolved on another device while the words are on their way are left
+    as that device made them, and the message goes as an ordinary one:
+    the strip goes, and the card is read again and says what became of
+    it. The call's row says "You answered in your own words", and opened,
+    each question with the message's words and Show Message, which puts
+    the chat at the message (`repliedIn`).
+  - Below 7, the message is an ordinary one, and a typed message answers
+    and dismisses nothing there, which would leave the questions pending
+    for good: once the server holds the message the app dismisses them
+    (`state: dismissed`, over the version it read), and the call's row
+    says they were dismissed. The server resumes the thread on every
+    resolution, a dismissal included, so the assistant takes one more step
+    after the reply to the message. The app does the same at 7 where it
+    had not read the server's document when the message left.
 - **Compactions**: a divider, "Earlier messages were summarized".
 - **Decisions and answers** the substrate wrote into the thread: a line in
   the tool calls' shape ("You applied the suggestion", a check or a cross).
@@ -1699,7 +1737,7 @@ button and Details stack where the text size leaves no room side by side.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
 12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; continued processing on iOS.
-13. Questions, suggestions and approvals answered inline, CAS'd; a card that ended is the mark on the call that asked; a question answered in the person's own words.
+13. Questions, suggestions and approvals answered inline, CAS'd; a card that ended is the mark on the call that asked, and says whose hand ended it where the server links one (`agents` 7); a question answered in the person's own words, by a message that names it at 7.
 14. A provider key added in-app (a password sign-in; an app links to the console).
 15. Rename.
 16. Drafts per chat across launches.
@@ -1934,6 +1972,20 @@ button and Details stack where the text size leaves no room side by side.
   waits is never hidden, but aside while it is answered in words; no card
   is resolved twice on the server; and an action from a notification is
   over, with the device told, within its time.
+- Answering at `agents` 7 (`AnsweringTests.swift`): a reply in words names
+  its questions, nothing is dismissed and one turn follows; questions
+  resolved elsewhere meanwhile stay as they were; a reply whose answer is
+  lost is sent again and resolves once; a card another person ended says
+  "Someone else", one below 7 says only how it ended, and whose hand it
+  was is concluded from the server's answer alone. The seeded server
+  takes `repliesTo`, links who resolved a card (`me`, or another person,
+  which its other-device step now draws), and answers the read of the
+  person's own. Two rules beside the others: at 7 a question is dismissed
+  only where Dismiss was pressed (or its words left before the app had
+  read the server's document) and a question replied to resumes nothing;
+  and a card says "You" only where the server links it to the person the
+  app is signed in as. `CHATKIT_REVISION=7` runs every seed at that
+  revision, which a tenth of the seeds draw on their own.
 - Answering beside the list (`AnsweringTests.swift`, "Answering in a list
   that archives" and "A turn that ends on a card is one notification"):
   an archived chat that comes to wait on a card is listed, counted and

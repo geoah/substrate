@@ -20,7 +20,7 @@ struct Answering {
 
     /// - Parameter records: 9 for a server that keeps a person's pins and
     ///   archives, 8 for one that keeps their marks alone.
-    init(agents: Int = 6, records: Int = 8) {
+    init(agents: Int = 7, records: Int = 8) {
         let clock = TestClock()
         server = SeededServer(seed: 1, clock: clock, revision: agents, records: records)
         rig = ChatRig([], transport: server.connect(), clock: clock, ids: ids)
@@ -502,12 +502,77 @@ struct FoldedCards {
         #expect(await app.tools(key).first?.resolution?.mark == .done)
     }
 
+    /// Whose hand ended a card is the server's to say (`agents` 7). One
+    /// another person resolved says "Someone else", never "You"; one this
+    /// device resolved says "You" from its own write.
+    @Test func aCardAnotherPersonEndedNeverSaysYou() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let (key, id) = try await asked(app, .approve)
+        #expect(app.server.elsewhere(card: id, accept: true, by: "other"))
+        try await app.until { screen, _ in screen.cards[id]?.resolution?.label.hasPrefix("Someone else approved gmail_send") == true }
+        let row = try #require(await app.tools(key).first)
+        #expect(row.statusLabel?.hasPrefix("You") == false && app.server.card(id)?.by == "other")
+        app.server.finishTurns()
+    }
+
+    /// Below `agents` 7 no record links who resolved it, and nothing is
+    /// asked: a card says only how it ended, whoever pressed.
+    @Test func belowSevenACardSaysOnlyHowItEnded() async throws {
+        let app = Answering(agents: 6)
+        try await app.signIn()
+        let (key, id) = try await asked(app)
+        let question = try #require(try await app.screen(key).cards[id]?.question?.questions.first)
+        await app.rig.harness.send(.answer(question: id, picks: [question.id: [question.options[0].value]]))
+        try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
+        #expect(await app.tools(key).first?.statusLabel == "Answered")
+        #expect(app.server.tally["a read of the person's own resolutions"] == nil)
+        app.server.finishTurns()
+    }
+
+    /// The engine alone: what a whole answer of the person's own does not
+    /// hold is somebody else's where it links somebody, and unsaid where
+    /// it links nobody; past a first page nothing is concluded.
+    @Test func whoseHandIsConcludedFromTheServersAnswerAlone() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        state.agentsRevision = 7
+        func card(_ id: String, linked: Bool) -> Record {
+            var properties: [String: JSONValue] = ["state": "answered", "thread": ["ref": .string("\(Kinds.thread)/t1")]]
+            if linked { properties["resolvedBy"] = ["ref": "substrate.reamde.dev/core/actor/a1"] }
+            return Record(id: id, kind: Kinds.interaction, properties: properties, version: 2)
+        }
+        for (id, linked) in [("mine", true), ("theirs", true), ("old", false)] {
+            state = try app.apply(.init(.cardRead(id, card(id, linked: linked), target: nil)), to: state)
+            // Asked once, for the first that ended; the rest are asked
+            // about when that read is answered.
+            #expect(state.asks.contains(.readOwn(thread: "t1", cards: ["mine"])) == (id == "mine"))
+        }
+        #expect(state.hand("mine", record: state.cards["mine"]?.record) == .unsaid)
+        var whole = try app.apply(.init(.ownRead(thread: "t1", asked: ["mine", "old", "theirs"], mine: ["mine"], whole: true)), to: state)
+        #expect(whole.hand("mine", record: whole.cards["mine"]?.record) == .you)
+        #expect(whole.hand("theirs", record: whole.cards["theirs"]?.record) == .other)
+        #expect(whole.hand("old", record: whole.cards["old"]?.record) == .unsaid)
+        // A first page that may not be all of them concludes nothing about
+        // the ones it does not hold.
+        whole = try app.apply(.init(.ownRead(thread: "t1", asked: ["mine", "old", "theirs"], mine: ["mine"], whole: false)), to: state)
+        #expect(whole.hand("mine", record: whole.cards["mine"]?.record) == .you)
+        #expect(whole.hand("theirs", record: whole.cards["theirs"]?.record) == .unsaid)
+        // Below the revision nothing is asked.
+        var below = signedInState()
+        below.agentsRevision = 6
+        below = try app.apply(.init(.cardRead("mine", card("mine", linked: true), target: nil)), to: below)
+        #expect(!below.asks.contains { if case .readOwn = $0 { true } else { false } })
+    }
+
     @Test func oneResolvedOnAnotherDeviceFoldsWhenTheFeedSaysSo() async throws {
         let app = Answering()
         try await app.signIn()
         let (key, id) = try await asked(app)
         #expect(app.server.elsewhere(card: id, accept: false))
-        try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
+        // Another device of the same person: the server says the card is
+        // theirs, once it is asked.
+        try await app.until { screen, _ in screen.cards[id]?.resolution?.label == "You dismissed the question" }
         let row = try #require(await app.tools(key).first)
         #expect(row.attachment == nil && row.status == .declined && row.statusLabel == "You dismissed the question")
         #expect(row.resolution?.facts.map(\.value) == ["No answer"])
@@ -562,7 +627,7 @@ struct FoldedCards {
         // the card reads what became of the questions.
         app.server.elsewhere(card: id, accept: true)
         await app.rig.harness.send(.dismissQuestions(id))
-        try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
+        try await app.until { screen, _ in screen.cards[id]?.resolution?.label == "You answered" }
         #expect(app.server.card(id)?.state == "answered" && app.server.card(id)?.resolutions == 1)
         #expect(await app.tools(key).first?.statusLabel == "You answered")
     }
@@ -599,10 +664,16 @@ struct FoldedCards {
         await again.harness.send(.sceneAppeared(scene: "s", restoring: nil))
         await again.harness.send(.show(thread: "t1", scene: "s"))
         let opened = try #require(await again.harness.state.scenes["s"]?.current)
-        try await again.harness.until(advancing: 0.1) { _ in (await again.conversation(opened)?.turns.count ?? 0) >= 2 }
+        let tool = { @Sendable (screen: ConversationScreen?) -> ToolRowPresentation? in
+            (screen?.turns ?? []).compactMap { turn -> ToolRowPresentation? in
+                if case let .assistant(reply) = turn.body { reply.tools.first } else { nil }
+            }.first
+        }
+        // Whose hand it was is the server's to say: asked once the rows are
+        // read, and said without the card's record.
+        try await again.harness.until(advancing: 0.1) { _ in tool(await again.conversation(opened))?.statusLabel == "You answered" }
         let screen = try #require(await again.conversation(opened))
-        let row = try #require(
-            screen.turns.compactMap { turn -> ToolRowPresentation? in if case let .assistant(reply) = turn.body { reply.tools.first } else { nil } }.first)
+        let row = try #require(tool(screen))
         #expect(row.attachment == nil && row.statusLabel == "You answered" && row.resolution?.loading == true)
         #expect(screen.cards[id]?.stands == false)
         _ = key
@@ -665,7 +736,8 @@ struct OwnWords {
         let screen = try await app.screen(key)
         #expect(screen.composer.answering == nil && screen.cards[id]?.question?.aside == false)
         let row = try #require(await app.tools(key).first)
-        #expect(row.status == .declined && row.statusLabel == "You dismissed the question")
+        // Below `agents` 7 nothing says whose hand ended a card.
+        #expect(row.status == .declined && row.statusLabel == "Dismissed")
         // The message is drawn once, and the chat settles on the rows.
         app.server.finishTurns()
         try await app.settled(key)
@@ -694,11 +766,102 @@ struct OwnWords {
         // Sent again, it goes, and the question with it.
         try await app.rig.send(.send, to: key)
         try await app.until { screen, _ in screen.cards[id]?.resolution != nil }
-        #expect(app.server.card(id)?.state == "dismissed" && app.server.userRows(saying: "Neither: Friday.") == 1)
+        #expect(app.server.card(id)?.state == "replied" && app.server.userRows(saying: "Neither: Friday.") == 1)
+    }
+
+    /// At `agents` 7 the message names the questions it answers. The
+    /// server marks them replied in the write of the message: no dismissal
+    /// is written, nothing resumes, and the turn that reads the message is
+    /// the only one. The call's row says they were answered in a message,
+    /// by the person, with the message's own words.
+    @Test func atSevenTheMessageNamesTheQuestionsAndNothingIsDismissed() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let id = try #require(app.server.allCards.first?.id)
+        await app.show(.question(id))
+        try await app.until { screen, _ in screen.cards[id]?.waits == true }
+        #expect(try await app.screen(key).cards[id]?.question?.words == "Answer in Your Own Words")
+        try await app.rig.send(.answerInWords(id), to: key)
+        try await app.until { screen, _ in screen.composer.answering != nil }
+        app.server.plan([.piece(0)])
+        try await app.say("Neither: Friday.", key)
+        try await app.until { screen, _ in screen.cards[id]?.resolution?.label == "You answered in your own words" }
+        let card = try #require(app.server.card(id))
+        #expect(card.state == "replied" && card.resolutions == 1 && card.dismissals == 0 && card.resumes == 0)
+        #expect(app.server.userRows(saying: "Neither: Friday.") == 1 && app.server.chatRequests(saying: "Neither: Friday.") == 1)
+        let message = try #require(app.server.rows(of: "t1").first { $0.content == "Neither: Friday." })
+        #expect(card.repliedIn == message.id)
+        let screen = try await app.screen(key)
+        #expect(screen.composer.answering == nil)
+        let row = try #require(await app.tools(key).first)
+        #expect(row.attachment == nil && row.status == .done && row.statusLabel == "You answered in your own words")
+        let question = try #require(card.questions.first)
+        #expect(row.resolution?.repliedIn == message.id)
+        #expect(row.resolution?.facts.first == CardResolution.Fact(label: question.prompt, value: "Neither: Friday."))
+        // One turn: the one that reads the message.
+        app.server.finishTurns()
+        try await app.settled(key)
+        #expect(app.server.rows(of: "t1").filter { $0.role == "assistant" && $0.turn > message.turn }.count == 1)
+        #expect(app.server.rows(of: "t1").filter { $0.role == "system" }.isEmpty)
+        #expect(await app.said(key) == app.server.spoken(in: "t1").map(\.content))
+    }
+
+    /// The questions are resolved on another device while the reply in
+    /// words is on its way: the server leaves them as they are and takes
+    /// the message as an ordinary one. The strip goes, and the card says
+    /// what the other device made of it.
+    @Test func questionsResolvedElsewhereMeanwhileStayAsTheyWereAndTheMessageGoes() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let id = try #require(app.server.allCards.first?.id)
+        await app.show(.question(id))
+        try await app.until { screen, _ in screen.cards[id]?.waits == true }
+        try await app.rig.send(.answerInWords(id), to: key)
+        try await app.until { screen, _ in screen.composer.answering != nil }
+        // Another person dismisses them, and the message leaves before the
+        // feed is heard.
+        app.server.elsewhere(card: id, accept: false, by: "other")
+        try await app.say("Neither: Friday.", key)
+        try await app.until { screen, _ in screen.cards[id]?.resolution?.label == "Someone else dismissed the question" }
+        #expect(app.server.card(id)?.state == "dismissed" && app.server.card(id)?.resolutions == 1 && app.server.card(id)?.dismissals == 0)
+        #expect(app.server.userRows(saying: "Neither: Friday.") == 1)
+        #expect(try await app.screen(key).composer.answering == nil)
+        app.server.finishTurns()
+        try await app.settled(key)
+    }
+
+    /// A reply in words whose answer is lost is sent again under its id,
+    /// with the questions it names: written once, and resolved once.
+    @Test func aReplyInWordsWhoseAnswerIsLostIsSentAgainAndResolvesOnce() async throws {
+        let app = Answering()
+        try await app.signIn()
+        let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
+        app.server.finishTurns()
+        try await app.settled(key)
+        let id = try #require(app.server.allCards.first?.id)
+        await app.show(.question(id))
+        try await app.until { screen, _ in screen.cards[id]?.waits == true }
+        try await app.rig.send(.answerInWords(id), to: key)
+        app.server.plan([.piece(0)])
+        app.server.fail("chat|t1|Neither: Friday.", with: .status(502, code: "bad_gateway", retryAfter: nil), lands: true)
+        try await app.say("Neither: Friday.", key)
+        try await app.rig.harness.until(advancing: 2) { _ in app.server.chatRequests(saying: "Neither: Friday.") >= 2 }
+        try await app.until(advancing: 2) { screen, _ in screen.cards[id]?.resolution != nil }
+        #expect(app.server.userRows(saying: "Neither: Friday.") == 1)
+        #expect(app.server.card(id)?.state == "replied" && app.server.card(id)?.resolutions == 1)
+        app.server.finishTurns()
+        try await app.settled(key)
     }
 
     @Test func aDismissalThatFailsBringsTheCardBackWithItsFailure() async throws {
-        let app = Answering()
+        // Below `agents` 7, where the questions are dismissed by a write.
+        let app = Answering(agents: 6)
         try await app.signIn()
         let key = try await app.chat([.piece(0), .tool(.ask), .call, .piece(0)])
         app.server.finishTurns()
@@ -1158,7 +1321,7 @@ struct ArchivedAnswering {
         try await app.say("Thursday, after eleven", key)
         try await app.rig.harness.until(advancing: 1) { _ in
             app.server.userRows(saying: "Thursday, after eleven") == 1 && app.server.mark(of: "t1")?.archived == false
-                && app.server.card(card.id)?.state == "dismissed"
+                && app.server.card(card.id)?.state == "replied"
         }
         app.server.finishTurns()
     }

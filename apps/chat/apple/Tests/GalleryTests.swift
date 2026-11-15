@@ -226,7 +226,7 @@ import Testing
     /// A host on the fixture showing the chat of one of those states, once
     /// its transcript is the one the picture is of.
     func host(answering state: String) async throws -> (ChatHost, ChildKey) {
-        let server = FixtureServer(reply: "", agents: 6)
+        let server = FixtureServer(reply: "", agents: 7)
         var thread = "t-live"
         var card: (asked: ChatFixtures.Asked, resolved: Bool)?
         switch state {
@@ -255,7 +255,11 @@ import Testing
             try await until {
                 host.conversation(key)?.cards[card.asked.card.id].map { $0.stands == !card.resolved && $0.waits == !card.resolved } == true ? true : nil
             }
-            if card.resolved { try await until { Self.tool(host, key)?.resolution?.loading == false ? true : nil } }
+            // Ended: its record is read, and the server has said whose
+            // hand it was.
+            if card.resolved {
+                try await until { Self.tool(host, key)?.resolution.map { !$0.loading && $0.label.hasPrefix("You ") } == true ? true : nil }
+            }
             return (host, key)
         }
         host.send(.draft(joined.message), to: key)
