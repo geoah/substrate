@@ -249,6 +249,33 @@ struct SevenRules {
         #expect(!state.isCurrent("t1"))
     }
 
+    /// A chat the list does not hold (opened from a notification, a
+    /// shortcut, a search's hit) is shown before its row is read. Its rows
+    /// were read at once, under no version, and again the moment the row
+    /// said which it was: the first read's answer was let go for the
+    /// second's. They are read once, when the row is, and as they stand
+    /// where the row cannot be read.
+    @Test func rule7_aChatShownWithoutItsRowReadsItsRowsOnceTheRowIsRead() async throws {
+        let rig = ChatRig(baseRoutes())
+        try await rig.signIn()
+        #expect(await rig.harness.state.thread("t1") == nil)
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        try await rig.harness.until { harness in
+            let state = await harness.state
+            return state.transcripts["t1"]?.version == 3 && state.reading["t1"] == nil && state.isCurrent("t1")
+        }
+        #expect(rig.server.count("/api/v1/records", query: "llm/message") == 1)
+        #expect(await rig.harness.state.rowAwaited.isEmpty)
+
+        // The row cannot be read: the rows are, as they stand.
+        let lone = ChatRig([.init(method: "GET", path: "/llm/thread/t1", answer: .fail(.networkConnectionLost))] + baseRoutes())
+        try await lone.signIn()
+        await lone.harness.send(.show(thread: "t1", scene: "s"))
+        try await lone.harness.until { harness in await harness.state.transcripts["t1"] != nil }
+        #expect(lone.server.count("/api/v1/records", query: "llm/message") == 1)
+        #expect(await lone.harness.state.rowAwaited.isEmpty)
+    }
+
     /// A message sent under no id is looked for among the rows past where
     /// its thread stood when it was sent (`LiveRows.Sent.baseline`, and the
     /// delivery check's). The folder's rows say where it stood a launch

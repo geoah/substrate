@@ -401,6 +401,11 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
    settled and its version is unchanged; a `running` thread's rows are
    incomplete by definition and are re-read on open. A message write does not
    move its thread, so the thread's `updatedAt` is never the test.
+   A chat shown before its row is held (a notification, a shortcut, a
+   search's hit) has no version to read its rows under: they are read
+   when the row is (`ChatAppState.rowAwaited`), and as they stand where
+   the row cannot be read. Read at once under none, they were read again
+   the moment the row arrived, and the first answer let go.
 
 **The handover.** On `done`, the rows are read under a new epoch. When they
 land, each takes its provisional row's place in the fold, in the same step
