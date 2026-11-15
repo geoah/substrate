@@ -566,6 +566,11 @@ func TestAWindowLargerThanAPassIsFinishedOverSeveral(t *testing.T) {
 	if _, err := d.Delete(ctx, substrate.ActorPerson, ledgerTask, gone, substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatal(err)
 	}
+	// The delete's erasure took its step in the request, which is no batch
+	// of the window: what the passes read is counted from here.
+	mu.Lock()
+	clear(read)
+	mu.Unlock()
 	var tasks []string
 	for i := range 20 {
 		id := put(fmt.Sprintf("task %d", i))

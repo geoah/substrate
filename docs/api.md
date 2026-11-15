@@ -456,7 +456,10 @@ and while it is not, `waits` names each
 enabled trigger it waits for (one that has not been delivered the deletion
 and is delivering), `held` says what else holds it, and `damaged` names the
 line known not to verify it waits on until its row is written back. The
-compaction pass finishes what waits. A stored `Idempotency-Key` outcome of the
+compaction pass finishes what waits. A history longer than the pass's bounds
+is erased in steps: the reply reads pending and `held` says how far the
+erasure has gone
+([0330](decisions/0330-an-erasure-longer-than-the-passs-bounds-is-done-in-steps.md)). A stored `Idempotency-Key` outcome of the
 record goes with it, and a retry under that key is told so. Out of reach: text
 another record quotes, a request already in the webhook spool, a provider's
 sync, and every copy taken before. A copy a mapping made that has since been
@@ -476,8 +479,12 @@ reply's `kept` names it; the delete itself goes ahead.
 history before its current state, the same way
 ([0306](decisions/0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md)),
 and waits for a parked failure or a drain on one of its lines; on a record
-whose erasure waits, it finishes it. `{"finish": true}` passes every trigger
-the erasure waits for. It answers the `erasure`. It erases across a merge or
+whose erasure waits, it takes the erasure's next step. `{"finish": true}`
+passes every trigger the erasure waits for. A forget, with `finish` or
+without, and a permanent delete take one step each: an erasure within the
+compaction pass's bounds is done in it, and a longer one answers `pending`,
+and a client calls again, a step a call, or leaves the rest to the pass.
+It answers the `erasure`. It erases across a merge or
 a split the record took part in, and across an earlier permanent deletion of
 the record a release before this one kept, but a forget whose record such a
 deletion took a former id from is refused, `409 conflict`, saying so, and
