@@ -186,6 +186,7 @@ which is what tells them apart in History.
 | `reasoning`, `delta`, `toolStarted`, `toolFinished`, `compacted` | fold into the stream's rows (`LiveRows`) | dropped if a row read with this attach carries its `turn`, else folded: what is held of the turn is written over, never emptied |
 | `truncated` | not sent | the replay lost events: what is held stays, and the chat says so ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
 | `lagged` | not sent | this reader fell behind and the server ends its stream: nothing failed, so the app attaches again at once and draws nothing for it |
+| `messageQueued`, `messageTaken` (`agents` 6) | kinds this build does not name: each line is skipped, and the reply around it is what it is without it | same |
 | `idle` | after `thread`, to a repeat of a message the server already holds: the thread's status is the whole answer, read as on an attach | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
 | `error` (after the 200) | a failed turn: settle, with the `cause` and `retryAfter` the event carries where the server sends them. With no `cause` and a `code`: `auth` is the sign-in ended (the signed-out screen), `internal` a failed turn, `unavailable` a reader cut off for reading too slowly (the turn runs on: attach again, nothing drawn) | same |
@@ -207,7 +208,11 @@ console's makes it from a thread's rows, and this one makes it from the
 rows and the stream together. The stream's events become provisional rows
 (`LiveRows`), each keyed as its stored row will be: an assistant row by the
 `turn` its `delta` and `reasoning` events carry, a tool row by its call's
-id, and the message you sent by its send. The transcript is one list made
+id, and the message you sent by its id (`messageId`): the bubble is drawn
+under that id from the press, its row has it, and the two are paired by it
+alone, whatever the words. Only a message sent under no id (a server below
+`agents` 3, and Continue's own words there) is found by its words, past
+what the thread held when it was sent. The transcript is one list made
 from the stored rows and the provisional ones (`TurnFold`): a stored row
 takes the place of the provisional row with its key and keeps the id that
 row was drawn by, so every view over it (an open Thinking section, an
@@ -845,7 +850,12 @@ bubble is a tinted fill. The transcript softens under the composer with
   rows read on opening bring the line with them: the chat is put at it
   once they are laid out, and does not follow its end in between. The
   line stays while the chat is open and is gone the next time
-  ([Read state](#read-state)).
+  ([Read state](#read-state)). It stands on the scroll view's seam:
+  `ConversationScreen.opens` names the turn, by the id the turn is drawn
+  under (a row streamed in this conversation keeps the id its stream gave
+  it); the line is a row of the transcript above that turn's first, which
+  is the row the scroll view is put at, once; and a chat opened there does
+  not follow its end until you come down to it.
 
 ### New chat
 
@@ -1084,7 +1094,12 @@ a chat behind a sheet or an alert is in front of nobody, which on iPhone
 and iPad the view learns from UIKit dimming its tint (`CoverProbe`), the
 one sign a view behind a presentation is given. A menu dims nothing and
 covers little, and does not count. The view says whether
-the end of the transcript is on screen; the list counts the second, from the
+the end of the transcript is on screen, which is the scroll view's word
+(`TranscriptScroll`'s `looked`): the transcript follows its end, and the
+end is within what shows. Both: a chat opened at its "New" line, or one
+you scrolled up, does not follow, so nothing that arrives below it is read
+until you come down; and one that follows is not at its end in the moment
+before a reply that just grew has been scrolled to. The list counts the second, from the
 moment the rows drawn hold that message, and stops counting when the chat
 scrolls away from its end, runs again, or leaves the front. So a reply
 that settles while the person is looking at the end is read without a
@@ -1353,6 +1368,8 @@ button and Details stack where the text size leaves no room side by side.
   events; and, at every point of a run's stream and every prefix of its
   rows, a transcript with nothing doubled, nothing lost and every id as the
   stream first gave it. Each `cutBy` says so at the turn the stream drew.
+  A message sent under an id is the row of that id and no other, whatever
+  its words; one sent under none is found by its words past what was held.
 - The stream (`StreamTests`): a return to the front at revision 5 and
   below it empties nothing and the reply goes on where it was; a turn that
   settles between an attach's read and its stream; `lagged`; the quiet a
@@ -1371,7 +1388,15 @@ button and Details stack where the text size leaves no room side by side.
   section and tool row stay open. `FollowTests` holds the real
   conversation view: at its end before the app was away and after, with a
   reply grown meanwhile; scrolled up, it stays, and Jump to Latest says how
-  many messages are below and goes there.
+  many messages are below and goes there; a wheel turned a little at a
+  time, and fingers that pause on a trackpad, are the reader's until they
+  rest. `OpeningTests` holds the seam the "New" line and the read mark
+  stand on, with rows of a known height in the scroll view itself: a chat
+  opens with its line at the top and is not at its end, whatever arrives
+  below, until its reader comes down and rests; from there what arrives is
+  followed and looked at with no scroll; a line that comes after the rows
+  takes the chat to it, once; and where what is new fits on one screen
+  the chat is at its end from the start.
 - A reply as it is written (`MarkdownClosingTests`, `MarkdownRowsTests`):
   at every prefix of several replies, what is drawn is the start of what
   the whole reply draws, with no marker in it the reply does not show; it
@@ -1419,7 +1444,12 @@ button and Details stack where the text size leaves no room side by side.
   timeout, a request that never arrives, a dropped connection, a page of
   HTML with a 200, a stream that closes before its `thread` event or is
   cut at any event, an event sent twice, a delay; a write is taken or not
-  before its answer is lost. `SeededRun` is a person by the same seed:
+  before its answer is lost. Two seeds in five draw a server at
+  `agents` 5: each piece of a reply says where it belongs (`at`), which
+  below 5 none does; a reader is cut off as `lagged`; and at any revision
+  the server may restart under a running turn, which ends every stream of
+  it with no word and leaves the run with no stream (`idle`, `running`),
+  given one a moment later from 5 and never below. `SeededRun` is a person by the same seed:
   sends, Stop, Try Again and Continue, Send Again and Edit Message,
   opening and closing chats, leaving and returning to the front, kills
   and relaunches over the same folder, with the server's turns and the
@@ -1435,7 +1465,14 @@ button and Details stack where the text size leaves no room side by side.
   a stored row, in a composer or on a message with its card); no failure
   is drawn in two places; a pending message has its send or its card;
   without an id nothing is sent again on the app's own; the list holds
-  each chat once. At the end the server behaves, time passes, and every
+  each chat once. And one fold's rules, on what each conversation draws
+  against what it drew a step ago: the text of a turn is never shorter
+  (but where a server that says no positions sent a piece twice, which no
+  reader can tell from a word said twice); a row keeps the id its turn was
+  first drawn by, a reply's by its turn's ordinal and a message sent under
+  an id by that id and no other; nothing drawn of a run goes while the run
+  goes on, an attach least of all; and no reply's words are drawn twice.
+  At the end the server behaves, time passes, and every
   conversation must have settled on the server's rows. A broken rule
   prints the seed and the steps, and
   `CHATKIT_SEED=<seed> CHATKIT_STEPS=<n> swift test --filter SeededChat`
@@ -1468,11 +1505,11 @@ button and Details stack where the text size leaves no room side by side.
   holds the hook to what the suite needs of it, for the kinds of work it
   starts; a runtime that honoured the hook for some enqueues and not for
   others could pass it, and would be caught only where the run is met.
-  Rules the app is known to break in code another group is rebuilding are
-  listed in `SeededRun.known`: noted, not failed, and a conversation that
-  breaks one is still held to every rule the leftover does not touch. A
-  kill may take a draft typed inside its save's pause and a send without
-  an id still on its way, and nothing else.
+  A rule the app is known to break is listed in `SeededRun.known`, noted
+  and not failed; the list is empty today (its four entries were the two
+  models of a turn, gone with them), and an entry that no longer fails
+  must not stay. A kill may take a draft typed inside its save's pause and
+  a send without an id still on its way, and nothing else.
 - Read state (`MarkTests.swift`, over `MarkServer`, a server that keeps
   marks by the real one's rules for any number of devices at once): the
   unread rule case by case; the mark moves after a second with the end on

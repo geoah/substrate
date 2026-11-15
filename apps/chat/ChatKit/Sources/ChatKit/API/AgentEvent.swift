@@ -44,6 +44,12 @@ struct AgentResult: Codable, Hashable, Sendable {
 /// One streamed loop event (`substrate.AgentEvent`). Every field is read
 /// tolerantly: a field spelled some other way reads as absent.
 struct AgentEvent: Codable, Sendable, Equatable {
+    /// A kind this build does not name is no event: its line is skipped, and
+    /// the stream goes on. `messageQueued` and `messageTaken` (`agents` 6, a
+    /// message sent while a turn runs) are two such today. A build that
+    /// draws a queued message names them here and folds them in
+    /// `LiveRows.apply`: the first as a user turn under the event's `id`,
+    /// which is its row's, the second as that turn no longer waiting.
     enum Kind: String, Codable, Sendable {
         case thread, delta, reasoning, toolStarted, toolFinished, compacted, truncated, idle, done, error
         /// Ends the stream of a reader that fell behind the turn, with no
