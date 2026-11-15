@@ -37,6 +37,8 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         var readThrough: String?
         var markedUnread: Bool?
         var version = 0
+        /// The place in the feed where the position was taken.
+        var readAt: Int?
     }
 
     private let lock = NSLock()
@@ -76,7 +78,9 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
             }
             chat.lastMessage = chat.messages.last?.id
             chats[id] = chat
-            if let readThrough { marks[id] = Mark(readThrough: readThrough, version: 1) }
+            // A position from before the thread last settled, unless it
+            // is that of its newest message.
+            if let readThrough { marks[id] = Mark(readThrough: readThrough, version: 1, readAt: readThrough == chat.lastMessage ? seq : 0) }
         }
     }
 
@@ -153,6 +157,7 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
             if stored.map({ place >= $0 }) ?? true {
                 let cleared = mark.markedUnread == true && markedUnread != true
                 if mark.readThrough != readThrough || cleared { changed = true }
+                if mark.readThrough != readThrough { mark.readAt = seq + 1 }
                 mark.readThrough = readThrough
                 if cleared { mark.markedUnread = false }
             }
@@ -187,7 +192,7 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         ]
         if let read = mark.readThrough {
             properties["readThrough"] = ["ref": "\(Kinds.message)/\(read)"]
-            properties["readAt"] = stamp(seq)
+            properties["readAt"] = stamp(mark.readAt ?? seq)
         }
         if let unread = mark.markedUnread { properties["markedUnread"] = unread }
         return record("\(thread).me", Kinds.threadMark, mark.version, at: seq, properties)

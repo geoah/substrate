@@ -58,7 +58,10 @@ extension ChatApp {
             next.refreshing = false
             next.listFailure = failure.report == nil ? failure : nil
         case let .featuresRead(agents, records): featuresRead(&next, agents: agents, records: records)
-        case let .marksRead(marks): announceLearned(&next, apply(&next, marks: marks))
+        case let .marksRead(marks):
+            let learned = apply(&next, marks: marks)
+            for thread in marks.threads { noteBehind(&next, thread) }
+            announceLearned(&next, learned)
         case let .endShown(scene, key, shown):
             if shown {
                 next.scenes[scene]?.atEnd = key
@@ -407,6 +410,9 @@ extension ChatApp {
             state.requests = cached.requests
             state.seen = cached.seen
             state.marks = cached.marks
+            // The folder's rows and marks as they were left: a mark that
+            // was ahead of its row then still is.
+            for thread in state.threads where cached.marks?[thread.id]?.ahead(of: thread) == true { state.rowsBehind.insert(thread.id) }
             // What was moved and not answered before the app stopped waits
             // for the first read the server answers.
             if cached.marks != nil {
@@ -573,6 +579,9 @@ extension ChatApp {
         }
         state.chats = threads.chats.map(newer)
         state.automated = threads.automated.map(newer)
+        // These rows are the server's as of this read: no mark it brought,
+        // or one held from before, is ahead of them.
+        state.rowsBehind.subtract((threads.chats + threads.automated).map(\.id))
         if !state.baselined {
             for record in state.chats + state.automated {
                 if let finished = record["finishedAt"]?.string {
@@ -590,6 +599,7 @@ extension ChatApp {
     /// One thread row, read on its own: a handover, a poll, a rename.
     private func upsert(_ state: inout State, _ record: Record) {
         if let held = state.thread(record.id)?.record, held.version > record.version { return }
+        state.rowsBehind.remove(record.id)
         replaceRow(&state, record)
         threadMoved(&state, record)
     }
@@ -647,12 +657,13 @@ extension ChatApp {
         // offering the turn before it as the answer.
         guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
             thread.status != "stopped", thread.status == "error" || thread.record["lastReply"]?.text != nil,
-            state.marks == nil || state.unread(thread)
+            state.marks == nil || state.unread(thread) || state.failedUnseen(thread)
         else { return }
         let request = ChatNotifications.reply(
             thread: thread, agent: agentName(thread.agentID ?? ""),
             title: state.title(thread), failed: notificationWords(state, thread: thread))
         state.asks.append(state.marks == nil ? .notify(request) : .notifyHeld(request, seconds: Self.notifyHold))
+        state.announced.insert(thread.id)
     }
 
     func apply(_ state: inout State, cards: ChatAppStep.Cards) {

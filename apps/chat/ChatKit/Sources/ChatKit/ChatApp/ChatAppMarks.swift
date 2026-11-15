@@ -39,16 +39,28 @@ extension ChatAppState {
         marks?[thread] != nil || marking[thread] != nil || markSending[thread] != nil
     }
 
+    /// Whether a thread's last call failed with nobody having looked since.
+    /// A call that fails before any reply moves no `lastMessage` (the
+    /// server passes over a message no reply came after), so the chat is
+    /// not unread by it and its mark says nothing of the failure: it is
+    /// seen only where the position was taken after the thread settled.
+    func failedUnseen(_ thread: ChatThread) -> Bool {
+        guard thread.status == "error", let settled = thread.record["finishedAt"]?.string.flatMap(Timestamp.parse) else { return false }
+        guard let at = mark(thread.id, last: thread.lastMessage)?.readAt else { return true }
+        return at <= settled
+    }
+
     /// Everything what is unread is read from, to tell an event that
     /// moved none of it without counting again.
     var readState: ReadState {
-        ReadState(marks: marks, marking: marking, sending: markSending, chats: chats, automated: automated, others: others)
+        ReadState(marks: marks, marking: marking, sending: markSending, behind: rowsBehind, chats: chats, automated: automated, others: others)
     }
 
     struct ReadState: Equatable {
         var marks: [String: ThreadMark]?
         var marking: [String: MarkChange]
         var sending: [String: MarkChange]
+        var behind: Set<String>
         var chats: [Record]
         var automated: [Record]
         var others: [String: Record]
@@ -62,9 +74,10 @@ extension ChatAppState {
     /// The chats whose end somebody is looking at, each with the newest
     /// message it settled with: a window in front and active shows the
     /// conversation, its view says the end is on screen, the thread has
-    /// settled, and the rows drawn hold that message.
+    /// settled, and the rows drawn hold that message. Nobody while the
+    /// sign-in has ended: the screen that says so stands over every chat.
     var seeing: [String: String] {
-        guard appActive, marks != nil else { return [:] }
+        guard appActive, marks != nil, !accessEnded else { return [:] }
         var out: [String: String] = [:]
         for scene in scenes.values where scene.active {
             guard let key = scene.current, scene.atEnd == key, let entry = conversations[key], !entry.owns, let id = entry.thread,
@@ -192,6 +205,18 @@ extension ChatApp {
         return learned
     }
 
+    /// A mark stored without its thread's row, a read of the marks alone
+    /// or the answer to a write: where it is ahead of the row held, the
+    /// row is read again, and until it is the chat is not called unread
+    /// for a message another device read past. A dot that went must not
+    /// come back for the time one read takes to follow another.
+    func noteBehind(_ state: inout State, _ thread: String) {
+        guard let mark = state.marks?[thread], let row = state.thread(thread), mark.ahead(of: row) else { return }
+        state.rowsBehind.insert(thread)
+        state.feedBatch.insert(.init(kind: Kinds.thread, id: thread))
+        state.asks.append(.feedWait(seconds: 0))
+    }
+
     /// A reply that settled before its chat's mark was known waited for it:
     /// notified now, where the mark says nobody read it.
     func announceLearned(_ state: inout State, _ threads: [String]) {
@@ -222,6 +247,7 @@ extension ChatApp {
         state.marks = nil
         state.marking = [:]
         state.markSending = [:]
+        state.rowsBehind = []
         state.sights = [:]
         if state.marksKnown {
             state.marksKnown = false
@@ -311,10 +337,7 @@ extension ChatApp {
         if (state.marks?[thread]?.version ?? 0) <= mark.version { state.marks?[thread] = mark }
         // The server kept a later position than the one sent: another
         // device read further, in a thread this one holds an older row of.
-        if let asked = sent.readThrough, mark.readThrough != asked {
-            state.feedBatch.insert(.init(kind: Kinds.thread, id: thread))
-            state.asks.append(.feedWait(seconds: 0))
-        }
+        noteBehind(&state, thread)
     }
 
     /// A write that did not land is nothing the person can act on: it waits
@@ -358,6 +381,17 @@ extension ChatApp {
             state.asks.append(.sight(thread: thread, message: message))
         }
         let visible = state.visibleThreads
+        // A reply notified and since read: taken back. Held by thread and
+        // not by what changed in one event, since a list read may drop a
+        // row and a later one bring it back beside the mark that reads it.
+        for thread in state.announced.sorted() {
+            if visible.contains(thread) {
+                state.announced.remove(thread)
+            } else if let row = state.thread(thread), !row.running, state.marked(thread), !state.unread(row), !state.failedUnseen(row) {
+                state.announced.remove(thread)
+                state.asks.append(.cancelGroup(thread))
+            }
+        }
         for (thread, change) in state.marking where change.due != nil && !visible.contains(thread) {
             state.marking[thread]?.due = nil
         }

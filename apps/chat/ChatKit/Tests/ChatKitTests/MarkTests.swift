@@ -72,6 +72,15 @@ extension ChatRig {
     }
 }
 
+extension ThreadMark {
+    /// Without when the server took the position: what a test names.
+    fileprivate var plain: ThreadMark {
+        var out = self
+        out.readAt = nil
+        return out
+    }
+}
+
 private func thread(_ properties: [String: JSONValue]) -> ChatThread {
     var all: [String: JSONValue] = ["mode": "chat", "status": "ok", "finishedAt": "2026-10-31T10:00:05Z"]
     all.merge(properties) { _, new in new }
@@ -80,9 +89,10 @@ private func thread(_ properties: [String: JSONValue]) -> ChatThread {
 
 private func message(_ id: String) -> JSONValue { ["ref": .string("\(Kinds.message)/\(id)")] }
 
-private func markRecord(_ thread: String, readThrough: String?, unread: Bool? = nil, version: Int) -> Record {
+private func markRecord(_ thread: String, readThrough: String?, unread: Bool? = nil, version: Int, readAt: String? = nil) -> Record {
     var properties: [String: JSONValue] = ["thread": ["ref": .string("\(Kinds.thread)/\(thread)")]]
     if let readThrough { properties["readThrough"] = message(readThrough) }
+    if let readAt { properties["readAt"] = .string(readAt) }
     if let unread { properties["markedUnread"] = .bool(unread) }
     return Record(id: "\(thread).me", kind: Kinds.threadMark, properties: properties, version: version)
 }
@@ -237,7 +247,7 @@ struct ReadingMovesTheMark {
         #expect(server.writes[0]["thread"] as? String == "t1")
         try await rig.harness.until(advancing: 1) { harness in
             let state = await harness.state
-            return state.markSending.isEmpty && state.marks?["t1"] == ThreadMark(readThrough: "t1-m2", version: 1)
+            return state.markSending.isEmpty && state.marks?["t1"]?.plain == ThreadMark(readThrough: "t1-m2", version: 1)
         }
         // Read already: looking at it longer writes nothing more.
         await rig.harness.advance(by: 5)
@@ -574,7 +584,7 @@ struct MarksFromElsewhere {
         await rig.harness.deliver(.init(.marksRead(stale)))
         await rig.harness.deliver(.init(.marksRead(ChatAppStep.Marks(threads: ["t1"], records: []))))
         #expect(await rig.row("t1")?.unread == false)
-        #expect(await rig.harness.state.marks?["t1"] == ThreadMark(readThrough: "t1-m2", version: 2))
+        #expect(await rig.harness.state.marks?["t1"]?.plain == ThreadMark(readThrough: "t1-m2", version: 2))
 
         // Mark as Unread on another device does bring it back, and the
         // open chat here does not read it away again.
@@ -1172,5 +1182,132 @@ struct AskingToNotify {
         try await rig.harness.until { harness in await harness.state.preferences.askedNotifications }
         #expect(await rig.harness.presentation.notificationOffer == nil)
         #expect(!rig.notifications.calls.contains(.requestPermission))
+    }
+}
+
+/// What the seeded runs found (`SeededRun`), each as the engine alone, on
+/// what the test names.
+@Suite("What the seeded runs found", .timeLimit(.minutes(10)))
+struct FoundBySeededRuns {
+    private let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+    private let agent: JSONValue = ["ref": .string("\(Kinds.agent)/\(helper)")]
+
+    private func held(_ ask: ChatAppAsk) -> Bool { if case .notifyHeld = ask { true } else { false } }
+
+    /// The screen that says the sign-in ended stands over every chat, and
+    /// no view says its end left the screen: the second is not counted
+    /// under it (seed 1107).
+    @Test func aChatUnderTheScreenThatSaysTheSignInEndedIsNotRead() throws {
+        let key = ChildKey("k")
+        var state = signedInState()
+        state.recordsRevision = 8
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1)]
+        state.chats = [thread(["lastMessage": message("m2")]).record]
+        let rows = ["m1", "m2"].map { Record(id: $0, kind: Kinds.message, properties: ["role": "assistant", "content": .string($0)]) }
+        state.transcripts["t1"] = .init(records: rows, turns: [], version: 3, full: false)
+        state.conversations[key] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1", agent: helper)
+        state.scenes["s"] = .init(current: key)
+        state.accessEnded = true
+        state = try app.apply(.init(.endShown(scene: "s", key: key, shown: true)), to: state)
+        #expect(state.seeing.isEmpty && state.sights.isEmpty)
+        #expect(!state.asks.contains { if case .sight = $0 { true } else { false } })
+        // Signed in again, with the chat still at its end.
+        state.accessEnded = false
+        state = try app.apply(.init(.endShown(scene: "s", key: key, shown: true)), to: state)
+        #expect(state.asks.contains(.sight(thread: "t1", message: "m2")))
+    }
+
+    /// A launch that does not know yet that the server keeps marks notifies
+    /// by the device's own map. The first marks it learns take that back
+    /// where they say the reply was read (seeds 1174, 20163).
+    @Test func theFirstMarksTakeBackWhatTheDevicesMapNotified() throws {
+        var state = signedInState()
+        state.baselined = true
+        let settled = thread(["lastMessage": message("m2"), "lastReply": "Hello", "agent": agent]).record
+        state = try app.apply(.init(.threadsRead(.init(chats: [settled], automated: []))), to: state)
+        #expect(state.asks.contains { if case .notify = $0 { true } else { false } })
+        state = try app.apply(.init(.featuresRead(agents: 3, records: 8)), to: state)
+        #expect(state.asks.contains(.readMarks(["t1"])))
+        let read = try app.apply(
+            .init(.marksRead(.init(threads: ["t1"], records: [markRecord("t1", readThrough: "m2", version: 1)]))), to: state)
+        #expect(read.asks.contains(.cancelGroup("t1")))
+        // Read by nobody: it stands.
+        let unread = try app.apply(.init(.marksRead(.init(threads: ["t1"], records: []))), to: state)
+        #expect(!unread.asks.contains(.cancelGroup("t1")))
+    }
+
+    /// A read of the marks alone brings one ahead of the row held: another
+    /// device read a reply this one has no row of. The chat is not called
+    /// unread for the older message, its row is read again, and what that
+    /// read brings is told by the rule (seeds 1058, 1131).
+    @Test func aMarkAheadOfTheRowHeldBringsNoDotBack() throws {
+        var state = signedInState()
+        state.recordsRevision = 8
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1)]
+        state.chats = [thread(["lastMessage": message("m1")]).record]
+        #expect(!state.unread(ChatThread(record: state.chats[0])))
+        let ahead = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m2", version: 2, readAt: "2026-10-31T10:05:00Z")])
+        state = try app.apply(.init(.marksRead(ahead)), to: state)
+        #expect(state.marks?["t1"]?.readThrough == "m2" && state.rowsBehind == ["t1"])
+        #expect(!state.unread(ChatThread(record: state.chats[0])))
+        #expect(state.feedBatch.contains(.init(kind: Kinds.thread, id: "t1")) && state.asks.contains(.feedWait(seconds: 0)))
+
+        // The row it speaks of arrives: read.
+        var newer = thread(["lastMessage": message("m2"), "finishedAt": "2026-10-31T10:04:00Z"]).record
+        newer.version = 4
+        let caught = try app.apply(.init(.threadsRead(.init(chats: [newer], automated: []))), to: state)
+        #expect(caught.rowsBehind.isEmpty && !caught.unread(ChatThread(record: caught.chats[0])))
+        // The row read again is the same one: the position was taken by a
+        // device that held an older row itself, and the chat is unread.
+        let same = try app.apply(.init(.threadsRead(.init(chats: state.chats, automated: []))), to: state)
+        #expect(same.rowsBehind.isEmpty && same.unread(ChatThread(record: same.chats[0])))
+
+        // A position from before the row settled is behind it, and unread
+        // at once.
+        var behind = signedInState()
+        behind.recordsRevision = 8
+        behind.marks = [:]
+        behind.chats = [thread(["lastMessage": message("m2")]).record]
+        let older = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m1", version: 1, readAt: "2026-10-31T09:00:00Z")])
+        behind = try app.apply(.init(.marksRead(older)), to: behind)
+        #expect(behind.rowsBehind.isEmpty && behind.unread(ChatThread(record: behind.chats[0])))
+    }
+
+    /// A list read that started before a chat existed lands without its
+    /// row, and the next one brings the row back beside a mark that reads
+    /// it: the reply notified in between is taken back all the same (seed
+    /// 5138).
+    @Test func aReplyNotifiedIsTakenBackWhenItsRowComesBackRead() throws {
+        var state = signedInState()
+        state.recordsRevision = 8
+        state.baselined = true
+        state.marks = ["t1": .none]
+        let settled = thread(["lastMessage": message("m2"), "lastReply": "Hello", "agent": agent]).record
+        state = try app.apply(.init(.threadsRead(.init(chats: [settled], automated: []))), to: state)
+        #expect(state.asks.contains(where: held) && state.announced == ["t1"])
+        state = try app.apply(.init(.threadsRead(.init(chats: [], automated: []))), to: state)
+        #expect(state.thread("t1") == nil && !state.asks.contains(.cancelGroup("t1")))
+        let marks = ChatAppStep.Marks(threads: ["t1"], records: [markRecord("t1", readThrough: "m2", version: 1)])
+        state = try app.apply(.init(.threadsRead(.init(chats: [settled], automated: [], marks: marks))), to: state)
+        #expect(state.asks.contains(.cancelGroup("t1")) && state.announced.isEmpty)
+    }
+
+    /// A call that failed before any reply moves no `lastMessage` (the
+    /// server passes over a message no reply came after), so the chat is
+    /// not unread: the failure is notified all the same, and not where the
+    /// position was taken after the thread settled.
+    @Test func aFailedCallIsNotifiedThoughTheChatIsNotUnread() throws {
+        var failed = thread(["status": "error", "lastMessage": message("m1"), "agent": agent, "finishedAt": "2026-10-31T10:00:05Z"]).record
+        failed.version = 4
+        var state = signedInState()
+        state.recordsRevision = 8
+        state.baselined = true
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1, readAt: Timestamp.parse("2026-10-31T09:00:00Z"))]
+        let told = try app.apply(.init(.threadsRead(.init(chats: [failed], automated: []))), to: state)
+        #expect(!told.unread(ChatThread(record: failed)) && told.asks.contains(where: held))
+        // Somebody looked at the chat after it failed.
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 2, readAt: Timestamp.parse("2026-10-31T10:01:00Z"))]
+        let quiet = try app.apply(.init(.threadsRead(.init(chats: [failed], automated: []))), to: state)
+        #expect(!quiet.asks.contains(where: held))
     }
 }

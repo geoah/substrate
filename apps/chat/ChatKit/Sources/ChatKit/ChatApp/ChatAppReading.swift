@@ -148,7 +148,11 @@ extension ChatAppState {
             guard let finished = thread.record["finishedAt"]?.string else { return false }
             return seen[thread.id] != finished
         }
-        return mark(thread.id, last: thread.lastMessage)?.unread(lastMessage: thread.lastMessage) ?? false
+        guard let mark = mark(thread.id, last: thread.lastMessage) else { return false }
+        // A mark ahead of the row says nothing of the row held: the chat
+        // reads as it did until the row it speaks of is here.
+        if rowsBehind.contains(thread.id), !mark.markedUnread { return false }
+        return mark.unread(lastMessage: thread.lastMessage)
     }
 
     /// The cards waiting on the owner in a thread: questions, suggestions

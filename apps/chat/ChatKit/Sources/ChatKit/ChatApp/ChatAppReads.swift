@@ -50,6 +50,7 @@ extension ChatAppState {
         state.marksDue = nil
         state.sights = [:]
         state.notificationOffer = nil
+        state.announced = []
         return state
     }
 
@@ -61,6 +62,7 @@ extension ChatAppState {
         state.marks = nil
         state.marking = [:]
         state.markSending = [:]
+        state.rowsBehind = []
         return state
     }
 
