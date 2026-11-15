@@ -456,7 +456,7 @@ extension Conversation {
         state.turnFailure = nil
         state.lastFailure = nil
         state.chatFailure = nil
-        let kept = state.reloadFailed != nil ? state.provisional.turns : []
+        let kept = state.provisional.turns
         var run = State.Send(
             message: pending.message, agent: pending.agent, sentTo: pending.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: nil, sentAt: at)
@@ -555,10 +555,12 @@ extension Conversation {
         // The strip's failure was about a send or this chat's last run: a
         // new send answers it.
         state.chatFailure = nil
-        // What the last run's stream said is the stored rows' job now,
-        // unless their read failed: then it is still the only view of that
-        // run.
-        let kept = state.reloadFailed != nil ? state.provisional.turns : []
+        // What a run before this one drew and no read of this conversation
+        // has paired with its rows yet stays held: a read that failed, a
+        // run a sign-in's end cut off. The fold draws it once with the
+        // rows whoever reads them, and it keeps its id; let go of here, its
+        // row would be drawn as another turn.
+        let kept = state.provisional.turns
         var run = State.Send(
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: baseline, sentAt: at, typed: typed ?? fromDraft)
@@ -599,7 +601,7 @@ extension Conversation {
         guard let thread = state.thread, let agent = agent(state) else { return }
         startRun(&state)
         state.lastFailure = nil
-        let kept = state.reloadFailed != nil ? state.provisional.turns : []
+        let kept = state.provisional.turns
         var run = State.Send(
             message: "", agent: agent, sentTo: thread, kept: kept, failedBefore: state.reloadFailed, baseline: nil, sentAt: at,
             typed: false, resumes: true)
