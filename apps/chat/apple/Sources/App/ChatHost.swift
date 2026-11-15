@@ -148,9 +148,18 @@ final class ChatHost {
     }
 
     /// A run settled: said, and felt on a phone, where its chat is on
-    /// screen. Elsewhere its notification says it.
+    /// screen. Elsewhere in the app (another chat, the list, Settings) it
+    /// is felt lightly and not said: the person is reading something else,
+    /// and the list shows which chat it was. Away from the app its
+    /// notification says it.
     private func answered(_ answer: ChatAnswer) {
-        guard let thread = answer.thread, model.presentation.app?.onScreen.contains(thread) == true else { return }
+        guard let thread = answer.thread else { return }
+        guard model.presentation.app?.onScreen.contains(thread) == true else {
+            #if os(iOS)
+            if UIApplication.shared.applicationState == .active { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            #endif
+            return
+        }
         AccessibilityNotification.Announcement(answer.words).post()
         #if os(iOS)
         UINotificationFeedbackGenerator().notificationOccurred(.success)

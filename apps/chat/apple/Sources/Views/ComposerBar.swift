@@ -35,6 +35,7 @@ struct ComposerBar: View {
     @State private var selection: TextSelection?
     @Namespace private var glass
     @State private var sent = 0
+    @State private var stopped = 0
 
     private var composer: ComposerPresentation { screen.composer }
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -122,6 +123,7 @@ struct ComposerBar: View {
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
+        .sensoryFeedback(.impact(weight: .light), trigger: stopped)
         .onChange(of: composer.draftRevision, initial: true) { _, _ in
             if let next = draft.reports.take(composer, holding: text) { text = next }
             say()
@@ -246,7 +248,10 @@ struct ComposerBar: View {
                     .sendShortcut(on: .current)
                     .transition(.scale.combined(with: .opacity))
             }
-            round("stop.fill", tint: .red, label: screen.stopping ? "Stopping" : "Stop") { host.send(.stop, to: key) }
+            round("stop.fill", tint: .red, label: screen.stopping ? "Stopping" : "Stop") {
+                stopped += 1
+                host.send(.stop, to: key)
+            }
                 .disabled(screen.stopping)
                 .accessibilityHint(composer.queued ?? "")
         } else if dictation.active {
