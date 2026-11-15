@@ -328,13 +328,36 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 
     /// A background action holds the app awake until the app says it is
     /// done with it (`SystemNotifications.finished`): the system may
-    /// suspend the app the moment this returns. A tap brings the app to the
-    /// front, and a dismissal asks for nothing: both return at once.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    /// suspend the app the moment it is answered. A tap brings the app to
+    /// the front, and a dismissal asks for nothing: both are answered at
+    /// once. The system's handler is called on the main thread, where it
+    /// takes the app's snapshot: the `async` form of this method answers
+    /// from whichever thread the wait ended on, and UIKit stops the app
+    /// there.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
         let made = Self.response(response)
         deliver(made)
-        guard case .named = made.action else { return }
-        await waits.wait(for: ResponseWaits.key(made))
+        guard case .named = made.action else { return completionHandler() }
+        let answer = Answer(completionHandler)
+        Task { [waits] in
+            await waits.wait(for: ResponseWaits.key(made))
+            await MainActor.run { answer.call() }
+        }
+    }
+
+    /// The system's handler, carried to the main thread to be called there
+    /// once.
+    private final class Answer: @unchecked Sendable {
+        private let handler: () -> Void
+
+        init(_ handler: @escaping () -> Void) {
+            self.handler = handler
+        }
+
+        func call() { handler() }
     }
 
     static func response(_ response: UNNotificationResponse) -> NotificationResponse {
