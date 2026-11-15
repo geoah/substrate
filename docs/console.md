@@ -975,13 +975,14 @@ panel on the right.
   **Pin**, which keeps the chat in a **Pinned** section above the rest
   however old it is, and **Archive**, which takes it out of the list at
   once: nothing is asked first, and **Undo** is offered for a few seconds.
-  **Archived**, beside the Chats heading, lists what you put away, each with
+  **Archived**, beside the Chats heading, lists what you put away, a
+  hundred at a time with **Older chats** and **Newer chats**, each with
   **Unarchive**. Both follow you to every device and change nobody else's
   list ([pinned and archived chats](agents.md#pinned-and-archived-chats)).
   Archiving deletes nothing and stops nothing: the chat runs on and its cost
   still counts. An archived chat that comes to wait on you shows in the list
   again, marked **Archived**, until it is answered; a reply in one does not
-  bring it back. An archived chat you open says so with **Unarchive** in its
+  bring it back. A chat that waits on you is listed however old it is. An archived chat you open says so with **Unarchive** in its
   header, and saying something in it unarchives it. On a server from before
   them, the menu offers neither and there is no Archived view.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from

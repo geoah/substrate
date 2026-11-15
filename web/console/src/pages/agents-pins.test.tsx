@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const watch = vi.hoisted(() => ({
   calls: [] as {
+    from?: number
     filter?: { kinds?: string[] }
     onRow: (row: unknown) => void
   }[],
@@ -32,6 +33,7 @@ const watch = vi.hoisted(() => ({
 
 vi.mock("@/lib/api/changes", () => ({
   watchChanges: (opts: {
+    from?: number
     filter?: { kinds?: string[] }
     onRow: (row: unknown) => void
   }) => {
@@ -80,12 +82,13 @@ let server: {
   threads: { id: string; title: string; waiting?: number }[]
   marks: Map<string, Flags>
   writes: ({ thread: string } & Flags)[]
-  /** The `referencedBy` each thread list carried, undefined for none. */
-  threadReads: (
-    { flag: string; exists: boolean; waiting: boolean } | undefined
-  )[]
+  /** What each thread list asked for: the `referencedBy` it carried,
+   * "waiting" for the chats that wait, undefined for every chat. */
+  threadReads: ({ flag: string; exists: boolean } | "waiting" | undefined)[]
   /** Refuse the next write of a mark. */
   failWrite?: boolean
+  /** How many chats a page of a list holds, where a test cuts it short. */
+  window?: number
 }
 
 function threadRecord(t: { id: string; title: string; waiting?: number }) {
@@ -127,7 +130,10 @@ function markRecord(thread: string) {
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status })
-const page = (records: unknown[]) => json({ records, head: 1, generation: "g" })
+/** A page of a list. The thread lists are read before the marks, so their
+ * head is the older one. */
+const page = (records: unknown[], head = 5, cursor?: string) =>
+  json({ records, head, generation: "g", ...(cursor && { cursor }) })
 
 beforeEach(() => {
   watch.calls.length = 0
@@ -200,7 +206,8 @@ beforeEach(() => {
         return page(
           (filter.properties?.thread?.in ?? [])
             .filter((id) => server.marks.has(id))
-            .map(markRecord)
+            .map(markRecord),
+          9
         )
       if (kind === AGENT)
         return page([
@@ -227,19 +234,30 @@ beforeEach(() => {
         ? (["pinned", "archived"] as const).find((f) => f in by.properties)!
         : undefined
       const waiting = filter.properties?.waitingOnPerson?.gt === 0
+      // What waits is read on its own, whatever the marks say.
+      if (waiting) expect(by).toBeUndefined()
       server.threadReads.push(
-        by ? { flag: flag!, exists: by.exists !== false, waiting } : undefined
+        by
+          ? { flag: flag!, exists: by.exists !== false }
+          : waiting
+            ? "waiting"
+            : undefined
       )
+      const found = server.threads
+        .filter(
+          (t) =>
+            !flag ||
+            (server.marks.get(t.id)?.[flag] === true) === (by!.exists !== false)
+        )
+        .filter((t) => !waiting || (t.waiting ?? 0) > 0)
+      // The list's window, and a page of it by offset.
+      const size = waiting ? found.length : (server.window ?? found.length)
+      const offset = Number(u.searchParams.get("offset") ?? 0)
+      const start = server.window ? (offset / 100) * server.window : 0
       return page(
-        server.threads
-          .filter(
-            (t) =>
-              !flag ||
-              (server.marks.get(t.id)?.[flag] === true) ===
-                (by!.exists !== false)
-          )
-          .filter((t) => !waiting || (t.waiting ?? 0) > 0)
-          .map(threadRecord)
+        found.slice(start, start + size).map(threadRecord),
+        5,
+        start + size < found.length ? "more" : undefined
       )
     })
   )
@@ -271,11 +289,10 @@ function titles(list: HTMLElement) {
   return within(list)
     .getAllByRole("button")
     .filter((b) => !b.getAttribute("aria-label"))
-    .map((b) => b.textContent ?? "")
-    .map(
-      (text) =>
-        server.threads.find((t) => text.includes(t.title))?.title ?? text
-    )
+    .flatMap((b) => {
+      const chat = server.threads.find((t) => b.textContent?.includes(t.title))
+      return chat ? [chat.title] : []
+    })
 }
 
 async function chats() {
@@ -312,9 +329,9 @@ describe("the chats page, pinned and archived", () => {
     // chats are not read until their view is opened.
     expect(server.threadReads).toEqual(
       expect.arrayContaining([
-        { flag: "archived", exists: false, waiting: false },
-        { flag: "pinned", exists: true, waiting: false },
-        { flag: "archived", exists: true, waiting: true },
+        { flag: "archived", exists: false },
+        { flag: "pinned", exists: true },
+        "waiting",
       ])
     )
     expect(server.threadReads).toHaveLength(3)
@@ -395,7 +412,6 @@ describe("the chats page, pinned and archived", () => {
     expect(server.threadReads).toContainEqual({
       flag: "archived",
       exists: true,
-      waiting: false,
     })
     await pick(archived, "Oldest", "Unarchive")
     expect(server.writes).toEqual([{ thread: "t-old", archived: false }])
@@ -465,12 +481,102 @@ describe("the chats page, pinned and archived", () => {
     expect(server.writes).toHaveLength(1)
   })
 
+  it("lists a chat that waits on you though it is older than the list's window", async () => {
+    server.threads[2].waiting = 1
+    server.window = 2
+    renderPage()
+    const list = await chats()
+    await waitFor(() =>
+      expect(titles(list)).toEqual(["Newest", "Middle", "Oldest"])
+    )
+    expect(
+      within(list).getByRole("button", { name: /^Oldest/ }).textContent
+    ).toContain("Waiting on you")
+  })
+
+  it("brings back an archived run when it comes to wait on you", async () => {
+    server.marks.set("t-old", { archived: true })
+    renderPage()
+    const list = await chats()
+    await waitFor(() => expect(titles(list)).toEqual(["Newest", "Middle"]))
+    // Nothing listed is running, and the thread rows are watched all the
+    // same: the run the person put away is in none of the lists.
+    const feed = () =>
+      watch.calls.find((c) => c.filter?.kinds?.includes(THREAD))
+    await waitFor(() => expect(feed()).toBeTruthy())
+    server.threads[2].waiting = 1
+    act(() => feed()!.onRow({ seq: 6, kind: THREAD, recordId: "t-old" }))
+    await waitFor(
+      () => expect(titles(list)).toEqual(["Newest", "Middle", "Oldest"]),
+      { timeout: 4000 }
+    )
+    // Its mark is read once it is listed, and says why Unarchive is offered.
+    await waitFor(() =>
+      expect(
+        within(list).getByRole("button", { name: /^Oldest/ }).textContent
+      ).toContain("Archived")
+    )
+  })
+
+  it("follows the marks from the oldest of the lists it read", async () => {
+    renderPage()
+    await chats()
+    const feed = () => watch.calls.find((c) => c.filter?.kinds?.includes(MARK))
+    await waitFor(() => expect(feed()).toBeTruthy())
+    // The lists answered at head 5 and the marks, read after them, at 9: a
+    // mark written between the two is heard only from 5.
+    expect(feed()!.from).toBe(5)
+  })
+
+  it("turns the pages of the archived chats", async () => {
+    for (const t of server.threads) server.marks.set(t.id, { archived: true })
+    server.window = 2
+    // Every chat is archived: the list is empty, and the view is still
+    // offered.
+    renderPage()
+    fireEvent.click(await screen.findByRole("button", { name: "Archived" }))
+    const archived = await screen.findByRole("navigation", {
+      name: "Archived chats",
+    })
+    await waitFor(() => expect(titles(archived)).toEqual(["Newest", "Middle"]))
+    expect(screen.getByRole("button", { name: "Newer chats" })).toHaveProperty(
+      "disabled",
+      true
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Older chats" }))
+    await waitFor(() => expect(titles(archived)).toEqual(["Oldest"]))
+    expect(screen.getByRole("button", { name: "Older chats" })).toHaveProperty(
+      "disabled",
+      true
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Newer chats" }))
+    await waitFor(() => expect(titles(archived)).toEqual(["Newest", "Middle"]))
+  })
+
+  it("says so when the unarchive of a chat its person spoke in fails", async () => {
+    server.marks.set("t-mid", { archived: true })
+    renderPage("?thread=t-mid")
+    await chats()
+    await screen.findByRole("button", { name: "Unarchive" })
+    server.failWrite = true
+    await act(async () => fireEvent.click(screen.getByText("Say something")))
+    expect(
+      await screen.findByText("The chat couldn’t be unarchived")
+    ).toBeTruthy()
+    // The way back is still offered.
+    expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy()
+  })
+
   it("reads one list and offers neither action on a server from before them", async () => {
     server.revision = 8
     renderPage()
     const list = await chats()
     expect(titles(list)).toEqual(["Newest", "Middle", "Oldest"])
-    expect(server.threadReads).toEqual([undefined])
+    // Every chat, and the ones that wait: no read is narrowed by a mark.
+    expect(server.threadReads).toEqual(
+      expect.arrayContaining([undefined, "waiting"])
+    )
+    expect(server.threadReads).toHaveLength(2)
     expect(screen.queryByRole("button", { name: "Archived" })).toBeNull()
     fireEvent.click(
       await within(list).findByRole("button", { name: "Actions: Middle" })

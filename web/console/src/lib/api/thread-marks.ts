@@ -7,9 +7,10 @@
  * moving back, so a late write is answered with what is stored and is no
  * failure.
  *
- * The chat list is read in parts, each a list of threads the server narrows
- * by the caller's own marks (`referencedBy`): the chats they have not
- * archived, the ones they pinned however old, and the archived ones. */
+ * The chat list is read in parts: the chats that wait on a person, and
+ * three lists of threads the server narrows by the caller's own marks
+ * (`referencedBy`), the chats they have not archived, the ones they pinned
+ * however old, and the archived ones. */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -47,6 +48,10 @@ export function myThreadMarksQueryOptions(threadIds: string[]) {
   })
 }
 
+/** The revision of `records` from which the server keeps marks, and a
+ * thread counts what waits on a person (`waitingOnPerson`). */
+export const THREAD_MARKS_REVISION = 8
+
 /** The revision of `records` from which a mark carries `pinned` and
  * `archived` and a list of threads is narrowed by the reader's own marks.
  * Below it the server refuses the two properties and the `referencedBy`
@@ -69,34 +74,35 @@ export function byMyMark(
 }
 
 /** The parts the chat list is read in. `all` is the one list a server from
- * before pin and archive serves. `archivedWaiting` is the archived chats
- * that wait on a person, which the list shows all the same: an archive
- * hides no question. */
+ * before pin and archive serves. `waiting` is every chat that waits on a
+ * person, whatever its marks say and however old it is: neither an archive
+ * nor the list's window hides a question. */
 export type ChatListPart =
-  "all" | "unarchived" | "pinned" | "archived" | "archivedWaiting"
+  "all" | "unarchived" | "pinned" | "archived" | "waiting"
 
-/** One part of the chat list, most recently active first. The pinned part
- * holds a chat the person also archived; the mark says so, and the list
- * keeps it with the archived ones. */
-export function chatListQueryOptions(
-  part: ChatListPart,
-  first = CHAT_LIST_WINDOW
-) {
-  if (part === "all") return conversationsQueryOptions(first)
+/** One part of the chat list, most recently active first; `page` is which
+ * window of it, 0 the newest. The pinned part holds a chat the person also
+ * archived; the mark says so, and the list keeps it with the archived
+ * ones. */
+export function chatListQueryOptions(part: ChatListPart, page = 0) {
+  if (part === "all") return conversationsQueryOptions()
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "thread",
-    first,
+    first: CHAT_LIST_WINDOW,
+    ...(page > 0 && { offset: page * CHAT_LIST_WINDOW }),
     filter: {
       properties: {
         mode: { in: CONVERSATION_MODES },
-        ...(part === "archivedWaiting" && { waitingOnPerson: { gt: 0 } }),
+        ...(part === "waiting" && { waitingOnPerson: { gt: 0 } }),
       },
-      referencedBy:
-        part === "unarchived"
-          ? byMyMark("archived", false)
-          : byMyMark(part === "pinned" ? "pinned" : "archived", true),
+      ...(part !== "waiting" && {
+        referencedBy:
+          part === "unarchived"
+            ? byMyMark("archived", false)
+            : byMyMark(part === "pinned" ? "pinned" : "archived", true),
+      }),
     },
     orderBy: "updatedAt:desc",
   })

@@ -58,14 +58,17 @@ and the general arm, `referencedBy`.
   person alone.
 - **What waits on a person is never hidden.** A thread whose
   `waitingOnPerson` is above 0 is listed, counted and notified for whether
-  or not its reader archived it, from the thread's own count, which needs no
-  mark. The flag stays, so the thread leaves the list again once answered.
+  or not its reader archived it. A client reads those threads on their own,
+  by the thread's count, which needs no mark, and follows the thread kind on
+  the change feed, since a run it archived is in no other list it reads. The
+  flag stays, so the thread leaves the list again once answered.
 - **An archived thread counts nowhere else.** No unread count holds it and
   no reply in it notifies. This binds each client, and the push sender when
   one is built.
 - **Saying something ends it.** A client whose person sends a message into a
-  thread they archived, or continues it, writes `archived: false` first.
-  This is the client's: the send path writes no mark.
+  thread they archived, or continues it, writes `archived: false` with it.
+  The message is not held for that write, and a client says so when the
+  write fails. This is the client's: the send path writes no mark.
 - **Archived wins over pinned.** A thread with both is with the archived
   ones, keeps its pin, and is pinned again when unarchived.
 - **The read.** `filter.referencedBy` names a kind, a single reference of it,
