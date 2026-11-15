@@ -16,8 +16,15 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var records: [Record]
         var turns: [Turn]
         var version: Int
-        /// The read filled its window: there may be older rows.
+        /// There may be rows before the ones held: the read filled its
+        /// window, and no read of the rows before it has reached the
+        /// thread's first.
         var full: Bool
+        /// Rows were read in above the ones held: the turn that stood first
+        /// before the last of them arrived, by its row, and how often that
+        /// has happened. What a transcript on screen is kept at.
+        var above: String?
+        var grown = 0
     }
 
     /// One conversation the list keeps, and what it knows of it.
@@ -45,6 +52,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// Where what the person had not read began when the chat was
         /// opened: the "New" line stands there while the chat stays open.
         var newFrom: NewFrom?
+        /// The message the chat was opened at, from a search: its row, and
+        /// how often the chat was asked to be put at a row.
+        var opensAt: String?
+        var visits = 0
     }
 
     /// Where a chat's unread part begins.
@@ -65,6 +76,69 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// The conversation whose end this window shows to somebody looking
         /// at it, as its view last said.
         var atEnd: ChildKey?
+        /// The window's list is the archived chats.
+        var archived = false
+        /// The window drew before the folder was read: what it opens to is
+        /// decided once the chats are held (`ChatApp.land`).
+        var arriving: Arrival?
+    }
+
+    /// What a window that just appeared may go back to: the chat it showed
+    /// when it last ran, where it was left within `ChatApp.freshFor`.
+    struct Arrival: Codable, Equatable, Sendable {
+        var restoring: String?
+        var key: ChildKey
+    }
+
+    /// Where the server's list of chats goes on past the ones held.
+    struct ListWindow: Codable, Equatable, Sendable {
+        /// The cursor after the last chat read; nil where the list ended
+        /// there, and until its first page is read.
+        var cursor: String?
+        /// Which list the cursor is of: the server takes a cursor back only
+        /// with the filter it was cut for, so a window read as every chat
+        /// starts over when it is read as the chats not archived.
+        var part: ChatLists.Part?
+        /// When the last chat of the last page read was last active: a
+        /// chat older than it is past the window. Nil with no cursor.
+        var end: Date?
+        /// The first page was read from the server since the folder was
+        /// opened: before that the chats held are the folder's.
+        var read = false
+        /// A read of the next page is out.
+        var reading = false
+        /// The next first page starts the window over, whatever it shares
+        /// with the rows held: the person asked for the list anew, or the
+        /// server could not go on from the cursor.
+        var restart = false
+    }
+
+    /// The archived chats, read when a window lists them.
+    struct Archive: Codable, Equatable, Sendable {
+        var rows: [Record] = []
+        var window = ListWindow()
+    }
+
+    /// The chat archived a moment ago, which Undo takes back until then.
+    struct Undo: Codable, Equatable, Sendable {
+        var thread: String
+        var until: Date
+    }
+
+    /// One window's search of the server's messages.
+    struct Search: Codable, Equatable, Sendable {
+        var query: String
+        /// The answer for `query` is not in yet: the pause, then the read.
+        var reading = true
+        /// The messages found, best first.
+        var hits: [Record] = []
+    }
+
+    /// A chat opened at a message its rows do not hold yet: the rows
+    /// before are read until they do, a few pages at most.
+    struct Seek: Codable, Equatable, Sendable {
+        var message: String
+        var reads = 0
     }
 
     /// The end of a chat on screen in a window in front: `message` is the
@@ -187,6 +261,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// The `records` revision that has the person's marks: `me` in a
     /// filter, and the mark kind.
     static let marksRevision = 8
+    /// The `records` revision that has `pinned` and `archived` on a mark,
+    /// and the `referencedBy` filter arm the lists are narrowed by.
+    static let flagsRevision = 9
     /// Try Again and Continue may call the continue route. Asked of the
     /// server's document, never found out by calling: an older server
     /// answers 404, and then they go on as before the route.
@@ -209,8 +286,39 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// Whose key each provider row runs on; nil until read, when no row is
     /// said to lack one.
     var keys: ProviderKeys?
+    /// The chats, most recently active first: the server's list from its
+    /// start down to `window`, each page as it was read, with the chats
+    /// opened on their own beside them. Where the server keeps the flags it
+    /// is the list of the chats not archived.
     var chats: [Record] = []
+    var window = ListWindow()
+    /// How many chats one read of the list asks for (`ChatApp.page`).
+    var page = ChatLists.page
     var automated: [Record] = []
+    /// The pinned chats, however old, and the ones that wait on a person,
+    /// archived or not: each read whole beside the list, where the server
+    /// keeps the flags. The pinned read also answers a pinned chat its
+    /// person archived, which the mark tells.
+    var pinned: [Record] = []
+    var waiting: [Record] = []
+    var archive = Archive()
+    var undo: Undo?
+    /// The pin or the archive the server refused for good, which Try Again
+    /// on the list's strip writes again.
+    var flagRefused: FlagRefused?
+
+    struct FlagRefused: Codable, Equatable, Sendable {
+        var thread: String
+        var change: MarkChange
+    }
+    /// The server said it keeps the flags and then refused the filter arm
+    /// they are read by: believed until the document is read again.
+    var flagsUnserved = false
+    /// Each window's search of the messages, by scene.
+    var searches: [String: Search] = [:]
+    /// The server refused the search: believed until the document is read
+    /// again, and the device's own rows are searched alone.
+    var searchUnserved = false
     /// Threads read one at a time that no list read holds: an old chat, or
     /// an automated run while those are hidden.
     var others: [String: Record] = [:]
@@ -294,6 +402,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var readEpochs: [String: Int] = [:]
     /// The thread version each read in flight started under.
     var reading: [String: Int] = [:]
+    /// The threads a read of the rows before the ones held is out for.
+    var olderReading: Set<String> = []
+    /// The chats opened at a message their rows do not hold yet, by thread.
+    var seeking: [String: Seek] = [:]
 
     /// The background run whose refresh is under way.
     var backgroundRun: BackgroundRun?

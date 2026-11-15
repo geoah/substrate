@@ -10,10 +10,12 @@ import SubstrateTesting
 /// person's steps chosen from the seed (sends, stops, Try Again and
 /// Continue, Send Again and Edit Message, opening and closing chats,
 /// leaving and coming back to the front, kills and relaunches, scrolling to
-/// a chat's end and away from it, Mark as Unread and Mark as Read), the
-/// server's turns moved, another device of theirs moving a mark, and the
-/// clock advanced between them, and after every step the rules a chat must
-/// keep whatever the server does.
+/// a chat's end and away from it, Mark as Unread and Mark as Read, Pin and
+/// Archive and Undo, the archived list, the list scrolled to its end, a
+/// search), the server's turns moved, a chat coming to wait on them,
+/// another device of theirs moving a mark or a flag, and the clock advanced
+/// between them, and after every step the rules a chat must keep whatever
+/// the server does.
 ///
 /// The seed fixes everything: the steps, the faults, the clock, and the
 /// order the app's concurrent work runs in, because a run is made on a
@@ -80,13 +82,40 @@ struct SeededRun {
         case shorter = "the text drawn for a turn is never shorter than it was a step ago"
         case renamed = "a row keeps the id its turn was first drawn by"
         case emptied = "nothing drawn of a run goes while the run goes on, an attach least of all"
+        /// The chat list (`ChatAppLists.swift`), where the server keeps a
+        /// person's pins and archives (decision 0322) and cuts its lists
+        /// into pages. An archived chat is drawn, counted and notified for
+        /// only while something in it waits on a person.
+        case archived = "an archived chat is in no list, badge or notification unless it waits"
+        case pinned = "a pinned chat is always shown"
+        case sections = "a chat is in at most one section"
+        /// Read from the list scrolled to its end once the server behaves:
+        /// every chat the server lists, once.
+        case paging = "paging never shows a chat twice or loses one when the order changes under it"
+        case undo = "Undo restores exactly"
+        /// A pin or an archive is written only where the person pressed
+        /// it, or spoke in a chat they had archived; and never to a server
+        /// that keeps neither.
+        case flags = "a flag is never written but where the person set it"
+        case found = "a search draws a message under the chat that holds it"
+        /// Known (below): a message sent under no id is found among the
+        /// rows by its words, and where the rows held when it was sent were
+        /// unread it may be paired with an older row of the same words.
+        case mispaired = "a message sent under no id is drawn as its own row, not an older one of the same words"
     }
 
     /// Rules the app is known to break today, each with what breaks it. A
     /// run notes one where it meets it and goes on, so the rest of the seed
-    /// is still held to every other rule. None is known today: an entry
-    /// that no longer fails must not stay.
-    static let known: [Rule: String] = [:]
+    /// is still held to every other rule. An entry that no longer fails
+    /// must not stay.
+    static let known: [Rule: String] = [
+        .mispaired:
+            "seed 6523 at 76 steps (CHATKIT_SEED=6523 CHATKIT_STEPS=76): after a relaunch, before the chat's rows and the server's document are read, "
+            + "\"say 3.\" is sent under no id into a thread whose rows already hold a \"say 3.\" sent under an id in the launch before. The fold "
+            + "(TurnFold, pairing a message sent under no id by its words) gives the new bubble's id to the older row. The transcript drawn is the "
+            + "server's rows, each once; only which of the two equal bubbles keeps the id `sent-1` is wrong. Found by the list's new steps, not "
+            + "caused by them: the pairing is the send-id group's."
+    ]
 
     let seed: UInt64
     let scene = "s"
@@ -97,6 +126,9 @@ struct SeededRun {
     let careless: Bool
     let rate: Double
     let with401: Bool
+    /// How many chats one read of the list asks for: few, so a handful of
+    /// chats is several pages.
+    let page: Int
     private let thread: SeededThread
     private var numbers: SeededNumbers
     private var rig: ChatRig
@@ -147,6 +179,22 @@ struct SeededRun {
     /// Each chat drawn with no dot while the server held it read, with the
     /// message it was read through: where a dot must not come back.
     private var cleared: [String: String] = [:]
+    /// The window lists the archived chats, and what it searches for.
+    private var showsArchived = false
+    private var query = ""
+    /// What the person pressed of a thread's flags, by thread: "pin",
+    /// "unpin", "archive", "unarchive"; and the chats they spoke in, where
+    /// an archive ends without a press.
+    private var pressedFlags: [String: Set<String>] = [:]
+    private var spokeIn: Set<String> = []
+    /// The chat the person archived, as the list drew it the moment before:
+    /// its row, where it stood among the rows, and the version of its
+    /// thread. What Undo must put back.
+    private var shelved: (thread: String, row: ThreadRow, at: Int, rows: [String], version: Int, step: Int, pinned: Bool?)?
+    /// Undo was pressed in this step, on this chat.
+    private var undid: String?
+    /// The chat a message was sent in in this step.
+    private var justSpoke: String?
     /// What each conversation drew at the last step: its thread, how many
     /// runs it had settled, whether one went on, and every turn's id, role
     /// and text. What the fold's rules compare a step with.
@@ -180,14 +228,20 @@ struct SeededRun {
         // id also say where a stream's text belongs (`agents` 5).
         var positions = SeededNumbers(seed: seed ^ SeededNumbers.hash("positions"))
         let agents = revision ?? (drawn == 3 && positions.below(2) == 0 ? 5 : drawn)
-        let server = SeededServer(seed: seed, clock: clock, revision: agents, records: marks.below(6) == 0 ? 7 : 8)
+        // And of its own once more: three in four of the servers that keep
+        // marks keep the flags too, and the list is read a few chats a page.
+        var flags = SeededNumbers(seed: seed ^ SeededNumbers.hash("flags"))
+        let kept = marks.below(6) == 0 ? 7 : 8
+        let records = kept == 8 && flags.below(4) != 0 ? 9 : kept
+        page = flags.pick([2, 2, 3, 4, 100])
+        let server = SeededServer(seed: seed, clock: clock, revision: agents, records: records)
         self.clock = clock
         self.ids = ids
         self.base = base
         self.server = server
         rig = ChatRig(
             platform: .ios, base: base, transport: server.connect(), clock: clock, ids: WatchedIDs(ids: ids, watch: server.watch),
-            watch: server.watch)
+            watch: server.watch, page: page)
         self.numbers = numbers
     }
 
@@ -279,7 +333,14 @@ struct SeededRun {
             if let name { out[name, default: 0] += 1 }
             let marks = [
                 "scrolls to the end": "person: scrolls to a chat's end", "scrolls up": "person: scrolls up from a chat's end",
-                "marks chat": "person: Mark as Unread or Mark as Read", "another device": "another device moves a mark",
+                "marks chat": "person: Mark as Unread or Mark as Read", "another device reads": "another device moves a mark",
+                "another device marks": "another device moves a mark", "another device pins": "another device moves a flag",
+                "another device unpins": "another device moves a flag", "another device archives": "another device moves a flag",
+                "another device unarchives": "another device moves a flag", "pins chat": "person: Pin or Unpin",
+                "unpins chat": "person: Pin or Unpin", "archives chat": "person: Archive", "unarchives chat": "person: Unarchive",
+                "presses Undo": "person: Undo", "opens the archived": "person: opens or closes the archived list",
+                "closes the archived": "person: opens or closes the archived list", "scrolls the list": "person: scrolls a list to its end",
+                "searches": "person: searches", "chat ": "a chat comes to wait on the person, or is answered",
             ]
             for (prefix, name) in marks where step.hasPrefix(prefix) { out[name, default: 0] += 1 }
         }
@@ -317,8 +378,13 @@ struct SeededRun {
     private mutating func step() async {
         var choices: [(weight: Int, name: String)] = [(12, "time"), (16, "work"), (3, "kill")]
         // The person's other device, whatever this one is doing.
-        if server.keepsMarks, !server.threadIDs.isEmpty { choices += [(4, "elsewhereRead"), (1, "elsewhereUnread")] }
+        if server.keepsMarks, !server.threadIDs.isEmpty { choices += [(4, "elsewhereRead"), (1, "elsewhereUnread"), (2, "wait")] }
+        if server.keepsFlags, !server.threadIDs.isEmpty { choices += [(2, "elsewherePin"), (2, "elsewhereArchive")] }
         let current = await shown()
+        let list = await rig.harness.presentation.list
+        let listed = list.sections.flatMap(\.rows)
+        undid = nil
+        justSpoke = nil
         if signedOut {
             choices.append((10, "signIn"))
         } else if !inFront {
@@ -329,6 +395,15 @@ struct SeededRun {
             let idle = current == nil
             choices += [(idle ? 24 : 4, "newChat"), (2, "refresh"), (4, "leave")]
             if !(await rig.harness.state.chats.isEmpty) { choices += [(idle ? 16 : 5, "show"), (2, "markUnread"), (2, "markRead")] }
+            // The list's own: offered where the server keeps the flags.
+            choices += [(2, "search")]
+            if list.more || list.archived?.more == true { choices.append((6, "end")) }
+            if list.flags {
+                choices.append((2, "archived"))
+                if !listed.isEmpty { choices += [(3, "pin"), (4, "archive")] }
+                if list.undo != nil { choices.append((8, "undo")) }
+                if showsArchived, list.archived?.rows.isEmpty == false { choices.append((4, "unarchive")) }
+            }
             if let current {
                 choices += [(2, "back"), (8, "scroll")]
                 if current.screen.composer.canSend { choices.append((30, "send")) }
@@ -395,6 +470,64 @@ struct SeededRun {
             let thread = numbers.pick(server.threadIDs)
             steps.append("another device marks chat \(thread) as unread")
             server.elsewhere(thread, unread: true)
+        case "elsewherePin":
+            let thread = numbers.pick(server.threadIDs)
+            let pinned = server.mark(of: thread)?.pinned != true
+            steps.append("another device \(pinned ? "pins" : "unpins") chat \(thread)")
+            server.elsewhere(thread, pinned: pinned)
+        case "elsewhereArchive":
+            let thread = numbers.pick(server.threadIDs)
+            let archived = server.mark(of: thread)?.archived != true
+            steps.append("another device \(archived ? "archives" : "unarchives") chat \(thread)")
+            server.elsewhere(thread, archived: archived)
+        case "wait":
+            let thread = numbers.pick(server.threadIDs)
+            let waits = server.waiting(thread) == 0
+            steps.append("chat \(thread) \(waits ? "comes to wait on the person" : "is answered")")
+            server.wait(thread, on: waits ? 1 : 0)
+        case "pin":
+            let row = numbers.pick(listed)
+            steps.append("\(row.pinned ? "unpins" : "pins") chat \(row.id)")
+            pressedFlags[row.id, default: []].insert(row.pinned ? "unpin" : "pin")
+            await rig.harness.send(.pin(thread: row.id, pinned: !row.pinned))
+        case "archive":
+            // The row's own button: Archive, or Unarchive on one that is
+            // listed, archived as it is, because it waits.
+            let row = numbers.pick(listed)
+            steps.append("\(row.archived ? "unarchives" : "archives") chat \(row.id)")
+            pressedFlags[row.id, default: []].insert(row.archived ? "unarchive" : "archive")
+            if !row.archived {
+                let state = await rig.harness.state
+                let version = state.thread(row.id)?.record.version ?? 0
+                shelved = (row.id, row, listed.firstIndex(of: row) ?? 0, listed.map(\.id), version, steps.count, Self.flag(state, row.id, \.pinned, \.pinned))
+            }
+            await rig.harness.send(.archive(thread: row.id, archived: !row.archived))
+        case "undo":
+            steps.append("presses Undo")
+            if let thread = list.undo?.thread {
+                pressedFlags[thread, default: []].insert("unarchive")
+                undid = thread
+            }
+            await rig.harness.send(.undoArchive)
+        case "archived":
+            showsArchived.toggle()
+            steps.append(showsArchived ? "opens the archived list" : "closes the archived list")
+            await rig.harness.send(.showArchived(scene: scene, shown: showsArchived))
+        case "unarchive":
+            let row = numbers.pick(list.archived?.rows ?? [])
+            steps.append("unarchives chat \(row.id)")
+            pressedFlags[row.id, default: []].insert("unarchive")
+            await rig.harness.send(.archive(thread: row.id, archived: false))
+        case "end":
+            let archived = showsArchived && list.archived?.more == true
+            steps.append("scrolls the list\(archived ? " of archived chats" : "") to its end")
+            await rig.harness.send(.more(archived: archived))
+        case "search":
+            // A word every message of the person's holds, the start of a
+            // reply, one message's own words, or nothing.
+            query = numbers.pick(["say", "r0", "say \(1 + numbers.below(max(1, typed))).", ""])
+            steps.append("searches the chats for \"\(query)\"")
+            await rig.harness.send(.search(scene: scene, query: query))
         case "newChat":
             steps.append("opens a new chat")
             await rig.harness.send(.newChat(agent: helper, listen: false, scene: scene))
@@ -469,7 +602,13 @@ struct SeededRun {
         sent[text] = ((held?.presses ?? 0) + 1, ids || held?.ids == true, held?.before ?? server.chatRequests(saying: text))
         typedAt[text] = nil
         ever[text, default: 1] += 0
+        let before = await rig.live(key)?.sends
         await tell(.send, key)
+        // The message went: where the chat was archived, its archive ends.
+        if let thread = screen.thread, await rig.live(key)?.sends != before {
+            spokeIn.insert(thread)
+            justSpoke = thread
+        }
     }
 
     /// Every button on the screen that can be pressed now.
@@ -487,11 +626,13 @@ struct SeededRun {
         switch action {
         case .resume:
             steps.append("presses Try Again or Continue")
+            if let thread = screen.thread { spokeIn.insert(thread) }
             await tell(.continueTurn, key)
         case .send:
             await send(key, screen)
         case .sendAgain:
             steps.append("presses Send Again on the unsent message")
+            if let thread = screen.thread { spokeIn.insert(thread) }
             if let text = await rig.live(key)?.pending?.message { sent[text]?.presses += 1 }
             await tell(.sendAgain, key)
         case .edit:
@@ -580,9 +721,12 @@ struct SeededRun {
         atEnd = false
         looking = nil
         cleared = [:]
+        showsArchived = false
+        query = ""
+        shelved = nil
         rig = ChatRig(
             platform: .ios, base: base, transport: server.connect(), clock: clock, ids: WatchedIDs(ids: ids, watch: server.watch),
-            watch: server.watch)
+            watch: server.watch, page: page)
         inFront = true
         signedOut = false
         await rig.runtime.linkChanged(link)
@@ -929,7 +1073,20 @@ struct SeededRun {
             // under it from the press, and so is its row.
             for (turn, row) in zip(drawn, server.rows(of: thread)) where turn.id != row.id {
                 let kept = row.role == "assistant" ? turn.id == "turn-\(row.turn)" : turn.id.hasPrefix("sent-") && row.id.hasPrefix("u")
-                if !kept { return broke(.fold, "\(name) draws the row \(row.id) (\(row.role), turn \(row.turn)) under \(turn.id)") }
+                if !kept {
+                    let what =
+                        "\(name) draws the row \(row.id) (\(row.role), turn \(row.turn)) under \(turn.id): it draws \(drawn.map { "\($0.id)=\($0.text)" }) over the rows "
+                        + "\(server.rows(of: thread).map { "\($0.id)=\($0.content)" })"
+                    // Known: a message sent under no id whose words an older
+                    // row of the thread holds too, sent before the rows
+                    // were read, is paired with that row. What is drawn is
+                    // the server's rows; one bubble's id is the other's.
+                    let older =
+                        turn.id.hasPrefix("sent-") && row.role == "user"
+                        && server.rows(of: thread).contains { $0.id.hasPrefix("u") && $0.content == row.content && $0.turn > row.turn }
+                    guard older else { return broke(.fold, what) }
+                    if noted[.mispaired] == nil { noted[.mispaired] = broke(.mispaired, what) }
+                }
             }
         }
 
@@ -970,12 +1127,179 @@ struct SeededRun {
             return broke(.lost, "\"\(text)\" is in no stored row, no composer and on no message")
         }
         if let broken = marks(state, presentation) { return broken }
-        // The list holds each chat once, and once settled every chat.
+        if let broken = lists(state, presentation, settled: settled) { return broken }
+        // The list holds each chat once.
         let listed = state.chats.map(\.id)
         if Set(listed).count != listed.count { return broke(.list, "the list holds a chat twice: \(listed)") }
-        if settled, Set(listed) != Set(server.threadIDs) {
-            return broke(.list, "the list holds \(listed.sorted()), and the server \(server.threadIDs.sorted())")
+        return nil
+    }
+
+    /// Whether the app holds a thread archived, and pinned, by the person's
+    /// mark of it and what this device moved since; nil where it holds no
+    /// mark of it.
+    private static func flag(_ state: ChatAppState, _ id: String, _ path: KeyPath<MarkChange, Bool?>, _ held: KeyPath<ThreadMark, Bool>) -> Bool? {
+        for change in [state.marking[id], state.markSending[id]] {
+            if let set = change?[keyPath: path] { return set }
         }
+        // A mark the app made up for a thread it just started was never
+        // read: the lists say which the chat is.
+        return state.marks?[id].flatMap { $0.version > 0 ? $0[keyPath: held] : nil }
+    }
+
+    /// The rules of the chat list: what an archive hides and never hides,
+    /// what a pin shows, one section a chat, a window that grows with no
+    /// chat twice and none lost, and an Undo that puts back what was there.
+    private mutating func lists(_ state: ChatAppState, _ presentation: ChatPresentation, settled: Bool) -> Violation? {
+        let sections = presentation.list.sections
+        let rows = sections.flatMap(\.rows)
+        let ids = rows.map(\.id)
+        // A chat is in at most one section, and once in it.
+        if Set(ids).count != ids.count {
+            return broke(.sections, "the list draws a chat twice: \(sections.map { "\($0.title): \($0.rows.map(\.id))" })")
+        }
+        let shelf = presentation.list.archived?.rows.map(\.id) ?? []
+        if Set(shelf).count != shelf.count { return broke(.sections, "the archived list draws a chat twice: \(shelf)") }
+
+        // A flag is written only where the person set it, and never to a
+        // server that keeps none.
+        for write in server.markWrites where write.pinned != nil || write.archived != nil {
+            if !server.keepsFlags { return broke(.flags, "a flag of \(write.thread) was sent to a server that keeps none") }
+            let pressed = pressedFlags[write.thread] ?? []
+            if let pinned = write.pinned, !pressed.contains(pinned ? "pin" : "unpin") {
+                return broke(.flags, "\(write.thread) was written as \(pinned ? "pinned" : "unpinned"), and nobody pressed that")
+            }
+            if write.archived == true, !pressed.contains("archive") {
+                return broke(.flags, "\(write.thread) was written as archived, and nobody archived it")
+            }
+            if write.archived == false, !pressed.contains("unarchive"), !spokeIn.contains(write.thread) {
+                return broke(.flags, "\(write.thread) was written as not archived, and nobody unarchived it or spoke in it")
+            }
+        }
+        guard state.flags else {
+            if presentation.list.flags || presentation.list.archived != nil || sections.contains(where: { $0.title == ChatApp.pinnedTitle }) {
+                return broke(.flags, "pins or archives are offered on a server that keeps none")
+            }
+            return settledList(state, presentation, settled: settled)
+        }
+
+        // An archived chat is drawn only while it waits; nor counted, since
+        // the count is of the rows drawn (the badge's rule); nor notified.
+        for row in rows where Self.flag(state, row.id, \.archived, \.archived) == true {
+            if (state.thread(row.id)?.waiting ?? 0) == 0 {
+                return broke(.archived, "\(row.id) is drawn in the list, and the app holds it archived with nothing waiting")
+            }
+        }
+        if presentation.unread != rows.filter(\.unread).count {
+            return broke(.archived, "\(presentation.unread) chats are counted unread, and \(rows.filter(\.unread).count) are drawn so")
+        }
+        for (id, request) in rig.notifications.pending.sorted(by: { $0.key < $1.key }) where id.hasSuffix("|reply") {
+            guard let name = request.thread, Self.flag(state, name, \.archived, \.archived) == true, let thread = state.thread(name),
+                thread.waiting == 0
+            else { continue }
+            return broke(.archived, "a notification of \(name)'s reply stands while the app holds the chat archived with nothing waiting")
+        }
+        // A pinned chat the app holds the row of is drawn, in the pinned
+        // section; and nothing else is drawn there.
+        let pinned = Set(sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
+        for id in state.threadIDs.sorted() where Self.flag(state, id, \.pinned, \.pinned) == true {
+            guard let thread = state.thread(id), !thread.automated else { continue }
+            let hidden = Self.flag(state, id, \.archived, \.archived) == true && thread.waiting == 0
+            if !hidden, !pinned.contains(id) { return broke(.pinned, "\(id) is pinned and not archived, and is not in the pinned section: \(pinned.sorted())") }
+        }
+        for id in pinned.sorted() where Self.flag(state, id, \.pinned, \.pinned) == false {
+            return broke(.pinned, "\(id) is drawn as pinned, and the app holds it not pinned")
+        }
+        // Whoever spoke in an archived chat follows it again.
+        if let spoke = justSpoke, Self.flag(state, spoke, \.archived, \.archived) == true {
+            return broke(.archived, "a message was sent in \(spoke), and it is still held archived")
+        }
+        // Undo puts the chat back: listed again and not archived; and,
+        // pressed in the step after the archive, with its thread and what
+        // the app holds of its mark as they were (the answer to the
+        // archive's own write may have told of a pin made elsewhere), the
+        // very row at the very place.
+        if let thread = undid, let was = shelved, was.thread == thread {
+            guard let row = rows.first(where: { $0.id == thread }) else {
+                // Unless the list was read again from its start since, and
+                // the chat's place is past the pages read so far: it is
+                // there once the list is scrolled to it.
+                if let end = state.window.end, let held = state.thread(thread), held.activeAt < end, presentation.list.more {
+                    shelved = nil
+                    return settledList(state, presentation, settled: settled)
+                }
+                return broke(
+                    .undo,
+                    "Undo was pressed on \(thread), and the list does not draw it: \(ids); the window \(state.window) holds \(state.chats.map(\.id)), "
+                        + "the archived rows \(state.archive.rows.map(\.id)), its mark \(String(describing: state.marks?[thread])), moved "
+                        + "\(String(describing: state.marking[thread] ?? state.markSending[thread])), its row \(String(describing: state.thread(thread)?.record.updatedAt))"
+                )
+            }
+            if row.archived {
+                return broke(.undo, "Undo was pressed on \(thread), which was drawn as \(was.row) and is drawn as \(row)")
+            }
+            let same =
+                was.step == steps.count - 1 && state.thread(thread)?.record.version == was.version
+                && Self.flag(state, thread, \.pinned, \.pinned) == was.pinned && row.unread == was.row.unread
+            // But for when: a row says "now" until something draws the list
+            // again.
+            var drawn = row
+            drawn.stamp = was.row.stamp
+            if same, ids == was.rows, drawn != was.row {
+                return broke(.undo, "Undo was pressed on \(thread) at once, and its row is \(row), not \(was.row) as it was")
+            }
+            if same, Set(ids) == Set(was.rows), ids.firstIndex(of: thread) != was.at {
+                return broke(
+                    .undo,
+                    "Undo was pressed on \(thread) at once, and it stands at \(ids.firstIndex(of: thread) ?? -1) of \(ids), not at \(was.at) of \(was.rows)")
+            }
+            shelved = nil
+        }
+        // A search's finds: each message under the chat that holds it, and
+        // each chat once.
+        if let groups = presentation.scenes[scene]?.messages {
+            if Set(groups.map(\.id)).count != groups.count { return broke(.found, "a search draws a chat twice: \(groups.map(\.id))") }
+            for group in groups {
+                let held = Set(server.rows(of: group.id).map(\.id))
+                if let stray = group.hits.first(where: { !held.contains($0.id) }) {
+                    return broke(.found, "a search draws the message \(stray.id) under \(group.id), which does not hold it")
+                }
+            }
+        }
+        return settledList(state, presentation, settled: settled)
+    }
+
+    /// Once the server has behaved and the list was read from its start
+    /// and scrolled to its end: every chat the server lists is drawn, once,
+    /// and no other; the pinned ones in their section; and the app holds
+    /// each chat's flags as the server does.
+    private func settledList(_ state: ChatAppState, _ presentation: ChatPresentation, settled: Bool) -> Violation? {
+        guard settled else { return nil }
+        let rows = presentation.list.sections.flatMap(\.rows).map(\.id)
+        let want = server.threadIDs.filter { server.mark(of: $0)?.archived != true || (server.keepsMarks && server.waiting($0) > 0) }
+        if presentation.list.more {
+            return broke(.paging, "the list was scrolled to its end and still says the server's goes on: \(rows)")
+        }
+        if Set(rows) != Set(want) {
+            let odd = Set(rows).symmetricDifference(want).sorted().map { id in
+                "\(id): the app holds the mark \(String(describing: state.marks?[id])), moved \(String(describing: state.marking[id] ?? state.markSending[id])), "
+                    + "and the server \(String(describing: server.mark(of: id))), waiting \(server.waiting(id))"
+            }
+            return broke(
+                .paging,
+                "the list draws \(rows.sorted()), and the server lists \(want.sorted()) (a page is \(page) chats; it holds \(server.threadIDs.count)); \(odd)")
+        }
+        guard server.keepsFlags else { return nil }
+        for id in server.threadIDs {
+            let mark = server.mark(of: id)
+            if state.thread(id) != nil, state.archived(id) != (mark?.archived == true) || state.isPinned(id) != (mark?.pinned == true) {
+                return broke(
+                    .flags,
+                    "\(id) is held as archived \(state.archived(id)) and pinned \(state.isPinned(id)), and the server holds \(String(describing: mark))")
+            }
+        }
+        let pinned = Set(presentation.list.sections.first { $0.title == ChatApp.pinnedTitle }?.rows.map(\.id) ?? [])
+        let shown = Set(want.filter { server.mark(of: $0)?.pinned == true })
+        if pinned != shown { return broke(.pinned, "the pinned section draws \(pinned.sorted()), and the server's pinned chats are \(shown.sorted())") }
         return nil
     }
 
@@ -1170,8 +1494,21 @@ struct SeededRun {
             }
             if round >= 24, await quiet() { break }
         }
+        // The person goes back to the chats, clears the search, pulls the
+        // list to read it from its start and scrolls it to its end.
+        showsArchived = false
+        query = ""
+        undid = nil
+        justSpoke = nil
+        await rig.harness.send(.showArchived(scene: scene, shown: false))
+        await rig.harness.send(.search(scene: scene, query: ""))
         await rig.harness.send(.refresh)
         await drain()
+        for _ in 0 ..< 400 {
+            guard await rig.harness.presentation.list.more else { break }
+            await rig.harness.send(.more(archived: false))
+            await drain()
+        }
         regard(await rig.harness.state)
         clock.advance(by: 1)
         await drain()

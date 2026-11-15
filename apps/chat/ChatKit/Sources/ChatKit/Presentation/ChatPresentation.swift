@@ -70,6 +70,13 @@ public struct ScenePresentation: Codable, Equatable, Sendable {
     public var found: [DaySection]?
     /// Said when a search finds nothing.
     public var nothingFound: String?
+    /// The messages the server found for the search, by chat, drawn under
+    /// the chats found by their titles; nil while nothing is searched.
+    public var messages: [SearchGroup]?
+    /// The server is being asked.
+    public var searching = false
+    /// The window's list is the archived chats.
+    public var archived = false
 }
 
 /// A conversation's run settled.

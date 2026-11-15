@@ -44,9 +44,12 @@ extension ChatAppState {
         state.unsent = [:]
         state.keptUnsent = []
         state.unsaved = nil
-        state.recordsRevision = nil
-        state.marksUnserved = false
         state.marksKnown = false
+        state.undo = nil
+        state.flagRefused = nil
+        state.searches = [:]
+        state.searchUnserved = false
+        state.seeking = [:]
         state.marksDue = nil
         state.sights = [:]
         state.notificationOffer = nil
@@ -94,6 +97,7 @@ extension ChatAppState {
         state.others = [:]
         state.appActive = true
         state.paces = false
+        state.olderReading = []
         return state
     }
 
@@ -106,6 +110,7 @@ extension ChatAppState {
         state.transcripts = thread.flatMap { id in transcripts[id].map { [id: $0] } } ?? [:]
         state.renameFailure = renameFailure.flatMap { $0.thread == thread ? $0 : nil }
         state.rowsFailed = thread.flatMap { id in rowsFailed[id].map { [id: $0] } } ?? [:]
+        state.olderReading = olderReading.filter { $0 == thread }
         state.conversations = [:]
         state.scenes = [:]
         state.route = nil
@@ -133,6 +138,7 @@ extension ChatAppState {
         state.others = [:]
         state.openings = [:]
         state.paces = false
+        state.shelve()
         return state
     }
 
@@ -156,6 +162,18 @@ extension ChatAppState {
         state.requests = []
         state.approvals = []
         state.paces = false
+        state.shelve()
         return state
+    }
+
+    /// Without the lists read beside the chats, their windows and the rows
+    /// being read above a transcript: what only the list and a conversation
+    /// read.
+    private mutating func shelve() {
+        pinned = []
+        waiting = []
+        archive = Archive()
+        window = ListWindow()
+        olderReading = []
     }
 }

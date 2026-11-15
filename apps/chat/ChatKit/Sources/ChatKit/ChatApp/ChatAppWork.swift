@@ -136,11 +136,11 @@ extension ChatApp {
         case let .loadCached(lease, thread, epoch):
             return .once { Event(.cachedLoaded(thread: thread, epoch: epoch, storage.transcript(lease, thread: thread, at: clock.now))) }
 
-        case let .refresh(plan, held):
+        case let .refresh(plan, held, beside):
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {
-                    return Event(.refreshed(try await Self.refresh(client, plan, held: held)))
+                    return Event(.refreshed(try await Self.refresh(client, plan, held: held, beside: beside)))
                 } catch {
                     return Task.isCancelled ? nil : Event(.refreshFailed(failed(.refresh, error, client)))
                 }
@@ -196,11 +196,27 @@ extension ChatApp {
             }
         case .readFeatures:
             // A read that fails changes nothing: the chat goes on as it
-            // does on a server it knows nothing of.
+            // does on a server it knows nothing of. One that never reached
+            // the server is made again twice, a little later each time:
+            // without the document the lists are read as an older server's,
+            // archived chats among them, until the next refresh asks.
             return .once {
-                guard let client = await source.current(), let discovery = try? await client.discovery() else { return nil }
-                return Event(
-                    .featuresRead(agents: discovery.feature("agents")?.revision ?? 0, records: discovery.feature("records")?.revision ?? 0))
+                guard let client = await source.current() else { return nil }
+                for wait in [0, 2, 6] {
+                    if wait > 0 { guard await pause(Double(wait)) else { return nil } }
+                    do {
+                        let discovery = try await client.discovery()
+                        return Event(
+                            .featuresRead(
+                                agents: discovery.feature("agents")?.revision ?? 0, records: discovery.feature("records")?.revision ?? 0))
+                    } catch is ServerError {
+                        // The server's own answer: it has no such document.
+                        return nil
+                    } catch {
+                        continue
+                    }
+                }
+                return nil
             }
         case let .readMarks(threads):
             // A read that fails changes nothing: the marks held stand, and
@@ -230,8 +246,55 @@ extension ChatApp {
                     properties["thread"] = .string(thread)
                     return Event(.markWritten(thread: thread, sent: change, try await client.create(Kinds.threadMark, properties: properties)))
                 } catch {
-                    return Event(.markWriteFailed(thread: thread, sent: change, MarkRefusal(error)))
+                    let refusal = MarkRefusal(error)
+                    // A pin or an archive refused for good is said.
+                    let said = change.flags && refusal == .dropped ? failed(.flag, error, client) : nil
+                    return Event(.markWriteFailed(thread: thread, sent: change, refusal, said))
                 }
+            }
+        case let .page(plan, part, after):
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    let modes = part == .archived ? Self.modes(plan) : ["chat"]
+                    let page = try await ChatLists.threads(client, part, modes: modes, first: plan.page, after: after)
+                    let marks = plan.readsMarks ? await Self.marks(client, threads: page.records.map(\.id), full: !plan.namesThreads) : nil
+                    return Event(.pageRead(part: part, after: after, rows: page.records, cursor: page.cursor, marks: marks))
+                } catch {
+                    if Task.isCancelled { return nil }
+                    let compacted = (error as? ServerError)?.isCompacted ?? false
+                    return Event(.pageFailed(part: part, after: after, failed(.refresh, error, client), compacted: compacted))
+                }
+            }
+        case let .readOlder(thread, before, epoch):
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    let query = ChatLists.older(thread, before: before)
+                    let page = try await client.list(query)
+                    return Event(
+                        .olderRowsRead(thread: thread, epoch: epoch, rows: page.records.reversed(), more: page.records.count >= query.first))
+                } catch {
+                    return Task.isCancelled ? nil : Event(.olderRowsFailed(thread: thread, epoch: epoch))
+                }
+            }
+        case let .search(plan, scene, query, threads):
+            return .once {
+                // Asked once the typing has paused: a search that follows
+                // cancels this one while it waits.
+                guard await pause(Self.searchPause), let client = await source.current() else { return nil }
+                do {
+                    return Event(try await Self.search(client, plan, scene: scene, query: query, threads: threads))
+                } catch {
+                    if Task.isCancelled { return nil }
+                    return Event(
+                        .searchFailed(scene: scene, query: query, failed(.search, error, client), unserved: Self.searchUnserved(error)))
+                }
+            }
+        case let .undoWait(thread, date):
+            return .once {
+                do { try await clock.sleep(until: date) } catch { return nil }
+                return Event(.undoPassed(thread))
             }
         case let .fetchThread(thread):
             return .once {
@@ -285,10 +348,10 @@ extension ChatApp {
             }
         case let .feedWait(seconds):
             return .once { await pause(seconds) ? Event(.feedDue) : nil }
-        case let .applyFeed(plan, batch, threads):
+        case let .applyFeed(plan, batch, threads, named):
             return .once {
                 guard let client = await source.current() else { return nil }
-                return Event(.feedApplied(await Self.feed(client, plan, batch, threads: threads)))
+                return Event(.feedApplied(await Self.feed(client, plan, batch, threads: threads, named: named)))
             }
         case let .markRefreshed(lease, keys):
             return .once {
@@ -484,29 +547,58 @@ extension ChatApp {
 
     // MARK: Reads
 
-    static func threads(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws -> ChatAppStep.Threads {
-        try await threadPages(client, plan).threads
+    /// - Parameter beside: threads held that the lists may not answer (one
+    ///   past the first page, one a conversation is on, one that just left
+    ///   its list): each such is read on its own, with the person's mark of
+    ///   it, so the row held is never left as it was.
+    static func threads(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, beside: [String] = []) async throws -> ChatAppStep.Threads {
+        try await threadPages(client, plan, beside: beside).threads
     }
 
-    private static func threadPages(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws
+    private static func threadPages(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, beside: [String] = []) async throws
         -> (threads: ChatAppStep.Threads, page: RecordPage)
     {
-        let chats = try await client.list(
-            ListQuery(
-                kinds: [Kinds.thread], properties: ["mode": ["eq": "chat"]], first: 100,
-                orderBy: "updatedAt:desc"))
+        // Where the server keeps the flags, the list is the chats not
+        // archived, and the pinned ones and the ones that wait on a person
+        // are read whole beside it: each may be older than the list's page,
+        // and one that waits may be archived. A server that turns out not
+        // to know the filter arm (`400`) is read as one that keeps none.
+        var chats: RecordPage
+        var flagged = plan.flags
+        do {
+            chats = try await ChatLists.threads(client, flagged ? .kept : .every, modes: ["chat"], first: plan.page)
+        } catch let error as ServerError where flagged && error.status == 400 {
+            flagged = false
+            chats = try await ChatLists.threads(client, .every, modes: ["chat"], first: plan.page)
+        }
         var automated: [Record] = []
         if plan.showAutomated {
-            let modes = conversationModes.filter { $0 != "chat" }.map(JSONValue.string)
-            automated = try await client.list(
-                ListQuery(
-                    kinds: [Kinds.thread], properties: ["mode": ["in": .array(modes)]], first: 50,
-                    orderBy: "updatedAt:desc")
-            ).records
+            let modes = conversationModes.filter { $0 != "chat" }
+            automated = try await ChatLists.threads(client, flagged ? .kept : .every, modes: modes, first: 50).records
         }
-        var threads = ChatAppStep.Threads(chats: chats.records, automated: automated)
+        var threads = ChatAppStep.Threads(chats: chats.records, automated: automated, cursor: chats.cursor)
+        threads.flagsUnserved = plan.flags && !flagged
+        if flagged {
+            let pinned = try await ChatLists.all(client, .pinned, modes: modes(plan), page: plan.page)
+            let waiting = try await ChatLists.all(client, .waiting, modes: modes(plan), page: plan.page)
+            (threads.pinned, threads.waiting) = (pinned.records, waiting.records)
+            // The watch opens from the oldest head of the reads.
+            chats.head = min(chats.head, pinned.head, waiting.head)
+            if plan.archived {
+                let archived = try await ChatLists.threads(client, .archived, modes: modes(plan), first: plan.page)
+                (threads.archived, threads.archivedCursor) = (archived.records, archived.cursor)
+                chats.head = min(chats.head, archived.head)
+            }
+        }
+        var seen: Set<String> = []
+        var ids = (threads.chats + threads.automated + (threads.pinned ?? []) + (threads.waiting ?? []) + (threads.archived ?? []))
+            .map(\.id).filter { seen.insert($0).inserted }
+        for id in beside where seen.insert(id).inserted {
+            if let row = try await client.record(Kinds.thread, id) { threads.named.append(row) } else { threads.gone.append(id) }
+            ids.append(id)
+        }
         if plan.readsMarks {
-            threads.marks = await marks(client, threads: (threads.chats + threads.automated).map(\.id), full: !plan.namesThreads)
+            threads.marks = await marks(client, threads: ids, full: !plan.namesThreads)
             // The marks are read after the threads. A mark taken since a
             // thread's row last settled, of a message that is not the row's
             // newest, may read through a reply that settled between the
@@ -515,7 +607,7 @@ extension ChatApp {
             if let marks = threads.marks, outran(marks, threads) {
                 var plain = plan
                 plain.readsMarks = false
-                if var again = try? await threadPages(client, plain) {
+                if var again = try? await threadPages(client, plain, beside: beside) {
                     again.threads.marks = marks
                     return again
                 }
@@ -527,7 +619,8 @@ extension ChatApp {
     /// Whether a mark's position was taken after its thread's row settled
     /// and names another message than the row's newest.
     static func outran(_ marks: ChatAppStep.Marks, _ threads: ChatAppStep.Threads) -> Bool {
-        let rows = Dictionary((threads.chats + threads.automated).map { ($0.id, $0) }) { a, _ in a }
+        let listed = threads.chats + threads.automated + (threads.pinned ?? []) + (threads.waiting ?? []) + (threads.archived ?? [])
+        let rows = Dictionary(listed.map { ($0.id, $0) }) { a, _ in a }
         return marks.records.contains { mark in
             guard let id = mark["thread"]?.referenceID, let row = rows[id], let read = mark["readThrough"]?.referenceID,
                 let last = row["lastMessage"]?.referenceID, read != last,
@@ -569,10 +662,52 @@ extension ChatApp {
     /// read, or the threads held where it failed.
     static func cardThreads(_ plan: ChatAppAsk.Plan, _ read: ChatAppStep.Threads?, held: [String]) -> [String] {
         guard let read else { return held }
-        let listed = read.chats + read.automated
+        var seen: Set<String> = []
+        let listed = (read.chats + read.automated + (read.waiting ?? [])).filter { seen.insert($0.id).inserted }
         guard plan.readsMarks else { return listed.map(\.id) }
         let ids = Set(listed.map(\.id))
         return listed.filter { ChatThread(record: $0).waiting > 0 }.map(\.id) + held.filter { !ids.contains($0) }
+    }
+
+    /// The modes the lists read beside the chats hold.
+    static func modes(_ plan: ChatAppAsk.Plan) -> [String] { plan.showAutomated ? conversationModes : ["chat"] }
+
+    /// A window's search of the messages: the hits, somebody's words alone
+    /// (a tool's output is no message), the rows of the chats they are in
+    /// where no list holds them, and the person's marks of those chats,
+    /// which say the archived ones. A query the grammar finds no word in
+    /// (`422`) found nothing.
+    static func search(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, scene: String, query: String, threads held: [String]) async throws
+        -> ChatAppStep
+    {
+        var hits: [Record]
+        do {
+            hits = plan.namesThreads ? try await ChatLists.search(client, query, threads: held) : try await ChatLists.search(client, query)
+        } catch let error as ServerError where error.status == 422 {
+            hits = []
+        }
+        hits = hits.filter { ["user", "assistant"].contains($0["role"]?.string ?? "") && $0["thread"]?.referenceID != nil }
+        var seen: Set<String> = []
+        let ids = hits.compactMap { $0["thread"]?.referenceID }.filter { seen.insert($0).inserted }
+        let known = Set(held)
+        var rows: [Record] = []
+        for id in ids.filter({ !known.contains($0) }).prefix(searchThreads) {
+            if let row = try? await client.record(Kinds.thread, id) { rows.append(row) }
+        }
+        let marks = plan.readsMarks && !ids.isEmpty ? await Self.marks(client, threads: ids, full: !plan.namesThreads) : nil
+        return .searchRead(scene: scene, query: query, hits: hits, threads: rows, marks: marks)
+    }
+
+    /// How many chats a search reads the rows of, of those no list holds.
+    static let searchThreads = 12
+
+    /// Whether the server answered that it takes no search from this
+    /// sign-in: an app's token reads messages thread by thread (`403`), and
+    /// a server older than an arm refuses it (`400`).
+    static func searchUnserved(_ error: any Error) -> Bool {
+        if error is InsufficientScope { return true }
+        guard let error = error as? ServerError else { return false }
+        return [400, 403, 404, 501].contains(error.status)
     }
 
     static func agents(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws -> (
@@ -638,9 +773,11 @@ extension ChatApp {
     /// of the reads in one history, so nothing written between them is
     /// missed; an app token's pages carry none, and its watch opens at the
     /// live head and reads the lists again after the bookmark.
-    static func refresh(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, held: [String] = []) async throws -> ChatAppStep.Refresh {
+    static func refresh(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, held: [String] = [], beside: [String] = []) async throws
+        -> ChatAppStep.Refresh
+    {
         async let lists = agents(client, plan)
-        async let threadRead = threadPages(client, plan)
+        async let threadRead = threadPages(client, plan, beside: beside)
         async let early: ChatAppStep.Cards? = plan.namesThreads || plan.readsMarks ? nil : cards(client, plan, threads: [])
         let (read, (threads, page), cardsEarly) = try await (lists, threadRead, early)
         let cards: ChatAppStep.Cards
@@ -664,7 +801,9 @@ extension ChatApp {
 
     /// A batch of the watch's rows, read again: the list for a thread, the
     /// agents and providers, the cards.
-    static func feed(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, _ batch: Set<ChatAppState.WatchKey>, threads: [String]) async
+    static func feed(
+        _ client: SubstrateClient, _ plan: ChatAppAsk.Plan, _ batch: Set<ChatAppState.WatchKey>, threads: [String], named: [String] = []
+    ) async
         -> ChatAppStep.Feed
     {
         var out = ChatAppStep.Feed(failed: [])
@@ -676,7 +815,7 @@ extension ChatApp {
         let listKinds: Set<String> = [Kinds.thread, Kinds.threadMark]
         if !kinds.isDisjoint(with: listKinds) {
             do {
-                let read = try await self.threads(client, plan)
+                let read = try await self.threads(client, plan, beside: named)
                 out.threads = read
                 known = cardThreads(plan, read, held: threads)
                 // The marks that could not be read are asked for again.

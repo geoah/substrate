@@ -40,6 +40,14 @@ struct CachedState: Codable, Equatable, Sendable {
     /// absent from a file an earlier build wrote, and until the first read.
     var memories: [Record]?
     var instructions: [Record]?
+    /// The pinned chats and the ones that wait on a person, as last read
+    /// beside the list, so a launch draws them before it asks; absent from
+    /// a file an earlier build wrote, and while the server keeps no flags.
+    var pinned: [Record]?
+    var waiting: [Record]?
+    /// The `records` feature's revision as the server's document last said
+    /// it: which lists a launch reads before the document is read again.
+    var records: Int?
     /// The watch's cursor before the kit's record cache kept it: moved to
     /// the cache at the first open that finds it, and removed from the file
     /// then, so it is read once.

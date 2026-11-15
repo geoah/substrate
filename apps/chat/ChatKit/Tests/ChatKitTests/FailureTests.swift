@@ -145,6 +145,8 @@ struct FailureSentences {
         .addKey: ("The key wasn't saved.", nil, nil),
         .refresh: ("Couldn't refresh your chats.", "Try Again", .refresh),
         .feed: ("Live updates stopped.", "Try Again", .refresh),
+        .search: ("Couldn't search your messages. Chats are found by their titles.", "Try Again", .refresh),
+        .flag: ("Couldn't save that change to the chat.", "Try Again", .refresh),
         .guidance: ("Couldn't read them.", nil, nil),
         .guidanceChange: ("That didn't go through.", nil, nil),
     ]
@@ -293,7 +295,7 @@ struct FailurePlaces {
             .send: .chat, .message: .turn, .keep: .chat, .resume: .turn, .reply: .turn, .stop: .chat, .attach: .chat, .reload: .chat, .rows: .chat,
             .poll: .nowhere,
             .rename: .chat, .card: .inline, .answer: .inline, .decide: .inline, .addKey: .inline, .refresh: .list, .feed: .list,
-            .guidance: .inline, .guidanceChange: .inline,
+            .search: .list, .flag: .list, .guidance: .inline, .guidanceChange: .inline,
         ]
         #expect(Set(places.keys) == Set(Failure.Attempt.allCases))
         for attempt in Failure.Attempt.allCases { #expect(Failure(attempt, .offline).place == places[attempt], "\(attempt)") }

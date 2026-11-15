@@ -49,6 +49,10 @@ struct Failure: Codable, Hashable, Sendable {
         case refresh
         /// The change feed.
         case feed
+        /// The server's search of the messages, under a search of the list.
+        case search
+        /// A pin or an archive the person asked for, written to their mark.
+        case flag
         /// Reading the memories and the instructions.
         case guidance
         /// Switching, rewording or deleting one of them.
@@ -184,7 +188,7 @@ struct Failure: Codable, Hashable, Sendable {
         switch attempt {
         case .reply, .resume, .message: .turn
         case .send, .keep, .stop, .attach, .reload, .rows, .rename: .chat
-        case .refresh, .feed: .list
+        case .refresh, .feed, .search, .flag: .list
         case .card, .answer, .decide, .addKey, .guidance, .guidanceChange: .inline
         case .poll: .nowhere
         }

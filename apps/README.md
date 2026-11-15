@@ -1028,6 +1028,18 @@ its end has been on screen for a second, and one opened with more than was
 read opens at a "New" line. On an older server the device keeps its own,
 as before ([its design](chat/DESIGN.md#read-state)).
 
+**The list.** The chats are a window of the server's list that grows at
+its end, a hundred at a time, and a chat's older messages are read in above
+its newest 500 when its top is reached. Where the `records` feature is at
+revision 9 or more a chat can be pinned, which keeps it in a section above
+the rest, and archived, which takes it out of the list, the badge and the
+notifications until something in it waits on the person; Archive asks
+nothing and offers Undo, and the archived chats are a list of their own. A
+search finds chats by their titles at once and, a moment later, the
+messages the server ranks for the words, by chat. A window opens to the
+chat left a short while ago, a running one, or a new chat
+([its design](chat/DESIGN.md#the-lists-window)).
+
 **Notifications.** The server has no push channel, so the app notifies what it
 sees: a reply that settles in a chat not on screen, and a new question or
 suggestion waiting on the owner, each once; a reply waits five seconds for

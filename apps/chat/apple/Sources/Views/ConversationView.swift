@@ -39,7 +39,9 @@ struct ConversationView: View {
 
     private func transcript(_ screen: ConversationScreen) -> some View {
         let _ = Meter.shared.count(.body, "Transcript")
-        return TranscriptScroll(opens: screen.opens, anchor: opening(screen), sends: screen.sends, looked: { atBottom = $0 }) {
+        return TranscriptScroll(
+            opens: screen.opens, anchor: opening(screen), sends: screen.sends, visit: screen.visit, above: screen.above, looked: { atBottom = $0 }
+        ) {
             LazyVStack(alignment: .leading, spacing: 22) {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
             }
@@ -200,6 +202,13 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     let anchor: String?
     /// Moved by every send from the chat.
     let sends: Int
+    /// Moved each time the chat is asked to be put at the row it opens at
+    /// once more, while it is shown: a message opened from a search.
+    var visit = 0
+    /// Rows arrived above the ones drawn: the turn that stood first before
+    /// them, which the transcript is kept at where it does not follow its
+    /// end.
+    var above: RowsAbove?
     /// Told whether the transcript follows its end with the end on screen:
     /// the reader's intent and what the scroll view shows, both. A chat
     /// opened further up, or scrolled up, is not at its end whatever
@@ -224,13 +233,16 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     @State private var reach = TranscriptReach()
 
     init(
-        opens: TranscriptOpening, anchor: String? = nil, sends: Int, looked: @escaping (Bool) -> Void = { _ in },
+        opens: TranscriptOpening, anchor: String? = nil, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
+        looked: @escaping (Bool) -> Void = { _ in },
         @ViewBuilder rows: () -> Rows,
         @ViewBuilder bar: @escaping (_ atEnd: Bool, _ seen: [String], _ jump: @escaping () -> Void) -> Bar
     ) {
         self.opens = opens
         self.anchor = anchor
         self.sends = sends
+        self.visit = visit
+        self.above = above
         self.looked = looked
         self.rows = rows()
         self.bar = bar
@@ -253,6 +265,12 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
                 }
                 .onChange(of: anchor, initial: true) { _, _ in place(reader) }
                 .onChange(of: laidOut) { _, _ in place(reader) }
+                .onChange(of: visit) { _, _ in
+                    // Asked for again: the chat is put at its row once more.
+                    placed = false
+                    place(reader)
+                }
+                .onChange(of: above) { _, above in keep(reader, at: above) }
                 .onChange(of: atEnd && follow.following, initial: true) { _, at in looked(at) }
         }
     }
@@ -267,6 +285,17 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         // is. After this update, since the rows may have arrived in it and
         // the stack has not laid them out yet.
         DispatchQueue.main.async { reader.scrollTo(anchor, anchor: .top) }
+    }
+
+    /// Rows arrived above the ones drawn. A transcript that does not follow
+    /// its end stays at the turn that was its first, which its reader had
+    /// at the top when the rows were asked for: without this the content
+    /// grows above them and what they read moves down off the screen.
+    private func keep(_ reader: ScrollViewProxy, at above: RowsAbove?) {
+        guard let above, !follow.following else { return }
+        placed = true
+        position = ScrollPosition(idType: String.self)
+        DispatchQueue.main.async { reader.scrollTo(above.turn, anchor: .top) }
     }
 
     private var scroll: some View {
@@ -616,12 +645,7 @@ struct TranscriptRows: View {
                 hero: hero, pick: { host.send(.fill($0), to: key) },
                 addKey: onKey)
         }
-        if let older = screen.olderHidden {
-            Label(older, systemImage: "clock.arrow.circlepath")
-                .font(.caption)
-                .foregroundStyle(.quietText)
-                .frame(maxWidth: .infinity)
-        }
+        if let older = screen.older { OlderRowsRow(older: older, thread: screen.thread, arrived: screen.above?.count ?? 0) }
         // A turn's failure is a card at that turn, a row under its last;
         // the "New" line is a row above the first turn that was not read.
         ForEach(TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine)) { piece in

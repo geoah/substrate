@@ -15,15 +15,26 @@ struct ThreadMark: Codable, Equatable, Sendable {
     var version = 0
     /// When the server took the position.
     var readAt: Date?
+    /// The person keeps the thread above the rest of their list (decision
+    /// 0322). Absent from a server older than the flag, and until set.
+    var pinned = false
+    /// The person put the thread away: it is in no list, no badge and no
+    /// notification of theirs, but while it waits on a person.
+    var archived = false
 
     /// No mark: the person never opened the thread.
     static let none = ThreadMark()
 
-    init(readThrough: String? = nil, markedUnread: Bool = false, version: Int = 0, readAt: Date? = nil) {
+    init(
+        readThrough: String? = nil, markedUnread: Bool = false, version: Int = 0, readAt: Date? = nil, pinned: Bool = false,
+        archived: Bool = false
+    ) {
         self.readThrough = readThrough
         self.markedUnread = markedUnread
         self.version = version
         self.readAt = readAt
+        self.pinned = pinned
+        self.archived = archived
     }
 
     init(record: Record) {
@@ -31,6 +42,19 @@ struct ThreadMark: Codable, Equatable, Sendable {
         markedUnread = record["markedUnread"]?.bool == true
         version = record.version
         readAt = record["readAt"]?.string.flatMap(Timestamp.parse)
+        pinned = record["pinned"]?.bool == true
+        archived = record["archived"]?.bool == true
+    }
+
+    /// As a file an earlier build wrote holds it: with neither flag.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        readThrough = try container.decodeIfPresent(String.self, forKey: .readThrough)
+        markedUnread = try container.decodeIfPresent(Bool.self, forKey: .markedUnread) ?? false
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        readAt = try container.decodeIfPresent(Date.self, forKey: .readAt)
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        archived = try container.decodeIfPresent(Bool.self, forKey: .archived) ?? false
     }
 
     /// Whether the position was taken after `thread`'s row settled and
@@ -69,14 +93,25 @@ struct MarkChange: Codable, Equatable, Sendable {
     var due: Date?
     /// Its write failed: it waits for the next chance, not for the clock.
     var held = false
+    /// Pin or Unpin, Archive or Unarchive: each rides with whatever else
+    /// the write carries, and moves neither the position nor the other
+    /// flag. Sent only where the server keeps the flags (`records` 9).
+    var pinned: Bool?
+    var archived: Bool?
 
     /// The body of the write. Never `readAt`, which is the server's.
     var properties: [String: JSONValue] {
         var out: [String: JSONValue] = [:]
         if let readThrough { out["readThrough"] = .string(readThrough) }
         if let markedUnread { out["markedUnread"] = .bool(markedUnread) }
+        if let pinned { out["pinned"] = .bool(pinned) }
+        if let archived { out["archived"] = .bool(archived) }
         return out
     }
+
+    /// Whether it moves a flag: a write the person asked for by name, whose
+    /// refusal is said.
+    var flags: Bool { pinned != nil || archived != nil }
 
     /// The mark as it reads once this is written over it, for a thread
     /// whose newest message is `last`. Taking a position clears Mark as
@@ -93,6 +128,8 @@ struct MarkChange: Codable, Equatable, Sendable {
         } else if let markedUnread {
             out.markedUnread = markedUnread
         }
+        if let pinned { out.pinned = pinned }
+        if let archived { out.archived = archived }
         return out
     }
 
@@ -103,6 +140,8 @@ struct MarkChange: Codable, Equatable, Sendable {
             out.readThrough = readThrough
             out.markedUnread = later.markedUnread ?? markedUnread
         }
+        out.pinned = later.pinned ?? pinned
+        out.archived = later.archived ?? archived
         return out
     }
 }

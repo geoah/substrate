@@ -146,8 +146,17 @@ extension ChatApp {
         state.continueUnserved = false
         state.idsUnserved = false
         let kept = state.readsMarks
+        let flagged = state.flags
         state.recordsRevision = records
         state.marksUnserved = false
+        state.flagsUnserved = false
+        state.searchUnserved = false
+        // The lists are other reads where the server keeps the flags, and
+        // where it stopped keeping them: read again by what it says now.
+        if state.flags != flagged {
+            if !state.flags { dropFlags(&state) }
+            if !state.refreshing { refresh(&state) }
+        }
         if state.readsMarks {
             // A refresh under way asks when it lands (`askMarks`).
             if state.marks == nil, !state.refreshing { askMarks(&state) }
@@ -353,9 +362,21 @@ extension ChatApp {
     /// on reading as it was left here. One the server refused for good (the
     /// thread is gone, the message is no longer one of its) is dropped, and
     /// the chat reads as the server says.
-    func markWriteFailed(_ state: inout State, thread: String, sent: MarkChange, _ refusal: MarkRefusal) {
+    func markWriteFailed(_ state: inout State, thread: String, sent: MarkChange, _ refusal: MarkRefusal, _ failure: Failure? = nil) {
         guard state.markSending[thread] == sent else { return }
         state.markSending[thread] = nil
+        if refusal == .dropped, sent.flags {
+            // A pin or an archive the server will not take: the chat reads
+            // as the server says again, and the list says so, since the
+            // person asked for it by name.
+            if state.undo?.thread == thread { state.undo = nil }
+            if let failure, failure.report == nil {
+                state.listFailure = failure
+                var again = MarkChange()
+                (again.pinned, again.archived) = (sent.pinned, sent.archived)
+                state.flagRefused = State.FlagRefused(thread: thread, change: again)
+            }
+        }
         guard state.marks != nil, refusal != .dropped else { return }
         if let later = state.marking[thread] {
             state.marking[thread] = sent.then(later)
@@ -400,6 +421,11 @@ extension ChatApp {
         for thread in state.announced.sorted() {
             if visible.contains(thread) {
                 state.announced.remove(thread)
+            } else if let row = state.thread(thread), !state.notifies(row) {
+                // Archived since, here or on another device: what it
+                // notified is put away with it.
+                state.announced.remove(thread)
+                state.asks.append(.cancelGroup(thread))
             } else if let row = state.thread(thread), !row.running, state.marked(thread), !state.unread(row), !state.failedUnseen(row) {
                 state.announced.remove(thread)
                 state.asks.append(.cancelGroup(thread))

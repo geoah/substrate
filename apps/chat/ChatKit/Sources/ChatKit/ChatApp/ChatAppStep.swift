@@ -48,6 +48,21 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// The row read again for a mark ahead of it, nil where the thread is
     /// gone: a read that started after that mark was learned.
     case rowReread(thread: String, Record?, mark: Int)
+    /// A page of a list past its first, or the archived chats' first:
+    /// `after` is the cursor it was asked from.
+    case pageRead(part: ChatLists.Part, after: String?, rows: [Record], cursor: String?, marks: Marks?)
+    /// `compacted`: the server can no longer go on from the cursor, and
+    /// the list is read again from its start.
+    case pageFailed(part: ChatLists.Part, after: String?, Failure, compacted: Bool)
+    /// The rows of a thread before the ones held; `more` where the read
+    /// filled its window.
+    case olderRowsRead(thread: String, epoch: Int, rows: [Record], more: Bool)
+    case olderRowsFailed(thread: String, epoch: Int)
+    /// The messages a window's search found, the rows of the chats they
+    /// are in where no list holds them, and the person's marks of those.
+    case searchRead(scene: String, query: String, hits: [Record], threads: [Record], marks: Marks?)
+    /// `unserved`: the server takes no search from this sign-in.
+    case searchFailed(scene: String, query: String, Failure, unserved: Bool)
 
     // The watch
     case watchOpened(fresh: Bool)
@@ -63,10 +78,13 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case feedApplied(Feed)
 
     // Scenes
-    case sceneAppeared(scene: String, restoring: String?, key: ChildKey)
+    /// `lands`: the window opens to something (`ChatApp.land`), and
+    /// `restoring` is the chat it was left in a short while ago.
+    case sceneAppeared(scene: String, restoring: String?, key: ChildKey, lands: Bool = false)
     case sceneActive(scene: String, active: Bool)
     case sceneGone(scene: String)
-    case show(thread: String, scene: String, key: ChildKey)
+    /// `message`: the row the chat is opened at, from a search.
+    case show(thread: String, scene: String, key: ChildKey, message: String? = nil)
     case newChat(agent: String?, listen: Bool, scene: String, key: ChildKey)
     case back(scene: String)
     case searched(scene: String, query: String)
@@ -83,13 +101,26 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// The wait before a mark's write ended.
     case marksDue(at: Date)
     case markWritten(thread: String, sent: MarkChange, Record)
-    case markWriteFailed(thread: String, sent: MarkChange, MarkRefusal)
+    /// The failure is said where the write moved a flag and the server
+    /// refused it for good.
+    case markWriteFailed(thread: String, sent: MarkChange, MarkRefusal, Failure? = nil)
     /// The offer to notify was answered.
     case notificationsAnswered(allow: Bool)
 
     // What the owner does
     case markedRead(String)
     case markedUnread(String)
+    case pinAsked(thread: String, pinned: Bool)
+    case archiveAsked(thread: String, archived: Bool, at: Date)
+    case undoAsked
+    /// Undo's few seconds passed.
+    case undoPassed(String)
+    /// A window lists the archived chats, or the chats again.
+    case archivedShown(scene: String, shown: Bool)
+    /// A list was scrolled to its end.
+    case moreAsked(archived: Bool)
+    /// A transcript was scrolled to the first row held.
+    case olderRowsAsked(String)
     case renameAsked(thread: String, subject: String)
     case renamed(Record)
     case renameFailed(thread: String, before: Record?, Failure)
@@ -148,6 +179,21 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         /// the server keeps none, and where their read failed, which keeps
         /// what is held.
         var marks: Marks?
+        /// Where the server's list goes on past `chats`; nil where it ends.
+        var cursor: String?
+        /// The pinned chats and the ones that wait on a person, each read
+        /// whole beside the list; nil where the server keeps no flags.
+        var pinned: [Record]?
+        var waiting: [Record]?
+        /// The archived chats' first page, read while a window lists them.
+        var archived: [Record]?
+        var archivedCursor: String?
+        /// Threads held that the feed named and no list read holds, read
+        /// one at a time, and the ones of them the server no longer holds.
+        var named: [Record] = []
+        var gone: [String] = []
+        /// The server refused the filter arm the flags are read by.
+        var flagsUnserved = false
     }
 
     /// An answered read of the person's marks.
@@ -221,6 +267,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var adopted = false
         /// The draft holds a message the conversation put back.
         var gaveBack = false
+        /// The person spoke in the chat: a message, Send Again, Try Again
+        /// or Continue.
+        var spoke = false
     }
 
     struct Read: Codable, Equatable, Sendable {
