@@ -610,6 +610,7 @@ var directGoroutines = map[string]launches{
 	"archive.go (*dataset).startArchiver":        {1, "a cancel when the service shuts down"},
 	"compactpass.go (*dataset).startCompactor":   {1, "a cancel when the service shuts down"},
 	"agents.go (*dataset).startChatTurn":         {1, "a cancel when the service shuts down"},
+	"agentdecision.go (*dataset).resumeChatTurn": {1, "a cancel when the service shuts down"},
 	"agentloop.go (*agentLoop).dispatchSubAgent": {1, "a cancel when the parent run ends"},
 	"agentjobs.go (*agentJobs).retire":           {1, "forgets a finished job in this process's memory"},
 	"runner.go (*callBackend).callAgent":         {1, "a cancel when the run hub stops"},
