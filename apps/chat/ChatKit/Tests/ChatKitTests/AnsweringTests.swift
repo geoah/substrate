@@ -824,13 +824,24 @@ struct OwnWords {
         try await app.until { screen, _ in screen.cards[id]?.waits == true }
         try await app.rig.send(.answerInWords(id), to: key)
         try await app.until { screen, _ in screen.composer.answering != nil }
-        // Another person dismisses them, and the message leaves before the
-        // feed is heard.
+        // Another person dismisses them, which resumes the thread, and the
+        // words are sent: before the feed is heard, or into the turn the
+        // dismissal started, whichever the device comes to first. Where
+        // the composer could not send at that instant (the chat was taking
+        // up the resumed turn), the person presses Send again.
         app.server.elsewhere(card: id, accept: false, by: "other")
-        try await app.say("Neither: Friday.", key)
+        try await app.rig.send(.draft("Neither: Friday."), to: key)
+        try await app.rig.harness.until(advancing: 0.5) { _ in
+            if app.server.userRows(saying: "Neither: Friday.") == 1 { return true }
+            if await app.rig.live(key)?.draft == "Neither: Friday.", await app.rig.conversation(key)?.composer.canSend == true {
+                try? await app.rig.send(.send, to: key)
+            }
+            return false
+        }
         try await app.until { screen, _ in screen.cards[id]?.resolution?.label == "Someone else dismissed the question" }
         #expect(app.server.card(id)?.state == "dismissed" && app.server.card(id)?.resolutions == 1 && app.server.card(id)?.dismissals == 0)
         #expect(app.server.userRows(saying: "Neither: Friday.") == 1)
+        try await app.until { screen, _ in screen.composer.answering == nil }
         #expect(try await app.screen(key).composer.answering == nil)
         app.server.finishTurns()
         try await app.settled(key)

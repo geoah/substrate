@@ -394,10 +394,17 @@ extension ChatApp {
                 }
             }
         case let .readOwn(thread, cards):
+            // Asked again where no read of it was answered, a few times
+            // and a second apart, as the mark beside a message is: until
+            // it is, a card says only how it ended. It always answers the
+            // engine, which holds the thread as being read until it does.
             return .once {
-                guard let client = await source.current() else { return Event(.ownRead(thread: thread, asked: cards, mine: nil, whole: false)) }
-                let own = await Self.own(client, thread: thread)
-                if Task.isCancelled { return nil }
+                var own: (mine: [String], whole: Bool)?
+                for attempt in 0 ..< Self.confirmTries where own == nil {
+                    if attempt > 0 { guard await pause(Self.confirmPause) else { break } }
+                    guard let client = await source.current() else { break }
+                    own = await Self.own(client, thread: thread)
+                }
                 return Event(.ownRead(thread: thread, asked: cards, mine: own?.mine, whole: own?.whole ?? false))
             }
         case let .readCard(reference, target):
