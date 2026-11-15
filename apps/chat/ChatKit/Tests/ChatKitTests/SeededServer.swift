@@ -709,6 +709,15 @@ final class SeededServer: @unchecked Sendable {
         }
     }
 
+    /// A heartbeat on every open stream of a turn, as a server sends one
+    /// into a stream gone quiet. It is no line of the turn: it counts
+    /// toward no fault of the stream it goes into.
+    func beat() {
+        lock.withLock {
+            for id in order { for reader in threads[id]?.turn?.readers ?? [] { reader.continuation.yield("{}") } }
+        }
+    }
+
     /// Every running turn runs to its end.
     func finishTurns() {
         lock.withLock {

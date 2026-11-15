@@ -106,10 +106,11 @@ struct SeededRun {
         /// holds the same words (`TurnFold`).
         case mispaired = "a message sent under no id is drawn as its own row, not an older one of the same words"
         /// A message sent while the assistant works (`ConversationQueue`).
-        /// It is drawn as queued only while the server holds it in a turn
-        /// that may still read it, as far as the app can know: never again
-        /// once it was drawn read, never in a conversation nothing runs
-        /// in, and never one the server does not hold.
+        /// It is drawn as queued only while a stream of its turn is open,
+        /// the server has said it is queued and no call has read it:
+        /// never in a conversation nothing runs in or that has no stream
+        /// to hear on, never one a call has read, and never one the
+        /// server does not hold.
         case queued = "a message is never drawn queued after it was taken or its run ended"
         /// A card (`CardPresenter.fold`). One the app drew as ended, or
         /// holds the server's last word of, is never drawn waiting again.
@@ -155,19 +156,7 @@ struct SeededRun {
     /// run notes one where it meets it and goes on, so the rest of the seed
     /// is still held to every other rule. An entry that no longer fails
     /// must not stay.
-    static let known: [Rule: String] = [
-        .queued:
-            "seed 4487 at 40 steps on a server at agents 6 or 7 (CHATKIT_REVISION=6 CHATKIT_SEED=4487 CHATKIT_STEPS=40): a message is queued "
-            + "and drawn so; the person signs in again, and the conversation made anew draws it plain until the next send joins the run, whose "
-            + "stream says it is still queued, which it is. Then the conversation is left with no stream (here it asks for the turn's again, and "
-            + "the read that comes first is held up twelve seconds), and in that time a call reads the message. Nothing can tell the app: it "
-            + "draws the message queued, as it last heard, until a stream says taken. Only that is held as known: a message drawn queued "
-            + "again while its conversation has a stream open still breaks the rule (the check notes this one only where the conversation is "
-            + "not connected, or waits to ask again). Found by the last 500,000 steps of the pass that emptied this list "
-            + "(group A11, #1468), once in them. What a person meets is a message that says it is queued for as long as the connection is down, "
-            + "where a call read it in that time. To say nothing of a queue while a stream is down would end it, and would take the word from "
-            + "every queued message at each dropped connection, the far commoner case: not decided here."
-    ]
+    static let known: [Rule: String] = [:]
 
     let seed: UInt64
     let scene = "s"
@@ -254,10 +243,6 @@ struct SeededRun {
     /// The cards whose view asked for their record since the chat came on
     /// screen: a card's view reads it once, when it appears.
     private var asked: Set<String> = []
-    /// The messages each conversation drew as queued, and the ones it then
-    /// drew as read.
-    private var drewQueued: [ChildKey: Set<String>] = [:]
-    private var drewRead: [ChildKey: Set<String>] = [:]
     /// The cards the app drew as ended.
     private var drewEnded: Set<String> = []
     /// The questions the person pressed Dismiss on, ever, and the ones
@@ -517,6 +502,9 @@ struct SeededRun {
             let seconds = numbers.pick([0.05, 0.3, 0.7, 1, 2, 3, 5, 9, 16, 40, 130])
             steps.append("the clock moves \(seconds) s")
             clock.advance(by: seconds)
+            // A stream that said nothing for ten seconds is sent a
+            // heartbeat.
+            if seconds >= 10 { server.beat() }
         case "work":
             let events = 1 + numbers.below(4)
             steps.append("the server's turns emit \(events) more")
@@ -943,8 +931,6 @@ struct SeededRun {
         composed = []
         drew = [:]
         asked = []
-        drewQueued = [:]
-        drewRead = [:]
         drewEnded = []
         // The process is gone, and with it the time the system gave its
         // actions: one unfinished is lost with it, but for a reply, which
@@ -1632,8 +1618,8 @@ struct SeededRun {
         -> Violation?
     {
         // A message drawn as queued: one the server admitted into a turn,
-        // drawn once, in a conversation a run goes on in, and never one
-        // this conversation already drew as read.
+        // drawn once, in a conversation a run goes on in, with a stream
+        // open, and that no call has read.
         var queued: Set<String> = []
         for turn in screen.turns {
             guard case let .user(message) = turn.body, message.queued != nil else { continue }
@@ -1642,27 +1628,21 @@ struct SeededRun {
             if live.phase == .idle || live.phase == .handingOver {
                 return broke(.queued, "\(name) draws \(turn.id) as queued while no run goes on in it")
             }
-            // Drawn plain between two times it is drawn queued is no
-            // fault where the server still holds it unread: a chat that
-            // lost its stream says nothing of a queue until it reads one
-            // again (seed 215, with the list's steps beside these).
-            if drewRead[key]?.contains(turn.id) == true, server.wasTaken(turn.id) {
-                let what = "\(name) draws \(turn.id) as queued again after it drew it as read"
-                // Known (`known`), and only this far: the conversation
-                // has no stream to hear on (it waits to ask for one again,
-                // or has asked and no event has come), so no word that a
-                // call read the message can have reached it. With a
-                // stream open, the rule breaks.
-                let deaf = !live.connected || (waits[key] ?? []).contains { $0.key == "retry" }
-                guard deaf else { return broke(.queued, what) }
-                if noted[.queued] == nil { noted[.queued] = broke(.queued, what) }
-            }
+            // Only while a stream is open to say otherwise: a conversation
+            // whose send waits for its answer, that asks for its stream or
+            // waits to ask again cannot know whether a call has read the
+            // message, and says nothing of a queue.
+            var open = live.connected
+            if case let .send(run)? = live.run { open = open && run.named }
+            if live.run == nil { open = false }
+            if !open { return broke(.queued, "\(name) draws \(turn.id) as queued while it has no stream to hear on") }
+            // And only while the server holds it unread: with a stream
+            // open, the word that a call read it has been said.
+            if server.wasTaken(turn.id) { return broke(.queued, "\(name) draws \(turn.id) as queued, and a call has read it") }
         }
         for id in live.queued.map(\.id) where screen.turns.filter({ $0.id == id }).count != 1 {
             return broke(.queued, "\(name) holds \(id) as queued and draws it \(screen.turns.filter { $0.id == id }.count) times")
         }
-        drewRead[key, default: []].formUnion((drewQueued[key] ?? []).subtracting(queued))
-        drewQueued[key, default: []].formUnion(queued)
 
         // The cards, under the calls the transcript draws.
         for case let .assistant(reply) in screen.turns.map(\.body) {

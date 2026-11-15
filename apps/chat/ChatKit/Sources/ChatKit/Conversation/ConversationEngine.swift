@@ -774,6 +774,7 @@ extension Conversation {
         state.stopping = false
         state.phase = .streaming
         state.connected = false
+        deafen(&state)
         state.run = .attach(State.Attach(attempt: attempt))
         state.asks.append(.attach(thread: thread))
     }
@@ -796,6 +797,9 @@ extension Conversation {
         if delay == 0 {
             attach(&state, attempt: attempt)
         } else {
+            // No stream until the wait is over and one opens.
+            state.connected = false
+            deafen(&state)
             state.asks.append(.wait(attempt: attempt, seconds: delay))
         }
     }
@@ -1100,6 +1104,7 @@ extension Conversation {
         state.phase = .background
         state.stopping = false
         state.run = nil
+        deafen(&state)
         state.asks.append(.pollEvery)
     }
 
