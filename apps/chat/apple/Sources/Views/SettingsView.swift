@@ -110,7 +110,7 @@ struct SettingsView: View {
                     addKey: { keySheet = host.chats?.keys[$0] })
             }
             if let empty = section.empty {
-                Text(empty).foregroundStyle(.secondary)
+                Text(empty).ink(.quiet, on: .form)
             }
         } header: {
             Text(section.title)
@@ -120,10 +120,10 @@ struct SettingsView: View {
         if !section.background.isEmpty {
             Section {
                 ForEach(section.background) { agent in
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: ChatSpace.pair) {
                         Text(agent.name)
                         Text(agent.description ?? agent.id)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            .font(ChatType.caption).ink(.quiet, on: .form).lineLimit(2)
                     }
                 }
             } header: {
@@ -184,30 +184,30 @@ private struct AssistantRowView: View {
     let addKey: (String) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .top, spacing: ChatSpace.apart) {
+            VStack(alignment: .leading, spacing: ChatSpace.mark) {
                 AgentPill(id: row.id, name: row.name)
                 if let description = row.description {
-                    Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(description).font(ChatType.caption).ink(.quiet, on: .form).lineLimit(2)
                 }
-                HStack(spacing: 6) {
+                WrapLayout(spacing: ChatSpace.words) {
                     ForEach(row.runsOn, id: \.self) { fact in
-                        HStack(spacing: 3) {
-                            Text(fact.label).fontWeight(.semibold)
+                        HStack(spacing: ChatSpace.mark) {
+                            Text(fact.label).fontWeight(ChatType.strong)
                             Text(fact.value).monospaced(fact.verbatim)
                         }
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(ChatType.small)
+                        .ink(.quiet, on: .form)
                     }
                     if let keyless = row.keyless {
                         Button(keyless.action) { addKey(keyless.id) }
-                            .font(.caption2.weight(.semibold))
+                            .font(ChatType.smallLabel)
                             .buttonStyle(.borderless)
-                            .tint(.orange)
+                            .tinted(.tone(.caution), on: .form)
                     }
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: ChatSpace.beside)
             Toggle("Show in chat", isOn: $offered)
                 .labelsHidden()
         }

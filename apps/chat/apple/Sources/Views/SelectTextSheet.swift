@@ -58,7 +58,7 @@ private struct ReplyTools: ViewModifier {
                 // One character of the code's font, never seen: its width
                 // is a column's, at whatever size the text is.
                 Text(verbatim: "0")
-                    .font(CodeMetrics.font)
+                    .font(ChatType.code)
                     .fixedSize()
                     .hidden()
                     .accessibilityHidden(true)
@@ -97,7 +97,9 @@ struct SelectTextSheet: View {
                 }
         }
         #if os(macOS)
-        .frame(minWidth: 520, idealWidth: 620, minHeight: 420, idealHeight: 560)
+        .frame(
+            minWidth: ChatSize.readingSheet.least.width, idealWidth: ChatSize.readingSheet.ideal.width,
+            minHeight: ChatSize.readingSheet.least.height, idealHeight: ChatSize.readingSheet.ideal.height)
         #endif
     }
 }
@@ -114,14 +116,14 @@ enum ReplyText {
     typealias PlatformColor = NSColor
     private static var body: NSFont { .preferredFont(forTextStyle: .body) }
     private static var label: NSColor { .labelColor }
-    private static var quiet: NSColor { .secondaryLabelColor }
+    private static var quiet: NSColor { NSColor(ChatColours.Ink.quiet.color) }
     private static func fixed(_ size: CGFloat) -> NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
     #else
     typealias PlatformFont = UIFont
     typealias PlatformColor = UIColor
     private static var body: UIFont { .preferredFont(forTextStyle: .body) }
     private static var label: UIColor { .label }
-    private static var quiet: UIColor { .secondaryLabel }
+    private static var quiet: UIColor { UIColor(ChatColours.Ink.quiet.color) }
     private static func fixed(_ size: CGFloat) -> UIFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
     #endif
 
@@ -129,7 +131,7 @@ enum ReplyText {
     private nonisolated static let gap = "\n\n"
     private nonisolated static let itemGap = "\n"
     /// Between two columns of a table.
-    private static let columnGap: CGFloat = 18
+    private static let columnGap = ChatSpace.edge
 
     static func attributed(_ rows: [MarkdownRow], missing: Set<String> = []) -> NSAttributedString {
         let out = NSMutableAttributedString()
@@ -248,7 +250,7 @@ enum ReplyText {
 struct SelectableText {
     let text: NSAttributedString
     /// The space around the text.
-    static let inset: CGFloat = 16
+    static let inset = ChatSpace.edge
 }
 
 #if os(macOS)

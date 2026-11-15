@@ -36,91 +36,89 @@ struct ComposerBar: View {
     @Namespace private var glass
     @State private var sent = 0
     @State private var stopped = 0
+    @Scaled(.control) private var control
 
     private var composer: ComposerPresentation { screen.composer }
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         let _ = Meter.shared.count(.body, "Composer")
-        VStack(spacing: 8) {
+        VStack(spacing: ChatSpace.items) {
             if let keyless = composer.keyless {
                 KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
             }
             if let note = composer.answering {
                 AnsweringNoteView(note: note) { host.send(.showOptions, to: key) }
-                    .transition(.opacity)
+                    .arrives()
             }
             if let status = composer.status {
                 ComposerStatusLine(status: status)
-                    .transition(.opacity)
+                    .arrives()
                 // What Stop does to the messages that wait to be read.
                 if let queued = composer.queued {
                     Text(queued)
-                        .font(.caption)
-                        .foregroundStyle(.quietText)
+                        .font(ChatType.caption)
+                        .ink(.quiet, on: .field)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 18)
-                        .transition(.opacity)
+                        .padding(.horizontal, ChatSpace.edge)
+                        .arrives()
                 }
             } else if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
                 // While a reply is on its way the line above says so: "wait
                 // for the answer" would say it twice.
                 Text(reason)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(ChatType.caption)
+                    .ink(.quiet, on: .field)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18)
-                    .transition(.opacity)
+                    .padding(.horizontal, ChatSpace.edge)
+                    .arrives()
             }
             if let problem = dictation.problem {
                 Text(problem)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(ChatType.caption)
+                    .ink(.tone(.critical), on: .field)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, ChatSpace.edge)
             }
-            GlassEffectContainer(spacing: 14) {
-                VStack(alignment: .trailing, spacing: 10) {
+            GlassEffectContainer(spacing: ChatSpace.inset) {
+                VStack(alignment: .trailing, spacing: ChatSpace.apart) {
                     if !atBottom {
                         Button(action: onJump) {
-                            HStack(spacing: 5) {
+                            HStack(spacing: ChatSpace.mark) {
                                 Image(systemName: "arrow.down")
-                                    .font(.body.weight(.semibold))
+                                    .font(ChatType.control)
                                 if let count = jump.count {
                                     Text(count)
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(ChatType.heading)
                                         .monospacedDigit()
-                                        .contentTransition(.numericText())
+                                        .changes(.digits)
                                 }
                             }
-                            .padding(.horizontal, jump.count == nil ? 0 : 13)
-                            .frame(minWidth: 40, minHeight: 40)
+                            .padding(.horizontal, jump.count == nil ? 0 : ChatSpace.inset)
+                            .frame(minWidth: ChatSize.target, minHeight: ChatSize.target)
                             .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .glassEffect(.regular.interactive(), in: .capsule)
                         .glassEffectID("jump", in: glass)
                         .accessibilityLabel(jump.label)
-                        .transition(.scale.combined(with: .opacity))
+                        .arrives(.grow)
                     }
-                    HStack(alignment: .bottom, spacing: 10) {
+                    HStack(alignment: .bottom, spacing: ChatSpace.apart) {
                         field
-                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: control / 2))
                             .glassEffectID("field", in: glass)
                         trailing
                     }
                 }
             }
-            .animation(.snappy, value: atBottom)
-            .animation(.snappy, value: jump)
-            .animation(.snappy, value: empty)
-            .animation(.snappy, value: screen.streaming)
-            .animation(.snappy, value: dictation.active)
+            .motion(.status, value: ComposerShape(atBottom: atBottom, jump: jump, empty: empty, streaming: screen.streaming, listening: dictation.active))
         }
-        .animation(.snappy, value: composer.status?.kind)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .frame(maxWidth: 820)
+        .motion(.status, value: composer.status?.kind)
+        .padding(.horizontal, ChatSpace.gutter)
+        .padding(.bottom, ChatSpace.items)
+        // As wide as the transcript's words, however wide the window.
+        .frame(maxWidth: ChatSize.measure + 2 * ChatSpace.gutter)
         .frame(maxWidth: .infinity)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .sensoryFeedback(.impact(weight: .light), trigger: stopped)
@@ -160,7 +158,7 @@ struct ComposerBar: View {
     // MARK: The field
 
     @ViewBuilder private var field: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: ChatSpace.beside) {
             if composer.picksAgent {
                 AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
             }
@@ -171,7 +169,7 @@ struct ComposerBar: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1 ... 8)
                     .focused($focused)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, ChatSpace.blocks)
                     // What the press does is ChatKit's rule (`ComposerKeys`):
                     // Command-Return sends, any other Return is a new line.
                     // A held key repeats the new line and never the send.
@@ -189,34 +187,35 @@ struct ComposerBar: View {
                     }
                 if !empty {
                     micButton
-                        .padding(.bottom, 8)
                 }
             }
         }
-        .padding(.leading, composer.picksAgent ? 7 : 16)
-        .padding(.trailing, 8)
-        .frame(minHeight: 46)
+        .padding(.leading, composer.picksAgent ? ChatSpace.lines : ChatSpace.edge)
+        // The microphone's target reaches the field's edge; anything else
+        // stands off it.
+        .padding(.trailing, !dictation.active && !empty ? 0 : ChatSpace.beside)
+        .frame(minHeight: control)
     }
 
     /// What is being heard: the finalized words, then the guess, dimmed.
     private var listening: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: ChatSpace.apart) {
             LevelMeter(level: dictation.level)
             Group {
                 switch dictation.state {
                 case let .preparing(words):
-                    Text(words).foregroundStyle(.secondary)
+                    Text(words).ink(.quiet, on: .field)
                 default:
                     if dictation.heard.isEmpty {
-                        Text("Listening…").foregroundStyle(.secondary)
+                        Text("Listening…").ink(.quiet, on: .field)
                     } else {
-                        Text(dictation.finalized) + Text(dictation.volatile).foregroundStyle(.secondary)
+                        Text(dictation.finalized) + Text(dictation.volatile).ink(.quiet, on: .field)
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .lineLimit(1 ... 8)
-            .padding(.vertical, 11)
+            .padding(.vertical, ChatSpace.blocks)
             .accessibilityAddTraits(.updatesFrequently)
         }
     }
@@ -226,10 +225,10 @@ struct ComposerBar: View {
             Task { await toggleListening() }
         } label: {
             Image(systemName: "mic")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
-                .contentShape(.circle)
+                .font(ChatType.body)
+                .ink(.quiet, on: .field)
+                .frame(width: ChatSize.target, height: control)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Dictate")
@@ -243,19 +242,19 @@ struct ComposerBar: View {
             // stands beside Stop once something is typed; elsewhere only
             // Stop is offered until the reply ends.
             if composer.queues, !empty, !dictation.active {
-                round("arrow.up", tint: .accentColor, label: "Send", id: "send") { send() }
+                round("arrow.up", tint: .accentFill, label: "Send", id: "send") { send() }
                     .disabled(!composer.canSend)
                     .sendShortcut(on: .current)
-                    .transition(.scale.combined(with: .opacity))
+                    .arrives(.grow)
             }
-            round("stop.fill", tint: .red, label: screen.stopping ? "Stopping" : "Stop") {
+            round("stop.fill", tint: .destructiveFill, label: screen.stopping ? "Stopping" : "Stop") {
                 stopped += 1
                 host.send(.stop, to: key)
             }
             .disabled(screen.stopping)
             .accessibilityHint(composer.queued ?? "")
         } else if dictation.active {
-            round("checkmark", tint: .accentColor, label: "Done Listening") {
+            round("checkmark", tint: .accentFill, label: "Done Listening") {
                 Task { await toggleListening() }
             }
         } else if empty {
@@ -263,7 +262,7 @@ struct ComposerBar: View {
                 .disabled(screen.agent == nil)
         } else {
             // ⌘Return is the field's own key handling; the button says so.
-            round("arrow.up", tint: .accentColor, label: "Send") { send() }
+            round("arrow.up", tint: .accentFill, label: "Send") { send() }
                 .disabled(!composer.canSend)
                 .sendShortcut(on: .current)
         }
@@ -272,10 +271,10 @@ struct ComposerBar: View {
     private func round(_ symbol: String, tint: Color?, label: String, id: String = "action", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(tint == nil ? Color.primary : Color.white)
-                .frame(width: 46, height: 46)
-                .contentTransition(.symbolEffect(.replace))
+                .font(ChatType.control)
+                .ink(tint == nil ? .label : .onFill, on: tint == nil ? .field : .fill)
+                .frame(width: control, height: control)
+                .changes(.mark)
         }
         .buttonStyle(.plain)
         .glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? .regular.interactive(), in: .circle)
@@ -383,6 +382,16 @@ extension EnvironmentValues {
 /// composer, its agent and thread and whether a turn streams or stops, so a
 /// piece of a reply arriving above it draws nothing here. A field of the
 /// screen the bar comes to read goes into this comparison with it.
+/// What the glass of the bar is shaped by: a change of any of these moves
+/// it as one.
+private struct ComposerShape: Equatable {
+    var atBottom: Bool
+    var jump: JumpToLatest
+    var empty: Bool
+    var streaming: Bool
+    var listening: Bool
+}
+
 extension ComposerBar: @MainActor Equatable {
     static func == (lhs: ComposerBar, rhs: ComposerBar) -> Bool {
         lhs.key == rhs.key && lhs.screen.composer == rhs.screen.composer && lhs.screen.streaming == rhs.screen.streaming
@@ -398,22 +407,25 @@ extension ComposerBar: @MainActor Equatable {
 /// change.
 struct ComposerStatusLine: View {
     let status: ComposerStatus
+    /// Every status's mark stands in one column, so the words do not move
+    /// when one status gives way to the next.
+    @Scaled(.actionMark) private var mark
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: ChatSpace.words) {
             Image(systemName: symbol)
                 .imageScale(.small)
-                .symbolEffect(.pulse, isActive: status.kind != .stopping)
-                .frame(width: 16)
+                .pulses(while: status.kind != .stopping)
+                .frame(width: mark)
             Text(status.words)
-                .lineLimit(1)
+                .lineLimit(2)
                 .shimmer()
-                .contentTransition(.opacity)
+                .changes(.words)
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.quietText)
+        .font(ChatType.label)
+        .ink(.quiet, on: .field)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, ChatSpace.edge)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.words)
         .accessibilityAddTraits(.updatesFrequently)
@@ -437,6 +449,7 @@ private struct AgentChip: View {
     let key: ChildKey
     let current: String?
     let label: String
+    @Scaled(.control) private var control
 
     var body: some View {
         Menu {
@@ -452,10 +465,10 @@ private struct AgentChip: View {
                 }
             }
         } label: {
-            // Centred on the field's first line: 32 points in a 46-point row.
+            // Centred on the field's first line.
             AgentPill(id: current, name: label, picker: true)
-                .frame(maxWidth: 180, alignment: .leading)
-                .padding(.vertical, 7)
+                .frame(maxWidth: ChatSize.chipMax, alignment: .leading)
+                .frame(minHeight: control)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -472,38 +485,41 @@ struct KeylessCalloutView: View {
     let add: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "key.fill").foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(callout.title).font(.subheadline.weight(.semibold))
+        HStack(spacing: ChatSpace.apart) {
+            Image(systemName: "key.fill").ink(.mark(.caution), on: .card)
+            VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                Text(callout.title).font(ChatType.heading)
                 Text(callout.message)
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(ChatType.caption).ink(.quiet, on: .card)
             }
             Spacer(minLength: 0)
             Button(callout.action, action: add)
                 .buttonStyle(.borderedProminent)
+                .prominentTint()
                 .controlSize(.small)
         }
-        .card(tint: .orange)
-        .padding(.horizontal, 4)
+        .card(.caution)
     }
 }
 
 /// The microphone's loudness as five bars.
 private struct LevelMeter: View {
     let level: Float
+    @Scaled(.meter) private var height
 
     var body: some View {
-        HStack(spacing: 2.5) {
+        HStack(spacing: ChatSpace.pair) {
             ForEach(0 ..< 5) { i in
+                // The middle bar reaches highest; a quiet room is a
+                // quarter of the meter.
                 let weight: Float = [0.5, 0.8, 1, 0.8, 0.5][i]
                 Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: 3, height: 6 + CGFloat(min(1, level * weight * 1.4)) * 16)
+                    .ink(.accent, on: .field)
+                    .frame(width: ChatLine.rail, height: height * (0.25 + 0.7 * CGFloat(min(1, level * weight * 1.4))))
             }
         }
-        .frame(height: 24)
-        .animation(.easeOut(duration: 0.08), value: level)
+        .frame(height: height)
+        .motion(.level, value: level)
         .accessibilityHidden(true)
     }
 }

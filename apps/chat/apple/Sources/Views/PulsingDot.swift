@@ -2,19 +2,17 @@ import SwiftUI
 
 /// A pulsing dot: a chat is running.
 struct PulsingDot: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var color: Color = .accentColor
+    /// The colour of what is working: an agent's.
+    let color: Color
     @State private var on = false
+    @Scaled(.dot) private var dot
 
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 6, height: 6)
-            .opacity(on ? 0.3 : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.9).repeatForever()) { on = true }
-            }
+            .frame(width: dot, height: dot)
+            .opacity(on ? ChatColours.dimmed : 1)
+            .repeats(.pulse, running: $on)
             .accessibilityLabel("Working")
     }
 }

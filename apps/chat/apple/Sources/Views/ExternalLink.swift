@@ -16,7 +16,8 @@ enum ExternalMark {
     static var text: Text {
         // An image in a text is one unit.
         let spoken = SpokenPiece.fill(1, for: words)
-        return Text("\(Text(Image(systemName: symbol)))\(Text(verbatim: spoken.filler))").foregroundStyle(.tint).accessibilityLabel(spoken.label)
+        return Text("\(Text(Image(systemName: symbol)))\(Text(verbatim: spoken.filler))").ink(.accent, on: .page, .card, .table).accessibilityLabel(
+            spoken.label)
     }
 }
 
@@ -40,18 +41,18 @@ struct SourceListView: View {
     let list: SourceList
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: ChatSpace.lines) {
             if let heading = list.heading {
                 Text(heading)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.label)
+                    .ink(.quiet, on: .page)
             }
             if let empty = list.empty {
                 Text(empty)
-                    .font(.footnote)
-                    .foregroundStyle(.quietText)
+                    .font(ChatType.note)
+                    .ink(.quiet, on: .page)
             } else {
-                WrapLayout(spacing: 6) {
+                WrapLayout(spacing: ChatSpace.words) {
                     ForEach(list.pills) { SourcePillView(pill: $0) }
                 }
             }
@@ -71,6 +72,9 @@ struct SourcePillView: View {
     var body: some View {
         if let url = URL(string: pill.url) {
             Link(destination: url) { label }
+                // The pill's own inks, not a link's tint over them: its
+                // title is the label colour, as a record's pill's is.
+                .buttonStyle(.plain)
                 .help(pill.snippet.map { "\(pill.title ?? pill.host)\n\n\($0)" } ?? pill.url)
                 .contextMenu {
                     Button("Open", systemImage: ExternalMark.symbol) { openURL(url) }
@@ -85,49 +89,49 @@ struct SourcePillView: View {
     }
 
     private var label: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: RecordPillStyle.spacing) {
             if let index = pill.index {
                 Text(index, format: .number)
                     .monospacedDigit()
-                    .fontWeight(.medium)
-                    .foregroundStyle(.quietText)
+                    .fontWeight(ChatType.strong)
+                    .ink(.quiet, on: .pill)
             } else {
-                Image(systemName: "globe").foregroundStyle(.tertiary)
+                Image(systemName: "globe").ink(.faint, on: .pill)
             }
             Text(pill.host)
-                .foregroundStyle(.quietText)
+                .ink(.quiet, on: .pill)
                 .lineLimit(1)
                 .layoutPriority(1)
             if let title = pill.title {
                 Text(title)
-                    .foregroundStyle(.primary)
+                    .ink(.label, on: .pill)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             Image(systemName: ExternalMark.symbol)
                 .imageScale(.small)
-                .foregroundStyle(.tertiary)
+                .ink(.faint, on: .pill)
         }
-        .font(.caption)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
+        .font(ChatType.note)
+        .padding(.horizontal, ChatSpace.pillSide)
+        .padding(.vertical, ChatSpace.pillEdge)
         // The wrap lays a pill out at its ideal width: a long title truncates
         // inside a phone's column instead of running past it.
-        .frame(maxWidth: 280, alignment: .leading)
-        .background(.fill.tertiary, in: .capsule)
+        .frame(maxWidth: ChatSize.pillMax, alignment: .leading)
+        .background(ChatColours.pillStyle, in: .capsule)
         .contentShape(.capsule)
     }
 
     private var preview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(pill.title ?? pill.host).font(.headline)
-            Text(pill.url).font(.caption).foregroundStyle(.quietText).lineLimit(2)
+        VStack(alignment: .leading, spacing: ChatSpace.lines) {
+            Text(pill.title ?? pill.host).font(ChatType.heading(level: 3))
+            Text(pill.url).font(ChatType.caption).ink(.quiet, on: .page).lineLimit(2)
             if let snippet = pill.snippet {
-                Text(snippet).font(.subheadline)
+                Text(snippet).font(ChatType.detail)
             }
         }
-        .padding(16)
-        .frame(width: 320, alignment: .leading)
+        .padding(ChatSpace.edge)
+        .frame(width: ChatSize.preview, alignment: .leading)
     }
 
     private var spoken: String {

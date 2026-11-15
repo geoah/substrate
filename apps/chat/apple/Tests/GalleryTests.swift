@@ -102,7 +102,7 @@ import Testing
     }
 
     /// The width an iPad's and a Mac's transcript keeps.
-    static let wide: CGFloat = 780
+    static let wide = ChatSize.measure + 2 * ChatSpace.margin
 
     /// A host on the fixture showing one chat, once its transcript is the
     /// one the picture is of.
@@ -146,12 +146,10 @@ import Testing
             change(&changed)
             screen = changed
         }
-        return VStack(alignment: .leading, spacing: 22) {
+        return VStack(alignment: .leading, spacing: ChatSpace.turns) {
             if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 16)
+        .transcriptMargins()
         .environment(\.recordTitles, screen?.titles ?? [:])
         .replyLinks()
         .replyTools(wraps: screen?.wrapsCode ?? false)
@@ -439,8 +437,7 @@ import Testing
                     let drawn = view(host, key, streaming: false)
                         .environment(\.conversationKey, key)
                         .environment(\.opensEndedCards, state.hasSuffix("-opened"))
-                        .frame(maxWidth: 780)
-                        .frame(maxWidth: .infinity)
+                        .readingMeasure()
                     Attachment.record(
                         try await OffscreenDrawing.png(drawn, size: CGSize(width: size.width, height: 700), scheme: scheme),
                         named: "answer-\(state)-\(device)-\(scheme == .dark ? "dark" : "light").png")
@@ -492,7 +489,7 @@ private struct Scene: View {
     private var chat: some View {
         VStack(spacing: 0) {
             header("Balcony plants", "with Moss")
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: ChatSpace.turns) {
                 bubble("How often should I water the balcony plants?")
                 reply("Twice a week in summer, and once a week from October. The tomatoes are the thirsty ones: check their soil every second day.")
                 bubble("And the tomatoes in August?").opacity(fixture.place == .unsent ? 0.7 : 1)
@@ -510,16 +507,15 @@ private struct Scene: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .frame(maxWidth: 780)
-            .frame(maxWidth: .infinity)
-            VStack(spacing: 8) {
-                if fixture.place == .chat { card.padding(.horizontal, 12) }
+            .padding(.horizontal, ChatSpace.margin)
+            .padding(.top, ChatSpace.edge)
+            .readingMeasure()
+            VStack(spacing: ChatSpace.items) {
+                if fixture.place == .chat { card.padding(.horizontal, ChatSpace.gutter) }
                 composer
             }
-            .frame(maxWidth: 820)
-            .padding(.bottom, 16)
+            .frame(maxWidth: ChatSize.measure + 2 * ChatSpace.gutter)
+            .padding(.bottom, ChatSpace.edge)
         }
     }
 

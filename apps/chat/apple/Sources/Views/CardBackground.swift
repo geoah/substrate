@@ -1,22 +1,23 @@
+import SubstrateKit
 import SwiftUI
 
-/// A card in the transcript: a plain fill, never glass (glass is for the
-/// control layer).
+/// A card in the transcript: a plain fill of its tone, or of none, never
+/// glass (glass is for the control layer).
 struct CardBackground: ViewModifier {
-    var tint: Color?
+    var tone: ScreenTone?
 
     func body(content: Content) -> some View {
         content
-            .padding(14)
+            .padding(ChatSpace.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background((tint ?? Color.secondary).opacity(tint == nil ? 0.08 : 0.1), in: .rect(cornerRadius: 16))
+            .background(ChatColours.cardStyle(tone), in: .rect(cornerRadius: ChatRadius.card))
             .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder((tint ?? Color.secondary).opacity(0.18), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: ChatRadius.card)
+                    .strokeBorder(ChatColours.cardEdge(tone), lineWidth: ChatLine.hairline)
             }
     }
 }
 
 extension View {
-    func card(tint: Color? = nil) -> some View { modifier(CardBackground(tint: tint)) }
+    func card(_ tone: ScreenTone? = nil) -> some View { modifier(CardBackground(tone: tone)) }
 }

@@ -27,13 +27,13 @@ import Testing
         let measured: Measured
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: ChatSpace.turns) {
                 if let screen = host.conversation(key) {
                     TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in })
                         .environment(\.recordTitles, screen.titles)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, ChatSpace.margin)
             .frame(width: OffscreenDrawing.phone.width, alignment: .topLeading)
             .fixedSize(horizontal: false, vertical: true)
             // The content's height as its own layout has it.

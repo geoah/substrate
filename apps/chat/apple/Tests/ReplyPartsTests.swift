@@ -152,13 +152,13 @@ import Testing
         for run in made.runs { drawn[String(made[run.range].characters)] = (run.foregroundColor, run.font) }
         let keyword = try #require(drawn["let"])
         #expect(keyword.colour == CodePaint.colours[.keyword])
-        #expect(keyword.font == CodePaint.keyword)
+        #expect(keyword.font == ChatType.codeKeyword)
         let string = try #require(drawn["\"b\""])
         #expect(string.colour == CodePaint.colours[.string])
         #expect(string.font == nil)
         let comment = try #require(drawn["// c"])
         #expect(comment.colour == CodePaint.colours[.comment])
-        #expect(comment.font == CodePaint.comment)
+        #expect(comment.font == ChatType.codeComment)
         // What is no token is the text's own colour.
         let between = try #require(drawn[" a = "])
         #expect(between.colour == nil)
@@ -312,7 +312,7 @@ import Testing
         func drawn(_ failure: FailurePresentation?) async throws -> [String] {
             screen.failures.turns = failure.map { [last: $0] } ?? [:]
             let hosted = try await Hosted(
-                VStack(alignment: .leading, spacing: 22) { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
+                VStack(alignment: .leading, spacing: ChatSpace.turns) { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
                     .replyLinks().replyTools(wraps: false).environment(host))
             return hosted.buttons
         }
@@ -337,7 +337,7 @@ import Testing
         let asked = try #require(screen.turns.last?.id)
         screen.failures.turns = [asked: FailureFixtures.keyRefused]
         let alone = try await Hosted(
-            VStack(alignment: .leading, spacing: 22) { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
+            VStack(alignment: .leading, spacing: ChatSpace.turns) { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
                 .replyLinks().replyTools(wraps: false).environment(host))
         #expect(alone.buttons.filter { ["Copy", "Share", "Try Again", "Continue"].contains($0) } == ["Try Again"])
         #expect(alone.buttons.contains("Replace Key"))
