@@ -15,7 +15,13 @@ import SubstrateKit
 /// run a line every 0.7 seconds; `long` shows the chat of 200 turns, with
 /// nothing running, for a transcript to scroll, and `deep` a chat of 1,100
 /// rows, whose older rows are read in above the newest 500 when its top is
-/// reached. `reply:<name>` shows a chat
+/// reached; each read's first reply is a page taller than a window, and
+/// `SUBSTRATE_CHAT_DEMO_SLOW` is the seconds a read of older rows takes,
+/// for a hand to move the transcript while it is out. `left:<ordinal>` shows
+/// the same chat with 2,000 rows on a server that keeps its person's
+/// marks, read through the row at that ordinal and not opened since: 1200
+/// is found two reads above the newest 500, and 100 is further back than
+/// the app reads toward. `reply:<name>` shows a chat
 /// that holds one settled reply of the fixtures: `week` (every block),
 /// `short`, `lines` (code with long lines), `tables`, `table` (a small
 /// one), `links` (records and pages linked in one paragraph), or a
@@ -58,6 +64,13 @@ enum Demo {
         }
     }
 
+    /// The ordinal a `left:<ordinal>` state says the deep chat's person
+    /// read through.
+    private static var left: Int? {
+        guard let asked, asked.hasPrefix("left:") else { return nil }
+        return Int(asked.dropFirst("left:".count))
+    }
+
     /// The states that are a card's: the chat that holds it, and whether
     /// it has ended.
     private static func card(_ state: String) -> (asked: ChatFixtures.Asked, resolved: Bool, words: Bool)? {
@@ -77,7 +90,8 @@ enum Demo {
         // A message joins a run where the server's `agents` is at 6.
         let queues = asked == "queued" || asked == "taken"
         // And a card says whose hand ended it where it is at 7.
-        let server = FixtureServer(reply: "", agents: queues ? 6 : card(asked) != nil ? 7 : 0)
+        let server = FixtureServer(reply: "", agents: queues ? 6 : card(asked) != nil ? 7 : 0, records: left != nil ? 8 : 1)
+        if let left { server.left(ChatFixtures.deep, rows: 2000, through: left) }
         if queues {
             server.script(thread, lines: joined.lines, rows: joined.rows)
         } else {
@@ -85,6 +99,8 @@ enum Demo {
         }
         if let card = card(asked) { server.ask(card.asked, resolved: card.resolved) }
         if let reply { server.seed(settled, message: "Show me.", reply: reply) }
+        let slow = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO_SLOW"] ?? UserDefaults.standard.string(forKey: "SUBSTRATE_CHAT_DEMO_SLOW")
+        if let seconds = slow.flatMap(Double.init) { server.olderTakes = .milliseconds(Int(seconds * 1000)) }
         self.server = server
         var parts = ChatHost.Parts.fixture(server)
         // The device's own service, for the notifications alone.
@@ -114,7 +130,7 @@ enum Demo {
             _ = await until { host.chats?.list.loading == false ? true : nil }
             if let only = notified(asked) { return await notify(only) }
             let card = card(asked)
-            if asked == "deep" { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
+            if asked == "deep" || left != nil { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
             host.send(.show(thread: asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread, scene: scene))
             if asked == "long" || reply != nil { return }
             guard let key = await until({ host.chats?.scenes[scene]?.current }) else { return }

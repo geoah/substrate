@@ -269,7 +269,6 @@ struct OlderRowsRow: View {
     let thread: String?
     /// How many times rows have arrived above the transcript.
     var arrived = 0
-    @State private var visible = false
 
     var body: some View {
         Button {
@@ -288,15 +287,23 @@ struct OlderRowsRow: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
-        .onAppear {
-            visible = true
+        // Asked for once the row has stood on screen a moment, and again
+        // each time rows arrive while it does. Not at once: rows that
+        // arrive are laid out above the reader before the transcript is
+        // put back where they were, so this row comes on screen for that
+        // moment at every arrival, and asking then read a whole thread
+        // in, page after page, for a reader who reached its top once.
+        .task(id: arrived) {
+            guard (try? await Task.sleep(for: Self.dwell)) != nil else { return }
             ask()
         }
-        .onDisappear { visible = false }
-        .onChange(of: arrived) { _, _ in
-            if visible { ask() }
-        }
     }
+
+    /// How long the row stands on screen before it asks.
+    static let dwell: Duration = .milliseconds(250)
+    /// The row's name in the transcript, which no turn's id is: what a
+    /// chat still read toward the row it opens at is put at.
+    static let row = "older-rows"
 
     private func ask() {
         if let thread { host.send(.olderRows(thread: thread)) }

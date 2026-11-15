@@ -552,9 +552,15 @@ extension ChatApp {
         // gave it.
         var newLine = Self.newLine(held, from: state.conversations[key]?.newFrom)
         // Read toward and not reached: the new messages begin above the
-        // rows held, and the line at their top says so.
-        if newLine == nil, state.conversations[key]?.line == .missed, let first = held?.turns.first?.id {
-            newLine = NewLine(turn: first, label: "New from above", spoken: "New messages begin above these")
+        // rows that were held then, and the line at their top says so. It
+        // stays on that row when rows arrive above it: the row before the
+        // ones held is on screen where the chat stands at their top, and
+        // asks for them.
+        if newLine == nil, let entry = state.conversations[key], entry.line == .missed, let turns = held?.turns {
+            let stood = entry.lineAt.flatMap { row in turns.first { $0.row == row || $0.id == row }?.id }
+            if let first = stood ?? turns.first?.id {
+                newLine = NewLine(turn: first, label: "New from above", spoken: "New messages begin above these")
+            }
         }
         if let row = newLine?.turn, let drawn = claims[row] ?? live.aliases[row] { newLine?.turn = drawn }
         // A line that is not drawn holds nothing: the "New" line, and a

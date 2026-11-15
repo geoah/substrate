@@ -162,9 +162,13 @@ struct ConversationView: View {
 
     /// The row a chat that opens at a turn is put at: the "New" line above
     /// the turn, or the turn's first row where it has none. Nil for a chat
-    /// that opens at its end, and until the rows hold the turn.
+    /// that opens at its end, and until the rows hold the turn. While the
+    /// row it opens at is still read toward, the row above the ones held
+    /// that says so: put at the first turn, that row stood just off the
+    /// screen's top and nothing said a read was under way.
     private func opening(_ screen: ConversationScreen) -> String? {
         guard case let .turn(id) = screen.opens else { return nil }
+        if screen.seeks, screen.older != nil { return OlderRowsRow.row }
         return TranscriptPiece.pieces(of: screen.turns, newLine: screen.newLine).first { $0.turn.id == id }?.id
     }
 
@@ -251,6 +255,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     @State private var seen: [String] = []
     @State private var reach = TranscriptReach()
     @State private var before = RowsBefore()
+    @State private var places = RowPlaces()
 
     init(
         opens: TranscriptOpening, anchor: String? = nil, seeks: Bool = false, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
@@ -275,7 +280,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     }
 
     var body: some View {
-        let _ = before.drawn(above: above, seen: seen)
+        let _ = before.drawn(above: above, seen: seen, places: places)
         ScrollViewReader { reader in
             scroll
                 // A chat with more than its reader had seen opens at the
@@ -333,11 +338,14 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         let own = seen.filter { $0 == above.turn || $0.hasPrefix(above.turn + "/") }
         let row = own.contains(above.turn) ? above.turn : first(own.isEmpty ? seen : own) ?? above.turn
         position = ScrollPosition(idType: String.self)
-        DispatchQueue.main.async { reader.scrollTo(row, anchor: .top) }
+        // Where the row stood, which inside a row taller than the screen
+        // is not its top.
+        let anchor = before.anchor(of: row, room: reach.measure.room)
+        DispatchQueue.main.async { reader.scrollTo(row, anchor: anchor) }
     }
 
     private var scroll: some View {
-        ScrollView { rows }
+        ScrollView { rows.environment(\.rowPlaces, places) }
             .scrollPosition($position)
             // A chat opens at its end, and a short one lies from the top: it
             // has nothing to follow until it outgrows the screen.
@@ -684,11 +692,11 @@ struct TranscriptRows: View {
                 hero: hero, pick: { host.send(.fill($0), to: key) },
                 addKey: onKey)
         }
-        if let older = screen.older { OlderRowsRow(older: older, thread: screen.thread, arrived: screen.above?.count ?? 0) }
+        if let older = screen.older { OlderRowsRow(older: older, thread: screen.thread, arrived: screen.above?.count ?? 0).id(OlderRowsRow.row) }
         // A turn's failure is a card at that turn, a row under its last;
         // the "New" line is a row above the first turn that was not read.
         ForEach(TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine, actions: screen.replyActions)) { piece in
-            TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking, act: act)
+            TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking, act: act).placed(piece.id)
         }
         if screen.typing {
             TypingDots()

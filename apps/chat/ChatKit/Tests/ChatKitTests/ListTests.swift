@@ -912,6 +912,11 @@ struct ListSearch {
         try await rig.harness.until { harness in await harness.state.transcripts["vast"]?.records.first?.id == "vast-m307" }
         let seeking = await rig.harness.state.seeking
         #expect(server.count(older) == ChatApp.seekReads + 1 && seeking.isEmpty)
+        // And the line stays on the row it was drawn at, with those rows
+        // above it now.
+        let after = try #require(await rig.conversation(key))
+        #expect(after.newLine == NewLine(turn: "vast-m506", label: "New from above", spoken: "New messages begin above these"))
+        #expect(after.turns.first?.id == "vast-m307")
     }
 
     @Test func aHitIsCutToTheWordsAroundTheFirstThatMatchedWithEachMarked() {

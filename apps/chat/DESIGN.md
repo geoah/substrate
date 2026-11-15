@@ -1244,20 +1244,36 @@ bubble is a tinted fill. The transcript softens under the composer with
   record in the console). The key lives only in the field until it is sent;
   it is never cached or logged.
 - **More than 500 rows**: a chat opens with its newest 500. A row at the
-  top, "Earlier messages", reads the 200 before the first one held when it
-  comes on screen, or when pressed, for as long as the thread holds more
-  (`ChatApp.Command.olderRows`). The rows arrive above the ones drawn, and
-  a transcript that does not follow its end stays at the turn that stood
-  first (`TranscriptScroll`'s `above`: the scroll view is put at that turn
-  again once the rows are laid out, since content that grows above a
-  reader moves what they read down). A reader who went on down the
-  transcript while the rows were out stays at the first row they have on
-  screen: the first they had before the rows were laid out (`RowsBefore`),
-  since by the time the scroll view can be asked, the rows it has on
-  screen are the ones that arrived. A row is kept by its top. A row of a
-  reply is about a screen and a half, a table or a block of code in it
-  the taller for it, so a reader part way down one when rows arrive is
-  put at the start of that row and no further. The next read of the newest rows
+  top, "Earlier messages", reads the 200 before the first one held once
+  it has stood on screen a quarter of a second (`OlderRowsRow.dwell`), or
+  when pressed, for as long as the thread holds more
+  (`ChatApp.Command.olderRows`). Not the moment it comes on screen: rows
+  that arrive are laid out above the reader before the transcript is put
+  back, so the row comes on screen for that moment at every arrival, and
+  asking then read a whole thread in, 200 rows after 200, for a reader
+  who reached its top once.
+- **Rows that arrive above.** The rows arrive above the ones drawn, and
+  a transcript that does not follow its end stays where it was
+  (`TranscriptScroll`'s `above`: the scroll view is put there again once
+  the rows are laid out, since content that grows above a reader moves
+  what they read down). A reader who went on down the transcript while
+  the rows were out stays at the first row they have on screen: the first
+  they had before the rows were laid out (`RowsBefore`), since by the
+  time the scroll view can be asked, the rows it has on screen are the
+  ones that arrived. On an iPhone and an iPad the row is put back where
+  it stood, to the point: each row says where it stands in the scroll
+  view (`placed`, `RowPlaces`), and the row is put at the point of itself
+  that stands it there (`RowsBefore.fraction`). A row of a reply is about
+  a screen and a half, a table or a block of code in it the taller for
+  it, and a reader part way down one when rows arrive keeps their line.
+  On a Mac a row is kept by its top, so that reader is put at the start
+  of that row and no further: put at another point of a row, the Mac's
+  scroll view held the place as exactly, and then refused the test
+  window's wheel, which moves the scroll view from outside it. On an
+  iPhone and an iPad a finger moves the transcript after as before. No
+  wheel could be turned over the real window to tell the two apart, so
+  the Mac keeps the rule that is known to leave the reader their hand.
+  The next read of the newest rows
   (the thread moved, a run handed over) keeps the older ones where it
   begins among the rows held, and starts the transcript over where it
   does not: more rows were written since than a read holds. The folder
@@ -1320,14 +1336,20 @@ bubble is a tinted fill. The transcript softens under the composer with
   further back than the rows held (the newest 500), the line is above
   them: the rows before are read toward it, as for a search's hit, five
   reads of 200 at most. While that is out the chat stands at the top of
-  what it holds, under the row at the top, which says "Finding where you
-  left off…", and no line is drawn where none is known
+  what it holds, at the row over it, which says "Finding where you left
+  off…" (the view puts the chat at that row, `OlderRowsRow.row`: put at
+  the first turn, the row stood just off the screen and nothing said a
+  read was under way), and no line is drawn where none is known
   (`ConversationScreen.seeks`). Once the rows hold the message, the line
   is drawn and the chat is put at it, unless its reader has touched,
   scrolled, sent or jumped by then. A line more than about 1,500 messages
   back is not reached, and neither is one past a read that failed: the
   chat stays at the top of what was read, a line there says "New from
-  above", and the row over it, "Earlier messages", reads further. A chat
+  above", and the row over it, "Earlier messages", reads further. That
+  row is on screen there, so it reads the next 200 by itself, and the
+  line stays on the row it was drawn at with those rows above it
+  (`Entry.lineAt`): a line that went up with every arrival was out of
+  sight a moment after the chat was put at it. A chat
   opened at a message, from a search,
   opens at that message's turn the same way, and each time it is opened at
   one again while it is shown (`ConversationScreen.visit`); where the rows
@@ -2312,10 +2334,9 @@ no outcome depends on how long they took.
   at 101; `AnsweringTests`), and a chat held archived after its person
   spoke in it, because the feed said so before the read beside the
   message did (seed 7190 at 96 steps; `AnsweringTests`). A message drawn
-  queued by a conversation
-  with no stream open, or one a call has read, breaks the run. A kill
-  may take a draft typed inside its save's pause and a send without an id
-  still on its way, and nothing else.
+  queued by a conversation with no stream open, or one a call has read,
+  breaks the run. A kill may take a draft typed inside its save's pause
+  and a send without an id still on its way, and nothing else.
 - The diagnostics file by a seed (`SeededRun.discreet`). The seeded
   server's every sentence is a canary (`SeededServer.said`: an envelope's
   message, a thread's reason, a failed turn's error), and so is every
@@ -2545,7 +2566,14 @@ held at that state: `connecting`, `thinking`, `writing`, `tool`,
 turns, to scroll up in for Jump to Latest), `deep` (a chat of 1,100 rows:
 the fixture's server answers the window a read asks for, so its older
 rows are read in above the newest 500 when its top is reached, with no
-server), `play` (the whole run, at
+server; the first reply of each read is a page taller than a window with
+a table wider than a phone, and `SUBSTRATE_CHAT_DEMO_SLOW=<seconds>`
+makes a read of older rows take so long, for a hand to move the
+transcript while it is out), `left:<ordinal>` (the same chat with 2,000
+rows on a server that keeps its person's marks, read through the row at
+that ordinal and not opened since: `left:1200` is found two reads above
+the newest 500, `left:100` is further back than the app reads toward),
+`play` (the whole run, at
 the fixture's pace) or `reply:<name>` (a chat that holds one settled
 reply of the fixtures: `week`, `short`, `lines`, `tables`, `table`, or a
 language's name for its code sample). And how a person answers:
