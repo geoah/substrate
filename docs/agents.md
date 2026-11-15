@@ -1463,7 +1463,10 @@ person finds it again by listing what they archived, and unarchives it there.
 [`waitingOnPerson`](#read-state) is above 0 holds a question, a proposed
 change or a call needing approval. A client lists it, counts it and notifies
 for it whether or not its reader archived it. The archive is not cleared:
-once nothing waits, the chat leaves the list again.
+once nothing waits, the chat leaves the list again. A client reads the
+threads that wait on their own, and follows the thread kind on the change
+feed: a run its person archived is in no other list it reads, and has to
+come back when it comes to wait.
 
 What a client does, since these are rules about a list and a badge:
 
@@ -1474,9 +1477,10 @@ What a client does, since these are rules about a list and a badge:
   pinned and archived is with the archived ones; it keeps its pin, and is
   pinned again once unarchived.
 - When its person sends a message into a chat they archived, or continues
-  it, the client writes `archived: false` first: they are following it
-  again, and its reply should find them. The server's send writes no mark,
-  so a client from before this leaves such a chat archived.
+  it, the client writes `archived: false` with it: they are following it
+  again, and its reply should find them. The message is not held for that
+  write, and the client says so if it fails. The server's send writes no
+  mark, so a client from before this leaves such a chat archived.
 
 **Reading the list.** The flags are on the mark, not on the thread, so a
 list of threads is narrowed by the reader's own marks with the
@@ -1497,8 +1501,10 @@ GET /api/v1/records?orderBy=updatedAt:desc&first=100&filter={"kinds":["substrate
 A thread the person never opened has no mark, so it is not archived and not
 pinned. The pinned read also answers a pinned chat its person archived;
 their mark of it says so, and the client keeps it with the archived ones.
-The archived chats that wait on a person are the second read with
-`"properties":{"waitingOnPerson":{"gt":0}}` beside `kinds`.
+The chats that wait on a person are a fourth read with no arm,
+`"properties":{"waitingOnPerson":{"gt":0}}` beside `kinds`: it holds the
+archived ones and the ones older than the first read's page alike. A list
+longer than a page is continued by its cursor or by `offset`, as any list.
 
 A server below revision 9 of `records` refuses the arm (`400 bad_request`)
 and the two properties (`422 validation`, or `403 forbidden` to an app's

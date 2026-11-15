@@ -23,7 +23,7 @@ import {
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { useLiveRecords } from "@/hooks/use-live-records"
+import { useLiveRecords, type LiveFrom } from "@/hooks/use-live-records"
 import { THREAD_LISTS_KEY } from "@/lib/api/agents"
 import {
   myThreadMarksQueryOptions,
@@ -80,10 +80,31 @@ export interface ThreadMarks {
   setArchived: (thread: string, on: boolean) => Promise<boolean>
 }
 
+/** The oldest of several reads of one history: where a watch must resume
+ * for none of them to miss a change. A read of another history than the
+ * first's is left out. */
+export function earliestRead(
+  ...reads: (LiveFrom | undefined)[]
+): LiveFrom | undefined {
+  let out: LiveFrom | undefined
+  for (const read of reads) {
+    if (!read) continue
+    if (!out) out = read
+    else if (read.generation === out.generation && read.head < out.head)
+      out = read
+  }
+  return out
+}
+
 export function useThreadMarks(
   threads: readonly SubstrateRecord[],
   /** The chat being read, when one is. */
-  open: SubstrateRecord | undefined
+  open: SubstrateRecord | undefined,
+  /** The oldest read of the lists `threads` came from. The marks are read
+   * after them, so a mark another device wrote in between is in the marks'
+   * own head already: resumed from there, the watch would never say that a
+   * chat left out of those lists was unarchived or pinned. */
+  listed?: LiveFrom
 ): ThreadMarks {
   const queryClient = useQueryClient()
   const ids = useMemo(() => {
@@ -97,7 +118,7 @@ export function useThreadMarks(
     supported ? [THREAD_MARK_KIND] : [],
     [[...THREAD_MARKS_KEY], [...THREAD_LISTS_KEY]],
     undefined,
-    query.data
+    earliestRead(query.data, listed)
   )
   const marks = useMemo(
     () => marksByThread(query.data?.records ?? []),

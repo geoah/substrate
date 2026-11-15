@@ -13,12 +13,12 @@
  * narrows it too, and New chat starts with the agent it is narrowed to. `/agents/<agent id>` is the old per-agent address and
  * redirects to `?agent=` (its `?thread=` carried along).
  *
- * THE CHATS. The column is read in parts, each a list of threads the server
- * narrows by the person's own marks (decision 0322): the chats they have not
- * archived, the ones they pinned however old, the archived ones that wait on
- * a person, and, while the Archived view is open, the archived ones. A
- * server from before pin and archive serves the one list it always did, and
- * the page offers neither action.
+ * THE CHATS. The column is read in parts: every chat that waits on a person,
+ * and three lists of threads the server narrows by the person's own marks
+ * (decision 0322), the chats they have not archived, the ones they pinned
+ * however old, and, while the Archived view is open, a page of the archived
+ * ones. A server from before pin and archive serves the one list it always
+ * did, and the page offers neither action.
  *
  * The llm/provider rows are not agents and are not listed; an agent's
  * provider shows on its panel, and a provider without a key says so where the
@@ -43,7 +43,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { toast } from "@/components/ui/toast"
 import { useAgentRuns } from "@/hooks/use-agent-runs"
 import { useLiveRecords } from "@/hooks/use-live-records"
-import { useThreadMarks } from "@/hooks/use-thread-marks"
+import { earliestRead, useThreadMarks } from "@/hooks/use-thread-marks"
 import {
   agentPurpose,
   chatCapable,
@@ -65,6 +65,7 @@ import { recordQueryOptions } from "@/lib/api/records"
 import {
   chatListQueryOptions,
   PIN_ARCHIVE_REVISION,
+  THREAD_MARKS_REVISION,
 } from "@/lib/api/thread-marks"
 import type { SubstrateRecord } from "@/lib/api/types"
 
@@ -129,8 +130,10 @@ export function AgentsPage() {
     if (search.agent) setNarrowed(search.agent)
   }
 
-  // Which part of the chats the column shows: a fact of this window.
+  // Which part of the chats the column shows, and which page of the
+  // archived ones: facts of this window.
   const [view, setView] = useState<ChatsView>("chats")
+  const [archivedPage, setArchivedPage] = useState(0)
 
   const agents = useQuery(agentsQueryOptions())
   // Whether the server keeps pins and archives, and narrows a list by them.
@@ -138,6 +141,7 @@ export function AgentsPage() {
   // refuse the filter, and a newer one would show the archived chats.
   const discovery = useQuery(discoveryQueryOptions)
   const flags = hasFeature(discovery.data, "records", PIN_ARCHIVE_REVISION)
+  const counts = hasFeature(discovery.data, "records", THREAD_MARKS_REVISION)
   const asked = !discovery.isPending
   const conversations = useQuery({
     ...chatListQueryOptions(flags ? "unarchived" : "all"),
@@ -147,12 +151,14 @@ export function AgentsPage() {
     ...chatListQueryOptions("pinned"),
     enabled: flags,
   })
+  // What waits on a person is read on its own, so neither an archive nor
+  // the list's window can leave it out.
   const waitingChats = useQuery({
-    ...chatListQueryOptions("archivedWaiting"),
-    enabled: flags,
+    ...chatListQueryOptions("waiting"),
+    enabled: counts,
   })
   const archivedChats = useQuery({
-    ...chatListQueryOptions("archived"),
+    ...chatListQueryOptions("archived", archivedPage),
     enabled: flags && view === "archived",
   })
   const policies = useQuery(writePoliciesQueryOptions())
@@ -193,9 +199,13 @@ export function AgentsPage() {
   // this watch, a chat still running behind another one settles unseen. It
   // resumes from the list's own head, so a chat that settles after the list
   // was read and before the stream opens is heard too.
+  //
+  // Where a chat can be archived the watch stays open: a run the person put
+  // away is in none of the lists read, and when it comes to wait on them it
+  // has to come back.
   const anyRunning = threads.some((t) => t.properties.status === "running")
   useLiveRecords(
-    anyRunning ? [`${LLM_PACKAGE}/thread`] : [],
+    anyRunning || flags ? [`${LLM_PACKAGE}/thread`] : [],
     [[...THREAD_LISTS_KEY]],
     undefined,
     conversations.data
@@ -224,7 +234,16 @@ export function AgentsPage() {
   const threadRecord = listed ?? single.data
   // How far the person has read each chat: the dots in the list, and the
   // write that follows reading the one that is open.
-  const marks = useThreadMarks(threads, threadRecord)
+  const marks = useThreadMarks(
+    threads,
+    threadRecord,
+    earliestRead(
+      conversations.data,
+      pinnedChats.data,
+      waitingChats.data,
+      view === "archived" ? archivedChats.data : undefined
+    )
+  )
   const threadAgent = threadRecord ? threadAgentId(threadRecord) : undefined
   // A new chat's agent: the one asked for, else whoever you talked to last
   // (when you still can), else the first you can talk to.
@@ -355,11 +374,25 @@ export function AgentsPage() {
       onMarkRead={marks.supported ? marks.markRead : undefined}
       pinned={marks.pinned}
       archived={marks.archived}
-      onPin={marks.supported && flags ? pin : undefined}
-      onArchive={marks.supported && flags ? archive : undefined}
+      // By the server's revision, not by a read of marks: with every chat
+      // archived the list is empty, no mark is read, and the Archived view
+      // is the one way back to them.
+      onPin={flags ? pin : undefined}
+      onArchive={flags ? archive : undefined}
       view={view}
-      onView={setView}
+      onView={(next) => {
+        setView(next)
+        setArchivedPage(0)
+      }}
       archivedLoading={archivedChats.isPending}
+      onArchivedNewer={
+        archivedPage > 0 ? () => setArchivedPage((n) => n - 1) : undefined
+      }
+      onArchivedOlder={
+        archivedChats.data?.cursor && !archivedChats.isPlaceholderData
+          ? () => setArchivedPage((n) => n + 1)
+          : undefined
+      }
     />
   )
   const panel = agent ? (
@@ -431,9 +464,11 @@ export function AgentsPage() {
           }
           // Saying something in a chat takes it out of the archive: the
           // person is following it again, and its reply should find them.
+          // The message is not held for it; an unarchive that fails is
+          // said, and the header still offers it.
           onSpoke={() => {
             if (threadId && flags && marks.archived.has(threadId))
-              void marks.setArchived(threadId, false)
+              void archive(threadId, false)
           }}
           actions={
             <>

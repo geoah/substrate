@@ -129,6 +129,8 @@ export function ThreadList({
   view = "chats",
   onView,
   archivedLoading = false,
+  onArchivedNewer,
+  onArchivedOlder,
 }: {
   rows: ChatRow[]
   loading: boolean
@@ -164,6 +166,11 @@ export function ThreadList({
   onView?: (view: ChatsView) => void
   /** The archived chats are still being read. */
   archivedLoading?: boolean
+  /** The Archived view shows one page of the archived chats, most recently
+   * active first: these turn it, and each is absent where there is no such
+   * page. */
+  onArchivedNewer?: () => void
+  onArchivedOlder?: () => void
 }) {
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
@@ -455,6 +462,28 @@ export function ThreadList({
               </Button>
             )}
           </>
+        )}
+        {showArchived && (onArchivedNewer || onArchivedOlder) && (
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="xs"
+              variant="ghost"
+              className="flex-1 text-muted-foreground"
+              disabled={!onArchivedNewer}
+              onClick={onArchivedNewer}
+            >
+              Newer chats
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              className="flex-1 text-muted-foreground"
+              disabled={!onArchivedOlder}
+              onClick={onArchivedOlder}
+            >
+              Older chats
+            </Button>
+          </div>
         )}
       </nav>
     </div>
