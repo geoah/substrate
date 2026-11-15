@@ -52,6 +52,9 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     /// How long a read of a chat's newest rows takes: a chat is on screen
     /// before its rows are, as it is against a server.
     var rowsTake: Duration?
+    /// A chat's row says what its runs took, so its technical details hold
+    /// every line they have.
+    var tallied = false
 
     /// A run a test writes a line at a time (`step`), so every screen
     /// between its first piece and its stored rows can be looked at: the
@@ -303,7 +306,9 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
             // A chat with a mark says which message is its newest, as a
             // server that keeps marks does.
             let last = lock.withLock { read[id] != nil ? rows[id].map { "\(id)-m\($0 - 1)" } : nil }
-            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : stopped ? "stopped" : "ok", lastMessage: last))
+            let row = ChatFixtures.thread(id, version: version, status: running ? "running" : stopped ? "stopped" : "ok", lastMessage: last)
+            let took = #""turns":12,"toolCalls":7,"totalTokens":48213,"promptTokens":41002,"completionTokens":7211,"costUSD":0.2143,"mode":"chat""#
+            return json(tallied ? row.replacingOccurrences(of: #""mode":"chat""#, with: took) : row)
         }
         return missing
     }

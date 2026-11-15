@@ -82,6 +82,25 @@ final class RowsBefore {
 @MainActor
 final class RowPlaces {
     var frames: [String: CGRect] = [:]
+    /// Whose word each place is. A scroll view made anew draws its rows
+    /// under the ids of the ones it replaces, and those leave after the
+    /// new ones have said where they stand: a row that leaves takes its
+    /// own word with it and never another's.
+    private var said: [String: Row] = [:]
+
+    /// One drawn row, to tell it from another under its id.
+    final class Row {}
+
+    func say(_ frame: CGRect, of id: String, by row: Row) {
+        frames[id] = frame
+        said[id] = row
+    }
+
+    func left(_ id: String, by row: Row) {
+        guard said[id] === row else { return }
+        frames[id] = nil
+        said[id] = nil
+    }
 
     /// Whether a row's end stands within the room's height of the end of
     /// the scroll view's room, `room` points high from the top of what it
@@ -118,15 +137,16 @@ extension View {
 #if os(iOS)
 private struct PlacedRow: ViewModifier {
     @Environment(\.rowPlaces) private var places
+    @State private var row = RowPlaces.Row()
     let id: String
 
     func body(content: Content) -> some View {
         content.onGeometryChange(for: CGRect.self) {
             $0.frame(in: .scrollView)
         } action: {
-            places?.frames[id] = $0
+            places?.say($0, of: id, by: row)
         }
-        .onDisappear { places?.frames[id] = nil }
+        .onDisappear { places?.left(id, by: row) }
     }
 }
 #endif

@@ -24,6 +24,10 @@ import UIKit
 @Suite(.serialized) struct OpensDrawnTests {
     static let scene = "opens"
     static let thread = "t-reply"
+    /// A chat the fixtures hold four rows of, which a send adds to: a
+    /// seeded one holds its newest turn alone.
+    static let short = "t-short"
+    nonisolated static let unseeded: (name: String, text: String?) = ("a chat of two turns", nil)
 
     /// The gallery's replies that are taller than a window at one text
     /// size or another, by name, each a chat of two turns, which is laid
@@ -44,7 +48,7 @@ import UIKit
     final class Stage {
         let window: UIWindow
 
-        init(_ host: ChatHost, _ key: ChildKey, at size: DynamicTypeSize) throws {
+        init(_ host: ChatHost, _ key: ChildKey, at size: DynamicTypeSize, height: CGFloat? = nil) throws {
             let view = NavigationStack { ConversationView(key: key, scene: OpensDrawnTests.scene) }
                 .environment(host)
                 .recordViewer(host.recordDirectory())
@@ -54,6 +58,7 @@ import UIKit
             let scene = try #require(scenes.first, "the test's host app has no window scene")
             window = UIWindow(windowScene: scene)
             window.frame = scene.screen.bounds
+            if let height { window.frame.size.height = height }
             window.rootViewController = UIHostingController(rootView: view)
             window.isHidden = false
         }
@@ -110,51 +115,103 @@ import UIKit
 
     struct NotReached: Error {}
 
+    /// A chat of the fixtures shown in a window that is there before its
+    /// rows are, and left until its scroll view has come to rest.
+    func opened(_ reply: (name: String, text: String?), at size: DynamicTypeSize, height: CGFloat? = nil, technical: Bool = false) async throws
+        -> (host: ChatHost, key: ChildKey, stage: Stage)
+    {
+        let server = FixtureServer(reply: "")
+        let thread = reply.name == Self.unseeded.name ? Self.short : reply.text == nil ? ChatFixtures.long : Self.thread
+        if let text = reply.text { server.seed(thread, message: "Show me.", reply: text) }
+        // The rows arrive once the chat is on screen, as they do against a
+        // server: a scroll view made with its rows opens at its own end,
+        // and the fault was one that got them after.
+        server.rowsTake = .milliseconds(400)
+        server.tallied = technical
+        let host = ChatHost(.fixture(server))
+        host.send(.sceneAppeared(scene: Self.scene, restoring: nil))
+        try await until { host.chats?.list.loading == false ? true : nil }
+        if technical { host.send(.settings(.toggle(row: .app("technicalDetails"), on: true))) }
+        host.send(.show(thread: thread, scene: Self.scene))
+        let key = try await until { () -> ChildKey? in
+            guard let key = host.chats?.scenes[Self.scene]?.current, host.conversation(key)?.thread == thread else { return nil }
+            return key
+        }
+        let stage = try Stage(host, key, at: size, height: height)
+        do {
+            try await until { (host.conversation(key)?.turns.count ?? 0) >= (thread == ChatFixtures.long ? 200 : 2) ? true : nil }
+            try await rest(stage)
+        } catch {
+            stage.close()
+            throw error
+        }
+        return (host, key, stage)
+    }
+
+    /// Once the scroll view has come to rest: where it stands is the same
+    /// for a second, which is longer than any move of the app's.
+    func rest(_ stage: Stage) async throws {
+        var rested = 0
+        var stood: [CGFloat]?
+        for _ in 0 ..< 200 where rested < 20 {
+            try await Task.sleep(for: .milliseconds(50))
+            let stands = stage.scroll.map { [$0.contentOffset.y, $0.contentSize.height, $0.adjustedContentInset.bottom] }
+            rested = stands == stood ? rested + 1 : 0
+            stood = stands
+        }
+    }
+
+    /// Rows are drawn, and the scroll view stands at its end by its own
+    /// account where the chat is taller than the room for it.
+    func expectTheEnd(_ stage: Stage, _ said: String) throws {
+        let scroll = try #require(stage.scroll, "no transcript in the window: \(said)")
+        let drawn = try #require(stage.drawn(), "the window could not be drawn: \(said)")
+        #expect(drawn > 0.01, "an empty screen: \(said): \(drawn) of the transcript is drawn on")
+        let room = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
+        let below = scroll.contentSize.height - (scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom)
+        if scroll.contentSize.height > room { #expect(abs(below) < 1, "not at its end: \(said): \(below) below, a room of \(room)") }
+    }
+
     @Test(.timeLimit(.minutes(10)), arguments: OpensDrawnTests.cases.indices)
     func aChatOpensWithItsRowsOnScreen(_ index: Int) async throws {
         let (reply, size) = (Self.replies[Self.cases[index].reply], Self.sizes[Self.cases[index].size])
         // Three opens of each: the fault was not every open's.
         for open in 1 ... 3 {
-            let said = "\(reply.name) at \(size), open \(open)"
-            let server = FixtureServer(reply: "")
-            let thread = reply.text == nil ? ChatFixtures.long : Self.thread
-            if let text = reply.text { server.seed(thread, message: "Show me.", reply: text) }
-            // The rows arrive once the chat is on screen, as they do
-            // against a server: a scroll view made with its rows opens at
-            // its own end, and the fault was one that got them after.
-            server.rowsTake = .milliseconds(400)
-            let host = ChatHost(.fixture(server))
-            host.send(.sceneAppeared(scene: Self.scene, restoring: nil))
-            try await until { host.chats?.list.loading == false ? true : nil }
-            host.send(.show(thread: thread, scene: Self.scene))
-            let key = try await until { () -> ChildKey? in
-                guard let key = host.chats?.scenes[Self.scene]?.current, host.conversation(key)?.thread == thread else { return nil }
-                return key
-            }
-            // On screen before its rows are, as a chat opened in the app is.
-            let stage = try Stage(host, key, at: size)
+            let (_, _, stage) = try await opened(reply, at: size)
             defer { stage.close() }
-            try await until { (host.conversation(key)?.turns.count ?? 0) >= (reply.text == nil ? 200 : 2) ? true : nil }
-            // Once the scroll view has come to rest: where it stands is the
-            // same for a second, which is longer than any move of the
-            // opening's.
-            var rested = 0
-            var stood: [CGFloat]?
-            for _ in 0 ..< 200 where rested < 20 {
-                try await Task.sleep(for: .milliseconds(50))
-                let stands = stage.scroll.map { [$0.contentOffset.y, $0.contentSize.height, $0.adjustedContentInset.bottom] }
-                rested = stands == stood ? rested + 1 : 0
-                stood = stands
-            }
-            let scroll = try #require(stage.scroll, "no transcript in the window: \(said)")
-            let drawn = try #require(stage.drawn(), "the window could not be drawn: \(said)")
-            #expect(drawn > 0.01, "opened on an empty screen: \(said): \(drawn) of the transcript is drawn on")
-            // And at its end, by the scroll view's own account, where the
-            // chat is taller than the room for it.
-            let room = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
-            let below = scroll.contentSize.height - (scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom)
-            if scroll.contentSize.height > room { #expect(abs(below) < 1, "not at its end: \(said): \(below) below") }
+            try expectTheEnd(stage, "\(reply.name) at \(size), open \(open)")
         }
+    }
+
+    /// With the technical details on, which stand under the last turn and
+    /// are there before the turns are: a chat of two turns in a window
+    /// short enough that they are more than three times the room high, and
+    /// the chat of 200 turns. Each opens at its end, and is at its end
+    /// again after a send made from its top, where it was put with no
+    /// finger on it. A last row named before the turns were held opened
+    /// the long chat 54 points past its end; the send from the top came to
+    /// the end with the last row named either way, so that half holds the
+    /// way there and no fault that was seen.
+    nonisolated static let sends: [(reply: (name: String, text: String?), size: DynamicTypeSize, height: CGFloat?)] = [
+        (unseeded, .accessibility5, 400), (replies[4], .large, nil), (replies[4], .accessibility3, nil),
+    ]
+
+    @Test(.timeLimit(.minutes(10)), arguments: OpensDrawnTests.sends.indices)
+    func aSendFromTheTopComesToTheEnd(_ index: Int) async throws {
+        let (reply, size, height) = Self.sends[index]
+        let said = "\(reply.name) at \(size)\(height.map { " in a window \(Int($0)) high" } ?? "")"
+        let (host, key, stage) = try await opened(reply, at: size, height: height, technical: true)
+        defer { stage.close() }
+        try expectTheEnd(stage, "\(said), opened")
+        let scroll = try #require(stage.scroll)
+        let held = host.conversation(key)?.turns.count ?? 0
+        scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+        try await Task.sleep(for: .milliseconds(500))
+        host.send(.draft("And then?"), to: key)
+        host.send(.send, to: key)
+        try await until { (host.conversation(key)?.turns.count ?? 0) > held ? true : nil }
+        try await rest(stage)
+        try expectTheEnd(stage, "\(said), after a send from its top")
     }
 }
 #endif

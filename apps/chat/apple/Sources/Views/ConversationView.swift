@@ -41,7 +41,7 @@ struct ConversationView: View {
         let _ = Meter.shared.count(.body, "Transcript")
         return TranscriptScroll(
             opens: screen.opens, anchor: opening(screen), seeks: screen.seeks, sends: screen.sends, visit: screen.visit, above: screen.above,
-            last: screen.approvals.last ?? TranscriptPiece.lastRow(of: screen.turns, failures: screen.failures.turns),
+            last: TranscriptRows.lastRow(of: screen),
             // Rows before the ones held are asked for by a row that comes
             // on screen, which in a stack laid out whole every row has.
             count: screen.older == nil ? screen.turns.count : .max,
@@ -595,9 +595,10 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// where it would stand, or the row is not laid out, the end is asked
     /// for by that row. Nearer, the place finishes the move, and not while
     /// it is more than twice the room away: the row's end is within the
-    /// room of where it would stand and less than the room from the
-    /// content's, so a place further off is a guess the stack has yet to
-    /// take back, and what the scroll view says next asks again.
+    /// room of where it would stand, and under the row stands a line of
+    /// dots at most (`TranscriptRows.lastRow`), so a place further off is
+    /// a guess the stack has yet to take back, and what the scroll view
+    /// says next asks again.
     /// With no row on screen nothing is asked for here: the rows have yet
     /// to say where they stand, or none is laid out (`startOver`).
     ///
@@ -653,7 +654,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// goes by the stack's guess too and has been seen to stand a lazy
     /// one past its rows time after time. After a moment, since a row
     /// says where it stands a little after it has moved; and a few times
-    /// at most, counted until it is found with a row on screen.
+    /// at most, counted until it is found at rest with a row on screen or
+    /// a finger moves it.
     private func startOver() {
         guard !reach.starting, reach.started < 3 else { return }
         reach.starting = true
@@ -671,7 +673,22 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
             position = ScrollPosition(idType: String.self)
             if count <= Self.fewAtMost { whole = true }
             starts += 1
+            // One made anew that came to rest on its rows is counted no
+            // more. Asked once it has rested, and never at a row's first
+            // word: one made anew shows its first rows for a frame before
+            // it stands past them, and a count put back then never ends.
+            try? await Task.sleep(for: .milliseconds(2000))
+            if !reach.starting, shows { reach.started = 0 }
         }
+    }
+
+    /// Whether a row stands in the room, by the rows' own word.
+    private var shows: Bool {
+        #if os(iOS)
+        places.shows(in: reach.measure.room)
+        #else
+        true
+        #endif
     }
 
     /// Holds a transcript that follows its end to it, wherever the scroll
@@ -867,6 +884,24 @@ struct TranscriptRows: View {
     /// What a failure's button does.
     let act: (FailureAction) -> Void
 
+    /// The ids the rows under the turns say where they stand by.
+    static let technical = "technical"
+    static func status(_ index: Int) -> String { "status/\(index)" }
+
+    /// The id of the last row of a transcript that holds turns, among the
+    /// rows that say where they stand: the last of all but for the dots of
+    /// a reply on its way, which no text size makes tall. A move to the
+    /// end goes by it (`go(to:)`), and what stands under the row it is
+    /// given must be less than the room. None before the turns are held,
+    /// whatever stands under where they will be: the scroll view is made
+    /// anew, and said to be laid out whole or not, when it first has one.
+    static func lastRow(of screen: ConversationScreen) -> String? {
+        guard !screen.turns.isEmpty else { return nil }
+        if screen.technical != nil { return technical }
+        if !screen.status.isEmpty { return status(screen.status.count - 1) }
+        return screen.approvals.last { screen.cards[$0]?.approval != nil } ?? TranscriptPiece.lastRow(of: screen.turns, failures: screen.failures.turns)
+    }
+
     var body: some View {
         if let hero = screen.hero {
             NewChatHeroView(
@@ -899,6 +934,8 @@ struct TranscriptRows: View {
             }
             .font(ChatType.small)
             .ink(.quiet, on: .page)
+            .placed(Self.technical)
+            .id(Self.technical)
         }
     }
 }
@@ -962,24 +999,37 @@ private struct ConversationStatus: View {
     let screen: ConversationScreen
     let key: ChildKey
 
+    /// A note under the id it says where it stands by: a move to the
+    /// transcript's end may go by the last of them.
+    private struct Row: Identifiable {
+        let id: String
+        let note: ConversationNote
+    }
+
+    private var notes: [Row] { screen.status.enumerated().map { Row(id: TranscriptRows.status($0.offset), note: $0.element) } }
+
     var body: some View {
-        ForEach(screen.status, id: \.self) { note in
-            switch note.kind {
-            case .partial:
-                Label(note.message, systemImage: "text.badge.minus")
-                    .font(ChatType.note)
-                    .ink(.quiet, on: .page)
-            case .background:
-                HStack(spacing: ChatSpace.beside) {
-                    ProgressView().controlSize(.small)
-                    Text(note.message)
-                        .font(ChatType.detail)
+        ForEach(notes) { row in
+            let note = row.note
+            Group {
+                switch note.kind {
+                case .partial:
+                    Label(note.message, systemImage: "text.badge.minus")
+                        .font(ChatType.note)
                         .ink(.quiet, on: .page)
+                case .background:
+                    HStack(spacing: ChatSpace.beside) {
+                        ProgressView().controlSize(.small)
+                        Text(note.message)
+                            .font(ChatType.detail)
+                            .ink(.quiet, on: .page)
+                    }
+                case .deleted:
+                    ProblemBox(title: note.title, message: note.message, tint: ChatColours.neutral, systemImage: "trash")
+                        .card()
                 }
-            case .deleted:
-                ProblemBox(title: note.title, message: note.message, tint: ChatColours.neutral, systemImage: "trash")
-                    .card()
             }
+            .placed(row.id)
         }
     }
 }
