@@ -180,14 +180,19 @@ struct LiveRows: Codable, Hashable, Sendable {
     }
 
     /// The provisional turn a new call belongs to: the reply that asked
-    /// for it. A reply's calls draw their ordinals one after another, and
-    /// the next reply draws its own between, so a call whose ordinal does
-    /// not follow the last turn's calls is another reply's, one that
-    /// streamed no text. It is keyed by the call until its row is read.
+    /// for it. A reply's calls draw their ordinals one after another from
+    /// the reply's own, and the next reply draws its own between, so a
+    /// call whose ordinal does not follow the last turn's newest (its last
+    /// call's, or its own where it has made none) is another reply's, one
+    /// that streamed no text: a reply kept from the run before is not the
+    /// one a continued run's first call belongs to. It is keyed by the
+    /// call until its row is read.
     private mutating func home(of call: ToolCall, seq: Int) -> Int {
         if let last = turns.last, last.role == .assistant {
             let ordinals = last.tools.compactMap(\.ordinal)
-            guard let ordinal = call.ordinal, let newest = ordinals.max(), ordinals.count == last.tools.count else { return turns.count - 1 }
+            guard let ordinal = call.ordinal, ordinals.count == last.tools.count, let newest = ordinals.max() ?? last.ordinal else {
+                return turns.count - 1
+            }
             if ordinal <= newest + 1 { return turns.count - 1 }
         }
         turns.append(Turn(id: call.id.isEmpty ? "\(Turn.unkeyedPrefix)\(seq)" : "call-\(call.id)", role: .assistant, content: ""))

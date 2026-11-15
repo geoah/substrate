@@ -180,6 +180,22 @@ struct LiveRowsTests {
         }
     }
 
+    /// A reply kept from the run before (its rows' read failed) and a
+    /// continued run whose next reply is only a call: the call's ordinal
+    /// does not follow the reply held, so it is another reply's.
+    @Test func aContinuedRunsFirstCallIsNotTheReplyBeforeIts() {
+        var live = LiveRows()
+        live.hear([.delta("Hello", turn: 1)])
+        live.begin()
+        // Reply 2 says nothing and asks for a call, whose row is 3.
+        live.hear([.toolStarted("c", turn: 3)])
+        #expect(live.turns.map(\.id) == ["turn-1", "call-c"] && live.turns[0].tools.isEmpty)
+        // A reply's own first call follows it.
+        var own = LiveRows()
+        own.hear([.delta("Hello", turn: 1), .toolStarted("c", turn: 2), .toolStarted("d", turn: 3)])
+        #expect(own.turns.map(\.id) == ["turn-1"] && own.turns[0].tools.map(\.id) == ["c", "d"])
+    }
+
     @Test func anUnclaimedFinishOpensASettledCard() {
         var live = LiveRows()
         live.hear([.toolFinished("x", turn: 4, output: #"{"error":"budget"}"#, ok: false)])
