@@ -949,6 +949,20 @@ whose `agents` feature is older than that route (below revision 3) sends
 "Continue where you left off." as the owner's own message. Every failure is drawn by one component in one of three
 places, never an alert ([its design](chat/DESIGN.md#failures)).
 
+**How a person answers.** A question, a suggestion and a call to approve are
+cards that stand only while they wait: once one ended, here or on another
+device, it is a check or a cross on the tool call that asked, which opens to
+what was asked and what was answered. A question can be answered in the
+person's own words, as an ordinary message, after which the app dismisses it.
+On a server at `agents` 6 a message can be sent while the assistant works: it
+is drawn queued until a model call reads it, and a run that is stopped first
+says the message was not read and offers Continue
+([its design](chat/DESIGN.md#a-message-sent-while-the-assistant-works)). A
+notification is answered where it stands: a reply with a line of text, an
+approval with Approve or Decline, a single question with one of its options,
+each through the path the chat uses and inside the time the system gives a
+background action ([notifications](chat/DESIGN.md#notifications)).
+
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest
 (`ChatManifest` in `chat/ChatKit/Sources/ChatKit/ChatManifest.swift`): the kit's connect screen checks

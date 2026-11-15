@@ -45,8 +45,14 @@ changed is listed at the end.
   counts after deletion. A thread deleted elsewhere says so when opened.
 - Push through APNs. The server has no push channel; the app notifies from
   what it observes (below), and says so in Settings.
-- Reply from a notification. A background send that expires before its
-  `thread` event needs the whole unknown-delivery path; later.
+- Reply from a notification on a server below `agents` 3. A notification
+  is answered where it stands ([Notifications](#notifications)): a reply
+  with a line of text, an approval with Approve or Decline, a single
+  question with one of its options. The reply is a message under an id of
+  its own, sent again if its answer is lost and kept on the device first,
+  which is what makes a send from the background safe; a server that takes
+  no id would leave a reply that expired as an unknown delivery, so there
+  the notification only opens the chat.
 - Attachments. The chat endpoint takes text.
 
 ## Platforms and target
@@ -190,7 +196,8 @@ which is what tells them apart in History.
 | `reasoning`, `delta`, `toolStarted`, `toolFinished`, `compacted` | fold into the stream's rows (`LiveRows`) | dropped if a row read with this attach carries its `turn`, else folded: what is held of the turn is written over, never emptied |
 | `truncated` | not sent | the replay lost events: what is held stays, and the chat says so ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
 | `lagged` | not sent | this reader fell behind and the server ends its stream: nothing failed, so the app attaches again at once and draws nothing for it |
-| `messageQueued`, `messageTaken` (`agents` 6) | kinds this build does not name: each line is skipped, and the reply around it is what it is without it | same |
+| `messageQueued` (`agents` 6) | a message was written into the running turn, from this device or another: its row is drawn at its ordinal, and it is queued until a call reads it ([a message sent while the assistant works](#a-message-sent-while-the-assistant-works)) | same; one a reply the rows already hold came after is read, not queued |
+| `messageTaken` (`agents` 6) | a model call read the message: it is queued no more, and is never said to be again | same |
 | `idle` | after `thread`, to a repeat of a message the server already holds: the thread's status is the whole answer, read as on an attach | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
 | `error` (after the 200) | a failed turn: settle, with the `cause` and `retryAfter` the event carries where the server sends them. With no `cause` and a `code`: `auth` is the sign-in ended (the signed-out screen), `internal` a failed turn, `unavailable` a reader cut off for reading too slowly (the turn runs on: attach again, nothing drawn) | same |
@@ -254,6 +261,58 @@ one brings. A feed row still reads the thread.
 read again, and what it says is shown. Any other failure is the stop's, not
 the reply's: the strip above the composer says the stop failed and that the
 reply is still being written, with Try Again for the stop.
+
+### A message sent while the assistant works
+
+A server at `agents` 6 takes a message sent under its id into the chat
+turn running on its thread (decision 0318): it writes the row at once,
+answers with that turn's stream from its start, and says `messageQueued`
+on every stream of the turn, then `messageTaken` when a model call reads
+the message. Where the server says that revision, takes ids, and the agent
+is a chat's, the composer sends while a reply streams (`Conversation.queues`,
+`ConversationQueue.swift`):
+
+- **The send takes over the read.** The stream being read is let go and the
+  send's own is read in its place: the same turn, said again from its
+  start, folded over what is drawn as a stream joined again is. Nothing is
+  drawn twice and nothing drawn goes.
+- **Queued, and then not.** The message is drawn from the press, under its
+  id, as every message is. Once the server says it wrote it
+  (`messageQueued`) it says "Queued for Moss's next step" under the bubble,
+  until `messageTaken` names its id. A piece of a reply whose ordinal is
+  past the message's, and a reply's stored row past it, say the same: a
+  call read it. The composer says how many are queued and what a stop does
+  to them.
+- **Another device's message** arrives as a `messageQueued` with its id,
+  ordinal and text, and is drawn the same way. Several keep the order of
+  their ordinals, and a call of the reply being written stays with that
+  reply, above them.
+- **The run ends on its own** (`ok`, `overbudget`) with a message unread:
+  the server starts the turn that reads it. Nothing is queued from that
+  word on. Once the rows are read, a thread that says it is running is
+  attached to, and that turn's stream opens with `messageTaken`; one that
+  does not run has the message in its rows with no reply after it, and the
+  card at the end of the chat says the assistant didn't answer, with
+  Continue.
+- **The run is stopped or fails** with a message unread: nothing starts.
+  The card at that turn says so, and that the message was not read ("It
+  hadn't read your last message. Continue has it read."), with Continue,
+  which writes no message. A message is never shown queued after its run
+  ended.
+- **Stop with a message queued** stops the turn; the composer said before
+  the press that the message stays unread until Continue.
+- **A send the server refuses** gives the text back to the composer and the
+  strip above it says why; the reply goes on, read again from an attach.
+  One whose answer is lost is sent again under its id, and the repeat is
+  answered with the turn's stream, or with `idle` once the turn is over.
+- **A turn this conversation was not reading.** A message sent into a
+  thread may meet a turn already running there. Its rows so far were drawn
+  from the rows, under their own ids, so the send's replay of those
+  ordinals is dropped (`stale`) and only what the rows do not hold is
+  folded.
+
+Below `agents` 6 none of this happens: the composer keeps the text while a
+reply is written, and a send goes when the reply ends.
 
 ### The store and its concurrency rules
 
@@ -522,6 +581,31 @@ The server has no push channel, so the app promises what it can observe:
   a proposed request ("Assistant suggested a change") or a pending approval
   ("Secretary wants your approval to run gmail_send") notifies once per
   record and opens the chat that asked.
+- **Answered where it stands.** A reply's notification takes a line of
+  text (Reply), where the server takes a message under an id of its own
+  (`agents` 3 or more). An approval's takes Approve and Decline, and shows
+  the tool and every argument whole; a call longer than a notification
+  shows (320 characters) offers only Open Chat, and says to read it there.
+  A single question that takes one of three options or fewer, each short
+  enough to read on a button, takes its options; any other question opens
+  the chat. Each action goes through the path the chat uses: the reply is
+  its thread's conversation sending a message under a fresh id, kept in
+  `unsent.json` before the request leaves and sent again under that id if
+  its answer is lost; a card's is the write that resolves it, over the
+  version the notification was made from, which rides in its `userInfo`,
+  so a record that changed since is refused by the server and never
+  decided unseen. The same response heard twice acts once.
+- **Inside the time a background action gets.** An action has 20 seconds
+  (`ChatApp.actionSeconds`). Done, its notification is taken back. Not
+  done, a new notification says so in the sentence the chat would say it
+  in, and opening it opens the chat: a reply's text stands there as a
+  message with Send Again (or is the chat's draft, where the app could not
+  start in time), and a card still waits. Only then is the device told the
+  action is over (`Notifications.finished`), since the system may suspend
+  the app at that word; the kit's delegate answers the system on the main
+  thread then, or after 25 seconds whatever the app says.
+- **Which chats are notified for** is asked of one predicate,
+  `ChatAppState.mayNotify`, by every notification the app posts of a chat.
 - **On iOS**, when the app leaves the screen with a turn streaming, it asks
   for a `BGContinuedProcessingTask` (iOS 26, strategy `.fail`, a fresh
   identifier each time, as Sync's `ContinuedSync`): iOS keeps the stream
@@ -826,19 +910,54 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Sources**: under a finished reply, the web pages it links as numbered
   pills, once each, in the order it first cites them.
 - **Questions** (`ask`): a card with each question's options (one or many,
-  as the console), Answer and Dismiss; a resolved one shows the choices.
+  as the console), Answer and Dismiss, and "Answer in Your Own Words"
+  (below).
 - **Suggestions** (`propose`): a card for a create, a patch or a delete:
   the record, each property's before and after, Apply and Dismiss, drawn
   from the `propose` call at once; Apply reads the request's version if the
   card holds none, and refuses if the change is no longer the one shown.
-  Once decided, the card moves to the decision (below).
+- **Approvals**: a card for a call that waits for the owner: the tool, each
+  argument whole, Approve and Decline.
+- **A card stands only while it waits.** The call that asked is a row of
+  the transcript, and while its card waits the row says so ("Waiting for
+  your answer", "Waiting for your approval") with the card under it. Once
+  the card is answered, dismissed, applied, approved or declined, here or
+  on another device, the card is gone and the same row, under the same id,
+  carries the outcome: a check or a cross and who ended it ("You answered",
+  "You dismissed the question", "You approved gmail_send, and it ran",
+  "You declined gmail_send"). Opened, the row shows what was asked with
+  what was answered, the arguments of the call, or the change as applied
+  or not taken, and when. What was asked is the card's record, read when
+  the row is first opened. The wire does not say which person ended a
+  card, and a repository has one, so it is always "You". The presenter
+  moves the outcome onto the row (`CardPresenter.fold`): the transcript's
+  rows and their ids are the same before and after, so nothing above or
+  below moves but by the card's own height.
+- **A card whose write failed** stays, with the failure in it in the
+  sentence every failure is said in, and its button: Try Again sends the
+  same answer over the version read since. It is cleared when the write
+  goes through or the card stops waiting.
+- **Answer in your own words.** Beside a question's options. It takes the
+  card off the transcript (the call's row says "You are answering in your
+  own words"), puts the cursor in the composer, and a strip above the
+  field says what is being answered, with Show Options. What is then sent
+  is an ordinary message. A typed message answers and dismisses nothing on
+  the server, which would leave the question pending for good, so once
+  the server holds the message the app dismisses the question (`state:
+  dismissed`, over the version it read), and the call's row says "You
+  dismissed the question". The server resumes the thread on every
+  resolution, a dismissal included, so the assistant takes one more step
+  after the reply to the message. If nothing is sent (Show Options, or the
+  chat is closed), the card is back as it was; a send the server refuses
+  leaves the question waiting and the text in the field. A message typed without pressing it leaves the card standing.
 - **Compactions**: a divider, "Earlier messages were summarized".
 - **Decisions and answers** the substrate wrote into the thread: a line in
-  the tool calls' shape ("You applied the suggestion", a check or a cross);
-  a decision is followed by the change as a panel, marked Applied ("Changed
-  “Groceries”", the values applied, the owner's own where they adjusted
-  them) or Dismissed (the values struck through). It is the transcript's:
-  no read, so nothing to fail.
+  the tool calls' shape ("You applied the suggestion", a check or a cross).
+  Where the call that asked is among the rows drawn, its row says the
+  outcome and this line is not drawn a second time under it; where the
+  call is past the rows read, the line stands, a decision's with the
+  change under it as a panel. It is the transcript's: no read, so nothing
+  to fail.
 - **Triggered openings**: "When <record> changed", not JSON.
 - **Failures**: [their own section](#failures) below. A turn that failed,
   was stopped or ran out of a limit is a card at that turn; a failure of
@@ -955,8 +1074,18 @@ the microphone, and Send, which morphs into Stop while a turn runs
   through your records…", "Asking Librarian…"), "Reconnecting…" while a
   stream that dropped is opened again, and "Stopping…". It stands where
   "Waiting for the answer" stood, which would say it twice. Stop is there
-  the whole time, and you can type the next message throughout: only Send
-  waits.
+  the whole time, and you can type the next message throughout. Where the
+  server takes a message into a running turn (`agents` 6), Send stands
+  beside Stop once there is text, and the line under the status says what
+  is queued and what a stop would do to it ("1 message is queued. If you
+  stop Moss first, it stays unread until you continue."). Below `agents`
+  6, and for an agent that is not a chat's, only Send waits: the text
+  stays in the field, the bar says "Waiting for the answer", and Stop is
+  the one button until the reply ends, as before.
+- **Answering in your own words**: after "Answer in Your Own Words" on a
+  question's card, a strip above the field says what is being answered
+  (the question, where there is one) with Show Options, which puts the
+  card back. The cursor is in the field.
 
 - **Keys**: Return makes a new line and ⌘Return sends, on a Mac and on an
   iPad's or an iPhone's hardware keyboard alike; Shift-Return and
@@ -1410,7 +1539,7 @@ and its button.
 
 A second failure in a place replaces the first. A question's, a
 suggestion's and an approval's card, the key sheet and a row of Settings say
-their own failure in a line, from the same presenter. A 401 is the kit's
+their own failure in place, from the same presenter. A 401 is the kit's
 signed-out screen. A stream that dropped and is being opened again, and a
 change feed that dropped, are states (`ScreenFailures.reconnecting`,
 `ChatListPresentation.reconnecting`), never drawn as failures.
@@ -1507,7 +1636,10 @@ button and Details stack where the text size leaves no room side by side.
 | The turn fails, is stopped or runs out of a limit | A card at that turn: the sentence, Try Again or Continue, Details; the list marks the chat |
 | Stop fails | The strip above the composer says the stop failed; the reply goes on |
 | Reload after a turn fails | The run stays shown; the strip above the composer, Try Again |
-| A card's write fails | A line in the card; a 409 re-reads and asks again |
+| A card's write fails | The failure in the card, with Try Again; a 409 re-reads and asks again |
+| A run ends, stopped or failed, with a message sent into it unread | The card at that turn says it was not read; Continue has it read |
+| A run ends on its own and no turn starts for a message sent into it | The card at the end of the chat: the assistant didn't answer, Continue |
+| An action from a notification fails or outlives its 20 s | A new notification with the sentence; the reply stands in the chat with Send Again, the card still waits |
 | The chat was deleted | "This chat was deleted"; the draft stays to copy |
 | 401 | The signed-out screen |
 
@@ -1520,14 +1652,14 @@ button and Details stack where the text size leaves no room side by side.
 3. Conversation from cache, current by version; prefetch of recent chats.
 4. Streaming send: reasoning, tools, compaction, result; every event and exit in the tables above.
 5. Attach to running chats, re-attach on drops and on returning to the foreground; background runs.
-6. Stop.
+6. Stop; a message sent while the assistant works, queued until a call reads it (`agents` 6).
 7. Every message under an id of its own, sent again when its answer is lost and kept across a kill; refused sends; unknown-delivery sends with the reconcile reads on a server without ids; for existing and new chats.
 8. One model of a turn from its first token to its stored row: no blink at the handover or on a return to the front; reload failure with Try Again.
 9. Markdown replies with code blocks and Copy.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
-12. Notifications for settled replies and attention items; continued processing on iOS.
-13. Questions and suggestions answered inline, CAS'd.
+12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; continued processing on iOS.
+13. Questions, suggestions and approvals answered inline, CAS'd; a card that ended is the mark on the call that asked; a question answered in the person's own words.
 14. A provider key added in-app (a password sign-in; an app links to the console).
 15. Rename.
 16. Drafts per chat across launches.
@@ -1549,7 +1681,6 @@ button and Details stack where the text size leaves no room side by side.
 
 **Later**
 
-- Reply from a notification.
 - Handoff of the open chat (`NSUserActivity`).
 - A share extension that starts a chat with the shared text.
 - Widgets; a Live Activity of its own.
@@ -1734,6 +1865,35 @@ button and Details stack where the text size leaves no room side by side.
   ahead of the row held, with a list read from before it landing after
   it and a thread that is in no list, a row dropped and brought back
   read, a failed call that is not unread).
+- Answering (`AnsweringTests.swift`), on the rig against the seeded
+  server with no faults: a message sent while a reply is written is
+  queued until a call reads it, from this device and from another, several
+  in order, through a stop, a failure, a refusal, a lost answer and a
+  server below `agents` 6; a card stands while it waits and is its call's
+  mark once it ended, here or on another device, and a write that failed
+  stays in the card with Try Again; an answer in the person's own words is
+  an ordinary message and the question is dismissed once the server holds
+  it, at `agents` 3, 5 and 6; and each action of a notification, through
+  the recorded notification service: a reply sent under an id and sent
+  again when its answer is lost, an approval over the version shown, one
+  that changed since refused and said, a question's option, an action
+  heard twice, one heard before the folder was read, one that outlives its
+  time, and none offered below `agents` 3.
+- Answering by a seed (`SeededRun`, `SeededServer`): two seeds in five
+  draw a server at `agents` 6, which takes a message into a running turn,
+  says `messageQueued` and `messageTaken` on every stream of it, and ends
+  a run with one unread each way (on its own, starting the next turn;
+  stopped; failed). Its turns call tools that ask a question or wait for
+  an approval, and another device answers, dismisses, approves, declines
+  and sends at any step. The person also sends while a reply runs, answers
+  in their own words, taps an option, approves, declines, tries a card
+  again, and answers from a notification. After every step: a message is
+  drawn queued only while the server holds it unread in a run that goes
+  on, and never twice; a card the server holds resolved is never drawn
+  waiting once the app holds the record at that version; a card that
+  waits is never hidden, but aside while it is answered in words; no card
+  is resolved twice on the server; and an action from a notification is
+  over, with the device told, within its time.
 - Read state by a seed (`SeededRun`, `SeededServer`): the seeded server
   keeps marks as #1405's does where its `records` revision is 8 (a sixth
   of the seeds draw 7, a server without them), names `lastMessage` as
@@ -1860,7 +2020,14 @@ nothing, as a measured one does, and shows one chat of the fixture's server
 held at that state: `connecting`, `thinking`, `writing`, `tool`,
 `answering`, `reconnecting`, `done`, `long` (the fixture's chat of 200
 turns, to scroll up in for Jump to Latest) or `play` (the whole run, at
-the fixture's pace). It is how the screenshots of a state that lasts a
+the fixture's pace). And how a person answers: `question` and `approval`
+(a card that waits), `words` (the question being answered in the person's
+own words), `folded` and `approved` (each once it ended), `queued` (a
+message a run has not read, with more typed) and `taken` (the same once a
+call read it), and `notify` (the app's three notifications that take an
+answer, posted through the device's own service; `notify-reply`,
+`notify-question` and `notify-approval` post one, for its banner to be
+pulled open). It is how the screenshots of a state that lasts a
 moment are taken; a release carries none of it. The run is
 `ChatFixtures.run(thread:)`, the lines a server at `agents` revision 5
 sends and the rows it holds after each, which `FixtureServer.script` serves
@@ -1870,7 +2037,9 @@ A debug build started with `SUBSTRATE_CHAT_SESSION` set to a server's
 address, a repository's name and a token, with spaces between, is signed in
 to that server from memory, with a scratch folder. It is for a run against
 a dev substrate on a simulator, where the browser's sign-in cannot be
-driven; a release carries none of it either.
+driven; a release carries none of it either. With
+`SUBSTRATE_CHAT_SESSION_NOTIFY` set it notifies through the device's own
+service, so an answer given from a notification reaches that server.
 
 ## What the reviews changed
 
@@ -1886,7 +2055,7 @@ driven; a release carries none of it either.
   text called evidence.
 - iOS notifications through a continued processing task, with the refresh
   task as a backstop and honest copy; Reply from a notification moved to
-  Later; notification and unread keys on `finishedAt`, not `updatedAt`.
+  Later (built since, on message ids); notification and unread keys on `finishedAt`, not `updatedAt`.
 - The chat list reads `mode eq chat`; automated runs behind a toggle;
   prefetch cut to 8 chats of 100 rows.
 - No actor header: `console` would be a false attribution.
