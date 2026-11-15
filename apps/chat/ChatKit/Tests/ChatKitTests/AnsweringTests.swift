@@ -1674,6 +1674,47 @@ struct SpokeThenArchived {
             #expect(after.marking["t1"]?.archived != false && after.markSending["t1"]?.archived != false)
         }
     }
+
+    /// What the seeded runs found (seed 7190 at 96 steps): the read beside
+    /// the message failed and waited to ask again, and another read (the
+    /// change feed's) said first that the chat had been archived on another
+    /// device. The chat its person had just spoken in was held archived
+    /// until the next try, and for good where every try failed. Any read
+    /// that says so while that one is out ends the archive; once it is
+    /// given up, an archive learned is one made since.
+    @Test func whileThatReadIsOutAnotherThatSaysTheChatWasArchivedEndsTheArchive() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        state.recordsRevision = 9
+        state.agentsRevision = 7
+        state.marks = ["t1": ThreadMark(readThrough: "m1", version: 1)]
+        state.chats = [
+            Record(
+                id: "t1", kind: Kinds.thread, properties: ["status": "ok", "mode": "chat", "agent": ["ref": .string("\(Kinds.agent)/\(helper)")]],
+                version: 2)
+        ]
+        let archived = Record(
+            id: "t1.me", kind: Kinds.threadMark,
+            properties: ["thread": ["ref": .string("\(Kinds.thread)/t1")], "readThrough": "m1", "archived": true], version: 2)
+        spoke(app, &state, in: "t1")
+        #expect(state.asks.contains(.confirmMark("t1")) && state.confirming == ["t1"])
+        // Another read answers first.
+        var first = state
+        first.asks = []
+        first = try app.apply(.init(.marksRead(.init(threads: ["t1"], records: [archived]))), to: first)
+        #expect(first.marks?["t1"]?.archived == true && !first.archived("t1"))
+        #expect(first.marking["t1"]?.archived == false || first.markSending["t1"]?.archived == false)
+        // The read given up, the same word is of an archive made since.
+        var late = state
+        late = try app.apply(.init(.markUnconfirmed(thread: "t1")), to: late)
+        #expect(late.confirming.isEmpty)
+        late = try app.apply(.init(.marksRead(.init(threads: ["t1"], records: [archived]))), to: late)
+        #expect(late.archived("t1") && late.marking["t1"] == nil && late.markSending["t1"] == nil)
+        // And answered, it is over too.
+        var answered = state
+        answered = try app.apply(.init(.markConfirmed(thread: "t1", .init(threads: ["t1"], records: []))), to: answered)
+        #expect(answered.confirming.isEmpty && !answered.archived("t1"))
+    }
 }
 
 /// One notification for a turn that ends waiting on a card, on the engine

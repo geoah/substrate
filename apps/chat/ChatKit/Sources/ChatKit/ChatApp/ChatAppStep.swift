@@ -55,6 +55,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case marksRead(Marks)
     /// The mark of a thread the person spoke in, read after they did.
     case markConfirmed(thread: String, Marks)
+    /// That read was given up: nothing answered it.
+    case markUnconfirmed(thread: String)
     case threadsRead(Threads)
     case agentsRead(agents: [Record], providers: [Record]?, models: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)

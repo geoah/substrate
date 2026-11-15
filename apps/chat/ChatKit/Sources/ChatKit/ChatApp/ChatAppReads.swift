@@ -57,6 +57,7 @@ extension ChatAppState {
         state.sights = [:]
         state.notificationOffer = nil
         state.announced = []
+        state.confirming = []
         state.acting = [:]
         state.acted = []
         state.deferred = []

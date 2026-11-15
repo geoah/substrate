@@ -135,11 +135,14 @@ extension ChatApp {
             // moment before, or while the app was away, it is theirs to
             // follow again (decision 0322), which this read is in time to
             // say.
+            next.confirming.remove(thread)
             guard !marks.unserved else { break }
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
             announceLearned(&next, learned)
             spokeBefore(&next, in: thread, marks: marks)
+        case let .markUnconfirmed(thread):
+            next.confirming.remove(thread)
         case let .endShown(scene, key, shown):
             if shown {
                 next.scenes[scene]?.atEnd = key
@@ -477,6 +480,7 @@ extension ChatApp {
         if next.marks == nil {
             for thread in next.visibleThreads.subtracting(state.visibleThreads) { markSeen(&next, thread) }
         }
+        followAgain(&next)
         settleMarks(&next)
         settleAttention(&next)
         return next
