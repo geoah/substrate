@@ -825,9 +825,10 @@ type txn struct {
 	// forgetHeld is the line of the lowest deletion a forgetting left
 	// because an effect that stays holds it, 0 for none (forgetRecords).
 	forgetHeld int64
-	// erasing marks a compaction that is an erasure (erase.go): a purged
-	// record's merge resync goes with it, its state with no value stays on
-	// its line, and a live record's that would leave values waits.
+	// erasing marks a compaction that is an erasure (erase.go): it takes its
+	// record's values out of a merge's resync, a purged record's state with
+	// no value stays on its line, and a live record's that would leave
+	// values waits.
 	erasing bool
 	// keeping marks a forgetting that keeps each deletion's line rather
 	// than taking it (compactpass.go forgetBatch, decision 0319): what it

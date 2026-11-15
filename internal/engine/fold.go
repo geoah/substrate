@@ -1315,11 +1315,41 @@ func (t *txn) applyResync(op foldOp) error {
 			return fmt.Errorf("substrate/engine: resync mark %s %s %s: %w", m.Kind, m.ID, m.Property, err)
 		}
 	}
+	// A former-id row the resync restates may stand already, under the same
+	// owner: an erasure before #1460 rewrote a merge's resync without its
+	// record and kept rows the rewritten scope no longer clears, which the
+	// merge's own former effect, or an earlier resync, had written (erase.go
+	// resyncWithout, decision 0331). The same row under the same owner is the
+	// trail as it stands and is not written twice; a row standing under
+	// another owner is a second owner of the id, and refused.
+	//
+	// The read after the insert always finds a row because nothing else
+	// writes this repository's former ids while a replay runs. A row another
+	// transaction inserted after this statement's snapshot would make the
+	// insert do nothing and the read find nothing, and the Scan would fail.
+	// Every writer of the table holds the repository's changelog lock (rows.go
+	// changelogLockKey) from before its first write until it ends, and every
+	// replay runs inside one of them: a rebuild, and an import's refold,
+	// which a restore is and which a conversion that changed a line leaves
+	// to run next, both in txn.rebuild (rebuild.go); a compaction's replay,
+	// in a savepoint of the transaction compactOver locks first; and a live
+	// write, in inTx.
 	for _, f := range op.Rows.FormerIDs {
-		if _, err := t.exec(`
-			INSERT INTO former_ids (record_kind, former_id, record_id, created_at) VALUES ($1, $2, $3, $4)`,
-			f.Kind, f.FormerID, f.RecordID, f.CreatedAt); err != nil {
+		var owner string
+		if err := t.row(`
+			WITH ins AS (
+				INSERT INTO former_ids (record_kind, former_id, record_id, created_at) VALUES ($1, $2, $3, $4)
+				ON CONFLICT (repository, record_kind, former_id) DO NOTHING
+				RETURNING record_id)
+			SELECT record_id FROM ins
+			UNION ALL
+			SELECT record_id FROM former_ids WHERE record_kind = $1 AND former_id = $2 AND NOT EXISTS (SELECT 1 FROM ins)`,
+			f.Kind, f.FormerID, f.RecordID, f.CreatedAt).Scan(&owner); err != nil {
 			return fmt.Errorf("substrate/engine: resync former id %s %s: %w", f.Kind, f.FormerID, err)
+		}
+		if owner != f.RecordID {
+			return fmt.Errorf("substrate/engine: resync former id %s %s for %s: the id is already a former id of %s",
+				f.Kind, f.FormerID, f.RecordID, owner)
 		}
 	}
 	return nil
