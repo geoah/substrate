@@ -401,15 +401,11 @@ struct AnsweringNoteView: View {
 struct ChangeHeaderView: View {
     let heading: ChangeHeading
     @Scaled(.markColumn) private var column
+    @Environment(\.dynamicTypeSize) private var size
 
     var body: some View {
         SplitRow {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: ChatSpace.words) {
-                    mark
-                    Text(heading.verb).fixedSize()
-                    subject
-                }
+            if size.isAccessibilitySize {
                 // The verb over what it is done to, where one line cannot
                 // hold both.
                 HStack(alignment: .firstTextBaseline, spacing: ChatSpace.words) {
@@ -418,6 +414,12 @@ struct ChangeHeaderView: View {
                         Text(heading.verb)
                         subject
                     }
+                }
+            } else {
+                HStack(alignment: .center, spacing: ChatSpace.words) {
+                    mark
+                    Text(heading.verb).fixedSize()
+                    subject
                 }
             }
         } trailing: {
@@ -428,6 +430,7 @@ struct ChangeHeaderView: View {
                     .ink(applied ? .tone(.positive) : .tone(.quiet), on: .badge)
                     .padding(.horizontal, ChatSpace.pillSide).padding(.vertical, ChatSpace.pillEdge)
                     .background(ChatColours.badgeStyle(applied ? .positive : .quiet), in: .capsule)
+                    .fixedSize()
             }
         }
         .font(ChatType.heading)
@@ -444,7 +447,7 @@ struct ChangeHeaderView: View {
         if let record = heading.record {
             RecordPill(record, title: heading.recordTitle)
         } else {
-            Text(heading.words).lineLimit(2)
+            Text(heading.words).lineLimit(size.isAccessibilitySize ? 3 : 1)
         }
     }
 

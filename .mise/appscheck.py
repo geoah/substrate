@@ -792,6 +792,9 @@ for app in apps:
 # fall between them. The text tone is the accent where the accent reads on
 # every one; elsewhere it is the accent's hue at the nearest tone that
 # does, darker in light mode and lighter in dark, which the failure names.
+# The light text tone is also the fill of a prominent button, in both modes
+# (SubstrateUI's `Color.accentFill`): white on it is the ratio it holds on
+# a white screen, so this rule is that button's too.
 # The tones are Material's and KitScheme's: CIELAB lightness at the
 # accent's OKLCH hue and chroma, the chroma lowered where sRGB ends.
 # Android's surfaces are KitSchemeTest's, which makes the scheme they are.

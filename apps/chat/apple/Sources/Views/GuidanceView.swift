@@ -107,10 +107,7 @@ private struct GuidanceRowView: View {
                     .lineLimit(6)
                 WrapLayout(spacing: ChatSpace.apart) {
                     ForEach(row.facts, id: \.self) { fact in
-                        HStack(spacing: ChatSpace.mark) {
-                            Text(fact.label).fontWeight(ChatType.strong)
-                            Text(fact.value)
-                        }
+                        FactText(label: fact.label, value: fact.value)
                     }
                 }
                 .font(ChatType.caption)

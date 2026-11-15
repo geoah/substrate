@@ -62,6 +62,7 @@ struct ArchiveButton: View {
 /// The chat archived a moment ago, with Undo, floating over the list's end.
 struct UndoBar: View {
     @Environment(ChatHost.self) private var host
+    @Environment(\.dynamicTypeSize) private var size
     let undo: UndoPresentation
 
     var body: some View {
@@ -70,7 +71,7 @@ struct UndoBar: View {
         SplitRow {
             Label(undo.words, systemImage: "archivebox")
                 .font(ChatType.detail)
-                .lineLimit(2)
+                .lineLimit(size.isAccessibilitySize ? 3 : 1)
                 .truncationMode(.middle)
         } trailing: {
             Button(undo.action) { host.send(.undoArchive) }
