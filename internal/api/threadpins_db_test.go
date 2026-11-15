@@ -117,6 +117,31 @@ func TestAPersonsListLeavesOutWhatTheyArchivedAndNobodyElses(t *testing.T) {
 	wantStatus(t, e.read(t, "/api/v1/records?filter="+misspelled, e.token), http.StatusUnprocessableEntity)
 }
 
+// A condition inside the arm on a reference into a kind the caller does not
+// read is refused on every list a person makes, the list of kind
+// declarations included, which takes its own path through the view: the
+// engine resolves such a condition through the hidden kind's merge history.
+func TestTheArmsConditionsAreHeldOnEveryListAPersonMakes(t *testing.T) {
+	t.Parallel()
+	e := newAppAgentsEnv(t, false)
+	viewer := addPerson(t, e.dbEnv, "v", scope.RoleViewer)
+	// Another person's actor is a record of a control kind a viewer does
+	// not read; `me` is the one actor they may name.
+	hidden := `{"kind":"` + kindThreadMark + `","property":"thread","properties":{"readBy":{"eq":"somebody"}}}`
+	for what, kind := range map[string]string{"the kind declarations": kindDeclarationRow, "an ordinary kind": kindThread} {
+		rec := e.read(t, "/api/v1/records?filter="+url.QueryEscape(`{"kinds":["`+kind+`"],"referencedBy":`+hidden+`}`), viewer.token)
+		wantStatus(t, rec, http.StatusForbidden)
+		if !strings.Contains(rec.Body.String(), "readBy") {
+			t.Errorf("%s: refused without naming the condition: %s", what, rec.Body.String())
+		}
+	}
+	// A kind the viewer does not read at all is unknown on both.
+	for _, kind := range []string{kindDeclarationRow, kindThread} {
+		by := `{"kind":"` + kindActorRow + `","property":"x"}`
+		wantStatus(t, e.read(t, "/api/v1/records?filter="+url.QueryEscape(`{"kinds":["`+kind+`"],"referencedBy":`+by+`}`), viewer.token), http.StatusNotFound)
+	}
+}
+
 func TestAnAgentsScopePinsArchivesAndListsItsPersonsOwn(t *testing.T) {
 	t.Parallel()
 	e := newAppAgentsEnv(t, false)
