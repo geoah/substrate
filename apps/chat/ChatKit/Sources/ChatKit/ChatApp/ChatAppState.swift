@@ -252,7 +252,8 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// The threads whose mark was learned without their row and is ahead
     /// of the row held (`ThreadMark.ahead`): another device read a reply
     /// this one has not read the thread's row for. Each reads as it did
-    /// until its row is read again, which is asked for at once.
+    /// until its row catches up, or a read of the row that started after
+    /// the mark was learned has answered.
     var rowsBehind: Set<String> = []
     /// When the wait before the next write ends.
     var marksDue: Date?

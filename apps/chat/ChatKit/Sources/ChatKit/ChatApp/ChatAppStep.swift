@@ -44,6 +44,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case cachedLoaded(thread: String, epoch: Int, CachedTranscript?)
     case prefetched(thread: String, epoch: Int, version: Int, rows: [Record])
     case threadFetched(Record)
+    /// The row read again for a mark ahead of it, nil where the thread is
+    /// gone: a read that started after that mark was learned.
+    case rowReread(thread: String, Record?, mark: Int)
 
     // The watch
     case watchOpened(fresh: Bool)

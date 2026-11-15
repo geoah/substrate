@@ -968,10 +968,15 @@ alone (after a list read whose marks failed), the answer to this device's
 own write, the folder's state at a launch. Where such a mark is ahead of
 the row held by the same test, the chat is not called unread for the
 older message: it reads as it did, the row is asked for again
-(`rowsBehind`), and what that read brings is told by the rule. A dot that
-went does not come back for the time one read takes to follow another,
-and a position another device took from an older row of its own still
-shows its dot once the row is read.
+(`rowsBehind`), and what that read brings is told by the rule. The row is
+read by a read of its own, so the answer that ends the wait is known to
+have started after the mark was learned: a list read under way before it
+may still land the older row, which changes nothing, and a thread opened
+on its own is in no list. A read that fails is made again when the server
+next answers a refresh or the app comes to the front. A dot that went
+does not come back for the time one read takes to follow another, and a
+position another device took from an older row of its own still shows its
+dot once that read has answered.
 
 **Reading.** A chat is read once the newest message it settled with has
 been on screen for a second, in a window that is in front and active (the
@@ -1359,8 +1364,9 @@ button and Details stack where the text size leaves no room side by side.
   marks; the offer to notify; and what the seeded runs found, each as
   the engine alone (a chat under the screen that says the sign-in ended,
   the first marks taking back what the device's map notified, a mark
-  ahead of the row held, a row dropped and brought back read, a failed
-  call that is not unread).
+  ahead of the row held, with a list read from before it landing after
+  it and a thread that is in no list, a row dropped and brought back
+  read, a failed call that is not unread).
 - Read state by a seed (`SeededRun`, `SeededServer`): the seeded server
   keeps marks as #1405's does where its `records` revision is 8 (a sixth
   of the seeds draw 7, a server without them), names `lastMessage` as
@@ -1370,8 +1376,9 @@ button and Details stack where the text size leaves no room side by side.
   marks it unread at any step. After every step: a dot that went for a
   message the server holds read, with the app holding it read, is drawn
   again only once somebody marked the chat unread; every write of a mark
-  names a message whose chat stood open at its end, in front, for a
-  second of the run's clock, or one Mark as Read was pressed on, and
+  names a message whose chat stood open at its end, in front, settled,
+  with its rows drawn and handed back by its conversation, for a second
+  of the run's clock, or one Mark as Read was pressed on, and
   nothing is written to a server without marks; the badge is the number
   of chats drawn unread, and each is drawn as its mark and its newest
   message say; no reply's notification stands, waiting or shown, for a

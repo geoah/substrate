@@ -151,7 +151,7 @@ extension ChatAppState {
         guard let mark = mark(thread.id, last: thread.lastMessage) else { return false }
         // A mark ahead of the row says nothing of the row held: the chat
         // reads as it did until the row it speaks of is here.
-        if rowsBehind.contains(thread.id), !mark.markedUnread { return false }
+        if rowsBehind.contains(thread.id), !mark.markedUnread, mark.ahead(of: thread) { return false }
         return mark.unread(lastMessage: thread.lastMessage)
     }
 

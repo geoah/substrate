@@ -242,6 +242,13 @@ extension ChatApp {
                     return Task.isCancelled ? nil : Event(.readFailed(failed(.refresh, error, client)))
                 }
             }
+        case let .rereadBehind(thread, mark):
+            // One that fails says nothing: it is asked for again at the
+            // next chance (`retryMarks`).
+            return .once {
+                guard let client = await source.current(), let record = try? await client.record(Kinds.thread, thread) else { return nil }
+                return Event(.rowReread(thread: thread, record, mark: mark))
+            }
         case let .watch(lease, head, kinds):
             return .sequence {
                 Self.relay { yield in

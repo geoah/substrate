@@ -44,6 +44,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case read(thread: String, first: Int, epoch: Int, version: Int)
     case prefetch(Lease, [Prefetch])
     case fetchThread(String)
+    /// The row of a thread whose mark is ahead of it, read again: `mark` is
+    /// the version of the mark it is read for.
+    case rereadBehind(thread: String, mark: Int)
     case watch(Lease, head: WatchCursor?, kinds: [String])
     case feedWait(seconds: Double)
     case applyFeed(Plan, Set<ChatAppState.WatchKey>, threads: [String])
