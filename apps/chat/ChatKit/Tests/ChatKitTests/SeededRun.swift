@@ -986,7 +986,7 @@ struct SeededRun {
         }
         // Nothing the person sent is lost: it is in a stored row, in a
         // composer, or on a message with its card.
-        for text in sent.keys.sorted() where server.userRows(saying: text) == 0 && !homes.contains(text) {
+        for text in sent.keys.sorted() where server.userRows(saying: text) == 0 && !server.holds(text) && !homes.contains(text) {
             return broke(.lost, "\"\(text)\" is in no stored row, no composer and on no message")
         }
         if let broken = marks(state, presentation) { return broken }

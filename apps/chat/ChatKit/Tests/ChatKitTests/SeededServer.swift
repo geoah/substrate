@@ -321,6 +321,12 @@ final class SeededServer: @unchecked Sendable {
         lock.withLock { threads.values.reduce(0) { $0 + $1.rows.filter { $0.role == "user" && $0.content == text }.count } }
     }
 
+    /// Whether a user row holds this text, alone or inside a longer
+    /// message: a draft kept beside what was typed is sent as one.
+    func holds(_ text: String) -> Bool {
+        lock.withLock { threads.values.contains { $0.rows.contains { $0.role == "user" && $0.content.contains(text) } } }
+    }
+
     /// Every row id two rows share, in any thread: none, ever.
     var sharedRowIDs: [String] {
         lock.withLock {
