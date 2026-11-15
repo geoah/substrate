@@ -122,8 +122,10 @@ struct SettingsView: View {
                 ForEach(section.background) { agent in
                     VStack(alignment: .leading, spacing: ChatSpace.pair) {
                         Text(agent.name)
+                        // Whole: what the agent does, or its reference where
+                        // it says nothing of itself, which is who it is.
                         Text(agent.description ?? agent.id)
-                            .font(ChatType.caption).ink(.quiet, on: .form).lineLimit(2)
+                            .font(ChatType.caption).ink(.quiet, on: .form)
                     }
                 }
             } header: {
@@ -188,7 +190,7 @@ private struct AssistantRowView: View {
             VStack(alignment: .leading, spacing: ChatSpace.mark) {
                 AgentPill(id: row.id, name: row.name)
                 if let description = row.description {
-                    Text(description).font(ChatType.caption).ink(.quiet, on: .form).lineLimit(2)
+                    Text(description).font(ChatType.caption).ink(.quiet, on: .form)
                 }
                 WrapLayout(spacing: ChatSpace.words) {
                     ForEach(row.runsOn, id: \.self) { fact in
