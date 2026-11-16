@@ -12,8 +12,8 @@ taken for this page. The choice that binds later code is
 Today a release that changes a stored shape makes every repository walk its
 whole history at its next boot, once for each conversion step, and then
 replay all of it into a new fold. All of that happens before the server
-listens. For a production repository of 11.7M lines that was about 23 hours
-of work with no mistakes, and about 48 hours in practice. A history of 100M
+listens. For a production repository of 11.7M lines that was about 24 hours
+of work with no mistakes, and 49 hours 25 minutes in practice. A history of 100M
 lines would take five to six days, and that assumes the replay's per-line
 cost stays flat, which it did not at 11.7M.
 
@@ -52,8 +52,8 @@ and dialect 6 says the same with `~/tasks/task` and `~/people/person/01jbx7…`.
 the repository and stamps a new checksum on it, all in one transaction, and
 then replays all 11.7M lines through the write path into an empty fold. Then
 the archive's next pass writes every piece again under `changelog/6/`. This
-took about 1 hour for the walk and about 10 hours for the replay, and would
-take about 8 and 80 hours at 100M lines.
+took about 1 hour for the walk and 10.5 hours for the replay, and would take
+about 8 and 90 hours at 100M lines.
 
 **Under this plan.** The release ships three things for the step:
 
@@ -361,10 +361,15 @@ write: the derivation fills only what no later line set. Where most lines
 qualify, a derivation is still a walk of most of the history. It is online,
 batched and resumable, and never in the boot.
 
-The same rule takes the two history reads that hold an open today out of it:
-the actor fill (`actorfill.go`, "reading the repository's history once for
-the actor records it links") and the boot upgrade's relinking of shipped
-mappings, which held the open for 11 and 35 minutes.
+The same rule takes out of the open the work that held this upgrade's first
+open for 29 minutes. The actor fill (`actorfill.go`, "reading the
+repository's history once for the actor records it links") read the whole
+68 GB table again for 17 minutes 24 seconds. Repository migration 9 scanned
+it for the actors it links for about 4.5 minutes. The boot upgrade relinked 9
+shipped mappings for 5 minutes 23 seconds, and that relink took 11 and 35
+minutes in earlier releases. Each becomes a pass behind the open, and a
+repository migration that reads the history does too (decision 0099
+amended).
 
 ### 5. A replay, when one is needed, is a bulk build beside the live fold
 
@@ -536,8 +541,11 @@ and [upgrading the binary](../operations.md#upgrading-the-binary):
    `pg_stat_statements` every few minutes. A statement whose buffers per call
    keep growing is a stop, not a wait.
 6. **Upgrade in place when the downtime is minutes.** A copy upgraded beside
-   production diverges from it. Use one only for a rehearsal, or say before
-   starting which writes will be lost and when.
+   production diverges from it, and loses whatever production writes
+   meanwhile. That includes the credentials a provider rotates: this upgrade
+   lost a rotated OAuth refresh token, and an account had to be connected
+   again. Use a copy only for a rehearsal, or say before starting what will be
+   lost and how each account comes back.
 7. **Rehearse before release.** A release that adds a lift, a fold migration
    or a migration that touches rows is rehearsed on a copy of the largest
    repository known, with the preflight and then the upgrade, before it is
@@ -553,7 +561,7 @@ best case.
 
 | Option | What it does | 11.7M lines | 100M lines | Verdict |
 | --- | --- | --- | --- | --- |
-| Today: rewrite in place, then refold | One walk per step, then one replay through the write path, in the boot | About 5 h of walks, 10–12 h of replay | About 40 h, then 85–100 h | Replace |
+| Today: rewrite in place, then refold | One walk per step, then one replay through the write path, in the boot | About 5 h of walks, 10.5 h of replay, and a first open of 29 min | About 40 h, then about 90 h | Replace |
 | Batched, resumable replay of today's path | The same replay, committed every few thousand lines into shadow tables while the repository stays closed, the tables vacuumed and analyzed between batches | About 8 h, with no growth and no restart lost | About 70 h | Phase 0, for whatever still replays; not an upgrade path |
 | Bulk replay | Section 5 | A floor of about 5 min; under 30 min with what the floor leaves out | A floor of about 25 min; under an hour | Phase 3, for restores, imports and rebuilds |
 | Lift on read and fold migration | Sections 1 and 3 | No line written, and a fold migration of about 3 min | The same: it depends on the fold, not the history | **Phases 1–2, the upgrade path** |

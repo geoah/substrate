@@ -182,9 +182,10 @@ history that made it, and rewriting a whole fold about a forty-fifth, on a
 history this short. The gap grows with the history, because the fold grows
 with the records a person keeps and the history with every write ever made.
 A per-kind partial index is built by scanning all of `records`, so building
-450 of them again after a bulk load scans the table 450 times: on
-production's 6 GB heap that is the one part of a bulk build that could still
-take tens of minutes, which is why the plan builds them behind the open.
+450 of them again after a bulk load scans the table 450 times. On production,
+restoring the 437 dropped for the replay took 8 minutes in six parallel
+sessions, 55 to 60 a minute. That is the largest part of a bulk build after
+the reading, which is why the plan builds them behind the open.
 
 ## Production numbers this rests on
 
@@ -194,12 +195,18 @@ take tens of minutes, which is why the plan builds them behind the open.
 | Conversion walk, after #1463 | About 7,800 lines/s on 16 cores; walks of 50 min, 1 h 42, 42 min | The upgrade's log |
 | Comparison with the 0.x directory | 500–750 lines/s, CPU-bound | The upgrade's log |
 | Replay, start of the first run | 196 lines/s | The upgrade's log |
-| Replay, after #1482–#1484 and 437 indexes dropped | 250–400 lines/s | The upgrade's log |
+| Replay, after #1482–#1484 and 437 indexes dropped | 10 h 32 min for 11.7M lines, 200–445 lines/s: about 440 from line 6.6M to 9.0M, then 270 falling to 200 to the end | The upgrade's log |
+| The replay's commit and `ANALYZE` | 1.5 min | The upgrade's log |
 | Replay, in the heaviest link stretch before #1484 | 43 lines/s | The upgrade's log |
 | Statements per line | About 10 | `pg_stat_statements` |
 | `DELETE FROM trigger_failures …`, line 6.2M | 31.7 ms and 8,747 buffers a call, about 700 calls a minute, about 38% of wall time | `pg_stat_statements`, `EXPLAIN` as `substrate_app` |
+| The same, at the end | 47 ms and about 14,000 buffers a call; about 58% of wall time over the last two hours, 52.6 s of one 90 s sample | `pg_stat_statements` |
 | `INSERT INTO records` | 1.8 ms and 608 buffers a call over 497,000 calls | `pg_stat_statements`, last 95 min |
 | Go process during the replay | About 0.65 of a core | The process's CPU use |
+| First open after the replay | 29 min: repository migrations 6–14 about 5.5 min (migration 9's scan of the changelog about 4.5), the boot upgrade 5 min 23 s with 9 mappings relinked, the actor fill's scan of the 68 GB table 17 min 24 s | The server's log |
+| Behind the open | The search index of 1.55M rows at about 1,000 rows/s; one reshaped kind's indexes at about 12 rows/s | The server's log |
+| 437 per-kind indexes restored on `records` | 8 min in six parallel sessions, 55–60 a minute | The restore's log |
+| Cutover downtime | About 2 min: the old server stopped at 3:25:56 pm, the new one listened at 3:26:17 and passed readiness at 3:27:51 | The platform's events |
 
 ## From these to 11.7M and 100M lines
 
@@ -210,7 +217,7 @@ parallel, and is given against what production measured.
 | Phase | How it scales | 11.7M lines, 24.7 GB | 100M lines, about 210 GB, same fold |
 | --- | --- | --- | --- |
 | Today: conversion walks | Lines × steps | About 5 h, measured | About 40 h |
-| Today: replay through the write path | Lines, at best | 10–12 h, measured | 85–100 h if it stays flat, which it does not |
+| Today: replay through the write path | Lines, at best | 10.5 h, measured | About 90 h if it stays flat, which it does not |
 | Batched replay through the write path | Lines | About 8 h at the 350–400 lines/s production started at | About 70 h |
 | Read and decode every line (bulk build) | Bytes: 17.7 s a GB on one core | About 1 min | About 8 min |
 | Checksum every line, if the build checks them | Bytes: about 30 s a GB on one core | About 1.5 min | About 13 min |

@@ -15,7 +15,7 @@ line and rewrites it in place, in one transaction, and
 then rebuilds the fold by replaying every line. 0260 recorded the cost ("its
 time grows with history") and planned to time it at 100 GB before 1.0. The
 upgrade of a production repository of 11.7M lines from v0.123.1 timed it:
-about 23 hours of boot with no mistakes, and about 48 in practice
+about 24 hours with no mistakes, and 49 hours 25 minutes in practice
 ([postmortem](../plans/fast-upgrades/postmortem.md)). A history of 100M lines
 would take five to six days. The cost grows with how many writes a
 repository has ever had, not with what a release changes, and nothing in

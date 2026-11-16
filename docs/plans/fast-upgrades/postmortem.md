@@ -1,21 +1,23 @@
 # Postmortem: upgrading an 11.7M-line repository from v0.123.1
 
-Status: written 2026-11-16, while the last replay was finishing. The fix
+Status: written 2026-11-16, after production went live on the new version. The fix
 for what it found is the plan in [fast upgrades](../fast-upgrades.md), and
 the measurements behind both are in [measurements](measurements.md).
 
 ## Summary
 
 A production repository of 11.7 million changelog lines was upgraded from
-v0.123.1 to a build of `main`. The new binary's first open had to rewrite
-and replay the repository's whole history before it would serve. The work
-ran on a copy of the database while production kept serving v0.123.1, so
-nobody saw downtime beyond one restart. It took about 48 hours from the
-snapshot to the new version going live:
+v0.123.1 to a build of `main`. The new binary had to rewrite and replay the
+repository's whole history before it would serve, and its first open read
+that history twice more. The work ran on a copy of the database while
+production kept serving v0.123.1. Production was down for about 25 minutes
+when the snapshot was taken and about 2 minutes at the cutover. It took 49
+hours 25 minutes from the snapshot to the new version going live:
 
-- About 23 hours were the design's own cost. Even run without a mistake, the
+- About 24 hours were the design's own cost. Even run without a mistake, the
   current upgrade path walks this history seven times and replays it once,
-  in the boot, before the server listens.
+  in the boot, before the server listens, and its first open then reads it
+  twice more.
 - About 14 hours were lost to our own process: an overnight step hung on a
   watcher inside an agent session, a startup probe shorter than our own
   estimate, and a conversion that was never dry-run against the real
@@ -25,7 +27,10 @@ snapshot to the new version going live:
   and started the replay again from the beginning.
 
 Writes made to production after the snapshot are lost at the cutover, except
-where a sync fetches them again.
+where a sync fetches them again. So is every credential production rotated
+meanwhile: one provider's OAuth refresh token, rotated during the two days,
+was refused after the cutover, and that account had to be connected again
+by hand.
 
 ## The repository
 
@@ -52,12 +57,18 @@ The same record is rewritten thousands of times.
 | 2. Repository id (decision 0261) | Rewrites 21.4M rows from the name to the id | 55 min |
 | 3. Boot check | Holds the 0.x history directory to the table line for line: 57 GB, CPU-bound at 500–750 lines/s | About 6.5 h, after #1455 removed a quadratic re-read of a 256 MB segment every 500 lines |
 | 4. Conversion, dialect 1 to 8 | Steps 2–8 in one transaction; each step walks all 11.7M lines and rewrites rows in place | 4 h 57 min after #1463 |
-| 5. Refold | Replays the whole converted history into a fresh fold, in one transaction, through the live write path | About 10 h |
-| 6. Boot upgrade of the shipped vocabulary | Relinks the shipped mappings | 11 min on v0.123.1's first open; 35 min in an earlier release |
+| 5. Refold | Replays the whole converted history into a fresh fold, in one transaction, through the live write path | 10 h 32 min for the final run, at 200–445 lines/s; its commit and `ANALYZE` 1.5 min |
+| 6. Repository migrations 6–14, at the first open | Ordinary writes through the changelog; migration 9 (`link_actors`) scans the changelog for the actors it links | About 5.5 min, 4.5 of them migration 9's scan |
+| 7. Boot upgrade of the shipped vocabulary, at the first open | Brings the shipped packages to this binary's versions and relinks 9 shipped mappings | 5 min 23 s (11 min on v0.123.1's first open; 35 min in an earlier release) |
+| 8. Actor fill, at the first open | "Reading the repository's history once for the actor records it links": a second whole scan of the 68 GB table, which the open waits for | 17 min 24 s |
+| Behind the open | The search index of 1.55M rows re-derived under new rules (about 1,000 rows/s), and one reshaped kind's indexes (about 12 rows/s) | Not blocking; the production server started both again from the beginning after the cutover |
 
-Stages 2 and 3 are one-time costs of leaving 0.x: no later upgrade has a 0.x
-directory to compare or a name to re-key. Stages 1, 4, 5 and 6 are how every
-upgrade works today, and each grows with the repository.
+The first open took 29 minutes in all, from the listener (2:24:47 pm) to the
+open (2:53 pm). Stages 2 and 3 are one-time costs of leaving 0.x: no later
+upgrade has a 0.x directory to compare or a name to re-key. Stages 6 and 8
+also ran once, for what this release changed, but they are the shape every
+release repeats: an open that reads the history. Stages 1, 4, 5 and 7 are how
+every upgrade works today, and each grows with the repository.
 
 - **The conversion (stage 4).** The old code ran on one core with one `UPDATE`
   per row, at about 1,200 lines/s: more than a day for this history. #1463
@@ -67,8 +78,10 @@ upgrade works today, and each grows with the repository.
   the heavy stretches.
 - **The refold (stage 5).** A declarations pass and then one full replay
   (#1470); before that it was two full replays. The live write path,
-  `fold.go`, runs about 10 SQL statements per line. The replay started at
-  196 lines/s and, after four fixes, ran at 250–400 lines/s.
+  `fold.go`, runs about 10 SQL statements per line. The first run started at
+  196 lines/s. The final run, after four fixes, held about 440 lines/s from
+  line 6.6M to 9.0M, then fell to 270 and on to 200 by the end, as the
+  `trigger_failures` delete below grew.
 
 ## Timeline
 
@@ -85,12 +98,20 @@ lost.
 | Sun 8:09 am – 12:23 pm | The fast conversion refused at the start of step 6 (decision 0259). The conversion is one transaction, so all four hours rolled back. | About 4 h lost |
 | Sun 12:42–5:39 pm | Conversion rerun with #1473; committed | About 5 h, needed |
 | Sun 5:45 pm – Mon 3:42 am | Refold: four starts, each after fixing a slowdown found at scale | About 10 h of replay progress discarded |
-| Mon 3:50 am – about 2–4 pm | The final replay | About 10–12 h, needed |
+| Mon 3:50 am – 2:24 pm | The final replay, to 2:22 pm, then its commit and `ANALYZE` | 10.5 h, needed |
+| Mon 2:24–2:53 pm | The first open, on the converter: repository migrations, the boot upgrade and the actor fill | 29 min, needed |
+| Mon 2:53–3:25 pm | The 437 per-kind indexes restored (8 min, in six parallel sessions) and the cutover prepared | About 30 min |
+| Mon 3:25:56–3:27:51 pm | Cutover: the old server stopped, the new one listened 21 s later and passed readiness 1.5 min after that | About 2 min of downtime |
+
+From the snapshot to live: 49 hours 25 minutes.
 
 ## What went right
 
 - **Production stayed up.** It served v0.123.1 throughout, because all the
   work ran on a ZFS clone of its database and data root.
+- **The cutover took 2 minutes.** The converter had already done the open's
+  one-time work, so the production server's first open on the converted
+  database had little left to do.
 - **Every attempt could start over cleanly.** The changelog is checksummed and
   every stage either commits whole or leaves the history as it was, so each
   restart began from a known state and nothing was corrupted.
@@ -146,7 +167,7 @@ scale:
 | `refs`, unchanged writes | Every write of a record deleted and re-inserted all its `refs` rows; the delete reached about 7,000 buffers a call. | #1482: a replay leaves the rows standing when a write derives the same ones. |
 | `refs`, growing lists | A list growing by one entry changes on every write; the delete reached about 30,000 buffers a call and the replay fell to 43 lines/s. | #1484: a replay syncs `refs` rows by key, so an append is one insert. |
 | Trigger cursor, schedule and page rows | Each delivery upserted its trigger's row; the cursor upsert grew from 0.4 ms to 5.7 ms within 1.9M lines. | #1483: a replay holds those rows and writes each once, at its end. |
-| `trigger_failures` | `DELETE FROM trigger_failures WHERE id = $1 AND trigger_id = $2` (`foldUnpark`, `internal/engine/delivery.go:110`): 31.7 ms and 8,747 buffers a call at line 6.2M, about 700 calls a minute, about 38% of wall time, up from about 11 ms an hour and a half before. The planner, trusting the emptied table's statistics (4 pages, 8 rows), walks `trigger_failures_trigger (repository, trigger_id, parked_at)` with a filter on `id` rather than the primary key `(repository, id)`, and the table had grown to 10,450 pages of versions nothing could prune. Each unpark walks every failure its trigger parked during the replay: quadratic per trigger. | Not fixed. |
+| `trigger_failures` | `DELETE FROM trigger_failures WHERE id = $1 AND trigger_id = $2` (`foldUnpark`, `internal/engine/delivery.go:110`). At line 6.2M it took 31.7 ms and 8,747 buffers a call, about 700 calls a minute, about 38% of wall time, up from about 11 ms an hour and a half before. By the end it took 47 ms and about 14,000 buffers a call and about 58% of wall time over the last two hours (52.6 s of one 90 s sample). The planner, trusting the emptied table's statistics (4 pages, 8 rows), walks `trigger_failures_trigger (repository, trigger_id, parked_at)` with a filter on `id` rather than the primary key `(repository, id)`, and the table had grown to 10,450 pages by line 6.2M, of versions nothing could prune. Each unpark walks every failure its trigger parked during the replay: quadratic per trigger. | Not fixed. |
 
 Nothing outside the transaction can fix one of these while it runs: an index
 built or dropped from another session, or an `ANALYZE`, reaches the replay
@@ -166,6 +187,17 @@ records` at 1.8 ms and 608 buffers a call over 497,000 calls, the record
 row's `SELECT` at 0.54 ms, and the `property_marks` insert at 0.056 ms over
 3.3M calls. The Go process used about 0.65 of a core: the replay waits on
 Postgres, not on decoding.
+
+### The first open reads the history twice more
+
+After the replay, the first open took 29 minutes, and every request on the
+repository waits for an open. Two of its parts read the whole history again:
+repository migration 9 scanned the changelog for the actors it links (about
+4.5 minutes), and the actor fill read the 68 GB table once more for the
+actor records the history links (17 minutes 24 seconds). The boot upgrade
+relinked 9 shipped mappings inside the open (5 minutes 23 seconds). Each ran
+on the converter, so the production server found them done. Each would have
+held a repository upgraded in place for as long.
 
 ### Two correctness bugs, found only by real history (#1473)
 
@@ -225,7 +257,10 @@ of that history and of no real one, and it was the rate the estimates used.
   replay could resume, so each improvement cost all the progress before it.
 - **The cutover plan accepted losing writes.** A copy upgraded beside
   production diverges from it from the snapshot on, and nothing could bring
-  production's later writes across. The longer the upgrade, the more was lost.
+  production's later writes across. The longer the upgrade, the more was
+  lost, and it was more than writes: a credential a provider rotates is
+  written too, so a refresh token rotated during the two days was gone after
+  the cutover and an account had to be connected again.
 
 ## What this asks of the design
 
@@ -240,3 +275,5 @@ Each of these is answered in [fast upgrades](../fast-upgrades.md):
 5. The test suite must hold the shapes real histories hold, at a size where a
    cost that grows shows up.
 6. An operator's long step must never depend on a session that can end.
+7. An upgrade must be short enough to run in place, so nothing production
+   writes meanwhile, a rotated credential included, is lost.
