@@ -986,7 +986,7 @@ state.
 | Stack | Pull requests, in merge order | What it holds |
 | --- | --- | --- |
 | Server and console | #1405, #1403, #1409, #1416, #1419, #1459, #1467 | Changes 1 to 6 and 6a, each with the console's side |
-| App | #1402, #1410, #1414, #1404, #1411, #1415, #1407, #1413, #1417, #1418, #1450, #1464, #1465, #1466, #1468, #1469 | Changes 8 to 10, and the app's side of 1 to 6a |
+| App | #1402, #1410, #1414, #1404, #1411, #1415, #1407, #1413, #1417, #1418, #1450, #1464, #1465, #1466, #1468, #1469, #1474 | Changes 8 to 10, and the app's side of 1 to 6a |
 
 The app reads every revision before it uses what the revision carries, so
 the two stacks can merge in either order, and the app works against a
@@ -1056,10 +1056,12 @@ authority document, and the server calling out on its own initiative.
 ## Open questions
 
 - **The flush budget.** The target is 8 ms of main thread per flush in a
-  200-turn chat. The line stands at about 10.5 ms on an iPhone simulator
-  on the build machine, down from about 23 before change 10. Paced text
-  flushes about twice as often as before, and about 0.4 ms a step added
-  with reply actions, code colours and tables was never placed. It has
+  200-turn chat. At the top of the line a flush costs about 11.4 ms on an
+  iPhone simulator and about 9.0 on a Mac, on the build machine, down from
+  about 23 and 39 before change 10. Paced text flushes about twice as
+  often as before, so the main thread works more per reply than it did
+  after the redraw work alone. Costs under about half a millisecond a step
+  could not be placed there: two runs of one build differ by more. It has
   not been measured on a device.
 - **A reader's place on a Mac.** When older rows arrive above, a reader
   part way down a tall row keeps their line on an iPhone and an iPad, and
