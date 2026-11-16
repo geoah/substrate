@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -527,4 +528,101 @@ def main(input, host):
 		t.Fatalf("the mapping did not carry the name onto the minted subject: %v", got)
 	}
 	mustGet(t, ds, trigger, "on-widget")
+}
+
+// A REPLAY LEAVES ROWS A WRITE DERIVES AGAIN STANDING. A record rewritten
+// many times over the same references, then over others, then deleted and
+// written again, rebuilds to the live index, and the rebuild inserts its
+// refs rows only for the writes that change what it points at: every row a
+// replay deletes stays in the index until its one transaction commits, so
+// re-deriving unchanged rows on each write made a long history fold slower
+// line by line.
+func TestARebuildReDerivesOnlyTheRefsAWriteChanges(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithKindsFS(engine.SeedKinds),
+		engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey))
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	const tally = refsPackage + "/tally"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(refsPackage, 0),
+		vocabulary.KindManifest(refsPackage,
+			map[string]any{"singular": "hub"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		vocabulary.KindManifest(refsPackage,
+			map[string]any{"singular": "tally"},
+			map[string]any{"properties": map[string]any{
+				"count": map[string]any{"type": "int"},
+				"hub":   map[string]any{"type": "reference", "kind": refsHub},
+				"hubs":  map[string]any{"type": "reference", "kind": refsHub, "repeated": true},
+			}}),
+	}); err != nil {
+		t.Fatalf("install the vocabulary: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h2")})
+	writes := 0
+	put := func(props map[string]any) {
+		t.Helper()
+		writes++
+		mustPut(t, ds, owner, substrate.PutInput{Kind: tally, ID: fid("t1"), Properties: props})
+	}
+	put(map[string]any{"count": 0, "hub": fid("h1"), "hubs": []any{fid("h1"), fid("h2")}})
+	for i := 1; i <= 20; i++ {
+		put(map[string]any{"count": i})
+	}
+	put(map[string]any{"hub": fid("h2")})
+	for i := 21; i <= 30; i++ {
+		put(map[string]any{"count": i})
+	}
+	if _, err := ds.Delete(ctx, owner, tally, fid("t1"), substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	put(map[string]any{"count": 31, "hubs": []any{fid("h2")}})
+	for i := 32; i <= 40; i++ {
+		put(map[string]any{"count": i})
+	}
+
+	admin, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open the schema owner's connection: %v", err)
+	}
+	defer func() { _ = admin.Close() }()
+	if _, err := admin.ExecContext(ctx, `
+		CREATE TABLE tally_refs_inserted (n int NOT NULL);
+		INSERT INTO tally_refs_inserted VALUES (0);
+		CREATE FUNCTION tally_refs_count() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+		BEGIN UPDATE tally_refs_inserted SET n = n + 1; RETURN NULL; END $$;
+		CREATE TRIGGER tally_refs_count AFTER INSERT ON refs
+		FOR EACH ROW WHEN (NEW.src_kind = '`+tally+`') EXECUTE FUNCTION tally_refs_count();`); err != nil {
+		t.Fatalf("arm the refs row count: %v", err)
+	}
+
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); !bytes.Equal(before, after) {
+		t.Fatal("the rebuilt fold differs from the live one")
+	}
+	// Three writes change what the record points at: its first (three rows),
+	// the one that moves hub (three) and the one after its deletion (two).
+	var inserted int
+	if err := admin.QueryRowContext(ctx, `SELECT n FROM tally_refs_inserted`).Scan(&inserted); err != nil {
+		t.Fatalf("read the refs row count: %v", err)
+	}
+	if inserted != 8 {
+		t.Errorf("the rebuild inserted %d refs rows for %d writes of one record, three of which change what it points at; want 8", inserted, writes)
+	}
 }
