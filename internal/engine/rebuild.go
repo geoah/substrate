@@ -411,6 +411,8 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	t.observed = &observedTouch{all: true}
 	t.replaying = true
 	defer func() { t.replaying = false }()
+	t.heldLedger = newHeldLedgerRows()
+	defer func() { t.heldLedger = nil }()
 	// A replay may bring a revision back holding other records than the
 	// graph this process cached under it (an import into a database that
 	// held another history), so the cache forgets the repository.
@@ -454,6 +456,9 @@ func (t *txn) rebuild(report *RebuildReport) error {
 		if f := t.ds.svc.testReplayPage; f != nil {
 			f(report.Head, t.tx)
 		}
+	}
+	if err := t.writeHeldLedger(); err != nil {
+		return err
 	}
 	if err := t.dropKeptCursors(); err != nil {
 		return err

@@ -451,6 +451,7 @@ func (t *txn) applyLedger(op foldOp) error {
 	if l == nil || op.ID == "" {
 		return fmt.Errorf("substrate/engine: a ledger effect on %s carries no ledger", op.ID)
 	}
+	t.heldLedger.dropTrigger(op.ID)
 	for _, table := range deliveryTables {
 		if _, err := t.exec(`DELETE FROM `+table+` WHERE trigger_id = $1`, op.ID); err != nil {
 			return err

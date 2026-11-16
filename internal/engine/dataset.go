@@ -757,6 +757,9 @@ type txn struct {
 	// (rebuild.go keepPagedCursors): a page entry that names its cursor by
 	// hash is folded back with the kept cursor whose digest it names.
 	keptCursors bool
+	// heldLedger holds a rebuild's resume rows until its replay ends
+	// (delivery.go heldLedgerRows); nil everywhere else.
+	heldLedger *heldLedgerRows
 	// internal writes bypass the system-type guard.
 	internal bool
 	// writeReg is the registry this transaction's writes are held to when it
