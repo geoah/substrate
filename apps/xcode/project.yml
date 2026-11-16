@@ -54,6 +54,12 @@ settings:
     SUBSTRATE_COMMIT: ""
     SUBSTRATE_UPDATES_URL: ""
     SUBSTRATE_SPARKLE_KEY: ""
+    # `-DSUBSTRATE_FEED_INSTALLS` on a release for the feed alone, which
+    # compiles in the iPhone's install from the feed (Updater.swift). App
+    # Review refuses a binary that holds that install at all, run or not
+    # (2.5.2), so every other build, TestFlight's above all, leaves it out.
+    SUBSTRATE_FEED_SWIFT_FLAGS: ""
+    OTHER_SWIFT_FLAGS: "$(inherited) $(SUBSTRATE_FEED_SWIFT_FLAGS)"
     # The publisher's privacy policy, which About opens; stamped by a release
     # (SUBSTRATE_APPLE_PRIVACY_URL), so a local build names none.
     SUBSTRATE_PRIVACY_POLICY: ""
