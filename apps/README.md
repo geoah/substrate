@@ -382,7 +382,11 @@ EdDSA key made on the first release (kept in the login keychain under
 `substrate`; losing it means every installed Mac app is replaced by hand once)
 and installs it. On iOS only the system may install an app: the app reads
 `index.json` at launch and when it comes to the foreground, at most hourly,
-and offers the newer release's install link. Both include pre-releases when
+and offers the newer release's install link. That install is compiled into
+the feed's release alone (`SUBSTRATE_FEED_SWIFT_FLAGS`): App Review refuses a
+binary that holds the `itms-services` scheme, run or not (guideline 2.5.2),
+so a TestFlight build has none, and `apps:testflight` refuses an IPA that
+holds the string. Both include pre-releases when
 the running build is one; the Mac's app menu turns that off. On both, the
 console's Settings → Signed in shows the app's version with a Check for
 updates button, which asks the shell (`checkForUpdates` in

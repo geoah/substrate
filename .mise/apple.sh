@@ -270,6 +270,8 @@ apple_release_build() {
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
 		SUBSTRATE_UPDATES_URL="$(feed_url "$app")/" "SUBSTRATE_$(app_upper "$app")_CLIENT_ID=$APPLE_CLIENT"
+		# The feed's build alone installs a newer one from it (project.yml).
+		SUBSTRATE_FEED_SWIFT_FLAGS=-DSUBSTRATE_FEED_INSTALLS
 		SUBSTRATE_PRIVACY_POLICY="${SUBSTRATE_APPLE_PRIVACY_URL:-}"
 		${SITE[@]+"${SITE[@]}"}
 	)
@@ -336,6 +338,14 @@ apple_testflight_build() {
 		die "$app's IPA holds no app"
 	unzip -p "$APPLE_IPA" "$entry" >"$plist"
 	apple_check "$app" iOS "$plist"
+	# App Review refuses a binary that can install an app (2.5.2), whether
+	# or not the code ever runs: the scheme must not be in it at all.
+	local payload="$2/iOS-payload-check"
+	rm -rf "$payload" && unzip -q "$APPLE_IPA" 'Payload/*' -d "$payload"
+	if grep -rlaF 'itms-services' "$payload" >"$2/itms-services.txt"; then
+		die "$app's App Store build holds the itms-services install App Review refuses (2.5.2): $(tr '\n' ' ' <"$2/itms-services.txt")"
+	fi
+	rm -rf "$payload"
 	# App Review wants the privacy policy inside the app (5.1.1(i)): About
 	# opens the address the build carries.
 	[ "$(plutil -extract SubstratePrivacyPolicy raw -o - "$plist" 2>/dev/null || true)" = "$SUBSTRATE_APPLE_PRIVACY_URL" ] ||

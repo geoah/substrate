@@ -89,7 +89,13 @@ final class Updater: NSObject, ObservableObject {
     private static let skippedKey = "updates.skipped"
 
     let build = BuildInfo.current
+    #if os(macOS) || SUBSTRATE_FEED_INSTALLS
     var enabled: Bool { build.updates != nil }
+    #else
+    /// An iPhone build without the feed's install never looks for one, even
+    /// with a feed address stamped in: it could offer nothing it can install.
+    var enabled: Bool { false }
+    #endif
 
     /// Pre-releases are offered too. A pre-release build starts with it on.
     @Published var prereleases: Bool {
@@ -150,6 +156,9 @@ final class Updater: NSObject, ObservableObject {
 
     func install(_ release: ReleaseIndex.Release) {
         offer = nil
+        // App Review refuses a binary that holds this scheme (2.5.2), so it
+        // is compiled into the feed's release alone (project.yml).
+        #if SUBSTRATE_FEED_INSTALLS
         guard let base = build.updates, let manifest = release.ios?.manifest,
             let url = URL(string: manifest, relativeTo: base)?.absoluteString
         else { return }
@@ -158,6 +167,7 @@ final class Updater: NSObject, ObservableObject {
         let encoded = url.addingPercentEncoding(withAllowedCharacters: allowed) ?? url
         guard let link = URL(string: "itms-services://?action=download-manifest&url=\(encoded)") else { return }
         UIApplication.shared.open(link)
+        #endif
     }
 
     private func check(asked: Bool) async {
