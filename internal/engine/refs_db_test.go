@@ -530,13 +530,13 @@ def main(input, host):
 	mustGet(t, ds, trigger, "on-widget")
 }
 
-// A REPLAY LEAVES ROWS A WRITE DERIVES AGAIN STANDING. A record rewritten
-// many times over the same references, then over others, then deleted and
-// written again, rebuilds to the live index, and the rebuild inserts its
-// refs rows only for the writes that change what it points at: every row a
-// replay deletes stays in the index until its one transaction commits, so
-// re-deriving unchanged rows on each write made a long history fold slower
-// line by line.
+// A REPLAY WRITES ONLY THE REFS ROWS A WRITE CHANGES. A record rewritten
+// many times over the same references, then over another, a list grown by
+// one and cut back, then deleted and written again, rebuilds to the live
+// index, and the rebuild inserts only the rows each write newly derives:
+// every row a replay deletes stays in the index until its one transaction
+// commits, so re-deriving a record's whole row set on each write made a long
+// history fold slower line by line.
 func TestARebuildReDerivesOnlyTheRefsAWriteChanges(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -572,6 +572,7 @@ func TestARebuildReDerivesOnlyTheRefsAWriteChanges(t *testing.T) {
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
 	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h2")})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h3")})
 	writes := 0
 	put := func(props map[string]any) {
 		t.Helper()
@@ -583,6 +584,8 @@ func TestARebuildReDerivesOnlyTheRefsAWriteChanges(t *testing.T) {
 		put(map[string]any{"count": i})
 	}
 	put(map[string]any{"hub": fid("h2")})
+	put(map[string]any{"hubs": []any{fid("h1"), fid("h2"), fid("h3")}})
+	put(map[string]any{"hubs": []any{fid("h1")}})
 	for i := 21; i <= 30; i++ {
 		put(map[string]any{"count": i})
 	}
@@ -616,13 +619,14 @@ func TestARebuildReDerivesOnlyTheRefsAWriteChanges(t *testing.T) {
 	if after := foldOf(t, ds); !bytes.Equal(before, after) {
 		t.Fatal("the rebuilt fold differs from the live one")
 	}
-	// Three writes change what the record points at: its first (three rows),
-	// the one that moves hub (three) and the one after its deletion (two).
+	// The rows writes newly derive: the first write's three, hub's move (one),
+	// hubs grown by one (one), cut back (none) and the write after the
+	// deletion, which derives its whole set again (two).
 	var inserted int
 	if err := admin.QueryRowContext(ctx, `SELECT n FROM tally_refs_inserted`).Scan(&inserted); err != nil {
 		t.Fatalf("read the refs row count: %v", err)
 	}
-	if inserted != 8 {
-		t.Errorf("the rebuild inserted %d refs rows for %d writes of one record, three of which change what it points at; want 8", inserted, writes)
+	if inserted != 7 {
+		t.Errorf("the rebuild inserted %d refs rows for %d writes of one record; want the 7 its writes newly derive", inserted, writes)
 	}
 }

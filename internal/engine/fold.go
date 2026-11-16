@@ -717,7 +717,7 @@ func (t *txn) settleTakenOut() error {
 // and its observed points. A record effect and a state entry (compact.go)
 // share it, so a state that lands a row derives exactly what the effects it
 // stands for derived. refsBefore, when set, is what the row's refs rows hold
-// before the write (unchangedRefs).
+// before the write (syncRefsFrom).
 func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string, tiersBefore []time.Duration, isMetric bool, moves int, refsBefore *[]refRow) error {
 	// The refs index is a PROJECTION of the row that just landed, like
 	// `fts` and unlike everything else here: derived from the folded
@@ -761,7 +761,12 @@ func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string,
 		t.unprojected[row.Kind] = true
 		return nil
 	}
-	if (ty == nil || declaresReference(ty)) && !unchangedRefs(refsBefore, ty, row.Props) {
+	switch {
+	case ty != nil && declaresReference(ty) && refsBefore != nil:
+		if err := t.syncRefsFrom(ref, ty, row.Props, *refsBefore); err != nil {
+			return err
+		}
+	case ty == nil || declaresReference(ty):
 		if err := t.syncRefs(ref, ty, row.Props); err != nil {
 			return err
 		}
