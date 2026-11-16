@@ -33,14 +33,19 @@ the current design bounds it.
 ## Decision Outcome
 
 Proposed: the third, as
-[the fast upgrades plan](../plans/fast-upgrades.md) sets out. An upgrade
-costs what it changes and never how long the history is:
+[the fast upgrades plan](../plans/fast-upgrades.md) sets out. Once its phases
+1 and 2 have landed, an upgrade costs what it changes and never how long the
+history is. Until then, a history below dialect 8 still converts through
+steps 2 to 8 as it does today, and no new step that rewrites lines lands.
+The rule:
 
 - **No upgrade reads or writes a repository's history in the boot or the
-  open.** A raised dialect is the dialect the lines after it name, and a line
-  without one is in its repository's base dialect. What a step's lift reads
-  about the repository, the name its lines were written under for the local
-  namespace, is kept as a timeline over seqs that travels with the archive.
+  open.** A raised dialect is the dialect the lines after it name, under a
+  line format and a manifest format raised once for it, and a line without
+  one is in its repository's base dialect. What a step's lift reads about
+  the repository, the name its lines were written under for the local
+  namespace, is kept as a timeline over seqs that travels with the archive,
+  and no compaction or erasure removes what a retained line's lift reads.
 - **A line is never rewritten to change its shape for an upgrade.** Readers
   are of two kinds. Raw readers (the archive, the export, an import, a
   comparison, a verify) take the verified bytes as stored. Lifted readers

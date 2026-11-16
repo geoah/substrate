@@ -178,6 +178,28 @@ written with it. So a history may hold any mix of dialects, one per line,
 and the sparse state entries a compaction writes inside old history are
 described exactly.
 
+**The formats, under the stored format's rules.** Both the line and the
+manifest stay closed key sets with numbered shapes
+([the stored format](../stored-format.md)), so each change is a new number:
+
+- **Line format 2** is line format 1's keys and `dialect`. It is written as
+  a plain decimal, as `seq` and `txn` are, and its checksum covers it. A
+  line holding `dialect` is format 2. A line without it is format 1, and is
+  in the base dialect. No other key changes, so a format-1 line keeps its
+  bytes and its checksum.
+- **Manifest format 4** is format 3's keys and two more. One is
+  `baseDialect`, the dialect of every line that names none. In a format-3
+  manifest that is `changelogDialect`, and a reader of format 3 keeps
+  reading it so. The other is the context timeline. A piece may then hold
+  lines of several dialects, and it sits under `changelog/` by the line
+  format it holds, no longer by a dialect.
+- **Vectors and kept directories.** New test vectors hold both formats. The
+  kept directories are 0.x directories and are read as they are today: a
+  kept directory is never edited.
+
+Phase 1's pull request writes all of it into the stored format's page before
+any step relies on it.
+
 **What a lift reads besides the line.** A step whose rewrite depends on the
 repository reads that from a **context timeline** the repository keeps: for
 each value its lift needs, the value in force for each interval of seqs.
@@ -191,6 +213,25 @@ today (`conversionPass`, `conversion.go`), and are lifted through the steps
 below the one asking and no further, so no lift waits on itself. A line
 reads the same in every copy and at every time (decision 0279's rule
 stands).
+
+**The context outlives the lines it came from.** Compaction folds a record's
+history into a state entry, and an erasure takes a record's history out.
+Either could remove a declaration's or an actor record's older versions
+while an older line of another record that a lift reads them for is still
+there. So the context a retained line needs is kept with it:
+
+- **Compaction waits.** A compaction does not fold the history of a
+  declaration or an actor record while any line remains below the dialect of
+  a step that reads them. Once the last such line is compacted or
+  re-encoded, they compact as anything else does.
+- **Erasure lifts first.** An erasure of a record a lift reads first lifts
+  and re-encodes the retained lines whose lift reads it.
+- **It travels with the archive.** The timeline is in the manifest, and the
+  declaration and actor lines come with the history, so an export and a
+  restore carry them.
+
+Tests hold all three: a compaction, an erasure, and an export and restore,
+each over a history with lines left below such a dialect.
 
 **Two readers, raw and lifted.** The line as stored and the line as it means
 today are two things, and every reader of the table or of a piece is one of
@@ -335,10 +376,18 @@ transaction.
 head it builds to, the fold version, and the last batch it committed. A
 restart resumes from that batch. There are two ways it keeps writes out:
 
-- **Closed.** A restore, an import, and a rebuild with the server stopped
-  build while the repository is closed to writes for the whole build. This
-  is the import-progress marker that refuses every open today, so no write
-  can land between the head and the swap. Phase 0 uses this form only.
+- **Closed.** A restore, an import and `repository rebuild` build while the
+  repository is closed to writes for the whole build. `repository rebuild`
+  cannot run beside a serving server: it takes the database's writer lock,
+  which the server holds (decision 0325, [one writer
+  per repository](../operations.md#one-writer-per-repository-and-a-second-is-refused)).
+  The build sets the import-progress marker in its first batch's
+  transaction, and the marker refuses every open until the swap clears it.
+  A process that already holds the repository open, as a test may, stops
+  its writers and its background passes first, as `RebuildRepository` stops
+  the reindex and the reprojection today. So no write can land between the
+  head and the swap, and a restart finds the marker and resumes. Phase 0
+  uses this form only.
 - **Online.** A rebuild of a serving repository builds from a snapshot at
   head H while writes go on, then folds the lines after H in order, as many
   passes as it takes to come close. It then takes the changelog lock, folds
@@ -584,10 +633,12 @@ holding what it built.
 6. The preflight's declarations part, for the conversion steps that exist.
 7. The runbook rules, in the skill and in the operations guide.
 
-**Phase 1: lines keep their dialect.** The line format 2 with `dialect`, the
-column, the context timeline in the table and the manifest, the raw and
-lifted readers, the list of SQL statements that read inside a payload and
-its guard, and the archive no longer writing pieces again for a conversion.
+**Phase 1: lines keep their dialect.** Line format 2 with `dialect` and its
+column, manifest format 4 with the base dialect and the context timeline,
+their vectors and the stored format's page, the raw and lifted readers, the
+compaction and erasure rules that keep a lift's context, the list of SQL
+statements that read inside a payload and its guard, and the archive no
+longer writing pieces again for a conversion.
 Steps 2–8 stay as they are for a history below dialect 8. The first step
 written after this phase is written the new way, and the scale test's
 upgrade check holds it.
