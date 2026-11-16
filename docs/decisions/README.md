@@ -466,4 +466,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0326](0326-a-repository-whose-first-open-fails-is-set-aside-like-one-the-start-sets-aside.md) | A repository whose first open fails is set aside, like one the start sets aside | accepted |
 | [0330](0330-an-erasure-longer-than-the-passs-bounds-is-done-in-steps.md) | An erasure longer than the pass's bounds is done in steps | accepted |
 | [0331](0331-a-resync-restates-a-former-id-that-stands-under-its-owner-without-writing-it-twice.md) | A resync restates a former id that stands under its owner without writing it twice | accepted |
+| [0332](0332-an-upgrade-never-walks-a-repositorys-history.md) | An upgrade never walks a repository's history | proposed |
 | [0333](0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md) | A mirror of an outside service keeps all of its history | accepted |
