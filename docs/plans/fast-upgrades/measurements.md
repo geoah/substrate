@@ -10,8 +10,9 @@ Two sources:
   Apple-silicon Mac with 12 cores given to Docker, and Postgres 16 with
   pgvector in a container beside it, on tmpfs with durability off, as the
   engine's tests run it. Wall times there are this machine's and no promise.
-  Buffers read per statement are the same on any machine, and they are what
-  the plan's scale test is held to.
+  Buffers read per statement depend on plans, statistics and data rather
+  than on the machine's speed, and they are what the plan's scale test
+  watches.
 
 The generator was a throwaway test in `internal/engine` and is not in this
 change; the plan's `TestReplayCostStaysFlat` is what it becomes.
@@ -142,6 +143,12 @@ line's envelope and nothing in it.
 - **Speed.** The protobuf decode is no faster than the JSON one. Checking a
   line's checksum costs two to five times decoding it, because it encodes
   the line again in the canonical form.
+- **What this does not measure.** A typed protobuf envelope around a compact
+  binary encoding of the property values was not built, and neither was a
+  stored form whose checksum is checked by hashing the stored bytes. The
+  numbers rule out the generic `Struct` form for these shapes, and say
+  decoding is a small share of a replay; they do not rule out every binary
+  form.
 - **Where the bytes are.** A link's 1,000th write is 57.6 KB, and its 1,000
   writes leave about 29 MB of history: each carries the whole list. Written as
   one added entry each, the same 1,000 writes would be about 0.6 MB, about

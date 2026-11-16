@@ -17,9 +17,9 @@ time grows with history") and planned to time it at 100 GB before 1.0. The
 upgrade of a production repository of 11.7M lines from v0.123.1 timed it:
 about 23 hours of boot with no mistakes, and about 48 in practice
 ([postmortem](../plans/fast-upgrades/postmortem.md)). A history of 100M lines
-would take about a week. The cost grows with how many writes a repository
-has ever had, not with what a release changes, and nothing in the current
-design bounds it.
+would take five to six days. The cost grows with how many writes a
+repository has ever had, not with what a release changes, and nothing in
+the current design bounds it.
 
 ## Considered Options
 
@@ -27,8 +27,8 @@ design bounds it.
   faster.
 - Convert in place, but online: batches committed behind the open while the
   server serves.
-- A line keeps the dialect it was written in and is lifted through the chain
-  where it is read; the fold moves by a migration of its own.
+- Each line names the dialect it was written in and is lifted through the
+  chain where its meaning is read; the fold moves by a migration of its own.
 
 ## Decision Outcome
 
@@ -37,21 +37,30 @@ Proposed: the third, as
 costs what it changes and never how long the history is:
 
 - **No upgrade reads or writes a repository's history in the boot or the
-  open.** A raised dialect is one row of the repository's dialect ranges,
-  from the head plus one, with what the step's lift reads frozen beside it.
-- **A line is never rewritten to change its shape.** Every read of a line
-  holds it to its stored checksum in the frame it was written in, then lifts
-  it through the steps above its dialect, in one place, so every reader
-  above that place sees one shape. A compaction and an optional background
-  re-encode, in committed batches, move old lines to the current dialect
-  over time.
+  open.** A raised dialect is the dialect the lines after it name, and a line
+  without one is in its repository's base dialect. What a step's lift reads
+  about the repository, the name its lines were written under for the local
+  namespace, is kept as a timeline over seqs that travels with the archive.
+- **A line is never rewritten to change its shape for an upgrade.** Readers
+  are of two kinds. Raw readers (the archive, the export, an import, a
+  comparison, a verify) take the verified bytes as stored. Lifted readers
+  (the fold, the change feed, a trigger's envelope) take the line through the
+  steps above its dialect, at one place. A compaction, an erasure and an
+  optional background re-encode lift the lines they rewrite for reasons of
+  their own. A lift stays in the binary for the supported-backup horizon,
+  whatever the live repositories hold.
 - **The fold moves by a fold migration** that each step changing what the
-  fold holds ships, proven by a commutation test (the fold of the lifted
-  history equals the migrated fold of the old one) over the kept directories
-  and the generated scale histories, and held to a time budget; what the
-  fold cannot answer is derived behind the open, in batches.
+  fold holds ships. A commutation test (the fold of the lifted history equals
+  the migrated fold of the old one) holds it over the kept directories, the
+  generated scale histories and the step's fixtures, and a time budget bounds
+  it. What the fold cannot answer is derived behind the open, in batches.
 - **Work that must be long runs behind the open**, in committed batches that
-  resume where they stopped, and a repository not ready answers `503`.
+  resume where they stopped. A replay that is still needed (a restore, an
+  import, a rebuild) builds beside the live fold and swaps it in one
+  transaction, either with the repository closed to writes or by catching up
+  the lines written meanwhile under the changelog lock before the swap.
+- **Until this is built, no release raises the changelog dialect with a step
+  that rewrites lines.**
 
 Faster walks and a faster replay were ruled out as the upgrade path because
 they move the constant and not the growth: a replay at ten times today's
@@ -63,29 +72,32 @@ archive piece that nothing needs.
 
 ### Consequences
 
-- Good, because a stored-format change costs a row and a fold migration
-  whose size is the fold's, which grows with the data a person keeps, not
-  with their history.
-- Good, because a stored line keeps the checksum it was stamped with, so a
-  checksum proves a line undamaged since it was written, and the archive
-  never writes its pieces again for a conversion.
-- Bad, because the conversion chain stays in the binary at the read, not
-  only at the boot, and the claim that every read of `changelog` passes
-  through it must be held by a source guard.
-- Bad, because a fold migration is new code a step author writes, and it is
-  only as right as the corpus its commutation test runs on.
-- Bad, because a step whose rewrite needs more than a line, its range's
-  context and the declarations in force cannot be a lift, and must ship a
-  background re-encode first.
+- Good, because a stored-format change costs a fold migration whose size is
+  the fold's, which grows with the data a person keeps, not with their
+  history.
+- Good, because an upgrade never moves a checksum, so a line's checksum
+  proves it undamaged since it was written or last rewritten for a reason of
+  its own, and the archive never writes its pieces again for a conversion.
+- Bad, because the conversion chain stays in the binary at the read for the
+  supported-backup horizon, and the claim that every read of `changelog`
+  goes through the raw or the lifted reader, or holds under every dialect,
+  must be held by a source guard over about forty SQL statements that read
+  inside the payload today.
+- Bad, because the line format rises once, to carry each line's dialect.
+- Bad, because a fold migration is new code a step author writes, and its
+  commutation test is evidence over its corpus, not a proof for every
+  history.
+- Bad, because a step whose lift needs a fact no index finds must ship the
+  side table that indexes it a release ahead.
 
 ### Confirmation
 
 A scale test generates histories with the shapes a long-lived repository
 holds and holds an upgrade over them to the rule: a history one dialect
-behind, at two lengths, opens in the same time and reads no changelog row in
+behind, at two sizes, opens in the same time and reads no changelog row in
 the boot. Each step's commutation test holds its fold migration. A source
-guard holds every query of the `changelog` table to the line reader that
-lifts.
+guard holds every query of the `changelog` table to the raw reader, the
+lifted reader, or a listed statement that holds under every dialect.
 
 ## More Information
 
