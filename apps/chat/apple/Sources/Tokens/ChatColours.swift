@@ -309,13 +309,15 @@ enum ChatColours {
         list(.accent, on: .page, .list, .field, .card, .code, .table)
         // A status in words: held, failed, a problem.
         list(.tone(.critical), on: .page, .card, .form, .field, .badge)
-        list(.tone(.caution), on: .page, .form, .badge)
+        // A helper's run that stopped, beside its name on its card.
+        list(.tone(.caution), on: .page, .form, .badge, .card)
         list(.tone(.positive), on: .badge)
         list(.tone(.quiet), on: .badge)
         // And as its mark: done, failed, held, declined, waiting on you,
         // a key that is missing.
-        list(.mark(.positive), on: .page)
-        list(.mark(.critical), on: .page)
+        // On a card: a call to another assistant, its own panel.
+        list(.mark(.positive), on: .page, .card)
+        list(.mark(.critical), on: .page, .card)
         list(.mark(.caution), on: .page, .list, .card)
         list(.mark(.quiet), on: .page)
         list(.onFill, on: .fill)

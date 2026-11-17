@@ -144,6 +144,9 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
     /// How that card ended, once it has: the row's mark and label are its
     /// own, and the row opens to what was asked and what was answered.
     public var resolution: CardResolution?
+    /// A call to another assistant, drawn as its own panel in place of the
+    /// line.
+    public var subagent: SubagentPanel?
 }
 
 /// The one record a tool line names, read for its heading.

@@ -36,6 +36,11 @@ import SubstrateKit
 /// the app's three notifications that take an answer, through the
 /// device's own notification service, and `notify-reply`, `notify-question`
 /// and `notify-approval` post one of them, for its banner to be pulled open.
+///
+/// And `helpers` shows a chat whose assistant called on other assistants:
+/// one that ran out of time, one that answered, one whose work in the
+/// background finished, and, as it stands, two running side by side and
+/// one working in the background.
 @MainActor
 enum Demo {
     /// From the environment, or as a launch argument (`-SUBSTRATE_CHAT_DEMO
@@ -101,6 +106,7 @@ enum Demo {
         }
         if let card = card(asked) { server.ask(card.asked, resolved: card.resolved) }
         if let reply { server.seed(settled, message: "Show me.", reply: reply) }
+        if asked == "helpers" { server.rows(ChatFixtures.helpersThread, page: ChatFixtures.helpers()) }
         let slow = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO_SLOW"] ?? UserDefaults.standard.string(forKey: "SUBSTRATE_CHAT_DEMO_SLOW")
         if let seconds = slow.flatMap(Double.init) { server.olderTakes = .milliseconds(Int(seconds * 1000)) }
         self.server = server
@@ -133,6 +139,7 @@ enum Demo {
             if let only = notified(asked) { return await notify(only) }
             let card = card(asked)
             if asked == "deep" || left != nil { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
+            if asked == "helpers" { return host.send(.show(thread: ChatFixtures.helpersThread, scene: scene)) }
             let shown = asked == "long" ? ChatFixtures.long : reply != nil ? settled : card?.asked.thread ?? thread
             host.send(.show(thread: shown, scene: scene))
             if asked == "long" || reply != nil { return }

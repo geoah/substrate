@@ -380,7 +380,7 @@ enum TurnPresenter {
             summary: line.said(title: named), unnamed: unnamed, details: details, raw: raw, sources: known.map(sources), chips: chips,
             thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") },
             asked: request.map { .suggestion($0) } ?? interaction.map { .question($0) } ?? approval.map { .approval($0) },
-            attachment: attachment)
+            attachment: attachment, subagent: subagentPanel(call, resolved, status: status, raw: raw))
     }
 
     /// A call's changes as pills, one run per verb in the order they

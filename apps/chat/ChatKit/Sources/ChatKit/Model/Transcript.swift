@@ -48,6 +48,18 @@ struct ToolCall: Codable, Hashable, Sendable {
     /// The `turn` ordinal of the call's own `tool` row, as its stream events
     /// carry it; nil on a call read off the rows, which need none.
     var ordinal: Int?
+    /// When the call's own dispatch started and ended, by the server's
+    /// clock: its tool row's `ran`, or its events' `startedAt` and
+    /// `finishedAt`. From a server older than those, the rows' own times
+    /// stand in: the start of the row that asked for the call, and the
+    /// call's own row. Nil where nothing the server wrote says it.
+    var startedAt: Date?
+    var finishedAt: Date?
+    /// A background call's job, which its handle's times are not: the tool
+    /// row's `job.startedAt` and `job.finishedAt`, or the job's own end
+    /// event.
+    var jobStartedAt: Date?
+    var jobFinishedAt: Date?
 
     var running: Bool { ok == nil }
 }
@@ -168,6 +180,24 @@ private func jobState(of record: Record) -> String? {
     record["job"]?["state"]?.text
 }
 
+/// An instant a row carries, in RFC 3339.
+private func instant(_ value: JSONValue?) -> Date? {
+    value?.string.flatMap(Timestamp.parse)
+}
+
+/// When a call ran, as its tool row says, onto the call: the row's `ran`,
+/// else the row's own `createdAt` as when it ended; and the job's times.
+private func stampTimes(of record: Record, on call: inout ToolCall) {
+    if let ran = record["ran"] {
+        call.startedAt = instant(ran["startedAt"]) ?? call.startedAt
+        call.finishedAt = instant(ran["finishedAt"])
+    } else {
+        call.finishedAt = Timestamp.parse(record.createdAt)
+    }
+    call.jobStartedAt = instant(record["job"]?["startedAt"])
+    call.jobFinishedAt = instant(record["job"]?["finishedAt"])
+}
+
 private func compaction(of record: Record) -> Compaction {
     let covers = record["covers"]?.object ?? [:]
     return Compaction(
@@ -210,7 +240,11 @@ func transcript(of messages: [Record]) -> [Turn] {
         let role = record["role"]?.string ?? ""
         switch role {
         case "user", "assistant":
-            let tools = role == "assistant" ? calls(of: record) : []
+            var tools = role == "assistant" ? calls(of: record) : []
+            // Until its own row says when it ran, a call started about when
+            // the row that asked for it was written.
+            let asked = Timestamp.parse(record.createdAt)
+            for index in tools.indices { tools[index].startedAt = asked }
             let reasoning = role == "assistant" ? record["reasoning"]?.text : nil
             turns.append(
                 Turn(
@@ -255,21 +289,21 @@ func transcript(of messages: [Record]) -> [Turn] {
                 if let wrote = subagentWrites(of: record) { turns[t].tools[c].subagentWrites = wrote }
                 if turns[t].tools[c].callable == nil { turns[t].tools[c].callable = callable }
                 turns[t].tools[c].job = jobState(of: record)
+                stampTimes(of: record, on: &turns[t].tools[c])
                 pending[callID] = nil
             } else {
                 // An orphan: its call is not in this window. Its own turn,
                 // rather than attributed to whichever assistant turn is last.
+                var orphan = ToolCall(
+                    id: callID, name: record["name"]?.string ?? "", callable: callable,
+                    arguments: "", output: output, ok: toolOK(record),
+                    changes: changes(of: record), subagentWrites: subagentWrites(of: record),
+                    job: jobState(of: record))
+                stampTimes(of: record, on: &orphan)
                 turns.append(
                     Turn(
                         id: record.id, row: record.id, ordinal: record["turn"]?.int, role: .assistant, content: "",
-                        tools: [
-                            ToolCall(
-                                id: callID, name: record["name"]?.string ?? "", callable: callable,
-                                arguments: "", output: output, ok: toolOK(record),
-                                changes: changes(of: record), subagentWrites: subagentWrites(of: record),
-                                job: jobState(of: record))
-                        ],
-                        createdAt: record.createdDate))
+                        tools: [orphan], createdAt: record.createdDate))
                 if !callID.isEmpty { located[callID] = (turns.count - 1, 0) }
             }
         default:

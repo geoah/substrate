@@ -161,8 +161,22 @@ enum TurnFold {
                         turns[index].tools[at].output = call.output
                         turns[index].tools[at].ok = call.ok
                         turns[index].tools[at].job = call.job ?? held.job
+                        if settles {
+                            turns[index].tools[at].startedAt = call.startedAt ?? held.startedAt
+                            turns[index].tools[at].finishedAt = call.finishedAt ?? held.finishedAt
+                        }
+                        if ends {
+                            turns[index].tools[at].jobStartedAt = call.jobStartedAt ?? held.jobStartedAt
+                            turns[index].tools[at].jobFinishedAt = call.jobFinishedAt ?? held.jobFinishedAt
+                        }
                         changed.insert(index)
                         newer.append(call)
+                    } else if held.ok == nil, let started = call.startedAt, started != held.startedAt {
+                        // A running call's own start, which its stream
+                        // said: the row that asked for it only says when
+                        // it was asked.
+                        turns[index].tools[at].startedAt = started
+                        changed.insert(index)
                     }
                     claim(index, turn.id)
                     replaced = true

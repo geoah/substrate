@@ -1089,8 +1089,7 @@ bubble is a tinted fill. The transcript softens under the composer with
   (`ChatApp.Command.pace`).
 - **Tool calls**: one line per call in the console's words ("Searched for
   “dentist”, found 3", "Changed the description of “Dune”", "Added “Dune”
-  to your books", "Asked Researcher", "Edited the body of “Garden” in 2
-  places"), a spinner while it runs, a check or a cross when it settles;
+  to your books", "Edited the body of “Garden” in 2 places"), a spinner while it runs, a check or a cross when it settles;
   tap for what it found or failed on, and the raw arguments and output. A
   call that worked on one record names it in its line, quoted and cut at 60
   characters: by the heading its answer carried, else the one the chat's
@@ -1105,8 +1104,39 @@ bubble is a tinted fill. The transcript softens under the composer with
   its job ends, and its end is a line of its own ("Librarian finished in the
   background") that settles the call with what it returned. A write the
   owner's policy held for review says "Waiting for you" above its
-  suggestion, not a failure. A sub-agent's call opens to "Open its
-  conversation", its own thread.
+  suggestion, not a failure.
+- **A call to another assistant is a card of its own**
+  (`SubagentPanel`, `SubagentPanelView`), not a tool's line: the
+  architect, the librarian, any agent behind a tool. Closed, it says who
+  ("Architect") with a mark and how it stands beside the name ("Working ·
+  1:23", "Working in the background · 0:42", "Finished · 2 min 10 s",
+  "Didn't finish · 5 min"), then a line or two of each fact under its
+  label: what it was asked (the call's `input`, its first sentences as
+  written, preamble and all, cut at a sentence or a word), what it
+  answered (its reply's first paragraph that is not a heading, in plain
+  words) or why it stopped, and what its conversation wrote ("Wrote 17
+  records in Places and Brands", "Changed nothing"; "wrote", since the
+  count is of records written, added or changed). Why it stopped is the
+  server's own sentence (the sub-agent answer's `stopped`, with
+  `failedCall`), else one made from its `cause`, else from its status and
+  reason, for an older server. One tap
+  opens the whole of each in place, with no second level: the request, the
+  reply as Markdown, the call it failed on and that call's error, the kinds
+  it wrote as pills, "Open its conversation", and the raw arguments and
+  output under a quiet "Raw call" closed by default. A call that waits on
+  the owner (held, declined) keeps the line and its card.
+- **Its clock is the server's.** A call's start and end are what the
+  server stamped (`agents` 8): the tool row's `ran`, the tool events'
+  `startedAt` and `finishedAt`, and a background job's `job.startedAt` and
+  `job.finishedAt`, which time a librarian's work and not its handle. A
+  stored running call counts from its asking row's `createdAt` until the
+  stream's own start replaces it; a settled call from an older server is
+  timed by its two rows. Nothing is timed by the device's clock but the
+  count itself, which starts at 0:00 where the device is behind. A panel
+  whose helper runs redraws its status line once a second (a
+  `TimelineView` in that line alone), so several running at once each
+  tick, and the transcript around them is not drawn again; a settled one
+  never ticks.
 - **Results of a known shape** (the console's `lib/tool-views.ts`): a
   function whose output is a list of web links draws them under its line as
   numbered source pills (the site and the title, the snippet as a long
@@ -1117,8 +1147,7 @@ bubble is a tinted fill. The transcript softens under the composer with
   panel ("Changed [Groceries]", each value it set). A function's own
   changes show under its line as pills after the verb ("Saved [a] [b]",
   one run per verb), and so do several changes of any call; a host
-  function's or a sub-agent's one change is in its opened details, beside
-  what a sub-agent's chain wrote ("Wrote 3 records across task and note").
+  function's one change is in its opened details.
   All of it comes from the transcript (the call's arguments and answer, the
   row's change stamps), so it shows whatever the token may read; a record's
   name comes from what the chat's own lookups returned.
