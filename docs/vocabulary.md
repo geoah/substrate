@@ -1109,10 +1109,10 @@ through the same loader. The shipped defaults follow two classes:
   fetch them again
   ([record 0333](decisions/0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md)).
   An owner who wants less of a kind writes an override, below. A record
-  deleted, here or at the service, keeps its history only until the
-  [compaction pass](operations.md#the-compaction-pass) forgets the
-  deletion (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its
-  kind keeps.
+  deleted, here or at the service, and then purged keeps its history only
+  until the [compaction pass](operations.md#the-compaction-pass) forgets
+  the purge (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its
+  kind keeps, unless a line of it is held or a package shipped it.
 - **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
   writes about its own runs, core's `triggerrun` and `alert`
   ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md))
@@ -1148,8 +1148,9 @@ the binary at its boot, which asks nobody, so they take the shipped values
 as they stand, and a release that shortens one says so in its notes. A
 restart alone brings those; an installed provider keeps the retention it had
 until it is upgraded, and from then its sync's bookkeeping kind, where it
-has one, keeps seven days, which its upgrade asks about first, and every
-other kind of it keeps all. The release that brought `retention` removes, rewrites
+has one, keeps seven days and every other kind of it keeps all; the upgrade
+asks first where that keeps a kind for less time than it does now. The
+release that brought `retention` removes, rewrites
 or compacts no history: an override that a kind move carries, or one it
 makes redundant, is an ordinary write. The
 release that brought `retention` moved `core/triggerrun` and `core/alert`

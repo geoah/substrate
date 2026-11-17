@@ -64,7 +64,7 @@ const DefaultCompactionInterval = time.Hour
 // forgets the record, whatever its kind keeps (decision 0300): longer than
 // any retention a shipped kind states short of all, so such a kind's
 // deletions outlive its own history. A kind kept all, a mirror of an outside
-// service among them, loses a deleted record's history here unless the
+// service among them, loses a purged record's history here unless the
 // deployment keeps every deletion.
 const DefaultDeletionsKept = 30 * 24 * time.Hour
 

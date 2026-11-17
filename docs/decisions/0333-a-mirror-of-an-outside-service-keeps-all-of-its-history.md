@@ -62,7 +62,7 @@ They record a sync's own runs, not what the service holds.
 An upgrade from a provider version that states `P30D` lengthens every
 mirror's history and asks nothing. One from a version before 0282 shortens
 only the bookkeeping kind a package has, from all to seven days, and asks
-about that kind alone.
+about that kind alone, unless an override already keeps it all.
 
 ### Consequences
 
@@ -72,11 +72,12 @@ about that kind alone.
   and every other kind keeps all.
 - Bad, because a mirror's history grows for as long as its sync runs, and
   the compaction takes none of it unless the owner overrides a kind.
-- Bad, because a record deleted, here or at the service, still loses its
-  history when the compaction pass forgets the deletion
-  (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its kind keeps
-  (0300). Keeping a mirror's deleted items for good takes
-  `SUBSTRATE_DELETIONS_KEPT=0`, which keeps every deletion of every kind.
+- Bad, because a record deleted, here or at the service, and then purged
+  still loses its history when the compaction pass forgets the purge
+  (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its kind keeps,
+  unless a line of it is held or a package shipped it (0300, 0319). Keeping
+  a mirror's deleted items for good takes `SUBSTRATE_DELETIONS_KEPT=0`,
+  which keeps every deletion of every kind.
 - Bad, because an owner who wants 30 days for a whole provider writes one
   override per kind: an override of a package is still an addition for
   later (0282).
