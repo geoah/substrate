@@ -62,7 +62,7 @@ carries a property's whole value, so every append writes the whole list again.
 The same record is rewritten thousands of times.
 
 Most of the history is not the owner's data at all. Of the 11,892,975 lines
-the repository held the day after the cutover:
+the repository held after the cutover:
 
 | Kind | Lines | Payload |
 | --- | --- | --- |
@@ -73,8 +73,7 @@ the repository held the day after the cutover:
 
 About 67% of the lines and about half the payload are the substrate's own
 per-delivery bookkeeping. Almost every delivery appends a line addressed to
-its trigger, at about 4 KB a line, because a webhook fire parks with its
-request whole until it settles.
+its trigger, at about 4 KB a line on average.
 
 ## What the first open had to do
 
@@ -162,8 +161,9 @@ From the snapshot to live: 49 hours 25 minutes. After it:
   time unless `--allow-shorter-history` takes it. The owner's tooling, which
   applies provider upgrades through it, stopped at the first refusal. Decision
   0333 now keeps a mirror's whole history.
-- **An upgrade with nothing to walk was a restart.** The roll forward the
-  next day ran one SQL migration in 34 ms and listened after about a minute.
+- **An upgrade with nothing to walk was a restart.** The roll forward two
+  hours after the cutover ran one SQL migration in 34 ms and listened after
+  about a minute.
 
 ## What went wrong in the system
 
@@ -294,8 +294,9 @@ are written.
 The `delivery` lines and run records above are 67% of the lines and half the
 bytes, and nearly every slow path the refold met was on them: the
 `trigger_failures` delete, the cursor, schedule and page upserts, and the run
-records. No trigger ever reads them as history: `matchChanges` skips both,
-because a delivery would feed itself. They are in the history only because
+records. No trigger delivers either: `matchChanges` skips both, because a
+delivery would feed itself. What reads them is the ledger's state, the
+console's lists of runs, and the change rows the history feed draws from. They are in the history only because
 decision 0064 put the delivery ledger there, when the backup was a directory
 written inside the commit. Compaction trims them to seven days, over days to
 weeks of passes. The plan takes them out of the history instead

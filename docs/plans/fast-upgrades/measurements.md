@@ -207,8 +207,8 @@ the reading, which is why the plan builds them behind the open.
 | Behind the open | The search index of 1.55M rows at about 1,000 rows/s; one reshaped kind's indexes at about 12 rows/s | The server's log |
 | 437 per-kind indexes restored on `records` | 8 min in six parallel sessions, 55–60 a minute | The restore's log |
 | Cutover downtime | About 2 min: the old server stopped at 3:25:56 pm, the new one listened at 3:26:17 and passed readiness at 3:27:51 | The platform's events |
-| The roll forward the next day, with no conversion | One SQL migration in 34 ms, listening after about 1 min, then 9 provider upgrades in 25 s | The server's log |
-| The history by kind, the day after | 11,892,975 lines. `core/triggerrun` 5,488,566 lines and 1.98 GB, `core/trigger` (its `delivery` lines) 2,440,726 and 10 GB, five sync-progress kinds about 63,700 and 39 MB, `core/alert` 214 and 97 kB: about 67% of the lines and half the payload | A count by kind over the `changelog` table |
+| The roll forward two hours after the cutover, with no conversion | One SQL migration in 34 ms, listening after about 1 min, then 9 provider upgrades in 25 s | The server's log |
+| The history by kind, after the cutover | 11,892,975 lines. `core/triggerrun` 5,488,566 lines and 1.98 GB, `core/trigger` (its `delivery` lines) 2,440,726 and 10 GB, five sync-progress kinds about 63,700 and 39 MB, `core/alert` 214 and 97 kB: about 67% of the lines and half the payload | A count by kind over the `changelog` table |
 | The archive catching up after the conversion | Not measured. At the default 8 MiB/s a pass copies about 27 GB an hour, and pauses while functions run | `docs/operations.md`, `SUBSTRATE_ARCHIVE_BYTES_PER_SECOND` |
 
 ## From these to 11.7M and 100M lines
