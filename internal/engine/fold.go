@@ -572,6 +572,13 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 	if err != nil {
 		return foldResult{}, err
 	}
+	var refsBefore *[]refRow
+	if t.replaying && row != nil && row.DeletedAt == nil {
+		if ty, _ := t.derivationView().ByIdentity(ref.Kind); ty != nil && declaresReference(ty) {
+			before := deriveRefs(ty, row.Props)
+			refsBefore = &before
+		}
+	}
 	if row == nil {
 		row = &erow{
 			ID: ref.ID, Kind: ref.Kind,
@@ -616,7 +623,7 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		if op.Delta.Restored {
 			row.DeletedAt = nil
 		}
-		if err := t.projectRow(ref, row, created, usesBefore, tiersBefore, isMetric, 1); err != nil {
+		if err := t.projectRow(ref, row, created, usesBefore, tiersBefore, isMetric, 1, refsBefore); err != nil {
 			return foldResult{}, err
 		}
 	}
@@ -709,8 +716,9 @@ func (t *txn) settleTakenOut() error {
 // uses and the unit graph's revision, which moves by moves, its refs rows
 // and its observed points. A record effect and a state entry (compact.go)
 // share it, so a state that lands a row derives exactly what the effects it
-// stands for derived.
-func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string, tiersBefore []time.Duration, isMetric bool, moves int) error {
+// stands for derived. refsBefore, when set, is what the row's refs rows hold
+// before the write (unchangedRefs).
+func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string, tiersBefore []time.Duration, isMetric bool, moves int, refsBefore *[]refRow) error {
 	// The refs index is a PROJECTION of the row that just landed, like
 	// `fts` and unlike everything else here: derived from the folded
 	// properties and the kind's declaration (refs.go), never from an effect
@@ -753,7 +761,7 @@ func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string,
 		t.unprojected[row.Kind] = true
 		return nil
 	}
-	if ty == nil || declaresReference(ty) {
+	if (ty == nil || declaresReference(ty)) && !unchangedRefs(refsBefore, ty, row.Props) {
 		if err := t.syncRefs(ref, ty, row.Props); err != nil {
 			return err
 		}

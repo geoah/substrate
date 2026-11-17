@@ -333,6 +333,41 @@ func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) erro
 	return nil
 }
 
+// unchangedRefs reports whether a write leaves a row's refs rows as they
+// stand: before is what they held before it (nil when that is not known),
+// and the row's properties after it derive the same rows. Only a replay
+// knows before: it holds every kind's declaration still from its first line
+// to its last (repodir.go refold), so a live row's stored rows are exactly
+// what its properties before the write derive. And only a replay needs it:
+// its one transaction keeps every refs row it deletes in the index until it
+// commits, so deleting and inserting the same rows on each write of a
+// record cost each write every earlier one, and a history that rewrites a
+// record thousands of times folded slower line by line.
+func unchangedRefs(before *[]refRow, ty *vocabulary.Kind, props map[string]any) bool {
+	if before == nil || ty == nil {
+		return false
+	}
+	after := deriveRefs(ty, props)
+	if len(after) != len(*before) {
+		return false
+	}
+	for i, a := range after {
+		b := (*before)[i]
+		if a.Property != b.Property || a.Path != b.Path || a.Ord != b.Ord || a.Dst != b.Dst {
+			return false
+		}
+		x, err := json.Marshal(nonNilMap(a.Props))
+		if err != nil {
+			return false
+		}
+		y, err := json.Marshal(nonNilMap(b.Props))
+		if err != nil || string(x) != string(y) {
+			return false
+		}
+	}
+	return true
+}
+
 // syncRefsOfRows is syncRefs for a page of rows of one kind, in two
 // statements: one DELETE of every row's refs rows and one INSERT of what
 // they derive. The pass behind the open re-derives a kind of many rows this

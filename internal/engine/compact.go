@@ -326,7 +326,7 @@ func (t *txn) applyState(op foldOp) (foldResult, error) {
 		return foldResult{}, err
 	}
 	t.noteProviderKey(ref, keyBefore, row.Props["apiKey"])
-	if err := t.projectRow(ref, row, old == nil, usesBefore, tiersBefore, bindsMetric(ty), moves); err != nil {
+	if err := t.projectRow(ref, row, old == nil, usesBefore, tiersBefore, bindsMetric(ty), moves, nil); err != nil {
 		return foldResult{}, err
 	}
 	return foldResult{changed: true, created: old == nil, row: row, version: row.Version}, nil
