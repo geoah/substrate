@@ -100,8 +100,8 @@ describe("the presenter over the contract's cases", () => {
       "substrate.reamde.dev/tasks/list",
     ])
     expect(s.rows.map((r) => [r.title, r.detail, r.open])).toEqual([
-      ["Home", "Task list", 4],
-      ["Groceries", "Task list", 1],
+      ["Home", "Task list · Active", 4],
+      ["Groceries", "Task list · Done", 1],
       ["No list", "Tasks with no list", 1],
       ["Missing", "Tasks whose list is gone or out of reach", 1],
     ])

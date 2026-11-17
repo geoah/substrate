@@ -1,6 +1,6 @@
 import type { Declaration } from "./sources"
 
-/** The app's own package as version 2 declares it (apps/tasks/package):
+/** The app's own package as version 3 declares it (apps/tasks/package):
  * what the app reads its own kinds by before the server's implementors
  * answer, and where they do not (a list binds no trait the route asks
  * after). A test holds it to the contract's copy. */
@@ -103,6 +103,20 @@ export const ownDeclarations: Declaration[] = [
           type: "datetime",
           description: "when it was marked done",
         },
+        origin: {
+          type: "reference",
+          kind: "any",
+          description:
+            "the record this task was made from, such as the message, mail, issue or meeting it answers; absent for a task you typed",
+        },
+        people: {
+          type: "reference",
+          kind: "substrate.reamde.dev/core/contact",
+          repeated: true,
+          mustExist: true,
+          description:
+            "the people this task involves, such as who asked for it or who is waiting on it",
+        },
       },
     },
   },
@@ -116,7 +130,7 @@ export const ownDeclarations: Declaration[] = [
       authority: "substrate.reamde.dev",
       package: "tasks",
       description:
-        "A task list: a named list of your tasks, such as Groceries or Home, kept in the order you arrange your lists. A task is in one list or in none.",
+        "A task list: a named list of your tasks, such as Groceries or Home, kept in the order you arrange your lists. A task is in one list or in none. A list stays active until you mark it done or abandon it.",
       purpose: "primary",
       names: {
         singular: "list",
@@ -125,6 +139,7 @@ export const ownDeclarations: Declaration[] = [
         singular: "Task list",
         plural: "Task lists",
       },
+      traits: ["substrate.reamde.dev/core/lifecycle"],
       displayTemplate: "{name}",
       properties: {
         name: {
@@ -136,6 +151,38 @@ export const ownDeclarations: Declaration[] = [
           type: "decimal",
           description:
             'where the list sits among your lists, lowest first; a number written as a string, such as "2" or "1.5"',
+        },
+        description: {
+          type: "markdown",
+          description:
+            "what the list is for and where its work stands, as prose",
+        },
+        status: {
+          type: "state",
+          description:
+            "active until you mark the list done or abandon it; either can be undone",
+          states: ["active", "done", "abandoned"],
+          initial: "active",
+          done: ["done"],
+          dropped: ["abandoned"],
+          transitions: [
+            {
+              from: "active",
+              to: "done",
+            },
+            {
+              from: "done",
+              to: "active",
+            },
+            {
+              from: "active",
+              to: "abandoned",
+            },
+            {
+              from: "abandoned",
+              to: "active",
+            },
+          ],
         },
       },
     },
