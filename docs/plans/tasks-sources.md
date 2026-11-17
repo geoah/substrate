@@ -36,7 +36,9 @@ with its declaration (`scopedDataset.TypesImplementing`).
 
 Binding `lifecycle` does not make a kind a to-do: a project, an order or a
 ticket binds it too. So a candidate stays a candidate until the owner turns
-it on.
+it on. The app's own `substrate.reamde.dev/tasks/list` binds it too, since
+the package's version 3, so a finished list can be closed; it is what the
+app's own task groups by, and never a candidate.
 
 **A collection** is a candidate the owner turned on. The app's own
 `substrate.reamde.dev/tasks/task` is on from the start. Every other one is

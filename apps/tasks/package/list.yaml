@@ -1,11 +1,17 @@
 # list: a named list of the owner's tasks. "Task list" on every surface,
 # because "List" alone reads as a page of the console rather than a record.
 #
-# NOT THE SAMPLE'S `project`. A project has a lifecycle of its own (active,
-# on hold, done, abandoned) and a summary of where the work stands, and it
-# is finished one day. A list is a heading and a place in the sidebar:
-# "Groceries" is never done. So it has no state, and adding one later is
-# additive if the owner ever wants to archive a list.
+# A LIST CAN BE FINISHED (version 3). A list that holds a piece of work
+# ("Budget 2027") ends one day, and deleting it would delete its tasks, so it
+# is closed instead: `status` moves to `done` or `abandoned`, through core's
+# `lifecycle`, and back to `active`. "Groceries" simply stays active. A list
+# that existed before version 3 is entered at `active` when the version is
+# admitted (decision record 0082). The Tasks app shows a group's status, and
+# a closed list while it still holds open tasks.
+#
+# NOT THE SAMPLE'S `project`. The sample's project also waits `onhold` and
+# carries a `summary`; a list has no on-hold state, and its prose is
+# `description`, the word this package already uses for prose.
 #
 # THE ORDER IS `position`, a decimal, as on the task: moving a list writes
 # that one list, a number between its new neighbours.
@@ -18,12 +24,15 @@ data:
   description: >-
     A task list: a named list of your tasks, such as Groceries or Home, kept
     in the order you arrange your lists. A task is in one list or in none.
+    A list stays active until you mark it done or abandon it.
   purpose: primary
   names:
     singular: list
   label:
     singular: Task list
     plural: Task lists
+  traits:
+    - substrate.reamde.dev/core/lifecycle
   displayTemplate: "{name}"
   properties:
     name:
@@ -34,3 +43,30 @@ data:
       type: decimal
       description: where the list sits among your lists, lowest first; a number
         written as a string, such as "2" or "1.5"
+    description:
+      type: markdown
+      description: what the list is for and where its work stands, as prose
+    # A create may name any state, so an importer writes a finished list as
+    # finished; every later move is a patch along these transitions.
+    status:
+      type: state
+      description: active until you mark the list done or abandon it; either
+        can be undone
+      states:
+        - active
+        - done
+        - abandoned
+      initial: active
+      done:
+        - done
+      dropped:
+        - abandoned
+      transitions:
+        - from: active
+          to: done
+        - from: done
+          to: active
+        - from: active
+          to: abandoned
+        - from: abandoned
+          to: active
