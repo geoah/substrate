@@ -1108,8 +1108,9 @@ through the same loader. The shipped defaults follow two classes:
   service no longer has, and the service is not their backup: nothing can
   fetch them again
   ([record 0333](decisions/0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md)).
-  An owner who wants less of a kind writes an override, below. A record
-  deleted, here or at the service, and then purged keeps its history too
+  An owner who wants less of a kind writes an override, below. A record of
+  such a kind deleted, here or at the service, and then purged keeps all of
+  its history too
   ([record 0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)):
   the [compaction pass](operations.md#the-compaction-pass) forgets a purge
   only on a deployment that sets `SUBSTRATE_DELETIONS_KEPT`, and then

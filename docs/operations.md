@@ -740,8 +740,9 @@ batch's commit keeps how far its stretch got: the next pass goes on from
 the last record finished, before it starts another stretch, so a stretch
 longer than one pass is done over several and no record is read twice.
 
-By default it keeps every deletion: a purged record's history stays, and the
-repository's **horizon** stays at 0 ([decision
+By default it keeps every deletion: a purged record keeps its deletion and
+what its kind's retention keeps of its history, as a live record does, and
+the repository's **horizon** stays at 0 ([decision
 0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)). A
 deployment that sets `SUBSTRATE_DELETIONS_KEPT` to a duration has the pass
 **forget a deletion** older than that: every entry of a purged record goes.

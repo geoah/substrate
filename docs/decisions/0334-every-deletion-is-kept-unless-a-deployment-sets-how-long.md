@@ -58,14 +58,15 @@ kind).
 
 ### Consequences
 
-- Good, because a purged record's history outlives the purge, as a mirror's
-  history outlives its service's copy (0333).
+- Good, because a purged record keeps what its kind's retention keeps, all
+  of its history for every kind but bookkeeping, as a mirror's history
+  outlives its service's copy (0333).
 - Good, because a client's cursor is never refused for a forgotten deletion
   on a deployment that sets nothing.
-- Bad, because a purged record's history now grows the changelog for good:
-  a repository that syncs a service whose items come and go keeps every one
-  it ever held, unless the deployment sets a period or the owner permanently
-  deletes the record, which erases its history at once.
+- Bad, because a purged record of a kind kept all now grows the changelog
+  for good: a repository that syncs a service whose items come and go keeps
+  every one it ever held, unless the deployment sets a period or the owner
+  permanently deletes the record, which erases its history at once.
 - Bad, because a deployment that ran a build with the 30-day default (no
   release carried it) has already forgotten what it forgot: its horizon
   stays where that build moved it, and the history is not brought back.
