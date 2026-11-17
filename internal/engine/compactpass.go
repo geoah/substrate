@@ -61,8 +61,11 @@ import (
 const DefaultCompactionInterval = time.Hour
 
 // DefaultDeletionsKept is how long a deletion is remembered before the pass
-// forgets the record: the longest retention the shipped kinds state short of
-// all, so a mirror's deletions outlive its own history.
+// forgets the record, whatever its kind keeps (decision 0300): longer than
+// any retention a shipped kind states short of all, so such a kind's
+// deletions outlive its own history. A kind kept all, a mirror of an outside
+// service among them, loses a purged record's history here unless the
+// deployment keeps every deletion.
 const DefaultDeletionsKept = 30 * 24 * time.Hour
 
 // The pass's stages, which its test seam stops at (seams.go).

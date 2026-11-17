@@ -2367,8 +2367,8 @@ one item per kind the repository declares, in reference order:
 
 ```json
 {"items": [
-  {"kind": "providers.substrate.reamde.dev/google/message", "declared": "P30D", "effective": "P30D"},
-  {"kind": "substrate.reamde.dev/core/contact", "effective": "all"},
+  {"kind": "providers.substrate.reamde.dev/google/calendarsync", "declared": "P7D", "effective": "P7D"},
+  {"kind": "providers.substrate.reamde.dev/google/message", "effective": "all"},
   {"kind": "substrate.reamde.dev/core/triggerrun", "declared": "P7D", "override": "P30D",
    "overrideId": "keep-runs", "effective": "P30D"}
 ]}
