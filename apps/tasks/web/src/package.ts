@@ -1,9 +1,13 @@
 import type { Declaration } from "./sources"
 
+/** The package version this build was written against: the floor its
+ * approval asks for, as app.json's `asks` and the closure the Apple and
+ * Android builds carry say. A test holds the three together. */
+export const packageVersion = 3
+
 /** The app's own package as version 3 declares it (apps/tasks/package):
  * what the app reads its own kinds by before the server's implementors
- * answer, and where they do not (a list binds no trait the route asks
- * after). A test holds it to the contract's copy. */
+ * answer, and where they do not. A test holds it to the contract's copy. */
 export const ownDeclarations: Declaration[] = [
   {
     identity: "substrate.reamde.dev/tasks/task",
