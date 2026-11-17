@@ -233,7 +233,11 @@ struct ReplyTailView: View, Equatable {
                 .accessibilityLabel(turn.linkedLabel)
             }
             ForEach(turn.tools) { tool in
-                ToolCallRow(tool: tool)
+                if let panel = tool.subagent {
+                    SubagentPanelView(panel: panel)
+                } else {
+                    ToolCallRow(tool: tool)
+                }
                 switch tool.attachment {
                 case let .suggestion(id)?:
                     if let card = cards[id]?.suggestion { SuggestionCardView(id: id, card: card) }

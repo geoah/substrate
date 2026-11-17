@@ -105,6 +105,13 @@ struct AgentEvent: Codable, Sendable, Equatable {
     /// Rides an `error` that is not a failed turn and so has no `cause`:
     /// `auth`, `internal` or `unavailable` (`StreamErrorCode`).
     var code: String?
+    /// Ride the tool events from a server whose `agents` feature is at
+    /// revision 8, by the server's clock: when the call's own dispatch
+    /// started and, on `toolFinished`, ended. On a background job's end
+    /// (`job` past `working`) they are the job's. Absent from an older
+    /// server.
+    var startedAt: Date?
+    var finishedAt: Date?
 
     /// One ndjson line, or nil: a blank line, an unknown kind (a newer
     /// server's) or garbage. The `{}` heartbeat is `.heartbeat`.
@@ -134,6 +141,8 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.cause = string("cause")
         event.retryAfter = int("retryAfter")
         event.code = string("code")
+        event.startedAt = string("startedAt").flatMap(Timestamp.parse)
+        event.finishedAt = string("finishedAt").flatMap(Timestamp.parse)
         if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }

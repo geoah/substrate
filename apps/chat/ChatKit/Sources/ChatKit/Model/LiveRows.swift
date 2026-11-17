@@ -152,7 +152,7 @@ struct LiveRows: Codable, Hashable, Sendable {
         case .toolStarted:
             return start(call(event), seq: seq)
         case .toolFinished:
-            return settle(call(event), output: event.output ?? "", ok: event.ok ?? true, job: event.job, seq: seq)
+            return settle(call(event), output: event.output ?? "", ok: event.ok ?? true, job: event.job, finishedAt: event.finishedAt, seq: seq)
         case .compacted:
             return compacted(tokensBefore: event.tokensBefore, covered: event.covered)
         case .truncated:
@@ -194,7 +194,9 @@ struct LiveRows: Codable, Hashable, Sendable {
     }
 
     private func call(_ event: AgentEvent) -> ToolCall {
-        ToolCall(id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable, arguments: event.args ?? "", ordinal: event.turn)
+        ToolCall(
+            id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable, arguments: event.args ?? "", ordinal: event.turn,
+            startedAt: event.startedAt)
     }
 
     /// A piece of a turn's reply or of its reasoning, written where it
@@ -292,6 +294,7 @@ struct LiveRows: Codable, Hashable, Sendable {
             if let callable = call.callable { turns[t].tools[c].callable = callable }
             if !call.arguments.isEmpty { turns[t].tools[c].arguments = call.arguments }
             if let ordinal = call.ordinal { turns[t].tools[c].ordinal = ordinal }
+            if turns[t].tools[c].startedAt == nil { turns[t].tools[c].startedAt = call.startedAt }
             return turns[t].tools[c] != before
         }
         let index = home(of: call, seq: seq)
@@ -304,8 +307,19 @@ struct LiveRows: Codable, Hashable, Sendable {
     /// the loop refuses a dispatch past its budget without starting it, and
     /// that refusal is the card a reader most needs. A background job's end
     /// settles its card a second time, its output replacing the handle.
-    private mutating func settle(_ call: ToolCall, output: String, ok: Bool, job: String?, seq: Int) -> Bool {
+    private mutating func settle(_ call: ToolCall, output: String, ok: Bool, job: String?, finishedAt: Date?, seq: Int) -> Bool {
         pass.closed = true
+        // A job's end says the job's times; any other finish, the call's.
+        let ended = job != nil && job != "working"
+        func stamp(_ held: inout ToolCall) {
+            if ended {
+                held.jobStartedAt = call.startedAt ?? held.jobStartedAt
+                held.jobFinishedAt = finishedAt ?? held.jobFinishedAt
+            } else {
+                held.startedAt = call.startedAt ?? held.startedAt
+                held.finishedAt = finishedAt ?? held.finishedAt
+            }
+        }
         // An empty id settles the oldest card still running, not all of them.
         let matches: (ToolCall) -> Bool = { call.id.isEmpty ? $0.running : $0.id == call.id }
         for t in turns.indices {
@@ -317,12 +331,15 @@ struct LiveRows: Codable, Hashable, Sendable {
             turns[t].tools[c].output = output
             turns[t].tools[c].ok = ok
             if let job { turns[t].tools[c].job = job }
+            stamp(&turns[t].tools[c])
             return turns[t].tools[c] != before
         }
         var settled = call
         settled.output = output
         settled.ok = ok
         settled.job = job
+        if ended { settled.startedAt = nil }
+        stamp(&settled)
         let index = home(of: settled, seq: seq)
         turns[index].tools.append(settled)
         pass.closed = true
