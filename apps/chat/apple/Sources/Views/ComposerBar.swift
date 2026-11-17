@@ -211,30 +211,12 @@ struct ComposerBar: View {
 
     // MARK: The field
 
-    /// The assistant's picker, then what is typed or heard. At the
-    /// accessibility text sizes the picker stands over the words, which
-    /// then have the field's whole width. One layout in either form, and
-    /// the words after the picker in both: the text field keeps its
-    /// place, so what is typed, the keyboard and a word an input method is
-    /// part way through stay when the picker goes (a new chat gets its
-    /// thread) or the form changes.
+    /// What is typed or heard, the field's whole width: a new chat's
+    /// assistant is picked from its title (`AgentTitle`).
     private var field: some View {
-        let over = composer.picksAgent && size.isAccessibilitySize
-        let form =
-            over
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
-            : AnyLayout(HStackLayout(alignment: .bottom, spacing: ChatSpace.beside))
-        return form {
-            if composer.picksAgent {
-                AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
-            }
-            typing
-                // Under the picker the words start where they do with
-                // none beside them.
-                .padding(.leading, over ? ChatSpace.edge - ChatSpace.lines : 0)
-        }
-        .padding(.leading, composer.picksAgent ? ChatSpace.lines : ChatSpace.edge)
-        .frame(minHeight: control)
+        typing
+            .padding(.leading, ChatSpace.edge)
+            .frame(minHeight: control)
     }
 
     private var typing: some View {
@@ -521,41 +503,6 @@ struct ComposerStatusLine: View {
         case .tool: "wrench.and.screwdriver"
         case .stopping: "stop.circle"
         }
-    }
-}
-
-/// The agent a new chat goes to, chosen from the offered ones.
-private struct AgentChip: View {
-    @Environment(ChatHost.self) private var host
-    let key: ChildKey
-    let current: String?
-    let label: String
-    @Scaled(.control) private var control
-
-    var body: some View {
-        Menu {
-            ForEach(host.chats?.offered ?? []) { agent in
-                Button {
-                    host.send(.choose(agent: agent.id), to: key)
-                } label: {
-                    if agent.id == current {
-                        Label(agent.name, systemImage: "checkmark")
-                    } else {
-                        Text(agent.name)
-                    }
-                }
-            }
-        } label: {
-            // Centred on the field's first line.
-            AgentPill(id: current, name: label, picker: true)
-                .frame(maxWidth: ChatSize.chipMax, alignment: .leading)
-                .frame(minHeight: control)
-                .contentShape(.rect)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .fixedSize()
-        .accessibilityLabel("Assistant: \(label)")
     }
 }
 

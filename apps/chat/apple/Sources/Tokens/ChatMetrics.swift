@@ -103,6 +103,9 @@ struct ChatSize: Sendable {
     static let meter = ChatSize(points: 24, style: .body, most: .xxxLarge)
     /// A mark of the row under a reply and of the line over the field.
     static let actionMark = ChatSize(points: 16, style: .subheadline, most: .accessibility2)
+    /// A new chat's title and its assistant under it, in the bar: the bar
+    /// holds two lines no larger than this.
+    static let barTitle = ChatSize(points: 17, style: .body, most: .xxxLarge)
 
     /// The size at a text size.
     func points(at size: DynamicTypeSize) -> CGFloat {
@@ -157,10 +160,8 @@ struct ChatSize: Sendable {
     /// The width a transcript keeps however wide its window: a readable
     /// measure, about 75 characters of the body's type.
     static let measure: CGFloat = 680
-    /// A pill's widest, where its words may be long: a page's title, an
-    /// assistant's name in the composer.
+    /// A pill's widest, where its words may be long: a page's title.
     static let pillMax: CGFloat = 280
-    static let chipMax: CGFloat = 180
     /// A page's preview on a long press.
     static let preview: CGFloat = 320
     /// A screen of one sentence and one button: no access.

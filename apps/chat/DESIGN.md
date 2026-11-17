@@ -1499,21 +1499,30 @@ bubble is a tinted fill. The transcript softens under the composer with
 
 ### New chat
 
-- The agent: its name and description as the header, and its pill as the
-  picker in the composer, centred on the field's first line and close to
-  its type, the chevron inside (over the field at the accessibility text
-  sizes); default from Settings, else the last chatted with, else the
-  first offered. An agent's pill is the record pill's capsule (the kit's
-  `RecordPillStyle`: its word from its ends and from its top and bottom,
-  a mark from its word, its type's size), so every pill in the app is one
-  shape; its fill is the agent's colour and it has no kind's tile.
+- The agent: its name and description as the header, and the chat's
+  title as its picker (`AgentTitle`, from ChatKit's `AgentPicker`): "New
+  Chat", and under it the assistant's name in its colour with a chevron,
+  which opens the assistants offered, the chosen one checked. On an
+  iPhone and an iPad it is the bar's middle item; on a Mac it is the
+  window title's own menu, the assistant named in the subtitle. VoiceOver
+  hears "Assistant: Moss". The bar holds its two lines up to the largest
+  standard text size, and a long press at the accessibility sizes shows
+  them larger. It sat in the composer, beside the field, until November
+  2026: a message of several lines left an empty column under it, so the
+  field now has its whole width. Default from Settings, else the last
+  chatted with, else the first offered. An agent's pill (the chat list,
+  Settings) is the record pill's capsule (the kit's `RecordPillStyle`: its
+  word from its ends and from its top and bottom, a mark from its word,
+  its type's size), so every pill in the app is one shape; its fill is the
+  agent's colour and it has no kind's tile.
 - Up to three openers by what the agent can do, as plain chips.
 
 ### Composer
 
 A floating glass bar (`safeAreaBar`) holding a field that grows 1 to 8 lines,
 the microphone, and Send, which morphs into Stop while a turn runs
-(`glassEffectID`); on a new chat, the agent chip.
+(`glassEffectID`). The field always has the bar's width: a new chat's
+assistant is chosen from its title ([New chat](#new-chat)).
 
 - **It says what is happening** (`ComposerStatus`, one line above the
   field, from the send to the end): "Connecting…" until the stream opens,
@@ -1710,7 +1719,7 @@ since a mark three times its size takes the room the words need. Where a
 line cannot hold what it held, the layout takes a taller form and never
 clips: a chat's date goes under its title and its marks under its
 preview, a card's buttons stack, a change's badge and a note's button go
-under their words, the assistant's picker stands over the field, the row
+under their words, the row
 under a reply wraps, a page's title goes under its site in its pill, and
 a table is a card for each row. The lines over the composer's field (what
 is happening, what Stop does to a queued message, why the field is
@@ -2297,7 +2306,7 @@ share sheet. Nothing leaves the device that was not on that screen.
 7. Every message under an id of its own, sent again when its answer is lost and kept across a kill; refused sends; unknown-delivery sends with the reconcile reads on a server without ids; for existing and new chats.
 8. One model of a turn from its first token to its stored row: no blink at the handover or on a return to the front; reload failure with Try Again.
 9. Markdown replies; code in its language's colours with Copy and a switch to wrap; tables laid out for their room; Copy, Share and Select Text on a reply, and Try Again or Continue under the last one.
-10. Agent picker; Settings → Agents for which agents are offered and the default.
+10. Agent picker in a new chat's title; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
 12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; on iOS, what settled while the app was away, from the refresh task.
 13. Questions, suggestions and approvals answered inline, CAS'd; a card that ended is the mark on the call that asked, and says whose hand ended it where the server links one (`agents` 7); a question answered in the person's own words, by a message that names it at 7.
@@ -2858,7 +2867,8 @@ once it ended), `queued` (a message a run has not read, with more typed)
 and `taken` (the same once a call read it), and `notify` (the app's three
 notifications that take an answer, posted through the device's own
 service; `notify-reply`, `notify-question` and `notify-approval` post
-one, for its banner to be pulled open). The state can be given as a
+one, for its banner to be pulled open), and `new` (a new chat with a
+second assistant offered, for its title's picker). The state can be given as a
 launch argument too (`-SUBSTRATE_CHAT_DEMO <state>`), which is what a
 tool that launches the app on a simulator can pass. It is how the
 screenshots of a state that lasts a moment are taken; a release carries

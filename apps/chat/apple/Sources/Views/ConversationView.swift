@@ -102,11 +102,11 @@ struct ConversationView: View {
         #endif
         .environment(\.draftField, draftField)
         .navigationTitle(screen.title)
-        .navigationSubtitle(screen.subtitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar { toolbar(screen) }
+        .pickingAgent(screen, key: key)
         .focusedSceneValue(\.conversation, key)
         .onAppear { host.send(.open, to: key) }
         .onDisappear {
@@ -131,6 +131,11 @@ struct ConversationView: View {
     }
 
     @ToolbarContentBuilder private func toolbar(_ screen: ConversationScreen) -> some ToolbarContent {
+        #if os(iOS)
+        if let picker = screen.picker {
+            ToolbarItem(placement: .principal) { AgentTitle(key: key, title: screen.title, picker: picker) }
+        }
+        #endif
         if screen.streaming {
             ToolbarItem(placement: .primaryAction) {
                 // ⌘. is the Chat menu's.

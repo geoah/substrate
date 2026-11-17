@@ -107,12 +107,17 @@ public enum ChatFixtures {
 
     // MARK: Records, as JSON
 
-    public static func agents() -> String {
-        page([
-            record(
-                id: agent, kind: Kinds.agent, version: 1, at: 0,
-                properties: #"{"description":"Your assistant.","provider":{"ref":"\#(Kinds.provider)/anthropic"},"model":"claude-fable-5-1"}"#)
-        ])
+    /// A second assistant a chat may go to, for a picture of the picker.
+    public static let gardener = "~/garden/gardener"
+
+    /// The agents, the fixture's assistant first; `also` adds more.
+    public static func agents(also: [String] = []) -> String {
+        page(
+            ([agent] + also).map { id in
+                record(
+                    id: id, kind: Kinds.agent, version: 1, at: 0,
+                    properties: #"{"description":"Your assistant.","provider":{"ref":"\#(Kinds.provider)/anthropic"},"model":"claude-fable-5-1"}"#)
+            })
     }
 
     public static func providers() -> String {

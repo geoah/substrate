@@ -55,6 +55,8 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     /// A chat's row says what its runs took, so its technical details hold
     /// every line they have.
     var tallied = false
+    /// Agents served beside the fixture's assistant.
+    var moreAgents: [String] = []
 
     /// A run a test writes a line at a time (`step`), so every screen
     /// between its first piece and its stored rows can be looked at: the
@@ -278,7 +280,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
                 let first = marked.map { ChatFixtures.thread($0.0, lastMessage: "\($0.0)-m\($0.1 - 1)") }
                 return json(query.contains(#""chat""#) ? ChatFixtures.threads(first: first) : ChatFixtures.page([]))
             }
-            if query.contains("core/agent") { return json(ChatFixtures.agents()) }
+            if query.contains("core/agent") { return json(ChatFixtures.agents(also: moreAgents)) }
             if query.contains("llm/provider") { return json(ChatFixtures.providers()) }
             return json(ChatFixtures.page([]))
         }

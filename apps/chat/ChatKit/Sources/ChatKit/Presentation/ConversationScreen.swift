@@ -17,6 +17,9 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var agentName: String
     /// Who a new chat is with, and a few openers; nil once it has turns.
     public var hero: NewChatHero?
+    /// A new chat picks its assistant from its title; nil once it has a
+    /// thread, whose assistant is fixed.
+    public var picker: AgentPicker?
     /// The thread holds rows before the ones drawn: a row at the top that
     /// reads them when it comes on screen (`ChatApp.Command.olderRows`).
     public var older: OlderRows?
@@ -124,6 +127,20 @@ public struct NewLine: Codable, Equatable, Sendable {
     public var spoken: String
 }
 
+/// The title of a new chat as its assistant's picker: the chat's title, and
+/// under it the assistant's name, which opens the list of the assistants
+/// offered.
+public struct AgentPicker: Codable, Equatable, Sendable {
+    /// The assistant chosen: the one the list marks.
+    public var current: String?
+    /// "Moss", or "No assistant" where none is offered.
+    public var name: String
+    /// What a screen reader says of it: "Assistant: Moss".
+    public var spoken: String
+    /// What a screen reader says it does.
+    public var hint: String
+}
+
 public struct NewChatHero: Codable, Equatable, Sendable {
     public var title: String
     public var description: String?
@@ -180,9 +197,6 @@ public struct ComposerPresentation: Codable, Equatable, Sendable {
     /// Said even while the field is empty (offline).
     public var blockedWhenEmpty: Bool
     public var keyless: KeylessCallout?
-    /// A new chat picks its agent in the composer.
-    public var picksAgent: Bool
-    public var agentLabel: String
     public var listenOnOpen: Bool
     public var canSend: Bool
     /// What is happening while a reply is on its way; nil when nothing is.
