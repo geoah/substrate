@@ -76,7 +76,6 @@ type options struct {
 	// oldResyncErasure is an erasure's treatment of a resync as the builds
 	// before #1460 had it, in a test (WithTestOldResyncErasure).
 	oldResyncErasure bool
-	deletionsKeptSet bool
 	// compactionBatches and compactionBatch are the pass's batch bounds and
 	// what it is told of each batch, in a test (WithTestCompactionBatches).
 	compactionBatches [2]int
@@ -492,9 +491,10 @@ func WithArchiveTimeouts(call, idle time.Duration) Option {
 func WithArchiveInterval(d time.Duration) Option { return func(o *options) { o.archiveInterval = d } }
 
 // WithDeletionsKept sets how long the compaction pass remembers a deletion
-// before it forgets the record (compactpass.go); 0 keeps every deletion.
+// before it forgets the record (compactpass.go); 0, the default, keeps every
+// deletion (decision 0334).
 func WithDeletionsKept(d time.Duration) Option {
-	return func(o *options) { o.deletionsKept, o.deletionsKeptSet = d, true }
+	return func(o *options) { o.deletionsKept = d }
 }
 
 // WithCompactionInterval sets how often a repository's compaction pass runs
@@ -1103,9 +1103,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	}
 	if o.compactionInterval == 0 {
 		o.compactionInterval = DefaultCompactionInterval
-	}
-	if !o.deletionsKeptSet {
-		o.deletionsKept = DefaultDeletionsKept
 	}
 	// The archive is on by default, under the data root, as the server's
 	// SUBSTRATE_ARCHIVE is; WithArchive(nil) turns it off.

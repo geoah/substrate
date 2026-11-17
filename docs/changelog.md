@@ -566,11 +566,13 @@ or resumes after a restore, is told plainly instead of silently missing rows,
 and its handler is one it **must** have: re-list, then resume the watch from
 the head and generation the response names.
 
-The horizon is **each repository's own**, because what moves it is: the
+The horizon is **each repository's own**, because what moves it is: on a
+deployment that sets `SUBSTRATE_DELETIONS_KEPT`, the
 [compaction pass](operations.md#the-compaction-pass) forgets a record purged
-longer ago than `SUBSTRATE_DELETIONS_KEPT` (30 days by default), every entry
-of it, and a consumer that resumed from below the line the deletion was on
-would never hear of it. So the horizon moves to that line, a `from=` below it
+longer ago than that, every entry of it, and a consumer that resumed from
+below the line the deletion was on would never hear of it. A deployment that
+sets nothing keeps every deletion, and its horizons stay at 0 ([decision
+0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)). So the horizon moves to that line, a `from=` below it
 is answered `410 compacted` ("seq N is below the repository's horizon H: a
 deletion before it was forgotten"), and a history page names it as `horizon`
 (revision 5 of the `changefeed` feature), absent while it is 0. Once the

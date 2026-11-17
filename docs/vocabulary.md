@@ -1109,10 +1109,12 @@ through the same loader. The shipped defaults follow two classes:
   fetch them again
   ([record 0333](decisions/0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md)).
   An owner who wants less of a kind writes an override, below. A record
-  deleted, here or at the service, and then purged keeps its history only
-  until the [compaction pass](operations.md#the-compaction-pass) forgets
-  the purge (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its
-  kind keeps, unless a line of it is held or a package shipped it.
+  deleted, here or at the service, and then purged keeps its history too
+  ([record 0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)):
+  the [compaction pass](operations.md#the-compaction-pass) forgets a purge
+  only on a deployment that sets `SUBSTRATE_DELETIONS_KEPT`, and then
+  whatever its kind keeps, unless a line of it is held or a package shipped
+  it.
 - **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
   writes about its own runs, core's `triggerrun` and `alert`
   ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md))

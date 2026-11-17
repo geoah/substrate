@@ -148,9 +148,9 @@ a length of time, its package header may state it for its kinds, and a
 repository may override it per kind
 ([the reserved keys](vocabulary.md#the-reserved-keys)). The latest state of
 every record is always kept. A background pass replaces a record's entries
-past its kind's retention with one entry holding that state, and forgets old
-deletions: what the history still holds of a record removed for good, longer
-ago than the server keeps deletions, may go too. A resume from below a
+past its kind's retention with one entry holding that state. A server keeps
+every deletion unless its operator sets how long: then what the history still
+holds of a record removed for good, longer ago than that, goes too. A resume from below a
 deletion the pass forgot is told `compacted`, and lists again
 ([the horizon](changelog.md#frames-and-the-horizon)); a resume from below a
 compaction, and above that, reads on and meets the entries that hold each

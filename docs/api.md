@@ -445,8 +445,8 @@ all in the delete's one transaction, which a finalizer on any record it
 would take (the merge's own hold on its loser aside) refuses whole, `409
 conflict` naming that record, and leaves the `gc` line with no value. What the record owns is not
 erased with it: it is tombstoned for the sweep, as above, and its own history
-stays until the compaction pass forgets old deletions
-(`SUBSTRATE_DELETIONS_KEPT`) or until it is permanently deleted itself. The
+stays until it is permanently deleted itself, or until the compaction pass
+forgets old deletions on a deployment that sets `SUBSTRATE_DELETIONS_KEPT`. The
 reply carries `erasure`: `purged` names, by record path, every other record
 the delete purged and erased with it; `tombstoned`, where the record owned
 any, counts the records its cascade tombstoned, which keep their history as

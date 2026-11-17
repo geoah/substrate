@@ -1721,7 +1721,7 @@ func TestDeletePurge(t *testing.T) {
 		"samples.substrate.reamde.dev/tasks/task/t9 purged",
 		"purged with it: substrate.reamde.dev/core/recordpatchrequest/r1",
 		"erasure waits: a line of the record a parked failure or a drain names",
-		"what it owned (2 records) is deleted with it, and keeps its history until old deletions are forgotten",
+		"what it owned (2 records) is deleted with it, and keeps its history unless the server forgets old deletions",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("delete --purge output lacks %q:\n%s", want, out)

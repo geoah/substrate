@@ -204,7 +204,8 @@ export interface Erasure {
   /** Every other record the permanent delete purged with this one, by path. */
   purged?: string[]
   /** How many records it owned the delete tombstoned for the sweep: deleted
-   * with it, each keeping its own history until old deletions are forgotten. */
+   * with it, each keeping its own history unless the server forgets old
+   * deletions. */
   tombstoned?: number
   /** Each record whose copy of a value the erasure leaves, and why. */
   kept?: ErasureKept[]

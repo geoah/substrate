@@ -265,8 +265,9 @@ func run() error {
 		opts = append(opts, engine.WithArchive(archiveStore), engine.WithArchiveInterval(cfg.Archive.Interval))
 	}
 	// The compaction pass (decision 0300): entries past their kind's
-	// retention become each record's state entry, and an old deletion is
-	// forgotten, which moves the repository's horizon.
+	// retention become each record's state entry. A deletion is forgotten,
+	// which moves the repository's horizon, only where
+	// SUBSTRATE_DELETIONS_KEPT sets how long it is kept (decision 0334).
 	every, err := cfg.Compaction.Every()
 	if err != nil {
 		return err
@@ -276,6 +277,9 @@ func run() error {
 		opts = append(opts, engine.WithCompactionInterval(-1))
 	} else {
 		opts = append(opts, engine.WithCompactionInterval(every), engine.WithDeletionsKept(cfg.Compaction.DeletionsKept))
+		if cfg.Compaction.DeletionsKept > 0 {
+			slog.Info("the compaction pass forgets a deleted record's history once its deletion is older than SUBSTRATE_DELETIONS_KEPT", "kept", cfg.Compaction.DeletionsKept)
+		}
 	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds
