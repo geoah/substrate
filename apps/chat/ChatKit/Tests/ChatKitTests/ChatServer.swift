@@ -16,6 +16,9 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         case stream([String], holdAfter: Int? = nil)
         /// The request fails on the device: no answer comes.
         case fail(URLError.Code)
+        /// A stream that says `lines`, then breaks on the device with
+        /// `code`: the connection lost, or quiet past its timeout.
+        case broken([String], URLError.Code)
     }
 
     struct Route {
@@ -120,6 +123,14 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         case let .json(status, body):
             let head = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
             return LineStream(head: head, body: Data(body.utf8))
+        case let .broken(lines, code):
+            let head = HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/x-ndjson"])!
+            let stream = AsyncThrowingStream<String, any Error> { continuation in
+                for line in lines { continuation.yield(line) }
+                continuation.finish(throwing: URLError(code))
+            }
+            return LineStream(head: head, lines: stream)
         case let .stream(lines, holdAfter):
             let head = HTTPURLResponse(
                 url: url, statusCode: 200, httpVersion: "HTTP/1.1",

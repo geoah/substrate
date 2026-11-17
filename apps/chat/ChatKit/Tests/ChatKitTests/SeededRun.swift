@@ -885,6 +885,9 @@ struct SeededRun {
         case let .retryCard(reference):
             steps.append("presses Try Again in a card")
             await rig.harness.send(.retryCard(reference))
+        case .readGuidance:
+            steps.append("presses Try Again on the memories")
+            await rig.harness.send(.readGuidance)
         case .rename, .addKey, .open:
             steps.append("presses a button that leaves the chat")
         }

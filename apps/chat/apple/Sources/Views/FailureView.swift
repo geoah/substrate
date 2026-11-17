@@ -245,6 +245,7 @@ struct FailureActions {
         case let .open(page): if let url = URL(string: page) { openURL(url) }
         case let .newChat(agent): host.send(.newChat(agent: agent, listen: false, scene: scene))
         case let .retryCard(reference): host.send(.retryCard(reference))
+        case .readGuidance: host.send(.readGuidance)
         }
     }
 }

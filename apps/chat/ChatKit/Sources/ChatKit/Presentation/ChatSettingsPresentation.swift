@@ -56,8 +56,8 @@ public struct GuidanceSection: Codable, Equatable, Sendable {
     public var instructions: GuidanceList
     /// Said until the first read lands.
     public var loading: String?
-    /// Why the last read did not land.
-    public var problem: String?
+    /// Why the last read did not land, with Try Again.
+    public var problem: FailurePresentation?
 }
 
 public struct GuidanceList: Codable, Equatable, Sendable {

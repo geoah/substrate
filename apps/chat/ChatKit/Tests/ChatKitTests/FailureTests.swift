@@ -140,15 +140,15 @@ struct FailureSentences {
         .poll: ("Couldn't check on this chat.", nil, nil),
         .rename: ("Couldn't rename this chat.", "Try Again", .rename(thread: "t1", subject: "Plants")),
         .card: ("Couldn't load this.", nil, nil),
-        .answer: ("That didn't go through.", nil, nil),
-        .decide: ("That didn't go through.", nil, nil),
+        .answer: ("Your answer wasn't sent.", nil, nil),
+        .decide: ("Your decision wasn't saved.", nil, nil),
         .addKey: ("The key wasn't saved.", nil, nil),
         .refresh: ("Couldn't refresh your chats.", "Try Again", .refresh),
         .feed: ("Live updates stopped.", "Try Again", .refresh),
         .search: ("Couldn't search your messages. Chats are found by their titles.", "Try Again", .refresh),
         .flag: ("Couldn't save that change to the chat.", "Try Again", .refresh),
-        .guidance: ("Couldn't read them.", nil, nil),
-        .guidanceChange: ("That didn't go through.", nil, nil),
+        .guidance: ("Couldn't load your memories and instructions.", "Try Again", .readGuidance),
+        .guidanceChange: ("Your change wasn't saved.", nil, nil),
     ]
 
     @Test func everyAttemptHasItsSentenceAndItsButton() {
@@ -188,7 +188,7 @@ struct FailureSentences {
             (.timeout, "The server took too long to answer."), (.streamEnded, "The connection dropped."),
             (.notTheAPI(status: 502), "The server answered with something Substrate Chat can't read."),
             (.sessionEnded, "Your sign-in ended."), (.needsApproval, "Substrate Chat needs your approval for that."),
-            (.ended, "The server ended it."), (.closed, "Substrate Chat closed while it was being sent."),
+            (.ended, "The server closed the connection."), (.closed, "Substrate Chat closed while it was being sent."),
             (.interrupted, "It was stopped before the server answered."), (.disk, "This device couldn't save it."),
             (.http(status: 500, code: "internal", reason: nil), "The server ran into a problem."),
             (.http(status: 429, code: "rate_limited", reason: nil), "The server is busy. Try again in a moment."),
@@ -199,6 +199,30 @@ struct FailureSentences {
         ]
         for (why, words) in reasons {
             #expect(FailurePresenter.present(Failure(.reload, why), context()).note == words, "\(why)")
+        }
+    }
+
+    /// No sentence or note names the machinery: what the owner was shown
+    /// for a stream that broke while its turn ran on ("The run ended in an
+    /// error." over "The server said: The connection closed while the
+    /// answer was read.") is said by no attempt for any reason.
+    @Test func noFailureIsSaidInTheMachinerysWords() {
+        let whys: [Failure.Why] =
+            [
+                .run(status: "error", cause: nil), .run(status: "overbudget", cause: nil), .run(status: "stopped", cause: nil), .cut("failure"),
+                .unanswered, .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI(status: 502),
+                .notTheAPI(status: nil), .ended, .closed, .interrupted, .disk,
+            ] + [400, 403, 404, 409, 422, 429, 500, 502, 503].map { .http(status: $0, code: "x", reason: nil) }
+            + RunCause.allCases.map { .run(status: "error", cause: $0.rawValue) }
+            + RefusalReason.allCases.map { .http(status: 409, code: "conflict", reason: $0.rawValue) }
+        let machinery = ["run ended", "an error", "server said", "closed while the answer", "the answer was read", "stream"]
+        for attempt in Failure.Attempt.allCases {
+            for why in whys {
+                let made = FailurePresenter.present(
+                    Failure(attempt, why, said: "The connection closed while the answer was read."), context { $0.subject = "Plants" })
+                let words = made.spoken.lowercased()
+                for word in machinery { #expect(!words.contains(word), "\(attempt) \(why): \(made.spoken)") }
+            }
         }
     }
 
@@ -385,7 +409,7 @@ struct FailurePlaces {
         try await rig.signIn()
         await rig.harness.deliver(ChatApp.Event(.watchEnded("the feed is closed to this token", nil)))
         let strip = try #require(await rig.harness.presentation.list.failure)
-        #expect(strip.sentence == "Live updates stopped." && strip.note == "The server ended it.")
+        #expect(strip.sentence == "Live updates stopped." && strip.note == "The server closed the connection.")
         #expect(strip.button == FailureButton(title: "Try Again", action: .refresh))
         #expect(strip.details == FailureDetails(title: "Details", label: "The server said", text: "the feed is closed to this token"))
         // A feed that only dropped is a state, never a failure.

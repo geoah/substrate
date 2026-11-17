@@ -5,6 +5,7 @@ import SwiftUI
 /// Settings → Assistant: the owner's memories and instructions, a screen
 /// for each.
 struct GuidanceSectionView: View {
+    @Environment(ChatHost.self) private var host
     let section: GuidanceSection
 
     var body: some View {
@@ -20,7 +21,7 @@ struct GuidanceSectionView: View {
                 LabeledContent(section.instructions.title, value: section.instructions.count)
             }
             if let problem = section.problem {
-                Text(problem).font(ChatType.note).ink(.tone(.critical), on: .form)
+                FailureView(failure: problem) { if $0 == .readGuidance { host.send(.readGuidance) } }
             }
         } header: {
             Text(section.title)
@@ -69,7 +70,7 @@ struct GuidanceListView: View {
                         }
                     }
                     if let problem = section.problem {
-                        ProblemBox(message: problem)
+                        FailureView(failure: problem) { if $0 == .readGuidance { host.send(.readGuidance) } }
                     }
                 } footer: {
                     Text(shown.footer)
