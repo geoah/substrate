@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -277,6 +278,37 @@ func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
 	}
 	if _, err := refs.at("~/tasks/log", 6, 6, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
 		t.Errorf("a line of a kind binding a word two packages declare by then: %v, want the conversion stopped", err)
+	}
+}
+
+// The memo boundTrait keeps answers every line as reading the candidates
+// afresh would, across a history in which many packages declare the same word
+// at different points, one is deleted and core declares it last, and it
+// reads the candidates once per stretch between their versions, not once per
+// line.
+func TestABareTraitBindingsMemoAnswersAsTheCandidatesDo(t *testing.T) {
+	trait := func(seq int64, id string, deleted bool) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Deleted: deleted, Properties: map[string]any{"properties": map[string]any{}}}
+	}
+	versions := []declarationVersion{{Seq: 1, Ref: kindKind, ID: "ada.example.com/tasks/task", Properties: map[string]any{"traits": []any{"owner"}}}}
+	for i := range 40 {
+		versions = append(versions, trait(int64(10+10*i), fmt.Sprintf("p%d.example.com/people/owner", i), false))
+	}
+	versions = append(versions, trait(15, "p0.example.com/people/owner", true), trait(450, vocabulary.PackageCore+"/owner", false))
+	slices.SortFunc(versions, func(a, b declarationVersion) int { return cmp.Compare(a.Seq, b.Seq) })
+	refs := referencePositionsOf(versions, localizeHome)
+	asked := 0
+	for seq := int64(1); seq <= 500; seq++ {
+		for _, txn := range []int64{seq, seq + 3, seq + 12} {
+			asked++
+			got := refs.boundTrait("owner", "~/tasks/task", seq, txn)
+			if want := refs.resolveBare("owner", "~/tasks", seq, txn); got != want {
+				t.Fatalf("a line at seq %d in a transaction ending at %d: the memo answers %s, the candidates %s", seq, txn, got, want)
+			}
+		}
+	}
+	if held := len(refs.bare.memo); held*10 > asked {
+		t.Errorf("the memo holds %d answers for %d lines asked: it reads the candidates per line", held, asked)
 	}
 }
 

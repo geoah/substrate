@@ -38,6 +38,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/scope"
@@ -289,6 +290,25 @@ func localizeAt(v any, path []string, fold func(string) string) any {
 type referencePositions struct {
 	kinds, traits map[string][]declaredReferences
 	traitsByWord  map[string][]string
+	bare          *bareBindings
+}
+
+// bareBindings keeps boundTrait's answers, so a history whose bare word many
+// packages declare reads each candidate once per stretch of history rather
+// than once per line. Which candidates govern a line moves only where a
+// version of a trait under the word is written, so the answer for a package
+// and a word is one per position of the line's seq and its transaction's end
+// among those versions. The steps convert pages on several goroutines, so the
+// answers are held under a lock.
+type bareBindings struct {
+	seqs map[string][]int64
+	mu   sync.RWMutex
+	memo map[bareBinding]string
+}
+
+type bareBinding struct {
+	pkg, word     string
+	before, inTxn int
 }
 
 // declaredReferences is one version of one kind's or trait's declaration:
@@ -347,6 +367,17 @@ func referencePositionsOf(versions []declarationVersion, home string) referenceP
 		}
 		into[id] = append(into[id], d)
 	}
+	out.bare = &bareBindings{seqs: map[string][]int64{}, memo: map[bareBinding]string{}}
+	for word, ids := range out.traitsByWord {
+		var seqs []int64
+		for _, id := range ids {
+			for _, v := range out.traits[id] {
+				seqs = append(seqs, v.seq)
+			}
+		}
+		slices.Sort(seqs)
+		out.bare.seqs[word] = seqs
+	}
 	return out
 }
 
@@ -367,12 +398,39 @@ func (rp referencePositions) boundTrait(name, kind string, seq, txn int64) strin
 	if strings.Contains(name, "/") {
 		return name
 	}
+	pkg := ""
+	if i := strings.LastIndex(kind, "/"); i > 0 {
+		pkg = kind[:i]
+	}
+	if rp.bare == nil {
+		return rp.resolveBare(name, pkg, seq, txn)
+	}
+	seqs := rp.bare.seqs[name]
+	before, _ := slices.BinarySearch(seqs, seq+1)
+	inTxn, _ := slices.BinarySearch(seqs, txn+1)
+	key := bareBinding{pkg: pkg, word: name, before: before, inTxn: inTxn}
+	rp.bare.mu.RLock()
+	got, ok := rp.bare.memo[key]
+	rp.bare.mu.RUnlock()
+	if ok {
+		return got
+	}
+	got = rp.resolveBare(name, pkg, seq, txn)
+	rp.bare.mu.Lock()
+	rp.bare.memo[key] = got
+	rp.bare.mu.Unlock()
+	return got
+}
+
+// resolveBare is boundTrait's reading of a bare word for a line, without the
+// memo: the package's trait, core's, then the one trait under the word.
+func (rp referencePositions) resolveBare(name, pkg string, seq, txn int64) string {
 	governs := func(trait string) bool {
 		_, ok := governing(rp.traits[trait], seq, txn)
 		return ok
 	}
-	if i := strings.LastIndex(kind, "/"); i > 0 && governs(kind[:i]+"/"+name) {
-		return kind[:i] + "/" + name
+	if pkg != "" && governs(pkg+"/"+name) {
+		return pkg + "/" + name
 	}
 	if governs(vocabulary.PackageCore + "/" + name) {
 		return vocabulary.PackageCore + "/" + name
