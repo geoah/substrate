@@ -2102,9 +2102,11 @@ closed with no error, and a read of the thread that failed meanwhile, say
 "Reconnecting…" too, never "Connecting…". A thread that
 settled `ok` meanwhile draws its reply and nothing else; one the server
 settled as failed draws the run's own failure, by its `cause`, with Try
-Again. A Continue whose answer was lost is said in its card only while the
-thread still says its run did not finish: on a thread that finished, the
-rows say how it stands. Builds before 2026-11-14 turned a stream that
+Again. A Continue whose answer was lost may or may not have run, and the
+thread says which: its reply, or the failure it settled on with the
+server's cause; the lost answer itself is never drawn. A wait for a
+stream (a run this server had none for) that closes before its first
+event stays a quiet wait. Builds before 2026-11-14 turned a stream that
 broke after the turn was admitted into "Moss couldn't answer. The run
 ended in an error." over the device's own account of the connection; the
 failure value replaced that path, and `RecoveryTests` holds it.
