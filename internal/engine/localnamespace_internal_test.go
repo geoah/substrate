@@ -220,7 +220,9 @@ func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing
 // word later leaves the earlier lines resolved and stops the conversion at
 // the later ones; and a trait declared in the kind's own transaction (one
 // vocabulary batch, which the loader resolved after) governs every line of
-// that transaction and after.
+// that transaction and after. A shipped trait the history declares only
+// later takes no part even in a line the engine wrote, which the shipped
+// kind's first version may read: the word meant what the history held.
 func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
 	trait := func(seq int64, id, prop string) declarationVersion {
 		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
@@ -242,19 +244,26 @@ func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
 		// then the trait it binds.
 		kind(10, "ada.example.com/notes/note", "pinned"),
 		trait(12, "ada.example.com/notes/pinned", "pinnedBy"),
+		trait(1, "other.example.com/x/label", "labelledBy"),
+		kind(2, "ada.example.com/tasks/tag", "label"),
+		trait(30, vocabulary.PackageCore+"/label", "coreLabel"),
 	}, localizeHome)
+	system := vocabulary.ActorID(substrate.ActorSystem)
 	for _, c := range []struct {
 		kind       string
 		seq, txn   int64
+		actor      string
 		want, lack string
 	}{
-		{"~/tasks/task", 3, 3, "account", "owner"},        // only another package's owner governs the line
-		{"~/tasks/task", 6, 6, "owner", "account"},        // its own package's owner since seq 5
-		{"~/tasks/log", 3, 3, "from", "to"},               // one feedback before the second is declared
-		{"~/notes/note", 11, 12, "pinnedBy", "elsewhere"}, // its package's pinned, later in the batch
-		{"~/notes/note", 20, 20, "pinnedBy", "elsewhere"},
+		{"~/tasks/task", 3, 3, "", "account", "owner"},           // only another package's owner governs the line
+		{"~/tasks/task", 6, 6, "", "owner", "account"},           // its own package's owner since seq 5
+		{"~/tasks/log", 3, 3, "", "from", "to"},                  // one feedback before the second is declared
+		{"~/notes/note", 11, 12, "", "pinnedBy", "elsewhere"},    // its package's pinned, later in the batch
+		{"~/notes/note", 20, 20, "", "pinnedBy", "elsewhere"},    //
+		{"~/tasks/tag", 5, 5, system, "labelledBy", "coreLabel"}, // core's label is declared at 30
+		{"~/tasks/tag", 31, 31, "", "coreLabel", "labelledBy"},   // and is core's from then on
 	} {
-		got, err := refs.at(c.kind, c.seq, c.txn, "")
+		got, err := refs.at(c.kind, c.seq, c.txn, c.actor)
 		if err != nil {
 			t.Errorf("a line of %s at seq %d: %v", c.kind, c.seq, err)
 			continue
@@ -268,6 +277,39 @@ func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
 	}
 	if _, err := refs.at("~/tasks/log", 6, 6, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
 		t.Errorf("a line of a kind binding a word two packages declare by then: %v, want the conversion stopped", err)
+	}
+}
+
+// A row outside history, which carries no line, is read by its kind's last
+// version as the history leaves it: the traits it binds as they stand after
+// every line, a trait its own batch declared after it included, and, for a
+// kind the history deleted, as they stood when it was deleted.
+func TestARecordOutsideHistoryIsReadByTheDeclarationsAsTheyStand(t *testing.T) {
+	trait := func(seq int64, id, prop string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(seq int64, id string, binds ...any) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindKind, ID: id, Properties: map[string]any{"traits": binds}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		kind(10, "ada.example.com/notes/note", "pinned"),
+		kind(10, "ada.example.com/notes/page", "ada.example.com/notes/pinned"),
+		trait(12, "ada.example.com/notes/pinned", "pinnedBy"),
+		kind(20, "ada.example.com/notes/draft", "starred"),
+		trait(21, "ada.example.com/notes/starred", "starredBy"),
+		{Seq: 30, Ref: kindKind, ID: "ada.example.com/notes/draft", Deleted: true},
+		{Seq: 31, Ref: kindTrait, ID: "ada.example.com/notes/starred", Deleted: true},
+	}, localizeHome)
+	for _, c := range []struct{ kind, want string }{
+		{"~/notes/note", "pinnedBy"},   // bound bare, declared later in the kind's batch
+		{"~/notes/page", "pinnedBy"},   // bound in full, the same
+		{"~/notes/draft", "starredBy"}, // the kind and then its trait deleted since
+	} {
+		if got := refs.lastDeclared(c.kind); got[c.want] == nil {
+			t.Errorf("a row of %s outside history holds no reference at %s: %v", c.kind, c.want, slices.Sorted(maps.Keys(got)))
+		}
 	}
 }
 
