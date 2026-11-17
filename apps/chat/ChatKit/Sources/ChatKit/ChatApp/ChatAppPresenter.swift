@@ -588,7 +588,7 @@ extension ChatApp {
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
-            agent: live.agent, agentName: live.name, hero: hero,
+            agent: live.agent, agentName: live.name, hero: hero, picker: live.thread == nil ? Self.picker(live.agent) : nil,
             older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false, seeking: seeks),
             turns: folded, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
             failures: failures(state, live: live, row: row, all: all, turns: folded), technical: technical,
@@ -599,7 +599,7 @@ extension ChatApp {
                 placeholder: agent.map { "Message \($0.name)" } ?? "Message",
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
                 keyless: hero?.keyless == nil ? callout : nil,
-                picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
+                listenOnOpen: live.listenOnOpen,
                 canSend: blocked == nil, status: Self.status(live, agent: agent), queues: live.queues,
                 queued: Self.queuedNote(live), answering: Self.answering(state, live), focus: live.focuses),
             streaming: live.phase == .streaming, stopping: live.stopping,
@@ -615,6 +615,12 @@ extension ChatApp {
         guard let held, held.full, !held.records.isEmpty else { return nil }
         if seeking { return OlderRows(label: "Finding where you left off…", loading: true) }
         return OlderRows(label: reading ? "Loading earlier messages…" : "Earlier messages", loading: reading)
+    }
+
+    /// A new chat's assistant, chosen from its title.
+    static func picker(_ agent: String?) -> AgentPicker {
+        let name = agent.map(agentName) ?? "No assistant"
+        return AgentPicker(current: agent, name: name, spoken: "Assistant: \(name)", hint: "Chooses the assistant this chat goes to.")
     }
 
     /// What the composer says is happening, from the send to the end of

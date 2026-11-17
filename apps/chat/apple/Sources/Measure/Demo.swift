@@ -41,6 +41,9 @@ import SubstrateKit
 /// one that ran out of time, one that answered, one whose work in the
 /// background finished, and, as it stands, two running side by side and
 /// one working in the background.
+///
+/// `new` opens a new chat with a second assistant offered beside the
+/// fixture's, for a picture of its title's picker.
 @MainActor
 enum Demo {
     /// From the environment, or as a launch argument (`-SUBSTRATE_CHAT_DEMO
@@ -107,6 +110,7 @@ enum Demo {
         if let card = card(asked) { server.ask(card.asked, resolved: card.resolved) }
         if let reply { server.seed(settled, message: "Show me.", reply: reply) }
         if asked == "helpers" { server.rows(ChatFixtures.helpersThread, page: ChatFixtures.helpers()) }
+        if asked == "new" { server.moreAgents = [ChatFixtures.gardener] }
         let slow = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO_SLOW"] ?? UserDefaults.standard.string(forKey: "SUBSTRATE_CHAT_DEMO_SLOW")
         if let seconds = slow.flatMap(Double.init) { server.olderTakes = .milliseconds(Int(seconds * 1000)) }
         self.server = server
@@ -137,6 +141,7 @@ enum Demo {
             guard let scene = await until({ host.chats?.scenes.keys.first }) else { return }
             _ = await until { host.chats?.list.loading == false ? true : nil }
             if let only = notified(asked) { return await notify(only) }
+            if asked == "new" { return await newChat(host, scene) }
             let card = card(asked)
             if asked == "deep" || left != nil { return host.send(.show(thread: ChatFixtures.deep, scene: scene)) }
             if asked == "helpers" { return host.send(.show(thread: ChatFixtures.helpersThread, scene: scene)) }
@@ -180,6 +185,12 @@ enum Demo {
                 server.drop(thread)
             }
         }
+    }
+
+    /// A new chat on the fixture's assistant, once both are read.
+    private static func newChat(_ host: ChatHost, _ scene: String) async {
+        _ = await until { (host.chats?.offered.count ?? 0) > 1 ? true : nil }
+        host.send(.newChat(agent: ChatFixtures.agent, listen: false, scene: scene))
     }
 
     /// Sends a message as the composer would, once the chat can send: on a

@@ -2,7 +2,7 @@ import SubstrateKit
 import SwiftUI
 
 /// An agent's name in a capsule tinted with a colour of the id's own, so one
-/// agent reads the same in the list, the composer and Settings. The
+/// agent reads the same in the list and Settings. The
 /// capsule is the kit's record pill's (`RecordPillStyle`: its shape, its
 /// word from its ends and from its top and bottom, a mark from its word),
 /// so every pill in the app is one shape; what it does not share is the
@@ -13,9 +13,6 @@ struct AgentPill: View {
     let name: String
     /// The chat is running: a pulsing dot before the name.
     var running = false
-    /// The composer's picker: close to the field's type, with the chevron
-    /// inside.
-    var picker = false
 
     var body: some View {
         let colours = AgentColours(id)
@@ -24,15 +21,11 @@ struct AgentPill: View {
             Text(name)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if picker {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(ChatType.smallLabel)
-            }
         }
-        .font(picker ? ChatType.heading : ChatType.noteStrong)
+        .font(ChatType.noteStrong)
         .foregroundStyle(colours.ink)
         .padding(.horizontal, ChatSpace.pillSide)
-        .padding(.vertical, picker ? ChatSpace.lines : ChatSpace.pillEdge)
+        .padding(.vertical, ChatSpace.pillEdge)
         .background(colours.fill.opacity(scheme == .dark ? ChatColours.agentPill.dark : ChatColours.agentPill.light), in: .capsule)
     }
 }

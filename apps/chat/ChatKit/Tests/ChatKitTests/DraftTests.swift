@@ -598,7 +598,7 @@ struct DraftTests {
         var field = Field()
         var composer = ComposerPresentation(
             draft: "", draftRevision: 0, draftReplaced: "", draftBefore: "", placeholder: "", blocked: nil, blockedWhenEmpty: false,
-            keyless: nil, picksAgent: false, agentLabel: "", listenOnOpen: false, canSend: true)
+            keyless: nil, listenOnOpen: false, canSend: true)
         _ = field.look(composer)
         field.type("Hello", at: start)
         let said = field.reports.say()
