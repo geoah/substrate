@@ -262,6 +262,13 @@ struct SubagentPanelTests {
         #expect(cut.hasSuffix("…") && cut.count <= TurnPresenter.panelLine + 1)
     }
 
+    @Test func aHeadingAboveItsParagraphLeavesTheParagraph() {
+        #expect(TurnPresenter.summary(of: "# Result\nThe records were created.\n\nFurther details.") == "The records were created.")
+        #expect(TurnPresenter.summary(of: "## Done\n\n**Three** kinds.") == "Three kinds.")
+        // A reply that is only a heading still says it.
+        #expect(TurnPresenter.summary(of: "## Done") == "Done")
+    }
+
     @Test func durationsAndClocksAreSaidPlainly() {
         #expect(SubagentClock.elapsed(7) == "0:07" && SubagentClock.elapsed(83) == "1:23" && SubagentClock.elapsed(3723) == "1:02:03")
         #expect(SubagentClock.duration(0.4) == "less than a second" && SubagentClock.duration(45) == "45 s")
