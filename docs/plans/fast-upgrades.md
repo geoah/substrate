@@ -674,6 +674,29 @@ trigger's runs through `refs`. `repository verify` holds the selected object
 to its checksum, as it holds a sealed value, and checks that no failure id
 in it reaches the counter.
 
+**The contracts the run records change.** A run record row written with no
+line is the one place a record leaves the rule that `fold.go` is the only
+path into `records`, so the exception is named and kept narrow:
+
+- **One write path, guarded.** One function writes a run record row and one
+  prunes it. `TestFoldPathWritesOnlyFromListedFunctions` lists them with the
+  reason, and a new guard refuses either for any kind but `core/triggerrun`,
+  so no other record can bypass the changelog. Both derive the row's `refs`
+  and `fts` through the same projection a folded row goes through
+  (`projectRow`), live and in a rebuild alike.
+- **`FoldSnapshot` names them.** The snapshot gives run record rows a section
+  of their own, on both sides of every comparison. A rebuild keeps them, so a
+  rebuilt repository compares equal, and tests hold that before and after a
+  rebuild and a restore.
+- **No observed points.** `core/triggerrun` binds no `observed` trait, so its
+  rows project nothing into the observed index. The guard above also refuses
+  a state-only kind that binds it.
+- **Compaction leaves the rows alone.** After the switch, the compaction pass
+  removes old run record lines once their seven days pass, writes no state
+  entry for them, and never touches a run record row: the state holds it. A
+  test holds one run that is kept and one that is pruned across a compaction
+  and a restore.
+
 **Old history.** The bookkeeping lines already written stay where they are
 until their seven days pass. A replay of a history whose archive has a state
 object takes the ledger and the runs from the object, and skips those lines'
