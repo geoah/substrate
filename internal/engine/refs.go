@@ -319,53 +319,82 @@ func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) erro
 		return fmt.Errorf("substrate/engine: refs of %s %s: %w", ref.Kind, ref.ID, err)
 	}
 	for _, r := range want {
-		raw, err := json.Marshal(nonNilMap(r.Props))
-		if err != nil {
+		if err := t.insertRefRow(ref, r); err != nil {
 			return err
-		}
-		if _, err := t.exec(`
-			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst, props)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-			ref.Kind, ref.ID, r.Property, r.Path, r.Ord, r.Dst.Kind, r.Dst.ID, raw); err != nil {
-			return fmt.Errorf("substrate/engine: refs of %s %s (%s): %w", ref.Kind, ref.ID, r.Property, err)
 		}
 	}
 	return nil
 }
 
-// unchangedRefs reports whether a write leaves a row's refs rows as they
-// stand: before is what they held before it (nil when that is not known),
-// and the row's properties after it derive the same rows. Only a replay
-// knows before: it holds every kind's declaration still from its first line
-// to its last (repodir.go refold), so a live row's stored rows are exactly
-// what its properties before the write derive. And only a replay needs it:
-// its one transaction keeps every refs row it deletes in the index until it
-// commits, so deleting and inserting the same rows on each write of a
-// record cost each write every earlier one, and a history that rewrites a
-// record thousands of times folded slower line by line.
-func unchangedRefs(before *[]refRow, ty *vocabulary.Kind, props map[string]any) bool {
-	if before == nil || ty == nil {
+// insertRefRow writes one refs row of ref.
+func (t *txn) insertRefRow(ref eref, r refRow) error {
+	raw, err := json.Marshal(nonNilMap(r.Props))
+	if err != nil {
+		return err
+	}
+	if _, err := t.exec(`
+		INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst, props)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+		ref.Kind, ref.ID, r.Property, r.Path, r.Ord, r.Dst.Kind, r.Dst.ID, raw); err != nil {
+		return fmt.Errorf("substrate/engine: refs of %s %s (%s): %w", ref.Kind, ref.ID, r.Property, err)
+	}
+	return nil
+}
+
+// syncRefsFrom is syncRefs for a write whose row's refs rows are known
+// before it (before): it deletes the rows the write no longer derives and
+// inserts the ones it newly derives, each by its key, and leaves the rest
+// standing. Only a replay knows before: it holds every kind's declaration
+// still from its first line to its last (repodir.go refold), so a live row's
+// stored rows are exactly what its properties before the write derive. And
+// only a replay needs it: its one transaction keeps every refs row it
+// deletes in the index until it commits, so deleting and inserting a
+// record's whole row set on each write cost each write every row the earlier
+// ones left, and a list that grows by one on every write (a link's citing
+// sources) folded slower line by line.
+func (t *txn) syncRefsFrom(ref eref, ty *vocabulary.Kind, props map[string]any, before []refRow) error {
+	was := make(map[[3]string]refRow, len(before))
+	for _, r := range before {
+		was[r.key()] = r
+	}
+	var add []refRow
+	for _, r := range deriveRefs(ty, props) {
+		k := r.key()
+		b, held := was[k]
+		if held && sameRefRow(b, r) {
+			delete(was, k)
+			continue
+		}
+		add = append(add, r)
+	}
+	for _, r := range before {
+		if _, gone := was[r.key()]; !gone {
+			continue
+		}
+		if _, err := t.exec(`DELETE FROM refs WHERE src_kind = $1 AND src = $2 AND property = $3 AND path = $4 AND ord = $5`,
+			ref.Kind, ref.ID, r.Property, r.Path, r.Ord); err != nil {
+			return fmt.Errorf("substrate/engine: refs of %s %s (%s): %w", ref.Kind, ref.ID, r.Property, err)
+		}
+	}
+	for _, r := range add {
+		if err := t.insertRefRow(ref, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sameRefRow reports whether two rows at one key are the same row.
+func sameRefRow(a, b refRow) bool {
+	if a.Dst != b.Dst {
 		return false
 	}
-	after := deriveRefs(ty, props)
-	if len(after) != len(*before) {
+	x, err := json.Marshal(nonNilMap(a.Props))
+	if err != nil {
 		return false
 	}
-	for i, a := range after {
-		b := (*before)[i]
-		if a.Property != b.Property || a.Path != b.Path || a.Ord != b.Ord || a.Dst != b.Dst {
-			return false
-		}
-		x, err := json.Marshal(nonNilMap(a.Props))
-		if err != nil {
-			return false
-		}
-		y, err := json.Marshal(nonNilMap(b.Props))
-		if err != nil || string(x) != string(y) {
-			return false
-		}
-	}
-	return true
+	y, err := json.Marshal(nonNilMap(b.Props))
+	return err == nil && string(x) == string(y)
 }
 
 // syncRefsOfRows is syncRefs for a page of rows of one kind, in two
