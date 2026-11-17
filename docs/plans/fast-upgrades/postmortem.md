@@ -1,6 +1,7 @@
 # Postmortem: upgrading an 11.7M-line repository from v0.123.1
 
-Status: written 2026-11-16, after production went live on the new version. The fix
+Status: written 2026-11-17, after production went live on the new version
+and rolled forward once more. The fix
 for what it found is the plan in [fast upgrades](../fast-upgrades.md), and
 the measurements behind both are in [measurements](measurements.md).
 
@@ -32,6 +33,17 @@ meanwhile: one provider's OAuth refresh token, rotated during the two days,
 was refused after the cutover, and that account had to be connected again
 by hand.
 
+Two things after the cutover belong to the same story:
+
+- **A destructive default almost erased history.** The release shipped
+  compaction on by default with deletions kept 30 days. Its first pass would
+  have erased the whole history of every record deleted more than 30 days
+  before. It was found by chance, an hour after the cutover, and turned off
+  before the pass reached the repository. Nothing was erased.
+- **An upgrade that walked no history was a restart.** The next roll forward,
+  to a later build of `main` with one SQL migration and no conversion, cost
+  about a minute of downtime.
+
 ## The repository
 
 | What | Size |
@@ -48,6 +60,21 @@ stretches are mostly one sync app's link records. Each write appends one
 entry to a reference list of up to about 1,500 entries, and a `record` effect
 carries a property's whole value, so every append writes the whole list again.
 The same record is rewritten thousands of times.
+
+Most of the history is not the owner's data at all. Of the 11,892,975 lines
+the repository held the day after the cutover:
+
+| Kind | Lines | Payload |
+| --- | --- | --- |
+| `core/triggerrun`, a run record each delivery writes | 5,488,566 | 1.98 GB |
+| `core/trigger`, the `delivery` lines that move a trigger's ledger | 2,440,726 | 10 GB |
+| Five providers' sync-progress kinds | about 63,700 | about 39 MB |
+| `core/alert` | 214 | 97 kB |
+
+About 67% of the lines and about half the payload are the substrate's own
+per-delivery bookkeeping. Almost every delivery appends a line addressed to
+its trigger, at about 4 KB a line, because a webhook fire parks with its
+request whole until it settles.
 
 ## What the first open had to do
 
@@ -103,7 +130,13 @@ lost.
 | Mon 2:53–3:25 pm | The 437 per-kind indexes restored (8 min, in six parallel sessions) and the cutover prepared | About 30 min |
 | Mon 3:25:56–3:27:51 pm | Cutover: the old server stopped, the new one listened 21 s later and passed readiness 1.5 min after that | About 2 min of downtime |
 
-From the snapshot to live: 49 hours 25 minutes.
+From the snapshot to live: 49 hours 25 minutes. After it:
+
+| When | What happened |
+| --- | --- |
+| Mon 4:38 pm | The release's defaults turn out to run compaction with deletions kept 30 days (`SUBSTRATE_DELETIONS_KEPT=720h`). Compaction is turned off in a 45-second restart, before its first pass reaches the repository. |
+| Mon 5:25 pm | Roll forward to a later build of `main` carrying #1473, #1482–#1484 and decision 0333's change: one SQL migration in 34 ms, listening after about a minute, then nine provider upgrades in 25 seconds |
+| Mon 5:40 pm | Compaction back on, with every deletion kept (`SUBSTRATE_DELETIONS_KEPT=0`) |
 
 ## What went right
 
@@ -123,6 +156,14 @@ From the snapshot to live: 49 hours 25 minutes.
   sample to the next in `pg_stat_statements` pointed at each slow statement
   within minutes of looking.
 - **Each fix landed with a test that fails without it.**
+- **The consent door caught a shorter history.** The provider upgrades on
+  offer declared 30 days of history for every kind they mirror.
+  `substratectl add` refuses an upgrade that keeps a kind's history for less
+  time unless `--allow-shorter-history` takes it. The owner's tooling, which
+  applies provider upgrades through it, stopped at the first refusal. Decision
+  0333 now keeps a mirror's whole history.
+- **An upgrade with nothing to walk was a restart.** The roll forward the
+  next day ran one SQL migration in 34 ms and listened after about a minute.
 
 ## What went wrong in the system
 
@@ -209,6 +250,27 @@ before `core/unit` was declared. A 10-minute offline run of step 6's pure
 functions over the real declaration lines found both, but only after a
 four-hour run had failed on the first.
 
+The fix ran the production conversion before any review. A review afterwards
+found four faults in it:
+
+- **A bare trait name was resolved against every trait ever declared,** not
+  against those that governed the line.
+- **The fallback for a shipped kind's early lines accepted any writer's
+  line** written before the declaration, not only the engine's own.
+- **It read a kind's last version at the kind's own seq.** That missed traits
+  declared later in the same batch, which matters for stored
+  `Idempotency-Key` answers.
+- **A scan of the candidate traits ran on every line,** quadratic at worst.
+  It is now memoized.
+
+The real history was checked against each. It held three lines whose answer
+depended on time, all with the kind and its trait declared in the same
+transaction, and 49 early lines, all units the seed and the system wrote. So
+production was unaffected, by luck rather than by review. #1484's CI also
+caught that the emergency branch's new fold-writing functions were missing
+from the guard that lists them (`TestFoldPathWritesOnlyFromListedFunctions`).
+The branch images that ran in production had not passed CI.
+
 ### Two bugs that made a walk quadratic or single-threaded
 
 The comparison re-read a 256 MB segment from its start every 500 lines
@@ -226,6 +288,44 @@ it is kept, by design: a kind a person or an app declares keeps all of its
 history, and the kinds a provider mirrors are to keep all of theirs too. So
 compaction is no way out of these bytes, and they have to be cut where they
 are written.
+
+### Two thirds of the history is the substrate's own bookkeeping
+
+The `delivery` lines and run records above are 67% of the lines and half the
+bytes, and nearly every slow path the refold met was on them: the
+`trigger_failures` delete, the cursor, schedule and page upserts, and the run
+records. No trigger ever reads them as history: `matchChanges` skips both,
+because a delivery would feed itself. They are in the history only because
+decision 0064 put the delivery ledger there, when the backup was a directory
+written inside the commit. Compaction trims them to seven days, over days to
+weeks of passes. The plan takes them out of the history instead
+([section 9](../fast-upgrades.md#9-bookkeeping-is-state-kept-beside-the-history)).
+
+### Destructive defaults shipped in the same release
+
+Two choices in the release would have removed history, and nothing listed
+either before the boot:
+
+- **Compaction forgot old deletions.** It was on by default with
+  `SUBSTRATE_DELETIONS_KEPT=720h`, so its first pass would have erased the
+  whole history of every record deleted more than 30 days before. It was
+  found by chance an hour after the cutover. Decision 0334 now keeps every
+  deletion unless a deployment says otherwise.
+- **Mirrors kept 30 days.** The provider packages declared `retention: P30D`
+  for every kind they mirror. The consent door caught it. Decision 0333 now
+  keeps a mirror's whole history.
+
+### Costs the upgrade did not count
+
+- **The archive copies everything again.** A conversion that rewrites every
+  line leaves the archive to copy the whole history once more after the
+  cutover. At the default 8 MiB/s that is about an hour per 27 GB, and longer
+  while functions run. It was not measured here, and `repository verify` had
+  not been run after the cutover when this was written.
+- **The clients.** The published app builds were 95 commits behind the new
+  server, and had to be rebuilt and checked after the roll. iOS also refuses
+  an install from a website over a TestFlight install with the same bundle
+  id, so the owner had to delete the app and install it again.
 
 ### Our tests never held these shapes
 
@@ -256,6 +356,16 @@ of that history and of no real one, and it was the rate the estimates used.
   behind it.
 - **Fixes were deployed by restarting a long run from zero.** Nothing in the
   replay could resume, so each improvement cost all the progress before it.
+- **Fixes ran in production before review and CI.** #1473's conversion fix
+  ran on the real history unreviewed, and the branch images had not passed
+  CI. A review afterwards found four faults, and only the history's luck kept
+  production unaffected.
+- **Nobody listed what the first boot would remove.** The release switched
+  on compaction with deletions forgotten after 30 days, and we learned it
+  after the cutover, by chance.
+- **The clients were left out of the plan.** The app builds that talk to the
+  server were 95 commits behind it, and one could only be reinstalled by
+  deleting it first.
 - **The cutover plan accepted losing writes.** A copy upgraded beside
   production diverges from it from the snapshot on, and nothing could bring
   production's later writes across. The longer the upgrade, the more was
@@ -278,3 +388,9 @@ Each of these is answered in [fast upgrades](../fast-upgrades.md):
 6. An operator's long step must never depend on a session that can end.
 7. An upgrade must be short enough to run in place, so nothing production
    writes meanwhile, a rotated credential included, is lost.
+8. The history should hold the owner's data and what changed it, not the
+   substrate's per-delivery bookkeeping.
+9. A behaviour a first boot switches on that removes or rewrites data must
+   be listed, and agreed to by the owner, before the boot.
+10. An upgrade's cost includes the archive catching up and the clients that
+    talk to the server.
