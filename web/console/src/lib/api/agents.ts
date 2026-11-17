@@ -540,6 +540,12 @@ export interface AgentEvent {
    * its handle answers, then where the job ended on a second toolFinished
    * under the same `id`, sent while a turn streams on the thread. */
   job?: "working" | "completed" | "failed" | "canceled"
+  /** Ride the tool events (`agents` revision 8), RFC 3339 by the server's
+   * clock: when the call's own dispatch started and, on toolFinished, ended,
+   * as the tool row's `ran` says. On a background job's second toolFinished
+   * they are the job's. */
+  startedAt?: string
+  finishedAt?: string
 }
 
 /** One ndjson line off the chat stream, or null (blank line / garbage). */

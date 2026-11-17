@@ -1174,6 +1174,8 @@ const agentEvent: Shape<AgentEvent> = {
   at: false,
   status: false,
   job: false,
+  startedAt: false,
+  finishedAt: false,
 }
 
 /** The catalog entry and the shapes nested in it. */

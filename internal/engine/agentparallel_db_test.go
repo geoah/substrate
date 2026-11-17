@@ -253,3 +253,92 @@ func TestAgentMaxParallelToolsOneRunsCallsInTurn(t *testing.T) {
 		t.Fatalf("serial: %+v, %v", got.res, got.err)
 	}
 }
+
+// TestAgentToolEventsAndRowsSayWhenEachCallRan holds two sub-agent calls of
+// one stretch and lets the second finish well before the first: its
+// toolFinished goes out after the first's and both rows are written once
+// the stretch settled, yet the event and the row's `ran` each say the
+// call's own end, so a client times each call right, live or read back.
+func TestAgentToolEventsAndRowsSayWhenEachCallRan(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	installFanAgents(t, ds)
+
+	scoutIn, scoutGo := make(chan struct{}), make(chan struct{})
+	spotIn, spotGo := make(chan struct{}), make(chan struct{})
+	fake.script("fanout",
+		fakeTurn{calls: []fakeCall{
+			{"scout", `{"input":"look left"}`},
+			{"spotter", `{"input":"look right"}`},
+		}},
+		fakeTurn{content: "fanned out"},
+	)
+	fake.script("scout", fakeTurn{content: "left is clear", arrived: scoutIn, release: scoutGo})
+	fake.script("spotter", fakeTurn{content: "right is clear", arrived: spotIn, release: spotGo})
+
+	events := newEventLog()
+	out := make(chan agentOutcome, 1)
+	go func() {
+		res, err := ds.ChatAgent(ctx, substrate.ActorPerson, fanPackage+"/fanout", substrate.ChatInput{Message: "look around"}, events.emit)
+		out <- agentOutcome{res, err}
+	}()
+	arrives(t, scoutIn, "scout at the model")
+	arrives(t, spotIn, "spotter at the model")
+	close(spotGo)
+	waitFor(t, "spotter to settle while scout is held", func() bool {
+		th := agentThreadsIn(t, ds, fanPackage, "spotter")
+		return len(th) == 1 && th[0]["status"] == threadOK
+	})
+	const gap = 300 * time.Millisecond
+	time.Sleep(gap)
+	close(scoutGo)
+	got := <-out
+	if got.err != nil || got.res.Reply != "fanned out" {
+		t.Fatalf("fanout: %+v, %v", got.res, got.err)
+	}
+
+	started := map[string]time.Time{}
+	finished := map[string][2]time.Time{}
+	for _, ev := range events.snapshot() {
+		switch ev.Kind {
+		case substrate.AgentEventToolStarted:
+			if ev.StartedAt == nil || ev.FinishedAt != nil {
+				t.Fatalf("toolStarted %s: startedAt %v, finishedAt %v", ev.ID, ev.StartedAt, ev.FinishedAt)
+			}
+			started[ev.ID] = *ev.StartedAt
+		case substrate.AgentEventToolFinished:
+			if ev.StartedAt == nil || ev.FinishedAt == nil {
+				t.Fatalf("toolFinished %s carries no times", ev.ID)
+			}
+			finished[ev.ID] = [2]time.Time{*ev.StartedAt, *ev.FinishedAt}
+		}
+	}
+	for _, id := range []string{"call_0", "call_1"} {
+		s, f := finished[id][0], finished[id][1]
+		if s.Before(started[id]) || f.Before(s) {
+			t.Fatalf("%s: announced %v, ran %v to %v", id, started[id], s, f)
+		}
+	}
+	if scout, spotter := finished["call_0"][1], finished["call_1"][1]; scout.Sub(spotter) < gap {
+		t.Fatalf("scout finished %v, spotter %v: want spotter at least %v sooner", scout, spotter, gap)
+	}
+
+	rows := map[string]map[string]any{}
+	for _, m := range threadMessages(t, ds, got.res.Thread) {
+		if m["role"] == "tool" {
+			id, _ := m["toolCallId"].(string)
+			rows[id] = m
+		}
+	}
+	for id, want := range finished {
+		ran, _ := rows[id]["ran"].(map[string]any)
+		s, _ := ran["startedAt"].(string)
+		f, _ := ran["finishedAt"].(string)
+		gotS, errS := time.Parse(time.RFC3339Nano, s)
+		gotF, errF := time.Parse(time.RFC3339Nano, f)
+		if errS != nil || errF != nil || !gotS.Equal(want[0]) || !gotF.Equal(want[1]) {
+			t.Fatalf("%s row ran %v, want %v to %v", id, ran, want[0], want[1])
+		}
+	}
+}

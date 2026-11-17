@@ -64,10 +64,11 @@ type agentJob struct {
 	done chan struct{}
 
 	// Set before done closes.
-	state     string
-	ok        bool
-	output    string
-	systemRow string
+	state      string
+	ok         bool
+	output     string
+	systemRow  string
+	finishedAt time.Time
 }
 
 // agentJobs is the dataset's registry of jobs, by thread and call id.
@@ -375,7 +376,7 @@ func (ds *dataset) endJob(bg context.Context, j *agentJob, jl *agentLoop, run *t
 		close(j.done)
 		return
 	}
-	j.state, j.ok, j.output, j.systemRow = state, ok, out, systemRow
+	j.state, j.ok, j.output, j.systemRow, j.finishedAt = state, ok, out, systemRow, finished
 	close(j.done)
 	ds.deliverJob(j, toolJSON(env))
 }
@@ -430,9 +431,11 @@ func (ds *dataset) deliverJob(j *agentJob, content string) {
 			}
 			if l.hub != nil {
 				okv := j.ok
+				started, finished := j.startedAt, j.finishedAt
 				l.hub.publish(substrate.AgentEvent{
 					Kind: substrate.AgentEventToolFinished, ID: j.callID, Tool: j.tool, Callable: j.callable,
 					OK: &okv, Output: j.output, Turn: j.turn, Job: j.state,
+					StartedAt: &started, FinishedAt: &finished,
 				})
 			}
 			return

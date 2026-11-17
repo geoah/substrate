@@ -513,6 +513,32 @@ The `query` calls of a stretch share what is left of the read budget: each
 takes its part of the rows left when it starts, and a part one does not read
 is there for the next.
 
+### When a call ran
+
+Neither a tool row's own `createdAt` nor the moment its `toolFinished`
+arrives is when its call ran: a stretch's rows are written once all of it
+settled, and its `toolFinished` events wait for the calls before them. So
+the server says it (`agents` revision 8), by its own clock, in RFC 3339:
+
+```json
+{"kind":"toolStarted","id":"call_1","tool":"architect","turn":4,"startedAt":"2026-11-17T10:00:02.5Z"}
+{"kind":"toolFinished","id":"call_1","tool":"architect","turn":4,"ok":true,"startedAt":"2026-11-17T10:00:02.6Z","finishedAt":"2026-11-17T10:02:12.9Z"}
+```
+
+- `toolStarted` carries `startedAt`, when it went out: when the call
+  started, unless it then waited for a slot of `maxParallelTools`.
+- `toolFinished` carries `startedAt` and `finishedAt`, the call's own
+  dispatch; a call refused or answered before it ran carries one instant
+  for both.
+- The tool row carries the same pair as `ran`, so a client reading a
+  stored thread times each call as the live stream did.
+- A replay to a late attacher carries the instants the events went out
+  with, so a client that reattaches times a running call from its real
+  start.
+- A background call's first `toolFinished` and its `ran` are its handle's;
+  the job's own times are its row's `job.startedAt` and `job.finishedAt`,
+  and the job's second `toolFinished` carries them.
+
 A failed call's result goes back flagged as a failure on a wire that has
 the flag (Anthropic's `is_error`), as well as carrying its `error` key.
 

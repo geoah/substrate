@@ -341,8 +341,11 @@ var featureTable = []feature{
 	// answers in the person's own words, `repliesTo`, which moves the
 	// interaction to the new state `replied` with `repliedIn`; and a resolved
 	// interaction, approval and change request link whose hand resolved it,
-	// `resolvedBy` and `decidedBy` (decision 0327).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 7, surfaces: []string{surfaceREST}, routes: []string{
+	// `resolvedBy` and `decidedBy` (decision 0327). Revision 8: the tool
+	// events say when the call's own dispatch started and ended,
+	// `startedAt` and `finishedAt`, by the server's clock, and a tool row
+	// says the same in `ran`.
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 8, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",

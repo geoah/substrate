@@ -21,8 +21,9 @@ data:
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
   # version 23: `cutBy`, how an assistant turn's reply was cut short
-  # (decision record 0317).
-  version: 23
+  # (decision record 0317). Version 24: `ran`, when a tool row's call
+  # ran.
+  version: 24
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -201,6 +202,18 @@ data:
         finishedAt:
           type: datetime
           description: when the job ended
+    ran:
+      type: object
+      description: when a tool row's call ran, by the server's clock, stamped
+        by the engine
+      fields:
+        startedAt:
+          type: datetime
+          description: when the call's dispatch started
+        finishedAt:
+          type: datetime
+          description: when the call's dispatch ended; a background call's
+            handle, not its job
     # Stamped by the ENGINE, never authored by the model: the changelog
     # entries a tool row's dispatch wrote (a write's writes, a propose's
     # request row, a function tool's applied effects), or the entries a
