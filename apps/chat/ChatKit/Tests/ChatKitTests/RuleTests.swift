@@ -374,8 +374,7 @@ struct ConversationRuns {
     @Test func streamedTextPresentsWithinItsWindowAndStructureAtOnce() throws {
         let conversation = Conversation(
             key: ChildKey("k"), seed: .init(thread: nil, agent: helper, draft: "", listen: false), facts: nil,
-            online: true, keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0,
-            continuing: nil)
+            online: true, keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0)
         var delta = AgentEvent(kind: .delta)
         delta.text = "a"
         #expect(conversation.coalescing(of: .init(.streamed(delta, at: Date()))) == .within(.milliseconds(50)))

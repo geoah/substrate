@@ -20,7 +20,6 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case backgroundRefreshed(BackgroundRun, threads: Threads?, cards: Cards?)
     /// The system took the run back, or its budget ran out.
     case backgroundExpired(String)
-    case continued(ChildKey, ContinuedProcessing.Update)
     case notificationOpened(NotificationResponse)
     /// An action of a notification: `key` and `message` are ids minted for
     /// it, the conversation a reply is sent from where its thread has none

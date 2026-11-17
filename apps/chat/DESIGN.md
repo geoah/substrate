@@ -125,7 +125,7 @@ again, and nothing else; a key typed makes nothing.
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
 | Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled (a reply five seconds ahead where the server keeps marks, at once otherwise), cancelled and badged as effects; the kit's delegate, installed at launch, hands a tap to `responses()`, which the list follows and turns into a route; the engine never notifies a chat on screen |
 | Read state | the person's `llm/threadmark` records where the server keeps them (`ChatAppMarks.swift`, [Read state](#read-state)); the device's own `seen` map on a server that does not |
-| Background | the kit's `BackgroundWork` device service: the refresh job's runs, scheduled with the repository and the link generation and checked against both, stopped when the system takes a run back or its budget runs out; and continued processing for a streaming turn |
+| Background | the kit's `BackgroundWork` device service: the refresh job's runs, scheduled with the repository and the link generation and checked against both, stopped when the system takes a run back or its budget runs out. Chat asks for no continued processing ([Notifications](#notifications)) |
 | The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
 ### The API, as this app uses it
@@ -712,19 +712,17 @@ The server has no push channel, so the app promises what it can observe:
   a chat its person archived, was said because the chat waited: it goes by
   the row's count alone, the moment that says nothing waits, whatever
   keeps the other two.
-- **On iOS**, when the app leaves the screen with a turn streaming, it asks
-  for a `BGContinuedProcessingTask` (iOS 26, strategy `.fail`, a fresh
-  identifier each time, as Sync's `ContinuedSync`): iOS keeps the stream
-  open and shows the progress with a Stop button. The bar moves on every
-  event and every heartbeat, since a long tool call emits nothing else and a
-  bar that stands still is expired. On `done` the notification goes and the
-  task completes. Where iOS will not run one, a background task gives about
-  30 s. A `BGAppRefreshTask` is the backstop: it reads the chats the app saw
+- **On iOS**, a turn streaming when the app leaves the screen holds nothing
+  open: the app asks for no continued processing task, so the system shows
+  no activity (no "Waiting for Moss" in the Dynamic Island, which the owner
+  did not want), and the stream ends when iOS suspends the app. A reply
+  that settles while the app is away is noticed by a `BGAppRefreshTask`
+  until the server can push (issue #1400): it reads the chats the app saw
   running and the pending cards, and notifies what settled or appeared. It
   runs when iOS decides; Settings says so. Its job names the repository and
   the link generation it was scheduled under, and a run for another, or one
   that outlives its budget or that iOS takes back, writes and notifies
-  nothing.
+  nothing. Back in front, the chat attaches to the run again.
 - **On macOS** the stream and the feed run while the app is open, so replies
   and cards notify when they happen (unless the Mac sleeps).
 - **Opening a chat** takes back its notifications, delivered and still
@@ -2301,7 +2299,7 @@ share sheet. Nothing leaves the device that was not on that screen.
 9. Markdown replies; code in its language's colours with Copy and a switch to wrap; tables laid out for their room; Copy, Share and Select Text on a reply, and Try Again or Continue under the last one.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
-12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; continued processing on iOS.
+12. Notifications for settled replies and attention items, each answered where it stands: a reply with text, an approval, a single question's options; on iOS, what settled while the app was away, from the refresh task.
 13. Questions, suggestions and approvals answered inline, CAS'd; a card that ended is the mark on the call that asked, and says whose hand ended it where the server links one (`agents` 7); a question answered in the person's own words, by a message that names it at 7.
 14. A provider key added in-app (a password sign-in; an app links to the console).
 15. Rename.
@@ -2890,7 +2888,9 @@ service, so an answer given from a notification reaches that server.
 - Unknown delivery on a new chat (adopt by the agent's newest chat), and same
   text called evidence.
 - iOS notifications through a continued processing task, with the refresh
-  task as a backstop and honest copy; Reply from a notification moved to
+  task as a backstop and honest copy (the task was removed in November 2026:
+  the owner did not want its activity in the Dynamic Island, and the
+  refresh task alone notices a reply until server push); Reply from a notification moved to
   Later (built since, on message ids); notification and unread keys on `finishedAt`, not `updatedAt`.
 - The chat list reads `mode eq chat`; automated runs behind a toggle;
   prefetch cut to 8 chats of 100 rows.
@@ -2918,7 +2918,8 @@ console and the server.
   not hold it; a chat opened from a notification is never stuck on "Choose an
   assistant".
 - The continued processing task is asked for while the app is still in
-  front (inactive), as iOS requires.
+  front (inactive), as iOS requires (since removed; see
+  [Notifications](#notifications)).
 - Typing dots between Send and the first event; Shift-Return at the cursor;
   New Window on the Mac; one binding per shortcut; Sign In Again after a
   refused token keeps the saved chats; a turn that ended in an error notifies

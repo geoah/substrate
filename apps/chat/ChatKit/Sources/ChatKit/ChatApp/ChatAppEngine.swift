@@ -56,8 +56,6 @@ extension ChatApp {
             guard let run = next.backgroundRun, run.id == id else { break }
             next.backgroundRun = nil
             next.asks += [.cancel("background"), .finishRun(run, success: false)]
-        case let .continued(key, update):
-            if update == .ended { next.conversations[key]?.continuing = nil }
         case let .phase(phase): self.phase(&next, phase)
         case let .paced(paces): next.paces = paces
 
@@ -668,13 +666,6 @@ extension ChatApp {
             // What was read and not yet written goes out while the app
             // may still send it.
             flushMarks(&state)
-            // Asked for while the app is still in front, as iOS requires of
-            // a continued processing task: inactive comes before background.
-            for (key, entry) in state.conversations where entry.streaming && entry.continuing == nil {
-                let title = entry.thread.flatMap { state.thread($0) }.map(state.title) ?? "New chat"
-                state.conversations[key]?.continuing = key.rawValue
-                state.asks.append(.continueRun(key, ContinuedProcessing(id: key.rawValue, title: "Waiting for \(entry.name)", subtitle: title)))
-            }
         case .background:
             state.appActive = false
             state.leaving = true
@@ -1150,7 +1141,6 @@ extension ChatApp {
         entry.active = report.active
         entry.streaming = report.streaming
         entry.outcomes = report.outcomes
-        entry.name = report.name
         if report.continueUnserved { state.continueUnserved = true }
         if report.idsUnserved { state.idsUnserved = true }
         if report.spoke, let thread = entry.thread { spoke(&state, in: thread) }
@@ -1173,10 +1163,6 @@ extension ChatApp {
             }
         }
         entry.settles = report.settles
-        if !report.active, entry.continuing != nil {
-            state.asks.append(.endContinued(key))
-            entry.continuing = nil
-        }
         state.conversations[key] = entry
         if let thread = entry.thread, started || settled {
             bump(&state, thread)

@@ -1061,7 +1061,7 @@ struct KilledMidSend {
         let key = ChildKey("k")
         let conversation = Conversation(
             key: key, seed: .init(thread: "t1", agent: helper, draft: "", listen: false), facts: nil, online: true, keyless: nil, newestTurn: nil,
-            visible: true, pollNudge: 0, resumeNudge: 0, continuing: nil, sendsIDs: true)
+            visible: true, pollNudge: 0, resumeNudge: 0, sendsIDs: true)
         var state = conversation.initialState
         state.pending = UnsentMessage(id: "a", message: "Water the basil", agent: helper, thread: "t1", sentAt: Date())
         state.unsentFailure = Failure(.message, .timeout)

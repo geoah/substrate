@@ -389,7 +389,7 @@ struct QueuedMessages {
     @Test func aQueueAStreamSaidAgainTellsOfIsDrawnOnceTheStreamHasCaughtUp() throws {
         let conversation = Conversation(
             key: ChildKey("c"), seed: .init(thread: "t1", agent: helper, draft: "", listen: false), facts: nil, online: true, keyless: nil,
-            newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0, continuing: nil, agents: 6, sendsIDs: true)
+            newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0, agents: 6, sendsIDs: true)
         var state = conversation.initialState
         var queued = AgentEvent(kind: .messageQueued)
         (queued.id, queued.turn, queued.text) = ("m2", 2, "And the mint?")

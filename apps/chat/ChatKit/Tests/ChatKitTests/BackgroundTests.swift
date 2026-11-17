@@ -88,4 +88,24 @@ struct BackgroundRefresh {
         #expect(await rig.harness.state.chats.isEmpty)
         #expect(rig.background.expired.isEmpty)
     }
+
+    /// A reply streaming as the app leaves the front holds no system
+    /// activity open (the owner does not want one in the Dynamic Island):
+    /// the refresh job notices it settled.
+    @Test func leavingWhileAReplyStreamsAsksForNoContinuedProcessing() async throws {
+        let rig = ChatRig()
+        rig.server.hold("/chat")
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Water the basil"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.phase == .streaming }
+        try await rig.harness.until { await $0.state.conversations[key]?.streaming == true }
+        await rig.harness.send(.phase(.inactive))
+        await rig.harness.send(.phase(.background))
+        try await rig.harness.until { _ in rig.background.scheduled.contains { $0.name == ChatApp.refreshJob } }
+        await rig.harness.settle()
+        #expect(rig.background.continued.isEmpty)
+        rig.server.letGo("/chat")
+    }
 }

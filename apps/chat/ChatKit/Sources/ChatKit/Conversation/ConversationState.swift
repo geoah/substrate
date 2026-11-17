@@ -111,7 +111,6 @@ public struct ConversationState: Codable, Equatable, Sendable {
         case stop(thread: String)
         case stopWait
         case check(Check)
-        case advance
         /// Ends what runs under this key: a new run's start, so nothing an
         /// older one asked for lands.
         case cancel(String)

@@ -41,12 +41,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var active = false
         var streaming = false
         var outcomes = 0
-        var name = "the assistant"
         /// The conversation's settles as last reported.
         var settles = 0
         var pollNudge = 0
         var resumeNudge = 0
-        var continuing: String?
         /// The id of the message the conversation last said the server has
         /// not taken.
         var unsent: String?
