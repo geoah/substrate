@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -74,19 +76,21 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		if op.Seq == nil {
 			return false, fmt.Errorf("substrate/engine: a cursor effect on %s carries no seq", op.ID)
 		}
-		_, err := t.exec(`
-			INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
-			ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq, updated_at = EXCLUDED.updated_at`,
-			op.ID, int64(*op.Seq), t.now)
+		if t.heldLedger != nil {
+			t.heldLedger.cursors[op.ID] = heldRow{stmt: cursorUpsert, args: []any{op.ID, int64(*op.Seq), t.now}}
+			return true, nil
+		}
+		_, err := t.exec(cursorUpsert, op.ID, int64(*op.Seq), t.now)
 		return true, err
 	case foldSchedule:
 		if op.At == nil {
 			return false, fmt.Errorf("substrate/engine: a schedule effect on %s carries no occurrence", op.ID)
 		}
-		_, err := t.exec(`
-			INSERT INTO trigger_schedule (trigger_id, fired_at, updated_at) VALUES ($1, $2, $3)
-			ON CONFLICT (repository, trigger_id) DO UPDATE SET fired_at = EXCLUDED.fired_at, updated_at = EXCLUDED.updated_at`,
-			op.ID, op.At.UTC(), t.now)
+		if t.heldLedger != nil {
+			t.heldLedger.schedules[op.ID] = heldRow{stmt: scheduleUpsert, args: []any{op.ID, op.At.UTC(), t.now}}
+			return true, nil
+		}
+		_, err := t.exec(scheduleUpsert, op.ID, op.At.UTC(), t.now)
 		return true, err
 	case foldPark:
 		if op.Failure == nil {
@@ -117,9 +121,11 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		if op.Page == nil {
 			return false, fmt.Errorf("substrate/engine: an unpage effect on %s names no chain", op.ID)
 		}
-		return t.rowsChanged(`DELETE FROM paged_cursors WHERE chain = $1`, op.Page.Chain)
+		held := t.heldLedger.dropChain(op.Page.Chain)
+		changed, err := t.rowsChanged(`DELETE FROM paged_cursors WHERE chain = $1`, op.Page.Chain)
+		return changed || held, err
 	case foldForget:
-		changed := false
+		changed := t.heldLedger.dropTrigger(op.ID)
 		for _, table := range deliveryTables {
 			n, err := t.rowsChanged(`DELETE FROM `+table+` WHERE trigger_id = $1`, op.ID)
 			if err != nil {
@@ -130,6 +136,89 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		return changed, nil
 	}
 	return false, fmt.Errorf("substrate/engine: %q is not a delivery effect", op.Kind)
+}
+
+// cursorUpsert and scheduleUpsert write a trigger's scan position and its
+// last occurrence.
+const (
+	cursorUpsert = `
+		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
+		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq, updated_at = EXCLUDED.updated_at`
+	scheduleUpsert = `
+		INSERT INTO trigger_schedule (trigger_id, fired_at, updated_at) VALUES ($1, $2, $3)
+		ON CONFLICT (repository, trigger_id) DO UPDATE SET fired_at = EXCLUDED.fired_at, updated_at = EXCLUDED.updated_at`
+)
+
+// heldLedgerRows is the resume rows a rebuild's replay holds back until its
+// last line (rebuild.go): each trigger's cursor and schedule row and each
+// chain's page row, as the last effect on it wrote it. One such row takes an
+// effect per delivery, fire or page, and the replay is one transaction,
+// which keeps every version of a row it writes until it commits: written as
+// each effect folded, the row of a trigger that delivered a hundred thousand
+// times cost each write every earlier one. The table the replay ends with is
+// the same: an effect that takes rows out (forget, unpage, a ledger) drops
+// what is held for them before it runs.
+type heldLedgerRows struct {
+	cursors, schedules, pages map[string]heldRow
+}
+
+// heldRow is one held row's statement and its arguments; trigger is the
+// trigger a page row belongs to.
+type heldRow struct {
+	stmt    string
+	args    []any
+	trigger string
+}
+
+func newHeldLedgerRows() *heldLedgerRows {
+	return &heldLedgerRows{cursors: map[string]heldRow{}, schedules: map[string]heldRow{}, pages: map[string]heldRow{}}
+}
+
+// dropChain drops the page row held for chain, reporting whether one was.
+func (h *heldLedgerRows) dropChain(chain string) bool {
+	if h == nil {
+		return false
+	}
+	_, held := h.pages[chain]
+	delete(h.pages, chain)
+	return held
+}
+
+// dropTrigger drops every row held for trigger, reporting whether one was.
+func (h *heldLedgerRows) dropTrigger(trigger string) bool {
+	if h == nil {
+		return false
+	}
+	_, c := h.cursors[trigger]
+	_, s := h.schedules[trigger]
+	delete(h.cursors, trigger)
+	delete(h.schedules, trigger)
+	held := c || s
+	for chain, p := range h.pages {
+		if p.trigger == trigger {
+			delete(h.pages, chain)
+			held = true
+		}
+	}
+	return held
+}
+
+// writeHeldLedger writes every held row and stops holding: the replay's end,
+// while the kept cursors a page row may name are still there.
+func (t *txn) writeHeldLedger() error {
+	h := t.heldLedger
+	t.heldLedger = nil
+	if h == nil {
+		return nil
+	}
+	for _, rows := range []map[string]heldRow{h.cursors, h.schedules, h.pages} {
+		for _, key := range slices.Sorted(maps.Keys(rows)) {
+			if _, err := t.exec(rows[key].stmt, rows[key].args...); err != nil {
+				return fmt.Errorf("substrate/engine: write the replay's resume row %s: %w", key, err)
+			}
+		}
+	}
+	return nil
 }
 
 // pageUpsert writes a resume row whole; %s is the expression the cursor
@@ -185,14 +274,23 @@ func (t *txn) upsertPage(triggerID string, p *foldPageRow, at time.Time) error {
 		args[1] = []byte(p.Cursor)
 	case t.keptCursors && p.CursorSHA256 != "":
 		args[1] = p.CursorSHA256
-		_, err := t.exec(fmt.Sprintf(pageUpsert, `coalesce(
+		return t.writePage(p.Chain, triggerID, fmt.Sprintf(pageUpsert, `coalesce(
 			(SELECT k.cursor FROM pg_temp.substrate_kept_cursors k WHERE k.chain = $1 AND k.digest = $2),
-			'null'::jsonb)`), args...)
-		return err
+			'null'::jsonb)`), args)
 	default:
 		args[1] = []byte(`null`)
 	}
-	_, err := t.exec(fmt.Sprintf(pageUpsert, `$2::jsonb`), args...)
+	return t.writePage(p.Chain, triggerID, fmt.Sprintf(pageUpsert, `$2::jsonb`), args)
+}
+
+// writePage runs a page row's upsert, or holds it for a replay's end
+// (heldLedgerRows).
+func (t *txn) writePage(chain, triggerID, stmt string, args []any) error {
+	if t.heldLedger != nil {
+		t.heldLedger.pages[chain] = heldRow{stmt: stmt, args: args, trigger: triggerID}
+		return nil
+	}
+	_, err := t.exec(stmt, args...)
 	return err
 }
 

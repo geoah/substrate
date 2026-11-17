@@ -6,8 +6,11 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -285,5 +288,72 @@ func TestListRefusesACursorFromAnotherHistory(t *testing.T) {
 	}
 	if len(second.Records) != 1 || second.Head != first.Head || second.Generation != ds.generation {
 		t.Fatalf("second page = %d records, head %d, generation %q; want one record under the first page's head %d", len(second.Records), second.Head, second.Generation, first.Head)
+	}
+}
+
+// A rebuild leaves each trigger's cursor where the last cursor effect the
+// history holds put it, and writes the row once: the replay holds it until
+// its last line (delivery.go heldLedgerRows), where writing it on every
+// delivery cost each write every version the earlier ones left.
+func TestARebuildWritesATriggersCursorOnceWhereItsLastEffectLeftIt(t *testing.T) {
+	t.Parallel()
+	ds := openCursorDataset(t)
+	ctx := context.Background()
+	const pkg = "widgets.test.dev/widgets"
+	triggerID := "on-mirror." + pkg
+	for i := range 5 {
+		if _, err := ds.Put(ctx, substrate.Actor(pkg), substrate.PutInput{
+			Kind: pkg + "/widget", ID: fid(fmt.Sprintf("w%d", i)), Properties: map[string]any{"name": fmt.Sprintf("w%d", i)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var effects int
+	var want int64
+	var wantAt time.Time
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT count(*) OVER (), (ef->>'seq')::bigint, c.ts
+		FROM changelog c, jsonb_array_elements(c.payload->'fold') ef
+		WHERE ef->>'kind' = 'cursor' AND ef->>'id' = $1
+		ORDER BY c.seq DESC LIMIT 1`, triggerID).Scan(&effects, &want, &wantAt); err != nil {
+		t.Fatalf("read the trigger's last cursor effect: %v", err)
+	}
+	if effects < 5 {
+		t.Fatalf("the history holds %d cursor effects of the trigger, want one a delivery", effects)
+	}
+	admin, err := sql.Open("pgx", ds.svc.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = admin.Close() }()
+	if _, err := admin.ExecContext(ctx, `
+		CREATE TABLE cursor_writes (n int NOT NULL);
+		INSERT INTO cursor_writes VALUES (0);
+		CREATE FUNCTION cursor_writes_count() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+		BEGIN UPDATE cursor_writes SET n = n + 1; RETURN NULL; END $$;
+		CREATE TRIGGER cursor_writes_count AFTER INSERT OR UPDATE ON trigger_cursors
+		FOR EACH ROW WHEN (NEW.trigger_id = '`+triggerID+`') EXECUTE FUNCTION cursor_writes_count();`); err != nil {
+		t.Fatalf("arm the cursor write count: %v", err)
+	}
+	if _, err := ds.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	var got int64
+	var gotAt time.Time
+	if err := ds.db.QueryRowContext(ctx, `SELECT seq, updated_at FROM trigger_cursors WHERE trigger_id = $1`, triggerID).Scan(&got, &gotAt); err != nil {
+		t.Fatalf("read the rebuilt cursor: %v", err)
+	}
+	if got != want || !gotAt.Equal(wantAt) {
+		t.Errorf("the rebuilt cursor is at %d (%s), want the last effect's %d (%s)", got, gotAt, want, wantAt)
+	}
+	var writes int
+	if err := admin.QueryRowContext(ctx, `SELECT n FROM cursor_writes`).Scan(&writes); err != nil {
+		t.Fatalf("read the cursor write count: %v", err)
+	}
+	if writes != 1 {
+		t.Errorf("the rebuild wrote the trigger's cursor row %d times for %d cursor effects, want once", writes, effects)
 	}
 }
