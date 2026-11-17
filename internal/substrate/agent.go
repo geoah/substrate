@@ -14,6 +14,8 @@ package substrate
 // function+trigger+effect core, so the loop is shipped host-side for the
 // streaming path and is the first thing that would be dropped.
 
+import "time"
+
 // AgentResult is one settled agent invocation: the final reply, the thread
 // that recorded it, and the rolled-up tally (sub-agents included).
 type AgentResult struct {
@@ -264,6 +266,16 @@ type AgentEvent struct {
 	// that the job's end publishes while a turn streams on the thread. The
 	// tool row's `job.state` says the same.
 	Job string `json:"job,omitempty"`
+	// StartedAt rides both tool events, by the server's clock, and
+	// FinishedAt the finished one: when the call's own dispatch started and
+	// ended, the tool row's `ran`, so a client times a running call and says
+	// how long a finished one took without its own clock, and a replay to a
+	// late attacher says the same instants. On toolStarted it is when the
+	// event went out, which is when the call started unless it waited for a
+	// slot of `maxParallelTools`. On a background job's second toolFinished
+	// they are the job's own, its row's `job.startedAt` and `job.finishedAt`.
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 }
 
 // MaxChatContextRecords bounds a chat turn's Context: each record is read

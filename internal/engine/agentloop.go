@@ -1276,6 +1276,9 @@ loop:
 				if c.writes != nil {
 					toolProps["subagentWrites"] = c.writes
 				}
+				toolProps["ran"] = map[string]any{
+					"startedAt": c.startedAt.Format(time.RFC3339Nano), "finishedAt": c.finishedAt.Format(time.RFC3339Nano),
+				}
 				jobStarted := nowUTC()
 				if c.job != nil {
 					toolProps["job"] = jobProps(jobWorking, jobStarted, time.Time{})
@@ -1675,27 +1678,36 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 	}
 }
 
-// toolEvent emits one side of a dispatch's lifecycle. The call ID rides both
-// sides: a turn may dispatch one tool several times, so a client pairing by
-// NAME settles the wrong card.
-func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, turn int, ok *bool, out string) {
-	l.toolEventJob(kind, tc, turn, ok, out, "")
-}
-
-// toolEventJob is toolEvent for a call that started a background job, whose
-// toolFinished carries the job's state.
-func (l *agentLoop) toolEventJob(kind string, tc llm.ToolCall, turn int, ok *bool, out, job string) {
+// toolStarted emits a call's start, stamped with the server's clock: a
+// client times a running call from it, and a replay to a late attacher
+// carries the same instant. The call ID rides both sides of the lifecycle: a
+// turn may dispatch one tool several times, so a client pairing by NAME
+// settles the wrong card.
+func (l *agentLoop) toolStarted(c *toolRun) {
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, Callable: l.byName[tc.Name].callable(), OK: ok, Turn: turn}
-	if kind == substrate.AgentEventToolStarted {
-		ev.Args = tc.Arguments
-	} else {
-		ev.Output = out
-		ev.Job = job
+	at := nowUTC()
+	l.in.emit(substrate.AgentEvent{
+		Kind: substrate.AgentEventToolStarted, ID: c.call.ID, Tool: c.call.Name, Callable: l.byName[c.call.Name].callable(),
+		Args: c.call.Arguments, Turn: c.turn, StartedAt: &at,
+	})
+}
+
+// toolFinished emits a call's end, with the instants its own dispatch
+// started and ended: the event goes out in call order once every call
+// before it settled too, so its own arrival times nothing. job is the state
+// of a background job the call started, `working`, or empty.
+func (l *agentLoop) toolFinished(c *toolRun, job string) {
+	if l.in.emit == nil {
+		return
 	}
-	l.in.emit(ev)
+	ok := c.ok
+	started, finished := c.startedAt, c.finishedAt
+	l.in.emit(substrate.AgentEvent{
+		Kind: substrate.AgentEventToolFinished, ID: c.call.ID, Tool: c.call.Name, Callable: l.byName[c.call.Name].callable(),
+		OK: &ok, Output: c.out, Turn: c.turn, Job: job, StartedAt: &started, FinishedAt: &finished,
+	})
 }
 
 // --- thread + message rows -------------------------------------------------------

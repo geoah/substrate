@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/llm"
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -51,6 +51,20 @@ type toolRun struct {
 	// panicked carries a panic out of the call's goroutine, so it surfaces
 	// on the loop's own.
 	panicked any
+	// startedAt and finishedAt bound the call's own dispatch, stamped on its
+	// tool row as `ran` and on its toolFinished event: the rows of a stretch
+	// are written once the whole stretch settled, and its toolFinished
+	// events go out in call order, so neither one's own time is the call's.
+	// A call that never ran (refused, or settled before its body) is the one
+	// instant it settled at.
+	startedAt, finishedAt time.Time
+}
+
+// run dispatches the call, timing it.
+func (c *toolRun) run(ctx context.Context, l *agentLoop) {
+	c.startedAt = nowUTC()
+	c.out, c.ok = l.dispatch(ctx, c)
+	c.finishedAt = nowUTC()
 }
 
 // partitionCalls splits one response's calls, in order, into the spans the
@@ -138,7 +152,7 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 	for _, c := range run {
 		if !c.refused {
 			live++
-			l.toolEvent(substrate.AgentEventToolStarted, c.call, c.turn, nil, "")
+			l.toolStarted(c)
 		}
 	}
 	finish := func(c *toolRun) {
@@ -148,6 +162,12 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 			}
 		}
 		c.out = l.capToolResult(c.out)
+		if c.startedAt.IsZero() {
+			c.startedAt = nowUTC()
+		}
+		if c.finishedAt.IsZero() {
+			c.finishedAt = c.startedAt
+		}
 		if !c.refused {
 			l.in.outcome.noteTool(c.call.Name, c.out, c.ok)
 		}
@@ -155,7 +175,7 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 		if c.job != nil {
 			job = jobWorking
 		}
-		l.toolEventJob(substrate.AgentEventToolFinished, c.call, c.turn, &c.ok, c.out, job)
+		l.toolFinished(c, job)
 	}
 	limit := l.parallelTools()
 	if live <= 1 || limit == 1 {
@@ -163,7 +183,7 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 			if !c.refused {
 				l.prepareCall(c, 1)
 				if !c.settled {
-					c.out, c.ok = l.dispatch(ctx, c)
+					c.run(ctx, l)
 				}
 			}
 			finish(c)
@@ -208,7 +228,7 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 						c.panicked = r
 					}
 				}()
-				c.out, c.ok = l.dispatch(ctx, c)
+				c.run(ctx, l)
 			}()
 		}
 	}()
