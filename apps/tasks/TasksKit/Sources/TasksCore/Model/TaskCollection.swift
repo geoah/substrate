@@ -165,8 +165,13 @@ public struct TaskCollection: Hashable, Sendable {
 
     /// The readings of `declaration` under `grant`, with the owner's
     /// `setting` and the preference's choice of where new tasks go.
+    /// The app's own list is never one: it binds the lifecycle trait so a
+    /// finished list can be closed, and it is what the app's own task groups
+    /// by, not a collection of tasks.
     public init?(_ declaration: TaskKindDeclaration, setting: CollectionSetting?, preference: TasksPreference, grant: Grants) {
-        guard let status = declaration.status, grant.reads(declaration.grantKind) else { return nil }
+        guard let status = declaration.status, declaration.identity != TasksKinds.list, grant.reads(declaration.grantKind) else {
+            return nil
+        }
         self.declaration = declaration
         self.status = status
         self.setting = setting

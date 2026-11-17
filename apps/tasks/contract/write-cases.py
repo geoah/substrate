@@ -86,8 +86,8 @@ def task(rid, created, name, **props):
     return rec(TASK, rid, created, name=name, title=name, **props)
 
 
-def lst(rid, name, position):
-    return rec(LIST, rid, "2026-10-01T08:00:00Z", name=name, title=name, position=position)
+def lst(rid, name, position, **props):
+    return rec(LIST, rid, "2026-10-01T08:00:00Z", name=name, title=name, position=position, **props)
 
 
 def acts(accept=(), dismiss=(), complete=(), wontDo=(), reopen=()):
@@ -123,13 +123,15 @@ K = lambda rid: f"{TICKET}/{rid}"
 CASES = {}
 
 # 1. The app's own tasks: every band, a suggestion, a done task, a list that
-#    is gone; another collection found but off.
+#    is gone, a finished list still holding an open task; another collection
+#    found but off. The app's own list binds `lifecycle` and is never a
+#    candidate.
 CASES["own-tasks"] = {
     "name": "the app's own tasks in every band, with a suggestion and a missing list",
     "now": NOW, "timeZone": ZONE, "grant": BASE_GRANT,
     "declarations": OWN + [CHORE_DECL],
     "records": [
-        lst("l1", "Home", "1"), lst("l2", "Groceries", "2"),
+        lst("l1", "Home", "1", status="active"), lst("l2", "Groceries", "2", status="done"),
         task("t1", "2026-11-01T08:00:00Z", "Pay rent", dueDay="2026-11-05", priority="urgent", list=L("l1"), position="1"),
         task("t2", "2026-11-02T08:00:00Z", "Call the plumber", dueAt="2026-11-09T08:00:00Z", dueDay="2026-11-09",
              priority="high", list=L("l1"), position="2"),

@@ -12,6 +12,16 @@ public enum TasksCodec {
     /// app carries.
     public static let taskProperties = ["name", "description", "url", "list", "position", "dueDay", "priority", "status", "completedAt"]
     public static let listProperties = ["name", "position"]
+    /// The property names the app's own kinds declare that it never writes,
+    /// so no edit of the app's can lose them: a task's `origin` and `people`
+    /// (version 3), which an agent or an importer writes, and a list's
+    /// `description` and `status` (version 3), the status read through the
+    /// lifecycle trait as any group's is. A suggestion's page lists `origin`
+    /// and `people` under Details; an accepted task's page does not yet,
+    /// because naming them needs read access to contacts and to the
+    /// origin's kind, which the app does not ask for.
+    public static let unwrittenTaskProperties = ["origin", "people"]
+    public static let unwrittenListProperties = ["description", "status"]
 
     /// A create's body: what the task holds, never its state, so a create
     /// sent again after the task was done never moves it back.

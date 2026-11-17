@@ -73,11 +73,11 @@ struct CodecTests {
     @Test func theCodecNamesOnlyWhatThePackageDeclares() throws {
         let package = try TasksPackage.bundled()
         #expect(package.package == TasksKinds.packageID)
-        #expect(package.version >= 2)
+        #expect(package.version >= 3)
         let task = try #require(package.properties[TasksKinds.task])
         #expect(Set(TasksCodec.taskProperties).isSubset(of: Set(task)), "the codec names \(TasksCodec.taskProperties), the kind declares \(task)")
-        #expect(Set(task).isSubset(of: Set(TasksCodec.taskProperties + ["url"])))
-        #expect(package.properties[TasksKinds.list].map(Set.init) == Set(TasksCodec.listProperties))
+        #expect(Set(task) == Set(TasksCodec.taskProperties + TasksCodec.unwrittenTaskProperties))
+        #expect(package.properties[TasksKinds.list].map(Set.init) == Set(TasksCodec.listProperties + TasksCodec.unwrittenListProperties))
         // `dueAt` is no declared property: the temporal trait binds it as
         // its point, and the codec reads and writes it under that name alone.
         #expect(!task.contains("dueAt"))

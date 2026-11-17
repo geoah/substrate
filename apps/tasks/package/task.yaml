@@ -101,7 +101,8 @@ data:
         - urgent
     # The sample's states. `proposed` (version 2) is a suggestion an agent
     # wrote, waiting for you to add it (to `open`) or dismiss it (to
-    # `abandoned`); a create that names no state is still `open`.
+    # `abandoned`), or closed as `done` when you already did it (version
+    # 3); a create that names no state is still `open`.
     # `abandoned` is reachable from `open`, which the sample's is not:
     # dropping a task is a decision worth keeping, where deleting it leaves
     # nothing.
@@ -127,6 +128,12 @@ data:
           to: open
         - from: proposed
           to: abandoned
+        # Version 3: a suggestion the owner already did, such as a reply
+        # an agent sees them send, closes without being accepted first.
+        - from: proposed
+          to: done
+          stamps:
+            completedAt: now
         - from: open
           to: done
           stamps:
@@ -142,3 +149,24 @@ data:
     completedAt:
       type: datetime
       description: when it was marked done
+    # ---- where it came from, and who it involves --------------------------------
+    # `origin` (version 3), as an observed row names the record it was built
+    # from (decision record 0162). Unpinned: a task comes from a message, a
+    # mail, an issue or a meeting, and naming each kind would make this
+    # package depend on every provider. No mustExist: the message may be
+    # deleted upstream after the task is written, and an agent's suggestion
+    # still stands.
+    origin:
+      type: reference
+      kind: any
+      description: the record this task was made from, such as the message,
+        mail, issue or meeting it answers; absent for a task you typed
+    # `people` (version 3): who asked, who is waiting, who it is for. Every
+    # task in a repository is its owner's, so there is no assignee.
+    people:
+      type: reference
+      kind: substrate.reamde.dev/core/contact
+      repeated: true
+      mustExist: true
+      description: the people this task involves, such as who asked for it
+        or who is waiting on it

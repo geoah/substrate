@@ -438,7 +438,9 @@ export function preferenceRecordOf(
 }
 
 /** Every candidate: a declaration the grant reads that binds `lifecycle`
- * with a status the kits read; the app's own first, then by kind. */
+ * with a status the kits read; the app's own first, then by kind. The app's
+ * own list is never one: it binds `lifecycle` so a finished list can be
+ * closed, and it is what the app's own task groups by. */
 export function readCollections(
   declarations: readonly Declaration[],
   records: readonly Envelope[],
@@ -455,7 +457,8 @@ export function readCollections(
   for (const declaration of declarations) {
     const { identity: kind, definition } = declaration
     const status = kindStatus(definition)
-    if (!status || !grantReads(grant, kind, definition)) continue
+    if (!status || kind === ownListKind || !grantReads(grant, kind, definition))
+      continue
     const record = collectionRecordOf(records, kind)
     const own = kind === ownTaskKind
     const enabled = own

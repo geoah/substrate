@@ -30,8 +30,10 @@ the only identity.
 ## The readings
 
 A **candidate** is a declaration that binds `substrate.reamde.dev/core/lifecycle`
-with a status the kits read (`KindStatus`). A **collection** is a candidate
-that is on:
+with a status the kits read (`KindStatus`), other than the app's own
+`substrate.reamde.dev/tasks/list`, which binds it so a finished list can be
+closed and is what the app's own task groups by. A **collection** is a
+candidate that is on:
 
 - the app's own `substrate.reamde.dev/tasks/task` unless its collection record
   says `enabled: false`;

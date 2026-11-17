@@ -65,6 +65,8 @@ repository's own authority, so there is no published name to require.
 
 ```text
 task ──list (mustExist, onDelete: cascade)──► list
+task ──people (repeated, mustExist)──► substrate.reamde.dev/core/contact
+task ──origin (any kind)──► the record it was made from
 ```
 
 - **task**: something to do. Ids are lowercase UUIDv7s chosen on the device,
@@ -77,8 +79,9 @@ task ──list (mustExist, onDelete: cascade)──► list
 
 ## Task
 
-`substrate.reamde.dev/tasks/task`, purpose `primary`, title `{name}`, trait
-`substrate.reamde.dev/core/temporal(point: dueAt)`.
+`substrate.reamde.dev/tasks/task`, purpose `primary`, title `{name}`, traits
+`substrate.reamde.dev/core/temporal(point: dueAt)` and
+`substrate.reamde.dev/core/lifecycle`.
 
 | Property | Type | Why |
 | --- | --- | --- |
@@ -90,8 +93,10 @@ task ──list (mustExist, onDelete: cascade)──► list
 | `dueDay` | date | The day it is due, on every task with a due date. |
 | `dueAt` | the trait's datetime | The moment it is due, only when it is due at a time. |
 | `priority` | enum, default `none` | none, low, medium, high, urgent: the sample's ladder. |
-| `status` | state: `open`, `done`, `abandoned` | Born `open`. |
+| `status` | state: `proposed`, `open`, `done`, `abandoned` | Born `open`; an agent's suggestion waits as `proposed`. |
 | `completedAt` | datetime | Stamped by the move to `done`. |
+| `origin` | reference to any kind | The record the task was made from, such as a message or an issue. Version 3. |
+| `people` | repeated reference to `substrate.reamde.dev/core/contact`, `mustExist` | The people the task involves. Version 3. |
 
 Notes:
 
@@ -123,13 +128,30 @@ Notes:
   pass a PUT of the list restores it with its tasks; after it nothing does,
   so the app's question promises no restore. An app that wants to keep the
   tasks moves them first.
-- **The states.** The sample's, without `proposed`: nothing proposes a task
-  to this package yet, and a state nothing writes is not declared; adding it
-  is additive. `abandoned` stays, and is reachable from `open`, which the
-  sample's is not: dropping a task is a decision worth keeping, where a
-  delete keeps nothing. `open` to `done` and back, `open` to `abandoned` and
-  back; nothing else. The state moves only by PATCH, so a create replayed
+- **The states.** The sample's, and since version 2 `proposed`, the state an
+  agent's suggestion waits in until the owner adds it (to `open`) or
+  dismisses it (to `abandoned`), which the app shows under Suggestions
+  ([0247](../../../docs/decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md)).
+  `abandoned` is reachable from `open`, which the sample's is not: dropping
+  a task is a decision worth keeping, where a delete keeps nothing. `open` to
+  `done` and back, `open` to `abandoned` and back, and since version 3
+  `proposed` to `done`, for a suggestion the owner already did (an agent
+  that sees the reply closes it); nothing else. A create may
+  name any of the states, so an importer writes a finished task as
+  finished; after that the state moves only by PATCH, so a create replayed
   from the outbox after the task was done never moves it back.
+- **`origin` is the record a task was made from**, as an observed row names
+  its upstream record
+  ([0162](../../../docs/decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)):
+  the message an agent read, the mail, the issue, the meeting's transcript.
+  Unpinned, because naming each kind would make this package depend on every
+  provider, and without `mustExist`, because the message may be deleted
+  upstream after the task is written. `source` is not the word: on
+  substrate it names the app or device a row came through.
+- **`people` are the contacts a task involves**: who asked, who is waiting,
+  who it is for. Not an assignee: every task in a repository is its owner's.
+  Each must exist when it is written; deleting a contact later leaves the
+  value pointing at nothing, as any reference without `onDelete` does.
 - **Reopening clears `completedAt` by hand.** The stamp is written on the
   way in and nothing removes it on the way out, so the app's reopen patch is
   `{"properties": {"status": "open", "completedAt": null}}`, one write.
@@ -140,20 +162,29 @@ Notes:
 ## List
 
 `substrate.reamde.dev/tasks/list`, purpose `primary`, label "Task list",
-title `{name}`, no traits.
+title `{name}`, trait `substrate.reamde.dev/core/lifecycle` (version 3).
 
 | Property | Type | Why |
 | --- | --- | --- |
 | `name` | string, required | The list's name, such as Groceries. |
 | `position` | decimal | Its place among the lists, lowest first, as a task's is. |
+| `description` | markdown | What the list is for and where its work stands. Version 3. |
+| `status` | state: `active`, `done`, `abandoned` | Born `active`. Version 3. |
 
 Notes:
 
-- **Not the sample's `project`.** A project has a lifecycle (active, on
-  hold, done, abandoned) and a `summary` of where the work stands; it is
-  finished one day. A list is a heading and a place in the sidebar:
-  "Groceries" is never done. The sample's project carries no dates, so the
-  difference is the lifecycle and the summary, not a schedule.
+- **A list can be finished.** A list that holds a piece of work ("Budget
+  2027") ends one day, and deleting it would delete its tasks, so it is
+  closed instead: `active` to `done` or `abandoned`, and back. "Groceries"
+  simply stays active. A list from before version 3 is entered at `active`
+  when the version is admitted
+  ([0082](../../../docs/decisions/0082-a-record-meets-a-new-state-machine-in-its-initial-state.md)).
+  The app shows a list's status, and a closed list while it still holds
+  open tasks. A list is not one of the app's collections: its own task is
+  the collection, and the list is what it groups by.
+- **Not the sample's `project`.** The sample's project also waits `onhold`,
+  and its prose is a `summary`. A list has no on-hold state, and its prose
+  is `description`, the word the task already uses.
 - **Labelled "Task list"**, because "List" alone reads as a page of the
   console rather than a record. The kind's name stays `list`: the package
   segment already says what it lists, and every surface shows the full
@@ -168,14 +199,15 @@ properties are optional, or a new kind.
   and marks each occurrence off with a `tasklog`. Binding them later adds
   `recurrence`, `rdates`, `exdates`, `timezone`, `recurrenceOf` and
   `originalAt`, the sample's names.
-- **Assignees, a source, a Linear mapping.** The sample's `assignee` needs
-  the `people` sample, which an app's package cannot require; a personal
-  to-do list has one person. `source` (the message a task came from) waits
-  for a writer that has one.
+- **An assignee, a Linear mapping.** A personal to-do list has one person;
+  a task's `people` are who it involves, not who does it. No mapping may
+  target the task: a mapped kind takes server-assigned ids only, and the app
+  chooses its ids on the device, so a task names the issue it came from
+  through `origin` instead.
 - **A reminder time apart from the due time.** Notifications fire at `dueAt`,
   or at the app's chosen hour on a task due on a day; both are the device's.
-- **Subtasks, tags, a start date, a list's colour or icon, an archived
-  list.**
+- **Subtasks, tags, a start date, a list's colour or icon, a list's links**
+  to the records its work is about.
 - **Indices.** None is declared. A list's tasks are a reverse read through
   the `refs` table, and every single reference gets an index on its path
   without a declaration; a personal list is hundreds of tasks. Declaring one
@@ -196,3 +228,10 @@ own authority applied and held: a task without `name`, a bare-number
 over `at` finds the timed task; the transitions stamp and clear
 `completedAt` as above, and `done` to `abandoned` is refused; purging a list
 takes its tasks and leaves the task in no list.
+
+Version 3, on a development substrate reading this tree's authority
+document: a repository holding version 2 with three lists took the upgrade
+through the catalog, and the three were entered at `active`; a migration
+then created 101 lists, some `abandoned`, and 955 tasks in each of the four
+states, with an `origin` of nine different kinds and `people` naming
+contacts, and every one was admitted.

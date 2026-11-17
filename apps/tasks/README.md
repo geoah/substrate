@@ -205,7 +205,7 @@ mise run console:build && mise run dev:restart   # the approval page is the cons
 
 Register a repository, run the app, give the connect screen
 `http://localhost:8080`, sign in on the approval page, and approve: it reads
-"Install Tasks", and the app's Settings then say "Tasks package", "Version 1",
+"Install Tasks", and the app's Settings then say "Tasks package", "Version 3",
 with `substrate.reamde.dev/tasks` under it.
 A local build's client id is the loopback one, so the page calls the app
 unverified.

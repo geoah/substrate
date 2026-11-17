@@ -32,13 +32,20 @@ data:
   # agent's suggestion waits in (decision records 0226 and 0247);
   # `collection` and `preference` keep the owner's choices about every
   # collection the app shows (docs/plans/tasks-sources.md).
-  version: 2
+  # 3: task gains `origin`, the record it was made from, and `people`, the
+  # contacts it involves, and a suggestion may close as done; list binds
+  # `lifecycle` with a status (active, done, abandoned) and gains
+  # `description`. A list that existed is entered at
+  # `active` when the version is admitted (decision record 0082).
+  version: 3
 ---
 # ---- the bundle document -----------------------------------------------------
 #
-# No `requires:`. Nothing here points outside the package, and an app's
-# package cannot require a sample: a sample is imported under the
-# repository's own authority, so there is no published name to require.
+# No `requires:`. Outside the package a task points only at core's
+# `contact`, which every repository is seeded with, and at any kind through
+# `origin`; and an app's package cannot require a sample: a sample is
+# imported under the repository's own authority, so there is no published
+# name to require.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: substrate.reamde.dev/tasks
