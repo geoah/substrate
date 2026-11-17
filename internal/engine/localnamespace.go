@@ -35,8 +35,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/scope"
@@ -283,14 +285,36 @@ func localizeAt(v any, path []string, fold func(string) string) any {
 // referencePositions say where a record of a kind holds references: per kind
 // (and per trait a kind binds), every version of its declaration the history
 // holds, in seq order, keyed by the kind as the converted line names it.
+// traitsByWord is every trait the history declares, by its last word, for a
+// bare binding (boundTrait).
 type referencePositions struct {
 	kinds, traits map[string][]declaredReferences
+	traitsByWord  map[string][]string
+	bare          *bareBindings
+}
+
+// bareBindings keeps boundTrait's answers, so a history whose bare word many
+// packages declare reads each candidate once per stretch of history rather
+// than once per line. Which candidates govern a line moves only where a
+// version of a trait under the word is written, so the answer for a package
+// and a word is one per position of the line's seq and its transaction's end
+// among those versions. The steps convert pages on several goroutines, so the
+// answers are held under a lock.
+type bareBindings struct {
+	seqs map[string][]int64
+	mu   sync.RWMutex
+	memo map[bareBinding]string
+}
+
+type bareBinding struct {
+	pkg, word     string
+	before, inTxn int
 }
 
 // declaredReferences is one version of one kind's or trait's declaration:
 // the line that wrote it, whether it is a deletion, the properties it
 // declares, those of them that hold a reference anywhere inside them, and the
-// traits it binds.
+// traits it binds, as written, a bare word included.
 type declaredReferences struct {
 	seq      int64
 	deleted  bool
@@ -308,7 +332,7 @@ type declaredReferences struct {
 // so one an older release wrote and this binary's vocabulary no longer
 // parses (Unread) still says where its references sit.
 func referencePositionsOf(versions []declarationVersion, home string) referencePositions {
-	out := referencePositions{kinds: map[string][]declaredReferences{}, traits: map[string][]declaredReferences{}}
+	out := referencePositions{kinds: map[string][]declaredReferences{}, traits: map[string][]declaredReferences{}, traitsByWord: map[string][]string{}}
 	for _, v := range versions {
 		var into map[string][]declaredReferences
 		switch v.Ref {
@@ -337,9 +361,93 @@ func referencePositionsOf(versions []declarationVersion, home string) referenceP
 				}
 			}
 		}
+		if v.Ref == kindTrait && len(out.traits[id]) == 0 {
+			word := id[strings.LastIndex(id, "/")+1:]
+			out.traitsByWord[word] = append(out.traitsByWord[word], id)
+		}
 		into[id] = append(into[id], d)
 	}
+	out.bare = &bareBindings{seqs: map[string][]int64{}, memo: map[bareBinding]string{}}
+	for word, ids := range out.traitsByWord {
+		var seqs []int64
+		for _, id := range ids {
+			for _, v := range out.traits[id] {
+				seqs = append(seqs, v.seq)
+			}
+		}
+		slices.Sort(seqs)
+		out.bare.seqs[word] = seqs
+	}
 	return out
+}
+
+// boundTrait is the trait a `traits:` entry of kind binds for a line at seq,
+// in a transaction ending at txn. A declaration written before decision 0098
+// may name it by its bare word, which the loader resolved
+// (Registry.ResolveTrait) against the registry of the day, reloaded at each
+// declaration: the declaring package's trait of that name, else core's, else
+// the one trait any package declares under it, each only where a version of
+// it governs the line (governing). A trait declared after the line's
+// transaction took no part, and one declared in it did, as the loader
+// resolved a vocabulary batch after the batch. The shipped fallback
+// (shippedGoverning) reads a declaration the line named, never widens what a
+// word could have meant: a shipped trait the history declares only later is
+// no candidate even in a line the engine wrote. A full name, or a word none
+// of the three settles, is the entry as written.
+func (rp referencePositions) boundTrait(name, kind string, seq, txn int64) string {
+	if strings.Contains(name, "/") {
+		return name
+	}
+	pkg := ""
+	if i := strings.LastIndex(kind, "/"); i > 0 {
+		pkg = kind[:i]
+	}
+	if rp.bare == nil {
+		return rp.resolveBare(name, pkg, seq, txn)
+	}
+	seqs := rp.bare.seqs[name]
+	before, _ := slices.BinarySearch(seqs, seq+1)
+	inTxn, _ := slices.BinarySearch(seqs, txn+1)
+	key := bareBinding{pkg: pkg, word: name, before: before, inTxn: inTxn}
+	rp.bare.mu.RLock()
+	got, ok := rp.bare.memo[key]
+	rp.bare.mu.RUnlock()
+	if ok {
+		return got
+	}
+	got = rp.resolveBare(name, pkg, seq, txn)
+	rp.bare.mu.Lock()
+	rp.bare.memo[key] = got
+	rp.bare.mu.Unlock()
+	return got
+}
+
+// resolveBare is boundTrait's reading of a bare word for a line, without the
+// memo: the package's trait, core's, then the one trait under the word.
+func (rp referencePositions) resolveBare(name, pkg string, seq, txn int64) string {
+	governs := func(trait string) bool {
+		_, ok := governing(rp.traits[trait], seq, txn)
+		return ok
+	}
+	if pkg != "" && governs(pkg+"/"+name) {
+		return pkg + "/" + name
+	}
+	if governs(vocabulary.PackageCore + "/" + name) {
+		return vocabulary.PackageCore + "/" + name
+	}
+	found := ""
+	for _, t := range rp.traitsByWord[name] {
+		if governs(t) {
+			if found != "" {
+				return name
+			}
+			found = t
+		}
+	}
+	if found == "" {
+		return name
+	}
+	return found
 }
 
 // governing is the version of a declaration that governs a line at seq whose
@@ -375,15 +483,20 @@ func governing(versions []declaredReferences, seq, txn int64) (declaredReference
 
 // lastDeclared is where a record of kind holds references by the last
 // version of its declaration that is no deletion: what a record stored
-// outside history, which carries no line, is read by. A kind never declared
-// holds none.
+// outside history, which carries no line, is read by. It is read as a line
+// after every one the history holds, so the traits the version binds are as
+// they stand at the end, a trait its own batch declared after it included;
+// for a kind the history deleted since, as they stood just before. A kind
+// never declared holds none.
 func (rp referencePositions) lastDeclared(kind string) map[string]map[string]any {
 	versions := rp.kinds[kind]
+	end := int64(math.MaxInt64)
 	for i := len(versions) - 1; i >= 0; i-- {
 		if versions[i].deleted {
+			end = versions[i].seq - 1
 			continue
 		}
-		out, err := rp.at(kind, versions[i].seq, versions[i].seq)
+		out, err := rp.at(kind, end, end, "")
 		if err != nil {
 			return nil
 		}
@@ -392,13 +505,43 @@ func (rp referencePositions) lastDeclared(kind string) map[string]map[string]any
 	return nil
 }
 
+// engineHands are the engine's own hands that write a shipped kind's records
+// before the history declares the kind, as a line names them when step 6
+// reads it: the actor record's id, which conversion step 3 wrote for an older
+// line and the engine writes for a newer one. The seed copies the shipped
+// tree, and the system runs a repository migration.
+var engineHands = map[string]bool{
+	vocabulary.ActorID(substrate.ActorSeed):   true,
+	vocabulary.ActorID(substrate.ActorSystem): true,
+}
+
+// shippedGoverning is governing, and for a line the engine's own hand wrote
+// (engineHands, by actor) of a kind or trait the binary ships, before the
+// history declares it at all, its first version: a repository migration runs
+// before the stored vocabulary loads and writes under the embedded
+// declaration, which the boot upgrade stores after it (the units move of
+// decision 0186 wrote core/unit records one transaction before core/unit was
+// declared). It is the one line read by a version written after its
+// transaction. Any other hand wrote under the stored vocabulary, and its line
+// before any declaration stays ungoverned, as a repository's own kind's does.
+func shippedGoverning(versions []declaredReferences, ref string, seq, txn int64, actor string) (declaredReferences, bool) {
+	if d, ok := governing(versions, seq, txn); ok {
+		return d, true
+	}
+	if engineHands[actor] && strings.HasPrefix(ref, vocabulary.AuthorityPublisher+"/") && len(versions) > 0 && versions[0].seq > seq && !versions[0].deleted {
+		return versions[0], true
+	}
+	return declaredReferences{}, false
+}
+
 // at is where a record of kind written at seq, in a transaction ending at
-// txn, holds references: by the declaration of its kind that governs the
-// line, and by those of the traits it binds that govern the line for the
-// properties the kind does not declare itself. A line no declaration
+// txn, by actor (the line's actor record id, "" for none), holds references:
+// by the declaration of its kind that governs the line, and by those of the
+// traits it binds (boundTrait) that govern the line for the properties the
+// kind does not declare itself (shippedGoverning). A line no declaration
 // governs is refused, naming the kind and the seq: nothing is guessed.
-func (rp referencePositions) at(kind string, seq, txn int64) (map[string]map[string]any, error) {
-	d, ok := governing(rp.kinds[kind], seq, txn)
+func (rp referencePositions) at(kind string, seq, txn int64, actor string) (map[string]map[string]any, error) {
+	d, ok := shippedGoverning(rp.kinds[kind], kind, seq, txn, actor)
 	if !ok {
 		return nil, fmt.Errorf("seq %d writes a record of %s, and no declaration of %s governs it: none was in force at that line and none was written in its transaction", seq, kind, kind)
 	}
@@ -407,7 +550,8 @@ func (rp referencePositions) at(kind string, seq, txn int64) (map[string]map[str
 		out[name] = decl
 	}
 	for _, t := range d.traits {
-		tv, ok := governing(rp.traits[t], seq, txn)
+		t = rp.boundTrait(t, kind, seq, txn)
+		tv, ok := shippedGoverning(rp.traits[t], t, seq, txn, actor)
 		if !ok {
 			return nil, fmt.Errorf("seq %d writes a record of %s, which binds %s, and no declaration of %s governs it there", seq, kind, t, t)
 		}
@@ -518,6 +662,7 @@ func localizeLine(home string, refs referencePositions, moves actorMoves) func(e
 		if home == "" {
 			return nil
 		}
+		actor := e.Actor
 		for _, id := range []*string{&e.Actor, &e.OnBehalfOf} {
 			if *id == "" {
 				continue
@@ -535,13 +680,13 @@ func localizeLine(home string, refs referencePositions, moves actorMoves) func(e
 			}
 			e.RecordID = to
 		}
-		hands := &actorMover{moves: moves, refs: refs, seq: e.Seq, txn: e.Txn}
+		hands := &actorMover{moves: moves, refs: refs, seq: e.Seq, txn: e.Txn, actor: actor}
 		// An authority row describes a publisher, and the local namespace has
 		// none: the repository's own, written by an older copy of a sample,
 		// stays as it is, held to its governing declaration as every line is.
 		// Its hands move as every line's do.
 		if e.Kind == kindAuthority {
-			if err := governedAsWritten(e, refs); err != nil {
+			if err := governedAsWritten(e, actor, refs); err != nil {
 				return err
 			}
 			return rewritePayload(e, func(payload map[string]any) error {
@@ -566,7 +711,7 @@ func localizeLine(home string, refs referencePositions, moves actorMoves) func(e
 		if err != nil {
 			return fmt.Errorf("read the payload: %w", err)
 		}
-		lc := lineLocalizer{home: home, refs: refs, seq: e.Seq, txn: e.Txn}
+		lc := lineLocalizer{home: home, refs: refs, seq: e.Seq, txn: e.Txn, actor: actor}
 		for _, key := range []string{payloadWinner, payloadLoser} {
 			if id, ok := payload[key].(string); ok {
 				payload[key] = vocabulary.LocalizeID(e.Kind, id, home)
@@ -626,10 +771,10 @@ func rewritePayload(e *changelogfile.Entry, rewrite func(map[string]any) error) 
 	return nil
 }
 
-// governedAsWritten holds a line the conversion keeps as written to what it
-// holds every line it rewrites to: each record its effects set has a
-// declaration that governs it at that line (referencePositions.at).
-func governedAsWritten(e *changelogfile.Entry, refs referencePositions) error {
+// governedAsWritten holds a line the conversion keeps as written, by actor,
+// to what it holds every line it rewrites to: each record its effects set
+// has a declaration that governs it at that line (referencePositions.at).
+func governedAsWritten(e *changelogfile.Entry, actor string, refs referencePositions) error {
 	if len(e.Payload) == 0 {
 		return nil
 	}
@@ -648,7 +793,7 @@ func governedAsWritten(e *changelogfile.Entry, refs referencePositions) error {
 		if len(ef.Delta.Set) == 0 {
 			continue
 		}
-		if _, err := refs.at(ef.Ref, e.Seq, e.Txn); err != nil {
+		if _, err := refs.at(ef.Ref, e.Seq, e.Txn, actor); err != nil {
 			return err
 		}
 	}
@@ -664,6 +809,7 @@ type lineLocalizer struct {
 	home     string
 	refs     referencePositions
 	seq, txn int64
+	actor    string
 }
 
 func (lc lineLocalizer) effect(v any) (any, error) {
@@ -759,7 +905,7 @@ func (lc lineLocalizer) properties(kind string, set map[string]any) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	positions, err := lc.refs.at(kind, lc.seq, lc.txn)
+	positions, err := lc.refs.at(kind, lc.seq, lc.txn, lc.actor)
 	if err != nil {
 		return nil, err
 	}

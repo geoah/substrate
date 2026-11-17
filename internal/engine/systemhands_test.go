@@ -61,6 +61,7 @@ var systemHands = map[string]string{
 	"domain.go:MarkDomainVerified":               "decides: a domain proven",
 	"localtitles.go:renderLocalTitles":           "decides: the mark that the titles under ~ are rendered, once, on the repository's own record",
 	"localtitles.go:renderTitlesSpelling":        "decides: a title a template rendered from a name the local namespace's conversion moved, rendered again by the engine's renderer",
+	"localnamespace.go:(package)":                "names: the engine's own hands, whose line of a shipped kind before the history declares it the local namespace's conversion reads by the kind's first version",
 	"engine.go:createSeededRepositoryFor":        "carries: the registration's own records beside the seed, the system and person actors (the person's naming the identity the registration made) and the default providers it decides; held to the registration door's checks, into core kinds that declare no writer:",
 	"erase.go:asEngine":                          "carries: the caller's person onto the purges of what a permanent delete takes with the record (its change requests, the merge's and split's own records, its losers); held to the delete's own one check on the record's kind, into those records' gc and delete lines",
 	"functions.go:parkAndAdvance":                "decides: a failed delivery parked and its cursor moved",

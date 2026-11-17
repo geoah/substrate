@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
@@ -124,6 +126,285 @@ func TestLocalizeLineReadsTheDeclarationThatGovernsIt(t *testing.T) {
 	} {
 		if got, err := line(c.seq, c.txn); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("seq %d writes a record of ~/notes/note", c.seq)) {
 			t.Errorf("a line at seq %d no declaration governs: %s, %v; want the conversion stopped, naming the kind and the seq", c.seq, got, err)
+		}
+	}
+}
+
+// A kind declared before decision 0098 may bind a trait by its bare word,
+// and the conversion reads the binding as the loader of the day resolved
+// it: the declaring package's trait of that name, else core's, else the one
+// trait any package declares under it. A word two other packages declare
+// stays unresolved, and a line of the kind stops the conversion.
+func TestABareTraitBindingIsReadAsTheLoaderResolvedIt(t *testing.T) {
+	trait := func(id, prop string) declarationVersion {
+		return declarationVersion{Seq: 1, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(id string, traits ...any) declarationVersion {
+		return declarationVersion{Seq: 2, Ref: kindKind, ID: id, Properties: map[string]any{"traits": traits}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		trait(vocabulary.PackageCore+"/oauth2", "account"),
+		trait("ada.example.com/notes/oauth2", "owner"),
+		trait("other.example.com/memory/attention", "about"),
+		trait("a.example.com/x/feedback", "from"),
+		trait("b.example.com/y/feedback", "to"),
+		kind("ada.example.com/notes/note", "oauth2", "attention"),
+		kind("ada.example.com/tasks/task", "oauth2(point: dueAt)"),
+		kind("ada.example.com/tasks/log", "feedback"),
+	}, localizeHome)
+	for _, c := range []struct {
+		kind       string
+		want, lack []string
+	}{
+		{"~/notes/note", []string{"owner", "about"}, []string{"account"}}, // its own package's oauth2 over core's
+		{"~/tasks/task", []string{"account"}, []string{"owner"}},          // core's, with a variant after the word
+	} {
+		got, err := refs.at(c.kind, 3, 3, "")
+		if err != nil {
+			t.Fatalf("a line of %s: %v", c.kind, err)
+		}
+		for _, name := range c.want {
+			if _, ok := got[name]; !ok {
+				t.Errorf("a line of %s holds no reference at %s, which a trait it binds bare declares: %v", c.kind, name, slices.Sorted(maps.Keys(got)))
+			}
+		}
+		for _, name := range c.lack {
+			if _, ok := got[name]; ok {
+				t.Errorf("a line of %s holds a reference at %s, from a trait its bare binding did not resolve to", c.kind, name)
+			}
+		}
+	}
+	if _, err := refs.at("~/tasks/log", 3, 3, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
+		t.Errorf("a line of a kind binding a word two packages declare: %v, want the conversion stopped", err)
+	}
+}
+
+// A repository migration runs before the stored vocabulary loads, so a
+// record of a kind the binary ships may precede the history's first
+// declaration of that kind, and of a trait it binds: the line is read by the
+// first version. A repository's own kind has no such writer, and its line
+// before any declaration still stops the conversion.
+func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing.T) {
+	unit := vocabulary.PackageCore + "/unit"
+	temporal := vocabulary.PackageCore + "/temporal"
+	refs := referencePositionsOf([]declarationVersion{
+		{Seq: 10, Ref: kindTrait, ID: temporal, Properties: map[string]any{"properties": map[string]any{
+			"source": map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}},
+		{Seq: 11, Ref: kindKind, ID: unit, Properties: map[string]any{
+			"properties": map[string]any{"base": map[string]any{"type": "reference", "kind": unit}},
+			"traits":     []any{temporal + "(point)"},
+		}},
+		{Seq: 11, Ref: kindKind, ID: "ada.example.com/notes/note", Properties: map[string]any{}},
+	}, localizeHome)
+	got, err := refs.at(unit, 5, 6, vocabulary.ActorID(substrate.ActorSeed))
+	if err != nil {
+		t.Fatalf("a line of %s one transaction before its declaration: %v", unit, err)
+	}
+	if _, ok := got["base"]; !ok {
+		t.Errorf("the line holds no reference at base, which the first version declares: %v", slices.Sorted(maps.Keys(got)))
+	}
+	if _, ok := got["source"]; !ok {
+		t.Errorf("the line holds no reference at source, which the first version of the trait it binds declares: %v", slices.Sorted(maps.Keys(got)))
+	}
+	if _, err := refs.at("~/notes/note", 5, 6, vocabulary.ActorID(substrate.ActorSeed)); err == nil || !strings.Contains(err.Error(), "no declaration of ~/notes/note governs it") {
+		t.Errorf("a line of an own kind before any declaration of it: %v, want the conversion stopped", err)
+	}
+}
+
+// A bare binding resolves against the traits that govern the line, as the
+// loader reloaded at each declaration resolved it then, never against a
+// trait declared after the line's transaction. A trait the declaring package
+// adds later takes the binding from then on; a second package declaring the
+// word later leaves the earlier lines resolved and stops the conversion at
+// the later ones; and a trait declared in the kind's own transaction (one
+// vocabulary batch, which the loader resolved after) governs every line of
+// that transaction and after. A shipped trait the history declares only
+// later takes no part even in a line the engine wrote, which the shipped
+// kind's first version may read: the word meant what the history held.
+func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
+	trait := func(seq int64, id, prop string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(seq int64, id, binds string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindKind, ID: id, Properties: map[string]any{"traits": []any{binds}}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		trait(1, "other.example.com/people/owner", "account"),
+		trait(1, "a.example.com/x/feedback", "from"),
+		trait(1, "other.example.com/people/pinned", "elsewhere"),
+		kind(2, "ada.example.com/tasks/task", "owner"),
+		kind(2, "ada.example.com/tasks/log", "feedback"),
+		trait(5, "ada.example.com/tasks/owner", "owner"),
+		trait(5, "b.example.com/y/feedback", "to"),
+		// One batch, its transaction seq 10 to 12: the kind, a line of it,
+		// then the trait it binds.
+		kind(10, "ada.example.com/notes/note", "pinned"),
+		trait(12, "ada.example.com/notes/pinned", "pinnedBy"),
+		trait(1, "other.example.com/x/label", "labelledBy"),
+		kind(2, "ada.example.com/tasks/tag", "label"),
+		trait(30, vocabulary.PackageCore+"/label", "coreLabel"),
+	}, localizeHome)
+	system := vocabulary.ActorID(substrate.ActorSystem)
+	for _, c := range []struct {
+		kind       string
+		seq, txn   int64
+		actor      string
+		want, lack string
+	}{
+		{"~/tasks/task", 3, 3, "", "account", "owner"},           // only another package's owner governs the line
+		{"~/tasks/task", 6, 6, "", "owner", "account"},           // its own package's owner since seq 5
+		{"~/tasks/log", 3, 3, "", "from", "to"},                  // one feedback before the second is declared
+		{"~/notes/note", 11, 12, "", "pinnedBy", "elsewhere"},    // its package's pinned, later in the batch
+		{"~/notes/note", 20, 20, "", "pinnedBy", "elsewhere"},    //
+		{"~/tasks/tag", 5, 5, system, "labelledBy", "coreLabel"}, // core's label is declared at 30
+		{"~/tasks/tag", 31, 31, "", "coreLabel", "labelledBy"},   // and is core's from then on
+	} {
+		got, err := refs.at(c.kind, c.seq, c.txn, c.actor)
+		if err != nil {
+			t.Errorf("a line of %s at seq %d: %v", c.kind, c.seq, err)
+			continue
+		}
+		if _, ok := got[c.want]; !ok {
+			t.Errorf("a line of %s at seq %d holds no reference at %s: %v", c.kind, c.seq, c.want, slices.Sorted(maps.Keys(got)))
+		}
+		if _, ok := got[c.lack]; ok {
+			t.Errorf("a line of %s at seq %d holds a reference at %s, from a trait that did not govern it", c.kind, c.seq, c.lack)
+		}
+	}
+	if _, err := refs.at("~/tasks/log", 6, 6, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
+		t.Errorf("a line of a kind binding a word two packages declare by then: %v, want the conversion stopped", err)
+	}
+}
+
+// The memo boundTrait keeps answers every line as reading the candidates
+// afresh would, across a history in which many packages declare the same word
+// at different points, one is deleted and core declares it last, and it
+// reads the candidates once per stretch between their versions, not once per
+// line.
+func TestABareTraitBindingsMemoAnswersAsTheCandidatesDo(t *testing.T) {
+	trait := func(seq int64, id string, deleted bool) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Deleted: deleted, Properties: map[string]any{"properties": map[string]any{}}}
+	}
+	versions := []declarationVersion{{Seq: 1, Ref: kindKind, ID: "ada.example.com/tasks/task", Properties: map[string]any{"traits": []any{"owner"}}}}
+	for i := range 40 {
+		versions = append(versions, trait(int64(10+10*i), fmt.Sprintf("p%d.example.com/people/owner", i), false))
+	}
+	versions = append(versions, trait(15, "p0.example.com/people/owner", true), trait(450, vocabulary.PackageCore+"/owner", false))
+	slices.SortFunc(versions, func(a, b declarationVersion) int { return cmp.Compare(a.Seq, b.Seq) })
+	refs := referencePositionsOf(versions, localizeHome)
+	asked := 0
+	for seq := int64(1); seq <= 500; seq++ {
+		for _, txn := range []int64{seq, seq + 3, seq + 12} {
+			asked++
+			got := refs.boundTrait("owner", "~/tasks/task", seq, txn)
+			if want := refs.resolveBare("owner", "~/tasks", seq, txn); got != want {
+				t.Fatalf("a line at seq %d in a transaction ending at %d: the memo answers %s, the candidates %s", seq, txn, got, want)
+			}
+		}
+	}
+	if held := len(refs.bare.memo); held*10 > asked {
+		t.Errorf("the memo holds %d answers for %d lines asked: it reads the candidates per line", held, asked)
+	}
+}
+
+// A row outside history, which carries no line, is read by its kind's last
+// version as the history leaves it: the traits it binds as they stand after
+// every line, a trait its own batch declared after it included, and, for a
+// kind the history deleted, as they stood when it was deleted.
+func TestARecordOutsideHistoryIsReadByTheDeclarationsAsTheyStand(t *testing.T) {
+	trait := func(seq int64, id, prop string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(seq int64, id string, binds ...any) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindKind, ID: id, Properties: map[string]any{"traits": binds}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		kind(10, "ada.example.com/notes/note", "pinned"),
+		kind(10, "ada.example.com/notes/page", "ada.example.com/notes/pinned"),
+		trait(12, "ada.example.com/notes/pinned", "pinnedBy"),
+		kind(20, "ada.example.com/notes/draft", "starred"),
+		trait(21, "ada.example.com/notes/starred", "starredBy"),
+		{Seq: 30, Ref: kindKind, ID: "ada.example.com/notes/draft", Deleted: true},
+		{Seq: 31, Ref: kindTrait, ID: "ada.example.com/notes/starred", Deleted: true},
+	}, localizeHome)
+	for _, c := range []struct{ kind, want string }{
+		{"~/notes/note", "pinnedBy"},   // bound bare, declared later in the kind's batch
+		{"~/notes/page", "pinnedBy"},   // bound in full, the same
+		{"~/notes/draft", "starredBy"}, // the kind and then its trait deleted since
+	} {
+		if got := refs.lastDeclared(c.kind); got[c.want] == nil {
+			t.Errorf("a row of %s outside history holds no reference at %s: %v", c.kind, c.want, slices.Sorted(maps.Keys(got)))
+		}
+	}
+}
+
+// The first version of a shipped kind reads a line before it only where the
+// engine wrote that line: the seed or the system hand, as the line names it
+// when step 6 reads it, an actor record's id (conversion step 3). A line
+// another hand wrote before any declaration of the kind, a published
+// package's or the person's, still stops the conversion.
+func TestAShippedKindsLineBeforeItsDeclarationIsReadOnlyWhereTheEngineWroteIt(t *testing.T) {
+	unit := vocabulary.PackageCore + "/unit"
+	workout := vocabulary.AuthorityPublisher + "/health/workout"
+	reference := map[string]any{"type": "reference", "kind": unit}
+	refs := referencePositionsOf([]declarationVersion{
+		{Seq: 11, Ref: kindKind, ID: unit, Properties: map[string]any{"properties": map[string]any{"base": reference}}},
+		{Seq: 40, Ref: kindKind, ID: workout, Properties: map[string]any{"properties": map[string]any{"unit": reference}}},
+	}, localizeHome)
+	for _, actor := range []substrate.Actor{substrate.ActorSeed, substrate.ActorSystem} {
+		got, err := refs.at(unit, 5, 6, vocabulary.ActorID(actor))
+		if err != nil {
+			t.Errorf("a line of %s by %s before its declaration: %v", unit, actor, err)
+		} else if _, ok := got["base"]; !ok {
+			t.Errorf("a line of %s by %s holds no reference at base: %v", unit, actor, slices.Sorted(maps.Keys(got)))
+		}
+	}
+	for _, c := range []struct {
+		kind  string
+		actor substrate.Actor
+	}{
+		{unit, substrate.ActorPerson},
+		{unit, substrate.BundleActor(vocabulary.AuthorityPublisher, "health")},
+		{workout, substrate.ActorPerson},
+		{workout, substrate.BundleActor(vocabulary.AuthorityPublisher, "health")},
+	} {
+		if _, err := refs.at(c.kind, 5, 6, vocabulary.ActorID(c.actor)); err == nil || !strings.Contains(err.Error(), "no declaration of "+c.kind+" governs it") {
+			t.Errorf("a line of %s by %s before any declaration of it: %v, want the conversion stopped", c.kind, c.actor, err)
+		}
+	}
+	// A line from before the actor links, its hand spelled, as step 6 is
+	// handed it: through every step below it, so its actor is the id step 3
+	// linked.
+	line := func(spelled string) error {
+		e := &changelogfile.Entry{
+			Seq: 5, Txn: 6, Op: "put", Kind: workout, RecordID: "w1", Actor: spelled, HasPrincipal: true,
+			Payload: []byte(`{"fold":[{"delta":{"set":{"unit":{"ref":"` + unit + `/kg"}}},"id":"w1","kind":"record","ref":"` + workout + `","version":1}]}`),
+		}
+		for _, step := range conversionSteps {
+			if step.Dialect >= localNamespaceDialect {
+				break
+			}
+			if err := step.Line(e); err != nil {
+				t.Fatalf("step %d: %v", step.Dialect, err)
+			}
+		}
+		return localizeLine(localizeHome, refs, actorMoves{})(e)
+	}
+	for _, spelled := range []string{string(substrate.ActorSeed), string(substrate.ActorSystem)} {
+		if err := line(spelled); err != nil {
+			t.Errorf("a line of %s %s wrote before its declaration: %v", workout, spelled, err)
+		}
+	}
+	for _, spelled := range []string{"console", string(substrate.BundleActor(vocabulary.AuthorityPublisher, "health"))} {
+		if err := line(spelled); err == nil || !strings.Contains(err.Error(), "seq 5 writes a record of "+workout) {
+			t.Errorf("a line of %s %s wrote before its declaration: %v, want the conversion stopped", workout, spelled, err)
 		}
 	}
 }
@@ -402,7 +683,7 @@ func TestEveryLineOfTheKeptHistoryHasAGoverningDeclaration(t *testing.T) {
 			if len(ef.Delta.Set) == 0 {
 				continue
 			}
-			if _, err := refs.at(vocabulary.LocalizeRef(ef.Ref, m.Authority), e.Seq, e.Txn); err != nil {
+			if _, err := refs.at(vocabulary.LocalizeRef(ef.Ref, m.Authority), e.Seq, e.Txn, e.Actor); err != nil {
 				t.Errorf("seq %d: %v", e.Seq, err)
 			}
 		}
