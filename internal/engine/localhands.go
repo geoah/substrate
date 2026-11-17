@@ -171,6 +171,7 @@ type actorMover struct {
 	refs  referencePositions
 	seq   int64
 	txn   int64
+	actor string
 	err   error
 }
 
@@ -293,7 +294,7 @@ func (a *actorMover) record(kind string, set map[string]any) {
 	for _, p := range actorRefPositions[kind] {
 		a.refAt(set, p)
 	}
-	if positions, err := a.refs.at(kind, a.seq, a.txn); err == nil {
+	if positions, err := a.refs.at(kind, a.seq, a.txn, a.actor); err == nil {
 		for name, decl := range positions {
 			if v, ok := set[name]; ok {
 				set[name] = localizeReferencesWith(decl, v, func(path string) string {

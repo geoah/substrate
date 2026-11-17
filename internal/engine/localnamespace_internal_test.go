@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
@@ -159,7 +160,7 @@ func TestABareTraitBindingIsReadAsTheLoaderResolvedIt(t *testing.T) {
 		{"~/notes/note", []string{"owner", "about"}, []string{"account"}}, // its own package's oauth2 over core's
 		{"~/tasks/task", []string{"account"}, []string{"owner"}},          // core's, with a variant after the word
 	} {
-		got, err := refs.at(c.kind, 3, 3)
+		got, err := refs.at(c.kind, 3, 3, "")
 		if err != nil {
 			t.Fatalf("a line of %s: %v", c.kind, err)
 		}
@@ -174,7 +175,7 @@ func TestABareTraitBindingIsReadAsTheLoaderResolvedIt(t *testing.T) {
 			}
 		}
 	}
-	if _, err := refs.at("~/tasks/log", 3, 3); err == nil || !strings.Contains(err.Error(), "binds feedback") {
+	if _, err := refs.at("~/tasks/log", 3, 3, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
 		t.Errorf("a line of a kind binding a word two packages declare: %v, want the conversion stopped", err)
 	}
 }
@@ -197,7 +198,7 @@ func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing
 		}},
 		{Seq: 11, Ref: kindKind, ID: "ada.example.com/notes/note", Properties: map[string]any{}},
 	}, localizeHome)
-	got, err := refs.at(unit, 5, 6)
+	got, err := refs.at(unit, 5, 6, vocabulary.ActorID(substrate.ActorSeed))
 	if err != nil {
 		t.Fatalf("a line of %s one transaction before its declaration: %v", unit, err)
 	}
@@ -207,7 +208,7 @@ func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing
 	if _, ok := got["source"]; !ok {
 		t.Errorf("the line holds no reference at source, which the first version of the trait it binds declares: %v", slices.Sorted(maps.Keys(got)))
 	}
-	if _, err := refs.at("~/notes/note", 5, 6); err == nil || !strings.Contains(err.Error(), "no declaration of ~/notes/note governs it") {
+	if _, err := refs.at("~/notes/note", 5, 6, vocabulary.ActorID(substrate.ActorSeed)); err == nil || !strings.Contains(err.Error(), "no declaration of ~/notes/note governs it") {
 		t.Errorf("a line of an own kind before any declaration of it: %v, want the conversion stopped", err)
 	}
 }
@@ -486,7 +487,7 @@ func TestEveryLineOfTheKeptHistoryHasAGoverningDeclaration(t *testing.T) {
 			if len(ef.Delta.Set) == 0 {
 				continue
 			}
-			if _, err := refs.at(vocabulary.LocalizeRef(ef.Ref, m.Authority), e.Seq, e.Txn); err != nil {
+			if _, err := refs.at(vocabulary.LocalizeRef(ef.Ref, m.Authority), e.Seq, e.Txn, e.Actor); err != nil {
 				t.Errorf("seq %d: %v", e.Seq, err)
 			}
 		}
