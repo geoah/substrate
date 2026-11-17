@@ -146,8 +146,6 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case finishRun(BackgroundRun, success: Bool)
     /// The refresh job, naming the lease's repository and generation.
     case scheduleRefresh(Lease)
-    case continueRun(ChildKey, ContinuedProcessing)
-    case endContinued(ChildKey)
 
     /// Ends what runs under a key: its late result is dropped.
     case cancel(String)

@@ -201,7 +201,7 @@ struct StreamTests {
         for (agents, quiet) in [(5, 25.0), (4, 75.0), (0, 75.0)] {
             let conversation = Conversation(
                 key: ChildKey("k"), seed: .init(thread: "t1", agent: helper, draft: "", listen: false), facts: nil, online: true,
-                keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0, continuing: nil, agents: agents)
+                keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0, agents: agents)
             #expect(conversation.quiet == quiet)
         }
         // And the request says so.

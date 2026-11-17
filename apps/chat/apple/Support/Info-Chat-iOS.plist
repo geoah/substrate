@@ -38,12 +38,10 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
-		<string>processing</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>dev.reamde.substrate.chat.refresh</string>
-		<string>dev.reamde.substrate.chat.continued.*</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

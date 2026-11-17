@@ -201,8 +201,6 @@ public struct Conversation: Controller, Equatable {
     /// Moved when the app comes back to the front: a stream that died while
     /// it was away opens again.
     let resumeNudge: Int
-    /// The continued processing the app asked for while this one streams.
-    let continuing: String?
     /// The server serves the continue route: its `agents` feature is at
     /// the revision that has it.
     let continues: Bool
@@ -307,7 +305,7 @@ public struct Conversation: Controller, Equatable {
 
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
+        pollNudge: Int, resumeNudge: Int, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
         kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil,
         rowTurns: Set<Int> = [], rowReplied: Int = -1, reply: Reply? = nil
     ) {
@@ -323,7 +321,6 @@ public struct Conversation: Controller, Equatable {
         self.visible = visible
         self.pollNudge = pollNudge
         self.resumeNudge = resumeNudge
-        self.continuing = continuing
         self.continues = continues
         self.sendsIDs = sendsIDs
         self.kept = kept
@@ -473,7 +470,6 @@ public struct Conversation: Controller, Equatable {
         case .stop: "stop"
         case .stopWait: "stopWait"
         case .check: "check"
-        case .advance: nil
         case let .cancel(key): key
         }
     }

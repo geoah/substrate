@@ -808,7 +808,6 @@ extension Conversation {
     }
 
     private func stream(_ state: inout State, _ event: AgentEvent, at: Date) {
-        if continuing != nil, event.kind == .heartbeat || state.seq % 8 == 0 { state.asks.append(.advance) }
         switch state.run {
         case var .send(run)?:
             state.connected = true

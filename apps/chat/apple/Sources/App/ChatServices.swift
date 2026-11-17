@@ -11,8 +11,7 @@ enum ChatServices {
     static let notifications: any Notifications = SystemNotifications(badges: true)
 
     #if os(iOS)
-    static let background: (any BackgroundWork)? = BackgroundTasksService(
-        jobs: [ChatApp.refreshJob], continuedPrefix: "dev.reamde.substrate.chat.continued.")
+    static let background: (any BackgroundWork)? = BackgroundTasksService(jobs: [ChatApp.refreshJob])
     #else
     static let background: (any BackgroundWork)? = nil
     #endif

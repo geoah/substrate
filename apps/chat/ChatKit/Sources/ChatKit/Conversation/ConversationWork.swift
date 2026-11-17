@@ -178,12 +178,6 @@ extension Conversation {
                     return Event(.checked(outcome: check.outcome, found: nil, failure: Failure(.send, error, server: client.server)))
                 }
             }
-        case .advance:
-            guard let id = continuing, let background = environment.devices.background else { return .none }
-            return .once {
-                await background.advance(id)
-                return nil
-            }
         case .cancel:
             return .cancel
         }

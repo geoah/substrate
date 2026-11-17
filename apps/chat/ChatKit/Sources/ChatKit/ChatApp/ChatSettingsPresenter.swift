@@ -37,7 +37,7 @@ extension ChatApp {
         let prefs = state.preferences
         let reach =
             platform == .ios
-            ? "iPhone and iPad have no push from your server: a reply notifies when the app sees it settle, while it is open, while it keeps an answer running after you leave, or when iOS lets it check in the background."
+            ? "iPhone and iPad have no push from your server: a reply notifies when the app sees it settle while it is open, or when iOS lets it check in the background."
             : "Your server has no push: replies and questions notify while the app is open."
         let denied = state.permission == .off
         // Not asked yet, or the app's offer was put off: asked from here.

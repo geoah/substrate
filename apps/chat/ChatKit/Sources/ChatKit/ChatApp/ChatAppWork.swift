@@ -646,15 +646,6 @@ extension ChatApp {
         case let .scheduleRefresh(lease):
             let job = BackgroundJob(name: Self.refreshJob, earliest: clock.now.addingTimeInterval(15 * 60), payload: lease.payload)
             return Self.device(background) { await $0.schedule(job) }
-        case let .continueRun(key, request):
-            guard let background else { return .none }
-            return .sequence {
-                Self.relay { yield in
-                    for await update in background.continueProcessing(request) { yield(.continued(key, update)) }
-                }
-            }
-        case let .endContinued(key):
-            return Self.device(background) { await $0.endProcessing(key.rawValue) }
         case .cancel:
             return .cancel
         }

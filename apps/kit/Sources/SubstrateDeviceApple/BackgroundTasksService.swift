@@ -9,13 +9,16 @@ import UIKit
 /// be before the app finishes launching; and continued processing as
 /// iOS 26's `BGContinuedProcessingTask`, a fresh identifier under the
 /// declared prefix each time (registering one twice ends the app), or the
-/// short time any app leaving the screen gets where iOS will not run one.
+/// short time any app leaving the screen gets where iOS will not run one or
+/// the app declared no prefix.
 /// A refresh request carries no payload of its own, so each job's is kept
 /// in the defaults under its name until the run it becomes.
 public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     /// The continued tasks' identifiers are this followed by a UUID; the
-    /// Info.plist permits it followed by `*`.
-    public let continuedPrefix: String
+    /// Info.plist permits it followed by `*`. Nil for an app that permits
+    /// none: registering an identifier the Info.plist does not list ends
+    /// the app.
+    public let continuedPrefix: String?
     private let lock = NSLock()
     private var tasks: [String: BGTask] = [:]
     private var held: [BackgroundRun] = []
@@ -37,7 +40,7 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     }
 
     @MainActor
-    public init(jobs: [String], continuedPrefix: String, defaults: UserDefaults = .standard) {
+    public init(jobs: [String], continuedPrefix: String? = nil, defaults: UserDefaults = .standard) {
         self.continuedPrefix = continuedPrefix
         self.defaults = defaults
         for job in jobs {
@@ -118,7 +121,15 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
 
     @MainActor
     private func start(_ request: ContinuedProcessing, _ run: Continued) {
-        let identifier = continuedPrefix + UUID().uuidString
+        if let continuedPrefix, submit(request, run, identifier: continuedPrefix + UUID().uuidString) { return }
+        run.updates?.yield(.refused)
+        run.fallback = UIApplication.shared.beginBackgroundTask(withName: request.title) { [weak self] in
+            MainActor.assumeIsolated { Task { await self?.endProcessing(request.id) } }
+        }
+    }
+
+    @MainActor
+    private func submit(_ request: ContinuedProcessing, _ run: Continued, identifier: String) -> Bool {
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
             guard let self else { return }
             guard let task = task as? BGContinuedProcessingTask, !run.ended else {
@@ -135,11 +146,7 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
         }
         let submission = BGContinuedProcessingTaskRequest(identifier: identifier, title: request.title, subtitle: request.subtitle)
         submission.strategy = .fail
-        if registered, (try? BGTaskScheduler.shared.submit(submission)) != nil { return }
-        run.updates?.yield(.refused)
-        run.fallback = UIApplication.shared.beginBackgroundTask(withName: request.title) { [weak self] in
-            MainActor.assumeIsolated { Task { await self?.endProcessing(request.id) } }
-        }
+        return registered && (try? BGTaskScheduler.shared.submit(submission)) != nil
     }
 
     public func advance(_ id: String) async {

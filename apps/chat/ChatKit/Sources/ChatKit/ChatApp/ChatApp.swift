@@ -423,13 +423,12 @@ public struct ChatApp: LinkedApp {
         case .followRuns: "runs"
         case .followResponses: "responses"
         case .backgroundRefresh: "background"
-        case let .continueRun(key, _): "continued:\(key.rawValue)"
         case .readUsage: "usage"
         case .readDiagnostics: "diagnostics"
         case .readPermission: "permission"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
-            .askPermission, .finishRun, .scheduleRefresh, .endContinued, .notifyCard, .finishAction, .cancelNotification, .diagnose, .timings,
+            .askPermission, .finishRun, .scheduleRefresh, .notifyCard, .finishAction, .cancelNotification, .diagnose, .timings,
             .noteRow:
             nil
         }
@@ -461,7 +460,7 @@ public struct ChatApp: LinkedApp {
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.flatMap { state.knows($0, of: entry.thread) ? newestTurn($0.records) : nil },
                 visible: entry.thread.map(visible.contains) ?? state.shown(key),
-                pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
+                pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge,
                 continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
                 landed: landed, landedOn: landedOn, draftFound: entry.draftFound, rowTurns: held.map { persistedTurns($0.records) } ?? [],
                 rowReplied: held.map { Self.Child.replied($0.records) } ?? -1, reply: entry.reply)

@@ -1089,7 +1089,7 @@ struct SeededRun {
                     under = "countdown"
                     if date > now { wait = Wait(end: date, key: "countdown") }
                 case let .cancel(cancelled): under = cancelled
-                case .find, .poll, .stop, .advance: break
+                case .find, .poll, .stop: break
                 }
                 if let replaced = wait?.key ?? under { waits[key]?.removeAll { $0.key == replaced } }
                 if let wait { waits[key, default: []].append(wait) }
