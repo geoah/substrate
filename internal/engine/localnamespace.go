@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -350,21 +351,24 @@ func referencePositionsOf(versions []declarationVersion, home string) referenceP
 }
 
 // boundTrait is the trait a `traits:` entry of kind binds for a line at seq,
-// in a transaction ending at txn, by actor. A declaration written before
-// decision 0098 may name it by its bare word, which the loader resolved
+// in a transaction ending at txn. A declaration written before decision 0098
+// may name it by its bare word, which the loader resolved
 // (Registry.ResolveTrait) against the registry of the day, reloaded at each
 // declaration: the declaring package's trait of that name, else core's, else
 // the one trait any package declares under it, each only where a version of
-// it governs the line (shippedGoverning). A trait declared after the line's
+// it governs the line (governing). A trait declared after the line's
 // transaction took no part, and one declared in it did, as the loader
-// resolved a vocabulary batch after the batch. A full name, or a word none
+// resolved a vocabulary batch after the batch. The shipped fallback
+// (shippedGoverning) reads a declaration the line named, never widens what a
+// word could have meant: a shipped trait the history declares only later is
+// no candidate even in a line the engine wrote. A full name, or a word none
 // of the three settles, is the entry as written.
-func (rp referencePositions) boundTrait(name, kind string, seq, txn int64, actor string) string {
+func (rp referencePositions) boundTrait(name, kind string, seq, txn int64) string {
 	if strings.Contains(name, "/") {
 		return name
 	}
 	governs := func(trait string) bool {
-		_, ok := shippedGoverning(rp.traits[trait], trait, seq, txn, actor)
+		_, ok := governing(rp.traits[trait], seq, txn)
 		return ok
 	}
 	if i := strings.LastIndex(kind, "/"); i > 0 && governs(kind[:i]+"/"+name) {
@@ -421,15 +425,20 @@ func governing(versions []declaredReferences, seq, txn int64) (declaredReference
 
 // lastDeclared is where a record of kind holds references by the last
 // version of its declaration that is no deletion: what a record stored
-// outside history, which carries no line, is read by. A kind never declared
-// holds none.
+// outside history, which carries no line, is read by. It is read as a line
+// after every one the history holds, so the traits the version binds are as
+// they stand at the end, a trait its own batch declared after it included;
+// for a kind the history deleted since, as they stood just before. A kind
+// never declared holds none.
 func (rp referencePositions) lastDeclared(kind string) map[string]map[string]any {
 	versions := rp.kinds[kind]
+	end := int64(math.MaxInt64)
 	for i := len(versions) - 1; i >= 0; i-- {
 		if versions[i].deleted {
+			end = versions[i].seq - 1
 			continue
 		}
-		out, err := rp.at(kind, versions[i].seq, versions[i].seq, "")
+		out, err := rp.at(kind, end, end, "")
 		if err != nil {
 			return nil
 		}
@@ -483,7 +492,7 @@ func (rp referencePositions) at(kind string, seq, txn int64, actor string) (map[
 		out[name] = decl
 	}
 	for _, t := range d.traits {
-		t = rp.boundTrait(t, kind, seq, txn, actor)
+		t = rp.boundTrait(t, kind, seq, txn)
 		tv, ok := shippedGoverning(rp.traits[t], t, seq, txn, actor)
 		if !ok {
 			return nil, fmt.Errorf("seq %d writes a record of %s, which binds %s, and no declaration of %s governs it there", seq, kind, t, t)
