@@ -92,10 +92,10 @@ write.
   request's, or a run's that acts for a person.
   A client lists its own marks for a page of threads without knowing its
   actor, and a person who may not read actor records filters by their own.
-- **History.** The kind declares `retention: P7D`: once a compaction runs,
-  a mark keeps its state and a week of moves
+- **History.** A mark is its person's own record, not bookkeeping, so the
+  kind states no retention and its history is kept whole
   ([0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md),
-  [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
+  [0333](0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md)).
 - **Existing threads are read.** Repository migration 15
   ([0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md))
   gives every settled thread a chat list shows (every `mode` but `subagent`
@@ -115,7 +115,7 @@ are.
 - Good, because a late write cannot move a position back, so clients need no
   conflict handling for it.
 - Bad, because every read is a changelog entry, about one per reply and
-  person. Retention bounds it only once a compaction runs.
+  person, and each is kept.
 - Bad, because whoever reads the kind reads how far each person has read:
   a kind is the unit of permission (0275), and nothing hides one person's
   mark from another who reads `llm/threadmark`.
