@@ -101,7 +101,8 @@ data:
         - urgent
     # The sample's states. `proposed` (version 2) is a suggestion an agent
     # wrote, waiting for you to add it (to `open`) or dismiss it (to
-    # `abandoned`); a create that names no state is still `open`.
+    # `abandoned`), or closed as `done` when you already did it (version
+    # 3); a create that names no state is still `open`.
     # `abandoned` is reachable from `open`, which the sample's is not:
     # dropping a task is a decision worth keeping, where deleting it leaves
     # nothing.
@@ -127,6 +128,12 @@ data:
           to: open
         - from: proposed
           to: abandoned
+        # Version 3: a suggestion the owner already did, such as a reply
+        # an agent sees them send, closes without being accepted first.
+        - from: proposed
+          to: done
+          stamps:
+            completedAt: now
         - from: open
           to: done
           stamps:

@@ -134,7 +134,9 @@ Notes:
   ([0247](../../../docs/decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md)).
   `abandoned` is reachable from `open`, which the sample's is not: dropping
   a task is a decision worth keeping, where a delete keeps nothing. `open` to
-  `done` and back, `open` to `abandoned` and back; nothing else. A create may
+  `done` and back, `open` to `abandoned` and back, and since version 3
+  `proposed` to `done`, for a suggestion the owner already did (an agent
+  that sees the reply closes it); nothing else. A create may
   name any of the states, so an importer writes a finished task as
   finished; after that the state moves only by PATCH, so a create replayed
   from the outbox after the task was done never moves it back.

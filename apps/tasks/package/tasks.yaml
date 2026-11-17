@@ -33,8 +33,9 @@ data:
   # `collection` and `preference` keep the owner's choices about every
   # collection the app shows (docs/plans/tasks-sources.md).
   # 3: task gains `origin`, the record it was made from, and `people`, the
-  # contacts it involves; list binds `lifecycle` with a status (active, done,
-  # abandoned) and gains `description`. A list that existed is entered at
+  # contacts it involves, and a suggestion may close as done; list binds
+  # `lifecycle` with a status (active, done, abandoned) and gains
+  # `description`. A list that existed is entered at
   # `active` when the version is admitted (decision record 0082).
   version: 3
 ---

@@ -79,6 +79,13 @@ export const ownDeclarations: Declaration[] = [
               to: "abandoned",
             },
             {
+              from: "proposed",
+              to: "done",
+              stamps: {
+                completedAt: "now",
+              },
+            },
+            {
               from: "open",
               to: "done",
               stamps: {
