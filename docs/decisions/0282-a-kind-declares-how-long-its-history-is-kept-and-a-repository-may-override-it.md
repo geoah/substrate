@@ -1,8 +1,8 @@
 ---
-status: superseded
-superseded-by: 0333
-date: 2026-11-17
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0333
 ---
 
 # 0282. A kind declares how long its history is kept, and a repository may override it
