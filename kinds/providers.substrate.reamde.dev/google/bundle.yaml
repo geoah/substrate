@@ -84,7 +84,6 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   dialect: 6
-  retention: P30D
   # 25 (T-023, the failure matrix): `retryNotBefore` on the account — a 429
   # SAYS WHEN, Google's quota is the ACCOUNT's, so the wall one stream meets
   # stops the other two walking into it and a "sync now" does not move it.
@@ -343,7 +342,12 @@ data:
   # 55: `config` and `account` keep all of their history, as kinds the owner
   #    writes, and `calendarsync` seven days, as bookkeeping, not the package's
   #    30 days (decision record 0282).
-  version: 55
+  # 56: the kinds that mirror the service keep all of their history, as a
+  #    kind a person writes does: it holds the earlier states the service no
+  #    longer has, which nothing can fetch again. The header states no
+  #    retention, and `config` and `account` no longer state the `all` that
+  #    absence reads as (decision record 0333).
+  version: 56
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -1107,9 +1111,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  # The owner's connection settings: every entry is kept, as for any kind a
-  # person writes, not the package's 30 days (decision record 0282).
-  retention: all
   description: >-
     The Google app settings your accounts connect through. The Google OAuth
     client this bundle authenticates through: a client id, a sealed client
@@ -1182,10 +1183,6 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  # The connection and the settings the owner chose on it: every entry is
-  # kept, as for any kind a person writes, not the package's 30 days. The
-  # sync's own stamps on it stay too (decision record 0282).
-  retention: all
   description: >-
     Your Google account, connected here. The OAuth facility writes its credential
     reference, status and granted scopes; the owner enables features and picks
@@ -12741,8 +12738,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
-  # Bookkeeping, how far one walk got: seven days of history, not the
-  # package's 30 (decision record 0282).
+  # Bookkeeping, how far one walk got: seven days of history (decision
+  # record 0282).
   retention: P7D
   description: >-
     How far copying one Google calendar has got. Where one calendar's events

@@ -18,19 +18,17 @@ var updateRetention = flag.Bool("update", false, "rewrite retention.golden.json 
 
 const retentionGolden = "retention.golden.json"
 
-// EVERY SHIPPED KIND'S RETENTION, HELD (decision records 0282 and 0283). The
-// golden is each kind of both shipped trees with the retention its declaration
-// states, its own key else its package header's, else all. A kind the golden
-// does not list fails here until its author says which of the three classes
-// it is in, and a change of one is a line the review reads:
+// EVERY SHIPPED KIND'S RETENTION, HELD (decision records 0282, 0283, 0320 and
+// 0333). The golden is each kind of both shipped trees with the retention its
+// declaration states, its own key else its package header's, else all. A kind
+// the golden does not list fails here until its author says which of the two
+// classes it is in, and a change of one is a line the review reads:
 //
-//   - a kind a person writes keeps all of its history: it states nothing, or,
-//     under a provider's header, states all (the connection settings, the
-//     account that holds the owner's choices, what the owner sent);
-//   - a provider's other kinds mirror an outside service, and take their
-//     package header's P30D;
 //   - bookkeeping, what the substrate or a sync writes about its own runs,
-//     states P7D.
+//     states P7D;
+//   - every other kind keeps all of its history and states nothing: what a
+//     person writes, and a provider's mirror of an outside service, whose
+//     earlier states nothing can fetch again.
 func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 	merged := fstest.MapFS{}
 	for name, src := range map[string]fs.FS{"kinds": kinds.All(), "samples": samples.Samples()} {
@@ -75,8 +73,8 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 	if err := json.Unmarshal(raw, &want); err != nil {
 		t.Fatal(err)
 	}
-	const classes = "say which class it is in — a kind a person writes keeps all, " +
-		"a provider's mirror kinds take their package header's P30D, bookkeeping states P7D — " +
+	const classes = "say which class it is in — bookkeeping states P7D, every other kind keeps all " +
+		"(a person's own and a provider's mirror alike) — " +
 		"then run go test ./kinds -run TestEveryShippedKindsRetentionIsHeld -update"
 	for kind, value := range got {
 		w, listed := want[kind]
@@ -92,9 +90,9 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 			t.Errorf("the golden lists %s, which the shipped trees no longer declare: run with -update", kind)
 		}
 	}
-	// The classes the page names, held where the golden could drift:
-	// bookkeeping keeps seven days, what a person writes under a provider
-	// keeps all, and every other provider kind, a mirror, thirty.
+	// The classes the records name, held where the golden could drift:
+	// bookkeeping keeps seven days, and every other shipped kind, a mirror
+	// of an outside service among them, keeps all.
 	bookkeeping := map[string]bool{
 		"substrate.reamde.dev/core/trigger":                     true,
 		"substrate.reamde.dev/core/triggerrun":                  true,
@@ -112,20 +110,17 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 	}
 	providers := 0
 	for _, k := range reg.Kinds() {
-		authority, _, name := vocabulary.SplitKindRef(k.Identity)
-		if authority != "providers.substrate.reamde.dev" || bookkeeping[k.Identity] {
+		if bookkeeping[k.Identity] {
 			continue
 		}
-		providers++
-		want := "P30D"
-		if name == "config" || name == "account" || k.Identity == "providers.substrate.reamde.dev/apple/share" {
-			want = vocabulary.RetentionAll
+		if authority, _, _ := vocabulary.SplitKindRef(k.Identity); authority == "providers.substrate.reamde.dev" {
+			providers++
 		}
-		if got[k.Identity] != want {
-			t.Errorf("%s keeps %s, want %s: %s", k.Identity, got[k.Identity], want, classes)
+		if got[k.Identity] != vocabulary.RetentionAll {
+			t.Errorf("%s keeps %s, want all (decision record 0333): %s", k.Identity, got[k.Identity], classes)
 		}
 	}
 	if providers == 0 {
-		t.Fatal("no provider kind loaded, so the rule above held nothing")
+		t.Fatal("no provider kind loaded, so the rule above held no mirror")
 	}
 }

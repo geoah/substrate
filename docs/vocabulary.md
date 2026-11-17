@@ -1100,14 +1100,19 @@ A package header may state it for the kinds that state none, and a kind's
 own key wins; absent on both reads as `all`, and nothing is written into
 the declaration. Any other value is refused with a reason, at the apply
 door, the catalog and the boot upgrade alike, because all three load
-through the same loader. The shipped defaults follow three classes:
+through the same loader. The shipped defaults follow two classes:
 
-- **A kind a person writes keeps everything.** It states nothing, or, under
-  a provider's header, states `all`: a provider's `config` (the connection
-  settings), its `account` (the connection and the choices the owner made
-  on it) and Apple's `share` (what the owner sent, with their note).
-- **A mirror of an outside service keeps 30 days**, from its package
-  header's `P30D`: every other provider kind.
+- **Everything is kept, but bookkeeping.** A kind states nothing and keeps
+  all of its history, whether a person writes it or a provider's sync
+  mirrors an outside service into it. A mirror keeps the earlier states the
+  service no longer has, and the service is not their backup: nothing can
+  fetch them again
+  ([record 0333](decisions/0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md)).
+  An owner who wants less of a kind writes an override, below. A record
+  deleted, here or at the service, keeps its history only until the
+  [compaction pass](operations.md#the-compaction-pass) forgets the
+  deletion (`SUBSTRATE_DELETIONS_KEPT`, 30 days by default), whatever its
+  kind keeps.
 - **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
   writes about its own runs, core's `triggerrun` and `alert`
   ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md))
@@ -1142,8 +1147,9 @@ The seeded packages (`core`, `llm`, `console`, `observations`) upgrade with
 the binary at its boot, which asks nobody, so they take the shipped values
 as they stand, and a release that shortens one says so in its notes. A
 restart alone brings those; an installed provider keeps the retention it had
-until it is upgraded, and from then a kind of it that states none inherits
-its header's `P30D`. The release that brought `retention` removes, rewrites
+until it is upgraded, and from then its sync's bookkeeping kind, where it
+has one, keeps seven days, which its upgrade asks about first, and every
+other kind of it keeps all. The release that brought `retention` removes, rewrites
 or compacts no history: an override that a kind move carries, or one it
 makes redundant, is an ordinary write. The
 release that brought `retention` moved `core/triggerrun` and `core/alert`

@@ -548,7 +548,7 @@ of your own. `-o json` prints the same rows, `keptBy` on each.
 An upgrade that keeps some kind's history for less time
 ([retention](vocabulary.md#the-reserved-keys)) is refused by `add
 <package>` before it reaches the route, naming each kind with what it keeps
-now and after (`…/contact: all -> P30D`).
+now and after (`…/calendarsync: all -> P7D`).
 `--allow-shorter-history` takes it, and prints the same lines. What the
 shorter retention lets go is removed by the [compaction
 pass](operations.md#the-compaction-pass), and an override of a kind's
