@@ -36,6 +36,16 @@ phases 1 and 2 have landed ([what each phase guarantees](#what-each-phase-guaran
 Until then, no release raises the changelog dialect with a step that
 rewrites lines.
 
+**The history is kept whole, and it keeps growing.** Every kind but the
+substrate's own bookkeeping keeps every line of its history: a kind a person
+or an app declares does already, and a separate change restores the same
+for the kinds a provider mirrors, in place of decision 0282's 30-day
+default. So this plan assumes a history that grows without bound, to tens
+and hundreds of GB, and nothing in it relies on keeping less. Compaction
+into state entries (decision 0296) folds only what a kind's retention lets
+go, which is bookkeeping kept for seven days, and an erasure takes out only
+what a person asked to erase. Neither is a lever for making upgrades fast.
+
 ### An example: this upgrade's step 6, done the new way
 
 Conversion step 6 (`local_namespace`, decision 0259) moves a repository's
@@ -286,14 +296,27 @@ from the lowest seq that changed, as it does after a compaction today
 (`archive_rewritten`, `archive.go`). An archive never writes its pieces
 again for a conversion.
 
-**Old dialects leave slowly, and the binary keeps reading them.** A
-compaction lifts the lines it rewrites. An optional background pass
-re-encodes old lines in batches of a few thousand, each its own transaction
-under the changelog lock. Neither decides when a lift may leave the binary.
-An export kept in a drawer is a supported backup whatever the live
-repositories hold. So a lift stays for 0260's horizon, a major version. Past
-it, the last release that carries a lift converts an archive offline, on a
-copy (`substratectl archive convert`, to be written). That is the one
+**Old dialects stay, and the binary keeps reading them.** Since every line
+is kept, a repository's history holds a line of every dialect it has lived
+through, for as long as it exists. Nothing on the upgrade path changes that.
+Two things may, later, and both keep every line's information: its seq, its
+transaction, its time, its hands and its effects, only in the current shape.
+
+- **A background re-encode.** It runs in batches of a few thousand lines,
+  each its own transaction under the changelog lock, paced like the archive,
+  resumable, and never in the boot. A line it rewrites takes a new checksum,
+  as any authorized rewrite does, and the archive writes those pieces again
+  at its own pace. At 100M lines that is hours of background work and a
+  paced upload of the whole archive. So it is not run for every release:
+  only before a major version drops the lifts it would retire.
+- **An offline conversion of an archive**, on a copy
+  (`substratectl archive convert`, to be written), with the last release
+  that carries a lift.
+
+A lift stays in the binary for 0260's horizon, a major version: an export
+kept in a drawer is a supported backup whatever the live repositories hold.
+A binary refuses to open a repository holding a dialect below its oldest
+lift, and says to re-encode under the release before it. That is the one
 whole-history rewrite left, and it is never part of an upgrade.
 
 ### 2. What a lift costs, and who pays it
@@ -304,7 +327,7 @@ and 5 cost about one and a half decodes of the line they read
 each line once; the change feed and the triggers mostly read recent lines,
 which are in the current dialect; the raw readers pay nothing. The cost of
 an old dialect falls only on the lifted reads of its lines, and only until
-they are compacted or re-encoded.
+they are re-encoded.
 
 ### 3. The fold moves by its own migration
 
@@ -359,7 +382,11 @@ than a plain effect: for marks, a resync and a merge's moved managers. A
 line written after the upgrade wins over anything the derivation would
 write: the derivation fills only what no later line set. Where most lines
 qualify, a derivation is still a walk of most of the history. It is online,
-batched and resumable, and never in the boot.
+batched and resumable, and never in the boot. With a history of hundreds of
+GB, though, it runs for hours, and the feature it serves answers `503` for
+as long. So a derivation is the last resort: a step reaches for a fold
+migration first, and the preflight says how long a derivation will run
+before the release that needs it is cut.
 
 The same rule takes out of the open the work that held this upgrade's first
 open for 29 minutes. The actor fill (`actorfill.go`, "reading the
@@ -438,12 +465,18 @@ write beside it. The live write path's replay stays as the reference, and
 as `repository rebuild --exact` for whoever wants the proof replayed line by
 line.
 
-**Fold checkpoints** come after the bulk build, and only if a restore of the
-largest repository still takes too long. The archive pass would write the
-fold, as of a seq and a fold version, beside the pieces, and a restore would
-load it and replay only the lines after it. A checkpoint is derived data in a
-backup, so the restored repository verifies it behind the open by a bulk
-build compared through `FoldSnapshot`.
+**Fold checkpoints** come with the bulk build. With every line kept, a bulk
+build's input grows without bound, and a restore that replays it all grows
+with it: under an hour at 100M lines by the floors measured, longer past
+that. So the archive pass writes the fold, as of a seq and a fold version,
+beside the pieces, now and then. A restore loads the newest checkpoint and
+replays only the lines after it, so its time depends on the fold and on the
+lines since the checkpoint, not on the history. A checkpoint made under an
+older fold version is brought forward by the same fold migrations an
+in-place upgrade runs. It is derived data in a backup, so the restored
+repository verifies it behind the open by a bulk build compared through
+`FoldSnapshot`: a background walk, at its own pace, while the repository
+serves.
 
 ### 6. The boot serves each repository when it is ready
 
@@ -513,7 +546,11 @@ two parts:
   the heaviest stretches. By the measured rates, reading, decoding and
   lifting 24.7 GB is about 2 minutes of work on 8 cores. Fetching 25 GB from
   an object store usually takes longer than that, so this part takes tens of
-  minutes. It is to be measured when it is built.
+  minutes, and at hundreds of GB it takes hours. It is to be measured when
+  it is built. It runs beside production and before the release is cut,
+  never in the upgrade window, and it reads only what it has not checked: a
+  piece already checked under the same chain is skipped. Only a release that
+  adds a lift reads every piece again.
 
 The fold migrations' checks need the fold. So a preflight that times them,
 and the derivations, runs against a copy of the database. For each phase it
@@ -565,11 +602,11 @@ best case.
 | Batched, resumable replay of today's path | The same replay, committed every few thousand lines into shadow tables while the repository stays closed, the tables vacuumed and analyzed between batches | About 8 h, with no growth and no restart lost | About 70 h | Phase 0, for whatever still replays; not an upgrade path |
 | Bulk replay | Section 5 | A floor of about 5 min; under 30 min with what the floor leaves out | A floor of about 25 min; under an hour | Phase 3, for restores, imports and rebuilds |
 | Lift on read and fold migration | Sections 1 and 3 | No line written, and a fold migration of about 3 min | The same: it depends on the fold, not the history | **Phases 1–2, the upgrade path** |
-| Fold checkpoints | The archive keeps the fold at a seq; a restore loads it and replays the tail | A load of a few minutes, and the tail | The same, and the tail | Later, only if bulk restores are too slow |
+| Fold checkpoints | The archive keeps the fold at a seq; a restore loads it and replays the tail | A load of a few minutes, and the tail | The same, and the tail | Phase 3, because a restore that replays everything grows with a history that is never shortened |
 | Online shadow rebuild beside the old version | The old binary serves while the new one builds a fold beside it, then a swap | No downtime but the swap | The same | Not now: two binaries writing one database break decision 0325's one writer, and every schema change would have to suit both |
 | A binary line encoding | Protobuf, or another form, for the line | The protobuf `Struct` form measured larger and no faster; decoding is 2% of a replay | The same share | Not now ([the questions](#the-owners-questions)); a form that makes a checksum cheap to check is worth measuring end to end |
 | A delta form for repeated properties | `add` and `remove` for a repeated property instead of its whole value | Cuts an append-heavy record's history about 50× from the next write on | The same | Phase 4, as a dialect raised the new way |
-| Compaction (exists) | Folds a record's history past its kind's retention into a state entry | Shrinks what a replay reads, for kinds that do not keep everything | The same | Keep, and tell owners of sync-written kinds that they keep everything by default |
+| Keeping less history (shorter retention, compaction of the owner's data) | Fewer lines to walk or replay | Would shrink every history cost | The same | No: every line is kept, and compaction folds only bookkeeping. The plan assumes a history that grows without bound |
 | Preflight | Section 8 | Minutes for the declarations, tens of minutes for the whole history | About eight times the whole-history part | Phase 0 |
 | Scale test in CI | Section 7 | Minutes a run | n/a | Phase 0 |
 
@@ -592,7 +629,7 @@ shape in the history" for whoever wants it, without anyone waiting for it.
 | Phase 0 | Still rewrites lines: any history below dialect 8, such as a server still on v0.123.1 | Still hours. The replay no longer slows down, a restart resumes, a preflight has found the refusals first, and other repositories serve meanwhile |
 | Phase 1 | Raises the dialect with a lift, and changes nothing the fold holds | No history read or written at the boot |
 | Phase 2 | Also changes the fold | A fold migration: minutes for the fold the scale test models, or a derivation behind the open |
-| Phase 3 | Needs a replay: a restore, an import, a rebuild | Under an hour at 100M lines, by the floors measured |
+| Phase 3 | Needs a replay: a restore, an import, a rebuild | A restore: a checkpoint load and the lines since it. A rebuild with no checkpoint: the bulk build, which grows with the history, under an hour at 100M lines by the floors measured |
 
 So the guarantee of minutes holds for upgrades written the new way, after
 phases 1 and 2, and only once the preflight and a rehearsal on the real
@@ -614,7 +651,9 @@ it supersedes:
 
 It amends 0099 (a repository migration that reads the history runs behind the
 open) and leaves 0296, 0300 and 0277 as they are, but for the line format
-and the manifest gaining what section 1 adds.
+and the manifest gaining what section 1 adds. It rests on the separate
+change that supersedes 0282's 30-day default for mirrored kinds: every kind
+but bookkeeping keeps every line.
 
 ## Phases
 
@@ -644,9 +683,9 @@ holding what it built.
 **Phase 1: lines keep their dialect.** Line format 2 with `dialect` and its
 column, manifest format 4 with the base dialect and the context timeline,
 their vectors and the stored format's page, the raw and lifted readers, the
-compaction and erasure rules that keep a lift's context, the list of SQL
-statements that read inside a payload and its guard, and the archive no
-longer writing pieces again for a conversion.
+compaction, erasure and re-encode rules that keep a lift's context, the list
+of SQL statements that read inside a payload and its guard, and the archive
+no longer writing pieces again for a conversion.
 Steps 2–8 stay as they are for a history below dialect 8. The first step
 written after this phase is written the new way, and the scale test's
 upgrade check holds it.
@@ -656,13 +695,16 @@ commutation test as part of a step; the background derivation for what only
 history holds; the actor fill and the shipped-mapping relink moved behind the
 open; the preflight's whole-history part and its run against a copy.
 
-**Phase 3: bulk replay.** The bulk build for restores, imports and rebuilds,
-with its inventory, held to the write path's fold. Fold checkpoints only if
-a restore of the largest repository still takes more than an hour.
+**Phase 3: bulk replay and checkpoints.** The bulk build for restores,
+imports and rebuilds, with its inventory, held to the write path's fold, and
+the fold checkpoints a restore starts from.
 
 **Phase 4: the delta form for repeated properties**, raised as a dialect the
 phase 1 way, with its lift (an old line's whole value stays a whole value)
-and no fold migration.
+and no fold migration. It can run beside phase 3. With every line kept, an
+append-heavy record's whole-value lines stay in the history for good, so
+this is what stops that history growing with the square of a list's length
+from the next write on.
 
 ## Risks and open questions
 

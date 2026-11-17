@@ -50,10 +50,15 @@ The rule:
   are of two kinds. Raw readers (the archive, the export, an import, a
   comparison, a verify) take the verified bytes as stored. Lifted readers
   (the fold, the change feed, a trigger's envelope) take the line through the
-  steps above its dialect, at one place. A compaction, an erasure and an
-  optional background re-encode lift the lines they rewrite for reasons of
-  their own. A lift stays in the binary for the supported-backup horizon,
+  steps above its dialect, at one place. A compaction of bookkeeping, an
+  erasure and a background re-encode lift the lines they rewrite for reasons
+  of their own. A lift stays in the binary for the supported-backup horizon,
   whatever the live repositories hold.
+- **Nothing relies on keeping less history.** Every kind but bookkeeping
+  keeps every line, so a history grows without bound, and the cost of an
+  upgrade does not depend on its size. A restore starts from a fold
+  checkpoint the archive keeps, so it does not replay the whole history
+  either.
 - **The fold moves by a fold migration** that each step changing what the
   fold holds ships. A commutation test (the fold of the lifted history equals
   the migrated fold of the old one) holds it over the kept directories, the

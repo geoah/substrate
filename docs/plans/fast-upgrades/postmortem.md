@@ -221,10 +221,11 @@ A `record` effect sets a property's whole value. A list that grows by one
 entry a write therefore writes `n` entries on its `n`th write, and a list of
 1,500 entries leaves about 1.1 million entries of payload behind it. That is
 why a few stretches of the history carry ten times the bytes of the rest, and
-why those stretches were the slowest to walk and to replay. Compaction
-(decisions 0296 and 0300) would fold that history into one state entry per
-record, but a kind a person or an app declares keeps all of its history
-unless its owner says otherwise, and these link records do.
+why those stretches were the slowest to walk and to replay. Every line of
+it is kept, by design: a kind a person or an app declares keeps all of its
+history, and the kinds a provider mirrors are to keep all of theirs too. So
+compaction is no way out of these bytes, and they have to be cut where they
+are written.
 
 ### Our tests never held these shapes
 
