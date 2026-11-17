@@ -1,12 +1,11 @@
 # Plan: a chat that keeps its place, streams evenly and fails in plain words
 
-Status: proposed 2026-11-14 and built since, as two stacks of open pull
-requests, one for the server and the console and one for the app.
-[#1400](https://github.com/geoah/substrate/issues/1400) lists them and
-says where each is. Changes 1 to 6 and 8 to 10 are built; change 7, push,
-is not. This page says what was built, so it is the design as it stands,
-not as first proposed. A plan, not a contract. It covers the agent API as
-a chat client uses it, and Substrate Chat, the iPhone, iPad and Mac app
+Status: proposed 2026-11-14, built, and merged to `main` on 2026-11-17.
+[#1400](https://github.com/geoah/substrate/issues/1400) lists the pull
+requests. Changes 1 to 6 and 8 to 10 are built; change 7, push, is not.
+This page says what was built, so it is the design as it stands, not as
+first proposed. A plan, not a contract. It covers the agent API as a chat
+client uses it, and Substrate Chat, the iPhone, iPad and Mac app
 ([its design](../../apps/chat/DESIGN.md)). It follows
 [detached chat turns](chat-turns.md), which landed, and sits beside
 [what Moss needs next](moss-capabilities.md), which owns attachments,
@@ -289,7 +288,9 @@ What was considered and set aside:
   message on a thread, and the mark covers it.
 
 What it costs: a changelog entry per read, debounced to about one per
-reply, which is the cost 0132 accepted for preferences. One more kind in
+reply, which is the cost 0132 accepted for preferences. Each is kept: a
+mark is its person's own record, not bookkeeping, so the kind states no
+retention. One more kind in
 `llm`, one more list read for a page of threads, one more kind on the
 watch.
 
@@ -978,19 +979,18 @@ two of them nested inside functions.
 
 ## Where it stands
 
-Two stacks of open pull requests, each one line, bottom first. Each pull
-request was reviewed before it was called ready, and
-[#1400](https://github.com/geoah/substrate/issues/1400) has each one's
-state.
+Two stacks of pull requests, each one line, merged to `main` in this
+order. Each was reviewed before it was called ready.
 
 | Stack | Pull requests, in merge order | What it holds |
 | --- | --- | --- |
-| Server and console | #1405, #1403, #1409, #1416, #1419, #1459, #1467 | Changes 1 to 6 and 6a, each with the console's side |
 | App | #1402, #1410, #1414, #1404, #1411, #1415, #1407, #1413, #1417, #1418, #1450, #1464, #1465, #1466, #1468, #1469, #1474 | Changes 8 to 10, and the app's side of 1 to 6a |
+| Server and console | #1405, #1403, #1409, #1416, #1419, #1459, #1467 | Changes 1 to 6 and 6a, each with the console's side |
 
 The app reads every revision before it uses what the revision carries, so
-the two stacks can merge in either order, and the app works against a
-server that has none of it.
+it works against a server that has none of it, and a server that has all
+of it serves an app from before. No build of the app with this work has
+been sent to TestFlight yet.
 
 Not built: change 7, push. It waits on where the relay runs and on the key
 that signs an Apple push, neither of which is in this tree. With it wait a
