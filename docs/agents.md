@@ -1284,9 +1284,8 @@ Absent reads as 0.
 A viewer may write their own mark: the shipped `viewer` role carries one
 `write` rule, over this kind ([roles](auth.md#roles)). An app reaches the
 marks of the threads its `agents:` scope reaches
-([apps](apps.md#talk-to-agents)). The kind keeps a week of history past each
-mark's latest state ([retention](api.md#retention)), since a mark moves at
-every reply its person reads.
+([apps](apps.md#talk-to-agents)). A mark's history is kept whole, as a
+person's own records are ([retention](api.md#retention)).
 
 Threads from before this release are read already. At a repository's first
 open under a release that carries it, repository migration 15 gives every

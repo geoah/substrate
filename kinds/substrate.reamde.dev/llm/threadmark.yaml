@@ -29,9 +29,9 @@ data:
   # two references, so a client reads a mark without a search.
   ids:
     type: named
-  # A mark moves at every reply its person reads. What it says now is what
-  # matters; a week of its moves is kept past that (decision record 0282).
-  retention: P7D
+  # A mark is its person's own record, so its history is kept whole like
+  # every kind that is not bookkeeping (decision record 0333): it states no
+  # retention.
   names:
     singular: threadmark
   # Whose mark, then of what: two people's marks of one thread read apart.

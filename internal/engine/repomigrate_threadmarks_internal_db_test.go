@@ -238,9 +238,8 @@ func TestRepositoryMigrationMarksExistingThreadsRead(t *testing.T) {
 }
 
 // A compaction leaves the migration's writes and a person's marks as they
-// were. A mark's history is kept seven days (`retention: P7D`) and a
-// thread's for good, so the pass replaces a mark's lines with its state
-// while the thread's stay; `repository compact` replaces both. After it the
+// were. A mark's history and a thread's are kept for good, so the pass
+// leaves the lines of both; `repository compact` replaces both. After it the
 // fold is the same, a mark still only moves forward, a second run of the
 // migration still finds nothing to do, and a rebuild reproduces the fold.
 func TestACompactionLeavesMarksAndTheMigrationsWritesAsTheyWere(t *testing.T) {
