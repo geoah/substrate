@@ -210,8 +210,8 @@ which is what tells them apart in History.
 | 4xx with the server's envelope before `thread` | refused: 409 a turn already running or the repository's 4 at once, 422 a hidden agent, 404 no such agent. Text back in the composer, and the strip above it says so (the envelope's `reason` is read where it has one) |
 | No connection, or a server that cannot be reached | the request never left: text back in the composer, Send Again, no check |
 | 5xx, 503 shutdown, a gateway's answer, a dropped connection, a timeout, a stream that ends before any event | the answer was lost (below): under its id the message is sent again; without one, unknown delivery |
-| Stream ends after `thread`, no `done` | the turn runs on: attach again, backing off 0, 1, 2, 4, 8, 15 s; after `lagged`, at once |
-| Nothing arrives, not a heartbeat, for 25 s (75 s below revision 5) | the connection is gone: the request times out and the app attaches again; the composer says "Reconnecting…" until a stream opens |
+| Stream ends after `thread`, no `done`: a timeout, a dropped connection, the app suspended, or a close with no error at all | the turn the server admitted runs on: the thread is read, then attached to again, backing off 0, 1, 2, 4, 8, 15 s; after `lagged`, at once. A thread still `running` streams again; one that settled meanwhile is handed over, its reply drawn or, only where the server settled the run as failed, its failure. A broken stream is never drawn as a failed run |
+| Nothing arrives, not a heartbeat, for 25 s (75 s below revision 5) | the connection is gone: the request times out and the app attaches again; the composer says "Reconnecting…" until a stream opens. The request's own timeout is that quiet, and on Apple systems it wins over the session's 30 s, in both directions |
 | Attach answers 4xx other than 409/429 | permanent (404 a deleted thread): settle, say so in the strip above the composer, release the composer |
 | 401 anywhere | the session ended: one screen, Sign In Again |
 
@@ -2056,11 +2056,29 @@ and its button.
 | The list | one strip at its top | a refresh, a page of the list, the change feed, a rename of a chat no window shows, a search of the messages, a pin or an archive the server refused |
 
 A second failure in a place replaces the first. A question's, a
-suggestion's and an approval's card, the key sheet and a row of Settings say
-their own failure in place, from the same presenter. A 401 is the kit's
-signed-out screen. A stream that dropped and is being opened again, and a
-change feed that dropped, are states (`ScreenFailures.reconnecting`,
-`ChatListPresentation.reconnecting`), never drawn as failures.
+suggestion's and an approval's card, the key sheet, the memories and
+instructions, and a row of Settings say their own failure in place, from
+the same presenter. A 401 is the kit's signed-out screen. A stream that
+dropped and is being opened again, and a change feed that dropped, are
+states (`ScreenFailures.reconnecting`, `ChatListPresentation.reconnecting`),
+never drawn as failures.
+
+**A broken stream is not a failed run.** Once the server took the turn
+(its stream said `thread`, or the message went under an id the server
+holds), only the server says how the run ended. A stream that times out,
+loses its connection or dies with the app in the background is a state:
+"Reconnecting…" in the composer while the app reads the thread and
+attaches to it again, backing off, for as long as it runs: a stream that
+closed with no error, and a read of the thread that failed meanwhile, say
+"Reconnecting…" too, never "Connecting…". A thread that
+settled `ok` meanwhile draws its reply and nothing else; one the server
+settled as failed draws the run's own failure, by its `cause`, with Try
+Again. A Continue whose answer was lost is said in its card only while the
+thread still says its run did not finish: on a thread that finished, the
+rows say how it stands. Builds before 2026-11-14 turned a stream that
+broke after the turn was admitted into "Moss couldn't answer. The run
+ended in an error." over the device's own account of the connection; the
+failure value replaced that path, and `RecoveryTests` holds it.
 
 **The sentences.** A run that did not finish reads by the server's `cause`,
 which the thread, the `error` event and the `done` result carry:
@@ -2100,7 +2118,12 @@ the end of this chat." (Try Again), "Couldn't refresh your chats." (Try
 Again), "Live updates stopped." (Try Again), "Couldn't search your
 messages. Chats are found by their titles." (Try Again, which searches
 again), "Couldn't save that change to the chat." (Try Again, which writes
-the pin or the archive again).
+the pin or the archive again), "Couldn't load your memories and
+instructions." (Try Again), "Your answer wasn't sent." and "Your decision
+wasn't saved." (Try Again, in the card), "Your change wasn't saved." (at
+the memory's or the instruction's row). No sentence names the machinery
+(a run, an error, a stream, what the server said): a test holds every
+attempt for every reason to it.
 
 **The details.** The server's own words (a thread's `reason`, an envelope's
 message) are behind a Details disclosure, under "The server said". What the
@@ -2129,6 +2152,15 @@ never under the server's name.
   page (`agents/<id>`): the nearest page to a model or a spending limit.
   Each opens in the browser, and carries the external-link mark.
 - New Chat starts one with the same assistant.
+- **A failure with no button is rare, and each says why in the
+  presenter.** A message the device could not save is written again on
+  its own; the key sheet has its own Save; a memory's or an instruction's
+  row went back to what it held, and its own switch, Edit and Delete do it
+  again; a card that changed or went is drawn again as it stands, and what
+  it offers is the way on; a reply already finished, and an older turn,
+  have nothing to try again. Every other failure offers Try Again, Send
+  Again or Continue, or the action that fixes it (Replace Key, Add Key,
+  Open in Console, New Chat).
 - **One place offers the run again.** Where a card's one button is the
   run again (Try Again, Continue), that is where it is offered. Where the
   button leads elsewhere first (Replace Key, Open in Console, Add Your Own
@@ -2159,7 +2191,7 @@ button and Details stack where the text size leaves no room side by side.
 | Send unanswered | Nothing while it is sent again under its id; then the message stands with its card, Send Again and the pencil |
 | Send unknown, on a server without message ids | "Checking whether your message arrived…", then nothing, or the strip and the text back |
 | The app was killed mid-send | The message at its place at the next launch: the stored row where the server holds it, else standing with Send Again |
-| The stream drops | Nothing; the app attaches again with backoff |
+| The stream drops, times out, or the app was suspended | "Reconnecting…" in the composer; the app reads the thread and attaches again with backoff; the reply lands, or the run's own failure where the server settled it as failed |
 | The turn fails, is stopped or runs out of a limit | A card at that turn: the sentence, Try Again or Continue, Details; the list marks the chat |
 | Stop fails | The strip above the composer says the stop failed; the reply goes on |
 | Reload after a turn fails | The run stays shown; the strip above the composer, Try Again |

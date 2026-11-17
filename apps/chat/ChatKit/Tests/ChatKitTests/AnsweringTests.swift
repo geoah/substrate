@@ -733,7 +733,7 @@ struct FoldedCards {
         try await app.until { screen, _ in screen.cards[id]?.question?.failure != nil && screen.cards[id]?.question?.busy == nil }
         var card = try #require(try await app.screen(key).cards[id])
         let failure = try #require(card.question?.failure)
-        #expect(failure.sentence == "That didn't go through." && failure.note == "The server ran into a problem.")
+        #expect(failure.sentence == "Your answer wasn't sent." && failure.note == "The server ran into a problem.")
         #expect(failure.button?.title == "Try Again" && failure.button?.action == .retryCard(.question(id)))
         // It still waits, and still stands, after the card was read again.
         #expect(card.stands && card.waits && app.server.card(id)?.pending == true)

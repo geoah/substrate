@@ -173,6 +173,9 @@ extension Conversation {
                 next.run = nil
                 break
             }
+            // Said as reconnecting while it asks again, as a stream that
+            // dropped is.
+            next.lastFailure = failure
             reattach(&next, attempt: run.attempt + 1)
         case let .retryDue(attempt):
             guard next.phase == .streaming else { break }
@@ -857,11 +860,15 @@ extension Conversation {
                 run.idle = event.status ?? "unknown"
                 // The turn ended. A failure the run itself reported is the
                 // turn's; a continue that never got an answer is said in
-                // its place; a stream that merely dropped says nothing of
-                // how the turn ended, which the thread's row does.
+                // its place while the thread says its run did not finish;
+                // on a thread that finished, its rows say how it stands
+                // (what the continue wrote, or the reply it was pressed on
+                // with its own button), and nothing failed; a stream that
+                // merely dropped says nothing of how the turn ended, which
+                // the thread's row does.
                 if run.idle != "running", let last = state.lastFailure {
                     if last.attempt == .resume {
-                        state.turnFailure = last
+                        if run.idle != "ok" { state.turnFailure = last }
                     } else if case .run = last.why {
                         state.turnFailure = last.attempting(.reply)
                     }
@@ -924,7 +931,12 @@ extension Conversation {
             guard let failure else {
                 if run.named, run.done { return settle(&state) }
                 if run.named, let idle = run.idle { return idle == "running" ? background(&state) : settle(&state) }
-                if run.named { return reattach(&state, attempt: 0) }
+                if run.named {
+                    // The stream closed with the turn still running: a
+                    // proxy or the network ended it without an error.
+                    state.lastFailure = Failure(.attach, .streamEnded)
+                    return reattach(&state, attempt: 0)
+                }
                 return end(&state, run, unknown: Failure(.send, .streamEnded), outcome: outcome)
             }
             state.failure = failure
@@ -960,6 +972,7 @@ extension Conversation {
                     // brought nothing new waits first, as any that ended
                     // early does, so a reader that cannot keep up does not
                     // ask in a loop.
+                    if !run.lagged { state.lastFailure = Failure(.attach, .streamEnded) }
                     return reattach(&state, attempt: run.lagged && run.moved ? 0 : run.attempt + 1)
                 }
                 if idle == "running" { return background(&state) }

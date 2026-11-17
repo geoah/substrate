@@ -172,6 +172,7 @@ enum FailurePresenter {
                     tone: .bad, sentence: "Today's spending limit is reached.", button: page("Open in Console", c.agentPage) ?? retry(failure, c),
                     again: retry(failure, c))
             case .nothingToContinue?:
+                // No button: the reply is whole, and the transcript shows it.
                 return Words(tone: .quiet, sentence: "\(c.agent) already finished this reply.", whole: true)
             case .providerKeyMissing?:
                 return Words(
@@ -253,7 +254,9 @@ enum FailurePresenter {
         }
     }
 
-    /// The server's own refusal that names no reason the chat acts on.
+    /// The server's own refusal that names no reason the chat acts on. A
+    /// card that changed or went is drawn again as it stands now, so what
+    /// it offers is the way on, and these say so with no button.
     private static func refused(_ status: Int, _ failure: Failure, _ c: Context) -> Words {
         switch (failure.attempt, status) {
         case (.answer, 409):
@@ -335,8 +338,12 @@ enum FailurePresenter {
             return Words(tone: .warn, sentence: "Couldn't rename this chat.", note: because, button: button)
         case .card:
             return Words(tone: .warn, sentence: "Couldn't load this.", note: because, button: button)
-        case .answer, .decide, .guidanceChange:
-            return Words(tone: .warn, sentence: "That didn't go through.", note: because, button: button)
+        case .answer:
+            return Words(tone: .warn, sentence: "Your answer wasn't sent.", note: because, button: button)
+        case .decide:
+            return Words(tone: .warn, sentence: "Your decision wasn't saved.", note: because, button: button)
+        case .guidanceChange:
+            return Words(tone: .warn, sentence: "Your change wasn't saved.", note: because, button: button)
         case .addKey:
             return Words(tone: .warn, sentence: "The key wasn't saved.", note: because, button: button)
         case .refresh:
@@ -348,12 +355,12 @@ enum FailurePresenter {
         case .flag:
             return Words(tone: .warn, sentence: "Couldn't save that change to the chat.", note: because, button: button)
         case .guidance:
-            return Words(tone: .warn, sentence: "Couldn't read them.", note: because, button: button)
+            return Words(tone: .warn, sentence: "Couldn't load your memories and instructions.", note: because, button: button)
         }
     }
 
     /// The one button that does an attempt again; nil where the place it is
-    /// drawn in has its own controls.
+    /// drawn in has its own controls, each named below with why.
     private static func retry(_ failure: Failure, _ c: Context) -> FailureButton? {
         switch failure.attempt {
         case .send: FailureButton(title: "Send Again", action: .send, busy: c.busy, blocked: c.blocked)
@@ -373,7 +380,17 @@ enum FailurePresenter {
         // again and writes the change again.
         case .refresh, .feed, .search, .flag: FailureButton(title: "Try Again", action: .refresh, busy: c.busy)
         case .card, .answer, .decide: c.card.map { FailureButton(title: "Try Again", action: .retryCard($0), busy: c.busy) }
-        case .poll, .addKey, .guidance, .guidanceChange, .keep: nil
+        case .guidance: FailureButton(title: "Try Again", action: .readGuidance, busy: c.busy)
+        // Never drawn: a poll that failed is asked again on its own.
+        case .poll: nil
+        // Drawn in the key sheet, whose Save sends the key again.
+        case .addKey: nil
+        // Drawn at the row, which went back to what it held: its own
+        // switch, Edit and Delete do it again.
+        case .guidanceChange: nil
+        // The write is tried again on its own, and the strip goes when one
+        // lands or the server has the message.
+        case .keep: nil
         }
     }
 
@@ -387,7 +404,7 @@ enum FailurePresenter {
         case .notTheAPI: return "The server answered with something \(ChatManifest.appName) can't read."
         case .sessionEnded: return "Your sign-in ended."
         case .needsApproval: return "\(ChatManifest.appName) needs your approval for that."
-        case .ended: return "The server ended it."
+        case .ended: return "The server closed the connection."
         case .closed: return "\(ChatManifest.appName) closed while it was being sent."
         case .interrupted: return "It was stopped before the server answered."
         case .disk: return "This device couldn't save it."

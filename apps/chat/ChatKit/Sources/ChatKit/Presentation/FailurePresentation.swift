@@ -135,4 +135,6 @@ public enum FailureAction: Codable, Hashable, Sendable {
     /// Try Again in a card: its answer or its decision once more, over the
     /// version the card holds now, or its read where that is what failed.
     case retryCard(CardReference)
+    /// The memories and the instructions read again.
+    case readGuidance
 }

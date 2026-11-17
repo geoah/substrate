@@ -78,7 +78,7 @@ struct GuidanceSettings {
         let busy = Failure(.guidanceChange, .http(status: 503, code: "unavailable", reason: nil), said: "The server is busy.")
         let refused = try step(.writeFailed(reference, busy, before: vegetarian), next)
         #expect(refused.guidance.failed[reference.path] == busy)
-        #expect(FailurePresenter.line(busy) == "That didn't go through. The server ran into a problem. The server said: The server is busy.")
+        #expect(FailurePresenter.line(busy) == "Your change wasn't saved. The server ran into a problem. The server said: The server is busy.")
         #expect(refused.asks.isEmpty)
         // The next change of it starts clean.
         #expect(try step(.changeAsked(reference, .active(false)), moved).guidance.failed.isEmpty)
@@ -118,12 +118,27 @@ struct GuidanceSettings {
         #expect(section.memories.count == "1 of 2 on")
         #expect(section.memories.rows.map(\.text) == ["I am vegetarian", "Summaries in bullet points"])
         #expect(section.memories.rows[0].facts == [LabeledValue("Added by", "an assistant, accepted by you")])
-        #expect(section.memories.rows[1].problem == "That didn't go through. You're offline.")
+        #expect(section.memories.rows[1].problem == "Your change wasn't saved. You're offline.")
         #expect(section.instructions.count == "1")
         #expect(section.instructions.rows[0].facts == [LabeledValue("For", "Moss"), LabeledValue("Added by", "you")])
         let empty = app.settings(signedInState()).guidance
         #expect(empty.loading == "Loading…")
         #expect(empty.memories.count == "None")
+    }
+
+    @Test func aReadThatFailedSaysWhyAndOffersTryAgain() throws {
+        let failed = try step(.readFailed(Failure(.guidance, .timeout, said: "the list read timed out")), signedInState())
+        let problem = try #require(app.settings(failed).guidance.problem)
+        #expect(problem.sentence == "Couldn't load your memories and instructions." && problem.note == "The server took too long to answer.")
+        #expect(problem.button == FailureButton(title: "Try Again", action: .readGuidance))
+        #expect(problem.details?.text == "the list read timed out")
+        // Pressed, it reads again, and shows that it is working.
+        let again = try step(.asked, failed)
+        #expect(again.asks == [.readGuidance])
+        #expect(app.settings(again).guidance.problem?.button?.busy == true)
+        // Read, the problem goes.
+        let read = try step(.read(memories: [vegetarian], instructions: []), again)
+        #expect(app.settings(read).guidance.problem == nil)
     }
 
     @Test func theyAreReadWhenSettingsOpensAndWrittenWithTheirVersion() async throws {
