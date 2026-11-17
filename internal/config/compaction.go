@@ -6,16 +6,18 @@ import (
 )
 
 // Compaction is the compaction pass's settings (decision 0300): how often
-// each repository's pass runs, and how long a deletion is remembered before
-// the pass forgets the record.
+// each repository's pass runs, and whether, and after how long, the pass
+// forgets a deleted record (decision 0334).
 type Compaction struct {
 	// Interval is how often each repository's pass runs; `off` (or 0) runs
 	// none, and nothing compacts by itself.
 	Interval string `envconfig:"SUBSTRATE_COMPACTION_INTERVAL" default:"1h"`
-	// DeletionsKept is how long a deletion is remembered: a client that
-	// resumes from before a forgotten one is told `compacted`. 0 keeps every
-	// deletion.
-	DeletionsKept time.Duration `envconfig:"SUBSTRATE_DELETIONS_KEPT" default:"720h"`
+	// DeletionsKept is how long a deletion is remembered before the pass
+	// forgets the record's history: a client that resumes from before a
+	// forgotten one is told `compacted`. 0, the default, keeps every
+	// deletion, since a deleted record's history is the owner's (decision
+	// 0334).
+	DeletionsKept time.Duration `envconfig:"SUBSTRATE_DELETIONS_KEPT" default:"0"`
 }
 
 // Every is the pass's interval, 0 when it is off.
@@ -39,7 +41,7 @@ func (c Compaction) Validate() error {
 		return err
 	}
 	if c.DeletionsKept < 0 {
-		return fmt.Errorf("SUBSTRATE_DELETIONS_KEPT is %s: it is how long a deletion is remembered before the record is forgotten, 0 (forever) or a positive duration (720h is the default)", c.DeletionsKept)
+		return fmt.Errorf("SUBSTRATE_DELETIONS_KEPT is %s: it is how long a deletion is remembered before the record is forgotten, 0 (forever, the default) or a positive duration", c.DeletionsKept)
 	}
 	return nil
 }

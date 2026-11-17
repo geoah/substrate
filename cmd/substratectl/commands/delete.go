@@ -21,9 +21,10 @@ restores the record with every property it held. --purge collects it now,
 so the next put at the id is a fresh record, and erases its history, and
 that of what asks to change it or was merged into it, which nothing brings
 back; what it owns (onDelete: cascade) is tombstoned for the sweep, its
-history kept until old deletions are forgotten. A mapping source resolves its
-subject again only when that put leaves the subject slot out; a put that
-names the slot keeps that subject. A record a finalizer holds refuses --purge.`,
+history kept unless the server forgets old deletions. A mapping source
+resolves its subject again only when that put leaves the subject slot out; a
+put that names the slot keeps that subject. A record a finalizer holds
+refuses --purge.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -69,7 +70,7 @@ func printErasure(a *app, e *substrate.Erasure) {
 		fmt.Fprintf(a.out, "  purged with it: %s\n", p)
 	}
 	if e.Tombstoned > 0 {
-		fmt.Fprintf(a.out, "  what it owned (%d records) is deleted with it, and keeps its history until old deletions are forgotten\n", e.Tombstoned)
+		fmt.Fprintf(a.out, "  what it owned (%d records) is deleted with it, and keeps its history unless the server forgets old deletions\n", e.Tombstoned)
 	}
 	if e.Pending && e.Held != "" {
 		fmt.Fprintf(a.out, "  erasure waits: %s\n", e.Held)

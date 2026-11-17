@@ -173,7 +173,7 @@ boot.
 | `SUBSTRATE_ARCHIVE`            | unset: `<SUBSTRATE_DATA_ROOT>/archive` | Where each repository is copied after its writes commit ([the archive](#the-archive)): unset is a directory under the data root; an absolute path is that directory; `s3://<bucket>[/<prefix>]` is a bucket of an S3-compatible service, reached with the `SUBSTRATE_ARCHIVE_S3_*` settings below; `off` writes no archive, so back Postgres up. Any other value refuses the boot, naming the variable. No request is made at boot: a store that cannot be reached is a delay the server reports, never a boot that fails. |
 | `SUBSTRATE_ARCHIVE_INTERVAL`   | `10s`                                  | How often each repository's archive pass runs: with the store answering, the longest a confirmed write waits before it is in the archive. A positive duration. |
 | `SUBSTRATE_COMPACTION_INTERVAL` | `1h`                                 | How often each repository's [compaction pass](#the-compaction-pass) runs, a duration of a minute or more, or `off`, when history only grows. |
-| `SUBSTRATE_DELETIONS_KEPT`     | `720h`                                 | How long a deletion is remembered before the compaction pass forgets the record and moves the repository's horizon; `0` keeps every deletion. |
+| `SUBSTRATE_DELETIONS_KEPT`     | `0`                                    | How long a deletion is remembered before the compaction pass forgets the record's history and moves the repository's horizon. `0`, the default, keeps every deletion ([decision 0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)); a positive duration (`720h`) has the pass forget older ones. |
 | `SUBSTRATE_ARCHIVE_S3_ENDPOINT` | unset: Amazon's                       | The URL of an S3-compatible service that is not Amazon's own, such as `https://s3.example.com`. |
 | `SUBSTRATE_ARCHIVE_S3_REGION`  | `us-east-1`                            | The region the requests are signed for. |
 | `SUBSTRATE_ARCHIVE_S3_PATH_STYLE` | `false`                             | Names the bucket in the path rather than the host name, which most services other than Amazon's need. |
@@ -740,11 +740,17 @@ batch's commit keeps how far its stretch got: the next pass goes on from
 the last record finished, before it starts another stretch, so a stretch
 longer than one pass is done over several and no record is read twice.
 
-It also **forgets a deletion** older than `SUBSTRATE_DELETIONS_KEPT`: every
-entry of a purged record goes. A client that resumed from before it would
-never hear of the deletion, so the repository's **horizon** moves to the line
-the deletion was on, and a `from=` below it is answered `410 compacted`; the
-change page names the horizon. The deletion of a record a package ships, and
+By default it keeps every deletion: a purged record keeps its deletion and
+what its kind's retention keeps of its history, as a live record does, and
+the repository's **horizon** stays at 0 ([decision
+0334](decisions/0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md)). A
+deployment that sets `SUBSTRATE_DELETIONS_KEPT` to a duration has the pass
+**forget a deletion** older than that: every entry of a purged record goes.
+A client that resumed from before it would never hear of the deletion, so
+the horizon moves to the line the deletion was on, and a `from=` below it is
+answered `410 compacted`; the change page names the horizon. A horizon an
+earlier build moved stays where it is, and what it forgot is not brought
+back. The deletion of a record a package ships, and
 of a bundle record, is kept instead: the record's own entries go as they
 would, but its deletion's line stays for good, with the hands that wrote the
 record and no value, and moves no horizon, so neither an open nor an upgrade
@@ -844,8 +850,9 @@ An erased value also stays in Postgres's dead tuples and WAL, on the
 primary and on any replica, until Postgres reclaims them, as a secret's old
 ciphertext does ([a deleted secret](#a-rotated-or-deleted-secret-stays-in-older-backups)): the substrate does not control when.
 What the record owns is tombstoned for the sweep, as a purge always did, and
-its own history stays until the pass forgets old deletions past
-`SUBSTRATE_DELETIONS_KEPT`, or until it is permanently deleted itself
+its own history stays until it is permanently deleted itself, or, on a
+deployment that sets `SUBSTRATE_DELETIONS_KEPT`, until the pass forgets old
+deletions past it
 ([decision 0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)).
 A copy made under a mapping since removed is out of its reach too: forget
 the history of the record that holds it.
@@ -3244,7 +3251,7 @@ And today:
 - **No erasure beyond the record.** A permanent delete erases the record's
   history and what holds its values by a typed link, and the archive's copy
   once its next pass has published; not what the record owns, which keeps
-  its own history until old deletions are forgotten, nor an export, a
+  its own history unless the deployment forgets old deletions, nor an export, a
   database backup or an archive version a bucket keeps, a request already in
   the webhook spool, or text another record quotes
   ([decision 0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)).

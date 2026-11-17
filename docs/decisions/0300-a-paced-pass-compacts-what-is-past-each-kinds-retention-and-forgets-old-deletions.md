@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-14
 decision-makers: George Antoniadis
+amended-by: 0334
 ---
 
 # 0300. A paced pass compacts what is past each kind's retention, and forgets old deletions

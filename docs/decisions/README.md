@@ -475,3 +475,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0331](0331-a-resync-restates-a-former-id-that-stands-under-its-owner-without-writing-it-twice.md) | A resync restates a former id that stands under its owner without writing it twice | accepted |
 | [0332](0332-an-upgrade-never-walks-a-repositorys-history.md) | An upgrade never walks a repository's history | proposed |
 | [0333](0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md) | A mirror of an outside service keeps all of its history | accepted |
+| [0334](0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md) | Every deletion is kept unless a deployment sets how long | accepted |

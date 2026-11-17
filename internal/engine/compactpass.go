@@ -60,14 +60,6 @@ import (
 // runs when nothing says otherwise.
 const DefaultCompactionInterval = time.Hour
 
-// DefaultDeletionsKept is how long a deletion is remembered before the pass
-// forgets the record, whatever its kind keeps (decision 0300): longer than
-// any retention a shipped kind states short of all, so such a kind's
-// deletions outlive its own history. A kind kept all, a mirror of an outside
-// service among them, loses a purged record's history here unless the
-// deployment keeps every deletion.
-const DefaultDeletionsKept = 30 * 24 * time.Hour
-
 // The pass's stages, which its test seam stops at (seams.go).
 const (
 	compactionInBatch    = "inside a batch, before its commit"
@@ -271,17 +263,21 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 	return report, nil
 }
 
-// FORGETTING A DELETION. A record purged longer ago than the deletions are
-// kept is forgotten: every entry of it goes, its purge and its state with
-// them, but for a state with neither row nor values where its effects moved
-// the unit graph's revision. A client that resumed from below the line its
-// deletion was on would never hear of it, so the repository's horizon moves
-// to that line, and a resume from below it is told `compacted` and lists
-// again (api watch.go). A record trigger reads every entry past its cursor,
-// so no deletion past the lowest cursor is forgotten: a trigger behind it
-// holds the horizon back, and its status says so. A permanent delete
-// erases the record's history at once and keeps its deletion's line, so it
-// moves no horizon; the pass forgets that line after the deletion period.
+// FORGETTING A DELETION. Every deletion is kept unless the deployment sets
+// how long (WithDeletionsKept, decision 0334): a deleted record's history is
+// the owner's, so by default the pass forgets none and nothing moves the
+// horizon. Where a period is set, a record purged longer ago than that is
+// forgotten, whatever its kind keeps: every entry of it goes, its purge and
+// its state with them, but for a state with neither row nor values where its
+// effects moved the unit graph's revision. A client that resumed from below
+// the line its deletion was on would never hear of it, so the repository's
+// horizon moves to that line, and a resume from below it is told `compacted`
+// and lists again (api watch.go). A record trigger reads every entry past
+// its cursor, so no deletion past the lowest cursor is forgotten: a trigger
+// behind it holds the horizon back, and its status says so. A permanent
+// delete erases the record's history at once and keeps its deletion's line,
+// so it moves no horizon; the pass forgets that line after the deletion
+// period, where one is set.
 //
 // A DELETION THAT IS KEPT. A record a package ships, and a bundle record,
 // are never forgotten whole (decision 0319): where the pass would forget

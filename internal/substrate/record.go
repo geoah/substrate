@@ -101,8 +101,8 @@ type Erasure struct {
 	Purged []string `json:"purged,omitempty"`
 	// Tombstoned is how many records the record owned that its delete
 	// tombstoned for the collector's sweep, as a delete's cascade does: they
-	// are deleted with it and keep their own history until old deletions are
-	// forgotten.
+	// are deleted with it and keep their own history unless the server
+	// forgets old deletions.
 	Tombstoned int `json:"tombstoned,omitempty"`
 	// Kept is every record a mapping copied a value of this one into whose
 	// copy the erasure leaves, and why: its own history holds a kept effect

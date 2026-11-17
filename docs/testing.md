@@ -345,7 +345,7 @@ half of validation item 10 of the 1.0 plan, and it runs only when
   operator's door (`substratectl repository compact`).
 - **The compaction pass:** run pass after pass until one finishes, with every
   kind keeping nothing past a record's latest state, as the door does, and
-  the pass's clock past the deletion period. The restored history came in
+  a deletion period set and the pass's clock past it. The restored history came in
   without the write path's index, as an upgraded or restored deployment's
   does, so its first passes derive the index before they compact. It records
   each pass, how long the passes that were still deriving the index took and

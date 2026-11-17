@@ -391,7 +391,7 @@ each kind's `EFFECTIVE` retention.
   record rather than a restore of the tombstone, and erases its history and
   that of what asks to change it or was merged into it
   ([api](api.md#the-five-mutations)); what it owns is tombstoned for the
-  sweep, its own history kept until old deletions are forgotten. A record a
+  sweep, its own history kept unless the server forgets old deletions. A record a
   finalizer holds refuses it.
 
 A pointer at another record is a property, so `apply` and `patch` write it like

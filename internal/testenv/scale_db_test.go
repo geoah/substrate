@@ -56,6 +56,11 @@ import (
 
 const scaleAuthority = "scale.example.com"
 
+// scaleDeletionsKept is the deletion period the harness's compaction pass
+// runs with: a server keeps every deletion unless one is set, and the
+// harness times the forgetting too.
+const scaleDeletionsKept = 30 * 24 * time.Hour
+
 func scaleVocabulary() string {
 	ref := scaleAuthority + "/scale"
 	return `
@@ -466,7 +471,8 @@ func TestScaleTimings(t *testing.T) {
 			testenv.WithEngineOptions(engine.WithArchive(store), engine.WithArchiveInterval(24*time.Hour),
 				engine.WithCompactionInterval(-1),
 				engine.WithTestCompactionRetention(func(string) (bool, time.Duration) { return false, 0 }),
-				engine.WithTestCompactionClock(func() time.Time { return time.Now().Add(engine.DefaultDeletionsKept + time.Hour) })))
+				engine.WithDeletionsKept(scaleDeletionsKept),
+				engine.WithTestCompactionClock(func() time.Time { return time.Now().Add(scaleDeletionsKept + time.Hour) })))
 		_, err := restored.Service.Dataset(ctx, scaleAuthority)
 		return 0, err
 	})
@@ -476,9 +482,11 @@ func TestScaleTimings(t *testing.T) {
 	// deployment's history does, so its first passes derive the index before
 	// they compact. Every kind keeps nothing past a record's latest state, the
 	// operator's door's work below, so the two compare, and the pass's clock
-	// stands past the deletion period. A server runs one pass an interval,
-	// each bounded by its budget, so the passes this takes, at the default
-	// interval, are how long a server's own passes take to clear the history.
+	// stands past a deletion period the harness sets, so it times the
+	// forgetting a deployment that sets SUBSTRATE_DELETIONS_KEPT runs. A
+	// server runs one pass an interval, each bounded by its budget, so the
+	// passes this takes, at the default interval, are how long a server's own
+	// passes take to clear the history.
 	restored.Token = token
 	e = restored
 	rds, err := restored.Service.Dataset(ctx, scaleAuthority)
