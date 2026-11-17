@@ -461,6 +461,17 @@ A write a later continuation of the child thread makes (a decision resume)
 is on the child's rows and not in the count. A reader that wants the entries
 opens the child thread.
 
+**A sub-agent that did not finish says why.** The call's result is
+`{reply, thread, status}` for a child that settled `ok`. Any other status adds
+the child thread's `cause` and `reason`, `failedCall` (`{tool, error}`, the
+child's newest tool call where it failed) and `stopped`: one sentence the
+calling model can repeat to the owner, naming the budget that ended the run
+(its time window, and whether the caller's own deadline cut it shorter, its
+turns or its tool calls), the call it failed on, and, for a time limit that
+ended a call still running, that this call took the time and nothing of it
+was applied. A caller that read `overbudget` alone told the owner to raise a
+spend cap when a declaration's index build had waited out the window.
+
 **Every tool row names its callable beside its alias.** `name` on a
 `toolCalls` entry and on the tool row is the name the model saw, which is the
 agent's alias. The engine also stamps `callable` on both: the record path of

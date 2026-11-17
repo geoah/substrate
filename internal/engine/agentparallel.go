@@ -148,6 +148,9 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 			}
 		}
 		c.out = l.capToolResult(c.out)
+		if !c.refused {
+			l.in.outcome.noteTool(c.call.Name, c.out, c.ok)
+		}
 		job := ""
 		if c.job != nil {
 			job = jobWorking

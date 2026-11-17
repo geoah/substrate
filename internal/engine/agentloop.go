@@ -243,6 +243,10 @@ type agentInvocation struct {
 	// budget, so the loop settles its thread before its caller gives up on
 	// it.
 	notAfter time.Time
+	// outcome, on a sub-agent invocation, is where the run leaves its window
+	// and its last failed call for the call that ran it
+	// (agentsubagentstop.go).
+	outcome *subagentOutcome
 	// emit streams loop events; nil disables streaming.
 	emit func(substrate.AgentEvent)
 	// tally is the shared root roll-up; nil at the root.
@@ -1026,8 +1030,12 @@ func (l *agentLoop) run(ctx context.Context) (res *substrate.AgentResult, err er
 
 	started := nowUTC()
 	deadline := started.Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
-	if !l.in.notAfter.IsZero() && l.in.notAfter.Before(deadline) {
+	callerBound := !l.in.notAfter.IsZero() && l.in.notAfter.Before(deadline)
+	if callerBound {
 		deadline = l.in.notAfter
+	}
+	if o := l.in.outcome; o != nil {
+		o.window, o.callerBound = deadline.Sub(started), callerBound
 	}
 	lctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
@@ -3692,8 +3700,9 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	defer cancel()
 	defer context.AfterFunc(l.runCtx, cancel)()
 	child := continued
+	outcome := &subagentOutcome{}
 	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
-		mode: agentModeSubagent, user: input, notAfter: notAfter,
+		mode: agentModeSubagent, user: input, notAfter: notAfter, outcome: outcome,
 		parent: l.threadID, root: l.rootThread(), depth: depth, threadID: continued,
 		// A stop of the detached turn stops the child with it, and the
 		// child settles `stopped` on its own bounded writes.
@@ -3720,7 +3729,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	return toolJSON(map[string]any{"reply": res.Reply, "thread": res.Thread, "status": res.Status}), res.Status != threadError
+	return toolJSON(subagentResult(sub, res, outcome)), res.Status != threadError
 }
 
 // continuedChild admits a sub-agent call that continues an earlier thread:
