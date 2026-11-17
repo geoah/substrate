@@ -261,13 +261,19 @@ extension TurnPresenter {
     /// words, its headings passed over), then whole sentences while they
     /// fit, else cut at a word and marked.
     static func summary(of text: String, markdown: Bool = true) -> String {
-        let paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        // A heading is passed over line by line: one written straight above
+        // its paragraph, with no blank line between, leaves the paragraph.
+        let paragraphs = text.components(separatedBy: "\n\n").map { paragraph in
+            paragraph.split(separator: "\n", omittingEmptySubsequences: false)
+                .drop { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+                .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let lead =
             markdown
             ? paragraphs.first { paragraph in
-                !paragraph.hasPrefix("#") && !paragraph.hasPrefix("```") && !paragraph.hasPrefix("~~~") && !paragraph.hasPrefix("|")
+                !paragraph.isEmpty && !paragraph.hasPrefix("```") && !paragraph.hasPrefix("~~~") && !paragraph.hasPrefix("|")
                     && !paragraph.allSatisfy { "-*_ ".contains($0) }
-            } ?? paragraphs.first ?? text
+            } ?? text
             : text
         let flat = markdown ? plainText(markdown: lead) : lead.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard flat.count > panelLine else { return flat }
