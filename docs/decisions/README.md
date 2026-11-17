@@ -435,7 +435,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |
 | [0281](0281-a-repository-the-start-finds-damaged-is-set-aside-in-memory-and-the-rest-serve.md) | A repository the start finds damaged is set aside in memory, and the rest serve | accepted |
-| [0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md) | A kind declares how long its history is kept, and a repository may override it | superseded |
+| [0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md) | A kind declares how long its history is kept, and a repository may override it | accepted |
 | [0283](0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md) | Trigger run records keep a week of history, and positions stay in the log | accepted |
 | [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
 | [0287](0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md) | A repository's name is an alias, and a former name holds for 90 days | accepted |
