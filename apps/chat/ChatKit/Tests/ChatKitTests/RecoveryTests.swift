@@ -187,4 +187,48 @@ struct RecoveryTests {
         #expect(await rig.card(key) == nil)
         #expect(rig.server.count("/continue") == 1)
     }
+
+    @Test func aTryAgainWhoseAnswerWasLostAndWhoseRunFailedShowsTheServersFailure() async throws {
+        let failed = threadJSON(version: 3, status: "error").replacingOccurrences(of: #""lastReply":"Hello""#, with: #""reason":"llm: overloaded""#)
+        let threads = #"{"head":10,"generation":"g","records":[\#(failed)]}"#
+        let rig = ChatRig(
+            [.init(method: "GET", path: "/llm/thread/t1", answer: .json(200, failed))] + baseRoutes(threads: threads, status: "error") + [
+                .init(method: "POST", path: "/continue", answer: .fail(.timedOut)),
+                .init(method: "GET", path: "/events", answer: .stream([#"{"kind":"idle","thread":"t1","status":"error"}"#])),
+            ])
+        try await rig.signIn(agents: 5)
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
+        // The continue's answer never came; its run failed again, and the
+        // server says why.
+        rig.server.route("GET", "/llm/thread/t1", .json(200, settled("error", cause: "provider_billing", reason: "llm: credit balance is too low")))
+        try await rig.send(.continueTurn, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        try await rig.harness.until { _ in await rig.card(key)?.sentence == "The provider's account is out of credit." }
+        let card = try #require(await rig.card(key))
+        #expect(card.details?.text == "llm: credit balance is too low" && card.button == FailureButton(title: "Try Again", action: .resume))
+        #expect(await rig.live(key)?.turnFailure == nil)
+    }
+
+    @Test func aProbeThatClosesBeforeItsFirstEventLeavesTheWaitQuiet() async throws {
+        let running = threadJSON(version: 3, status: "running")
+        let rig = ChatRig(
+            baseRoutes(threads: #"{"head":10,"generation":"g","records":[\#(running)]}"#, status: "running")
+                + [.init(method: "GET", path: "/events", answer: .stream([]))])
+        rig.server.route("GET", "/events", once: true, .stream([#"{"kind":"idle","thread":"t1","status":"running"}"#]))
+        rig.server.route("GET", "/api/v1/records", query: "llm/message", .json(200, page([messageRow("m1", "user", "Hi", turn: 0)])))
+        try await rig.signIn(agents: 5)
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        let (frames, watching) = await rig.frames(key)
+        defer { watching.cancel() }
+        try await rig.harness.until { _ in await rig.live(key)?.phase == .background }
+        // The wait asks for a stream again; it closes with nothing said.
+        try await rig.harness.until(advancing: 6) { _ in rig.server.count("/events") >= 3 }
+        await rig.harness.settle()
+        let live = try #require(await rig.live(key))
+        #expect(live.phase == .background && !live.reconnecting && live.lastFailure == nil)
+        #expect(frames.all.allSatisfy { $0.composer.status?.kind != .reconnecting })
+    }
 }

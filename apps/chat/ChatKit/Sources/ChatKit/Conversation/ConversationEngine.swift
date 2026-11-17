@@ -859,17 +859,15 @@ extension Conversation {
             case .idle:
                 run.idle = event.status ?? "unknown"
                 // The turn ended. A failure the run itself reported is the
-                // turn's; a continue that never got an answer is said in
-                // its place while the thread says its run did not finish;
-                // on a thread that finished, its rows say how it stands
-                // (what the continue wrote, or the reply it was pressed on
-                // with its own button), and nothing failed; a stream that
+                // turn's. A continue whose answer was lost may or may not
+                // have run, and the thread's row says how it stands either
+                // way: its reply, or the failure it settled on (the one the
+                // button was pressed on, or a new one) with the server's
+                // cause; a refused continue never comes here. A stream that
                 // merely dropped says nothing of how the turn ended, which
                 // the thread's row does.
                 if run.idle != "running", let last = state.lastFailure {
-                    if last.attempt == .resume {
-                        if run.idle != "ok" { state.turnFailure = last }
-                    } else if case .run = last.why {
+                    if case .run = last.why {
                         state.turnFailure = last.attempting(.reply)
                     }
                 }
@@ -972,6 +970,12 @@ extension Conversation {
                     // brought nothing new waits first, as any that ended
                     // early does, so a reader that cannot keep up does not
                     // ask in a loop.
+                    // A probe that closed before its first event drew
+                    // nothing: the wait asks again, as for a failed one.
+                    if run.probe {
+                        state.run = nil
+                        return
+                    }
                     if !run.lagged { state.lastFailure = Failure(.attach, .streamEnded) }
                     return reattach(&state, attempt: run.lagged && run.moved ? 0 : run.attempt + 1)
                 }
