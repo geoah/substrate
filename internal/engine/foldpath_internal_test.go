@@ -58,6 +58,8 @@ var foldWriteSites = map[string]string{
 	// and the declarations, and a rebuild derives it again.
 	"fold.go:rederiveFTS":           "`fts`, the search index over the folded row",
 	"refs.go:syncRefs":              "the refs projection of one row, derived again by foldRecordOp on replay",
+	"refs.go:syncRefsFrom":          "a replayed write's refs projection, written as the change from the rows its earlier write derived",
+	"refs.go:insertRefRow":          "one row of syncRefs' and syncRefsFrom's projection",
 	"refs.go:syncRefsOfRows":        "the refs projection of a page of rows, for a declaration change",
 	"unitgraph.go:replaceUnitUses":  "the unit spellings one row's values store, derived again by foldRecordOp on replay",
 	"unitgraph.go:moveUnitRevision": "the unit graph's revision, moved once per changed unit or conversion row, which a replay moves the same",
