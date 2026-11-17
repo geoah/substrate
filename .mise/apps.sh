@@ -1042,10 +1042,12 @@ fetch_closure() {
 # document lists under another digest, one below the newest listed, and a
 # narrowing of the newest published closure unless
 # SUBSTRATE_APPLE_SITE_ALLOW_NARROWING=1 passes `--allow-narrowing`. The
-# document goes to it as a file, with each package's newest published
-# closure fetched beside it under the name the file lists, because a
+# document goes to it as a file, with every published closure of the
+# package fetched beside it under the name the file lists, because a
 # file-backed document's closures are read from the document's directory
-# and never fetched. Runs in a dry run too: it uploads nothing.
+# and never fetched, and the check reads each published version for the
+# kinds it declared, which no later version may remove (decision 0269).
+# Runs in a dry run too: it uploads nothing.
 check_publications() {
 	local out="$1" published="$2" built="$3" authority="$4" site="$5"
 	local new
@@ -1065,18 +1067,17 @@ check_publications() {
 	jq --arg authority "$authority" '{authority: $authority, name: (.name // "Substrate"),
 		packages: [(.packages // [])[] | . as $p | . + {versions: [($p.versions // [])[] | . + {closure: "\($p.package)-\(.version).yaml"}]}]}' \
 		<<<"$published" >"$doc"
-	local pkg version newest nv nurl args
+	local pkg version nv nurl args
 	while read -r pkg version; do
-		newest="$(jq -r --arg pkg "$pkg" '[(.packages // [])[] | select(.package == $pkg) | (.versions // [])[]] | sort_by(-.version) | first // empty |
-			"\(.version) \(.closure)"' <<<"$published")"
-		if [ -n "$newest" ]; then
-			read -r nv nurl <<<"$newest"
+		while read -r nv nurl; do
+			[ -n "$nv" ] || continue
 			fetch_closure "$nurl" "$tmp/$pkg-$nv.yaml" || {
 				echo "apps: fetching the published $authority/$pkg version $nv closure from $nurl failed; the candidate cannot be compared with it" >&2
 				rm -rf "$tmp"
 				return 1
 			}
-		fi
+		done < <(jq -r --arg pkg "$pkg" '(.packages // [])[] | select(.package == $pkg) | (.versions // [])[] |
+			"\(.version) \(.closure)"' <<<"$published")
 		args=(publish "$authority/$pkg" --check --file "$out/packages/$pkg-$version.yaml" --version "$version"
 			--closure "$site/packages/$pkg-$version.yaml" --document "$doc")
 		if [ "${SUBSTRATE_APPLE_SITE_ALLOW_NARROWING:-}" = 1 ]; then args+=(--allow-narrowing); fi
