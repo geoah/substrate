@@ -213,6 +213,128 @@ func TestAShippedKindsLineBeforeItsDeclarationIsReadByTheFirstVersion(t *testing
 	}
 }
 
+// A bare binding resolves against the traits that govern the line, as the
+// loader reloaded at each declaration resolved it then, never against a
+// trait declared after the line's transaction. A trait the declaring package
+// adds later takes the binding from then on; a second package declaring the
+// word later leaves the earlier lines resolved and stops the conversion at
+// the later ones; and a trait declared in the kind's own transaction (one
+// vocabulary batch, which the loader resolved after) governs every line of
+// that transaction and after.
+func TestABareTraitBindingIsReadByTheTraitsThatGovernTheLine(t *testing.T) {
+	trait := func(seq int64, id, prop string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindTrait, ID: id, Properties: map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "ada.example.com/notes/note"},
+		}}}
+	}
+	kind := func(seq int64, id, binds string) declarationVersion {
+		return declarationVersion{Seq: seq, Ref: kindKind, ID: id, Properties: map[string]any{"traits": []any{binds}}}
+	}
+	refs := referencePositionsOf([]declarationVersion{
+		trait(1, "other.example.com/people/owner", "account"),
+		trait(1, "a.example.com/x/feedback", "from"),
+		trait(1, "other.example.com/people/pinned", "elsewhere"),
+		kind(2, "ada.example.com/tasks/task", "owner"),
+		kind(2, "ada.example.com/tasks/log", "feedback"),
+		trait(5, "ada.example.com/tasks/owner", "owner"),
+		trait(5, "b.example.com/y/feedback", "to"),
+		// One batch, its transaction seq 10 to 12: the kind, a line of it,
+		// then the trait it binds.
+		kind(10, "ada.example.com/notes/note", "pinned"),
+		trait(12, "ada.example.com/notes/pinned", "pinnedBy"),
+	}, localizeHome)
+	for _, c := range []struct {
+		kind       string
+		seq, txn   int64
+		want, lack string
+	}{
+		{"~/tasks/task", 3, 3, "account", "owner"},        // only another package's owner governs the line
+		{"~/tasks/task", 6, 6, "owner", "account"},        // its own package's owner since seq 5
+		{"~/tasks/log", 3, 3, "from", "to"},               // one feedback before the second is declared
+		{"~/notes/note", 11, 12, "pinnedBy", "elsewhere"}, // its package's pinned, later in the batch
+		{"~/notes/note", 20, 20, "pinnedBy", "elsewhere"},
+	} {
+		got, err := refs.at(c.kind, c.seq, c.txn, "")
+		if err != nil {
+			t.Errorf("a line of %s at seq %d: %v", c.kind, c.seq, err)
+			continue
+		}
+		if _, ok := got[c.want]; !ok {
+			t.Errorf("a line of %s at seq %d holds no reference at %s: %v", c.kind, c.seq, c.want, slices.Sorted(maps.Keys(got)))
+		}
+		if _, ok := got[c.lack]; ok {
+			t.Errorf("a line of %s at seq %d holds a reference at %s, from a trait that did not govern it", c.kind, c.seq, c.lack)
+		}
+	}
+	if _, err := refs.at("~/tasks/log", 6, 6, ""); err == nil || !strings.Contains(err.Error(), "binds feedback") {
+		t.Errorf("a line of a kind binding a word two packages declare by then: %v, want the conversion stopped", err)
+	}
+}
+
+// The first version of a shipped kind reads a line before it only where the
+// engine wrote that line: the seed or the system hand, as the line names it
+// when step 6 reads it, an actor record's id (conversion step 3). A line
+// another hand wrote before any declaration of the kind, a published
+// package's or the person's, still stops the conversion.
+func TestAShippedKindsLineBeforeItsDeclarationIsReadOnlyWhereTheEngineWroteIt(t *testing.T) {
+	unit := vocabulary.PackageCore + "/unit"
+	workout := vocabulary.AuthorityPublisher + "/health/workout"
+	reference := map[string]any{"type": "reference", "kind": unit}
+	refs := referencePositionsOf([]declarationVersion{
+		{Seq: 11, Ref: kindKind, ID: unit, Properties: map[string]any{"properties": map[string]any{"base": reference}}},
+		{Seq: 40, Ref: kindKind, ID: workout, Properties: map[string]any{"properties": map[string]any{"unit": reference}}},
+	}, localizeHome)
+	for _, actor := range []substrate.Actor{substrate.ActorSeed, substrate.ActorSystem} {
+		got, err := refs.at(unit, 5, 6, vocabulary.ActorID(actor))
+		if err != nil {
+			t.Errorf("a line of %s by %s before its declaration: %v", unit, actor, err)
+		} else if _, ok := got["base"]; !ok {
+			t.Errorf("a line of %s by %s holds no reference at base: %v", unit, actor, slices.Sorted(maps.Keys(got)))
+		}
+	}
+	for _, c := range []struct {
+		kind  string
+		actor substrate.Actor
+	}{
+		{unit, substrate.ActorPerson},
+		{unit, substrate.BundleActor(vocabulary.AuthorityPublisher, "health")},
+		{workout, substrate.ActorPerson},
+		{workout, substrate.BundleActor(vocabulary.AuthorityPublisher, "health")},
+	} {
+		if _, err := refs.at(c.kind, 5, 6, vocabulary.ActorID(c.actor)); err == nil || !strings.Contains(err.Error(), "no declaration of "+c.kind+" governs it") {
+			t.Errorf("a line of %s by %s before any declaration of it: %v, want the conversion stopped", c.kind, c.actor, err)
+		}
+	}
+	// A line from before the actor links, its hand spelled, as step 6 is
+	// handed it: through every step below it, so its actor is the id step 3
+	// linked.
+	line := func(spelled string) error {
+		e := &changelogfile.Entry{
+			Seq: 5, Txn: 6, Op: "put", Kind: workout, RecordID: "w1", Actor: spelled, HasPrincipal: true,
+			Payload: []byte(`{"fold":[{"delta":{"set":{"unit":{"ref":"` + unit + `/kg"}}},"id":"w1","kind":"record","ref":"` + workout + `","version":1}]}`),
+		}
+		for _, step := range conversionSteps {
+			if step.Dialect >= localNamespaceDialect {
+				break
+			}
+			if err := step.Line(e); err != nil {
+				t.Fatalf("step %d: %v", step.Dialect, err)
+			}
+		}
+		return localizeLine(localizeHome, refs, actorMoves{})(e)
+	}
+	for _, spelled := range []string{string(substrate.ActorSeed), string(substrate.ActorSystem)} {
+		if err := line(spelled); err != nil {
+			t.Errorf("a line of %s %s wrote before its declaration: %v", workout, spelled, err)
+		}
+	}
+	for _, spelled := range []string{"console", string(substrate.BundleActor(vocabulary.AuthorityPublisher, "health"))} {
+		if err := line(spelled); err == nil || !strings.Contains(err.Error(), "seq 5 writes a record of "+workout) {
+			t.Errorf("a line of %s %s wrote before its declaration: %v, want the conversion stopped", workout, spelled, err)
+		}
+	}
+}
+
 func TestLocalizeLineMovesOwnKindsAndLeavesTheRest(t *testing.T) {
 	cases := []localizeCase{
 		{
