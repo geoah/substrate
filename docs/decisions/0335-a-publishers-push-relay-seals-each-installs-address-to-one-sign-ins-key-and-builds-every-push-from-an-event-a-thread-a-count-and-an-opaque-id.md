@@ -56,18 +56,23 @@ What binds:
 - **The signature** is `Substrate-Push-Signature: t=<unix>,s=<base64url>`
   over `substrate-push-v1\n`, `t`, `\n` and the hex SHA-256 of the body. It
   is checked within 300 seconds either way, against the key sealed in the
-  push key, and each accepted signature is kept until `t` plus 300 seconds
-  and refused as `replayed`, per replica, at most 200,000 entries.
+  push key. A signature is held until `t` plus 300 seconds and a repeat is
+  refused as `replayed`, per replica. It is held only once its push passed
+  the install's and the total limits, in one step under one lock and at one
+  clock, so the window holds at most eleven minutes of the total limit and
+  never drops a live entry: the total limit is bounded so that fits 200,000,
+  and a window full anyway answers `rate_limited`.
 - **No words from a caller.** The Apple payload is built from the event (a
   closed set), the thread (a record id), the badge (0 to 999), the event id
   (opaque, 32 to 1,024 characters) and the sealed generation; the alert is a
   `loc-key` into the app's own strings. A `request` carries no collapse id.
 - **Limits** are token buckets of a minute's allowance, in memory: per
   install by a keyed digest of Apple's token and in all, charged only after
-  the signature verifies; per caller address and per registering caller, read
-  through `internal/peer` as the server reads one. Refusals in all are
-  bounded too: past that bound a refusal is answered `rate_limited` and not
-  logged, and a push that verifies is never held by it.
+  the signature verifies; per caller and per registering caller, the address
+  read through `internal/peer` as the server reads one, an IPv6 caller by its
+  /64. Refusals in all bound the log and not the answers: past the bound a
+  refusal keeps its own code, which a server acts on, and is counted instead
+  of logged, and a request its caller's own limit holds is not charged to it.
 - **The API is versioned in its path.** `/v1/` is served while anything that
   speaks it may exist; a key it does not know is ignored, a value it does not
   know is refused, and every refusal is one envelope with a code from a
@@ -90,6 +95,8 @@ What binds:
   registration comes from a genuine install (App Attest), which is not done.
 - Bad, because the replay window and the limits are per replica: a request
   replayed to another replica within ten minutes is sent again.
+- Bad, because the window's bound caps the pushes in all at 18,181 a minute
+  on one replica.
 - Bad, because a compromised server keeps signing for the installs it held
   until their keys expire, up to 90 days after each last registered.
 - Bad, because the relay's logs still link one registration's pushes by the

@@ -3252,18 +3252,20 @@ so it may run before any server or app uses it.
 | `SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_FILE`, `SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_ID` | Apple's token-auth key (`.p8`) for `production` and its key id; the file readable by uid 65532 | `/keys/production.p8` |
 | `SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_FILE`, `SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_ID` | the same for `development`; the same file where one key serves both | `/keys/development.p8` |
 | `SUBSTRATE_PUSH_RELAY_APNS_TOPICS` | the bundle ids it pushes to, comma separated | `com.example.chat` |
-| `SUBSTRATE_PUSH_RELAY_SEAL_KEY` | the base64 of 32 random bytes (`openssl rand -base64 32`) | |
-| `SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS` | the seal key before a rotation, optional | |
-| `SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS` | where Prometheus metrics listen, optional; unset is none | `:9090` |
+| `SUBSTRATE_PUSH_RELAY_SEAL_KEY`, or `SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE` naming a file that holds it | the base64 of 32 random bytes (`openssl rand -base64 32`) | `/secrets/seal-key` |
+| `SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS`, or `SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS_FILE` | the seal key before a rotation, optional | |
+| `SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS` | where Prometheus metrics listen, optional; unset is none. Keep it off the public network: `:9090` is every interface of the container, which only the cluster or the host should reach | `:9090` |
 | `SUBSTRATE_PUSH_RELAY_LIMIT_*` | the limits below, optional | |
 | `PORT`, `SUBSTRATE_BIND_ADDRESS`, `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT` | the listener, as the server's ([TLS and the reverse proxy](#tls-and-the-reverse-proxy)); the image sets 8080, every interface, and true | |
-| `SUBSTRATE_TRUSTED_PROXIES` | the TLS terminator in front, so the limits key on the caller and not on it | `10.0.0.0/8` |
+| `SUBSTRATE_TRUSTED_PROXIES` | the one address the TLS terminator in front connects from, so the limits key on each caller and not on the terminator (below) | `172.17.0.1` |
 | `LOG_LEVEL`, `LOG_FORMAT` | as the server's | `info`, `json` |
 
 At least one environment needs both its key file and its key id, and an
 environment with neither refuses registrations for it. The relay refuses to
-start without a team id, a topic or a seal key, with half an environment, or
-with a key that is not a P-256 `.p8`. An app's builds for TestFlight and the
+start without a team id, a topic or a seal key, with half an environment,
+with a key that is not a P-256 `.p8`, with a seal key set both ways, with a
+previous seal key that is the current one, or with
+`SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL` over 18,181 (the replay window below). An app's builds for TestFlight and the
 App Store register in `production`; development builds, and the builds a
 publisher's own feed exports for debugging, in `development`.
 
@@ -3283,8 +3285,8 @@ sealed has expired.
 ### Running it
 
 Behind a TLS terminator on a public host the publisher chooses, pinned by
-digest. With `TEAM_ID`, `KEY_ID`, `SEAL_KEY` and `DIGEST` set in the shell,
-and one key serving both environments:
+digest. With `TEAM_ID`, `KEY_ID`, `SEAL_KEY`, `PROXY` and `DIGEST` set in
+the shell, and one key serving both environments:
 
 ```bash
 docker run -d --name push-relay --restart unless-stopped \
@@ -3297,10 +3299,27 @@ docker run -d --name push-relay --restart unless-stopped \
   -e "SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_ID=$KEY_ID" \
   -e "SUBSTRATE_PUSH_RELAY_APNS_TOPICS=com.example.chat" \
   -e "SUBSTRATE_PUSH_RELAY_SEAL_KEY=$SEAL_KEY" \
+  -e "SUBSTRATE_TRUSTED_PROXIES=$PROXY" \
   "ghcr.io/geoah/substrate-push-relay@sha256:$DIGEST"
 ```
 
-with `https://push.example.com` proxied to `127.0.0.1:8090`. On Kubernetes
+with `https://push.example.com` proxied to `127.0.0.1:8090`.
+
+**The proxy's address.** The image listens on every interface of its
+container, so whatever connects to it is the TLS terminator, and without
+`SUBSTRATE_TRUSTED_PROXIES` every caller is that one address: the per-caller
+limits then hold every server and every app together, and one caller past
+its allowance holds all of them. The relay warns at boot when it listens
+beyond loopback with the variable unset. Set it to the one address the
+terminator connects from, not a range. For a terminator on the Docker host
+that is usually the bridge's gateway, `172.17.0.1` on Docker's default
+network (`docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}'`).
+To see it rather than guess, start the relay without the variable, send it
+one request through the terminator
+(`curl -s -X POST https://push.example.com/v1/push`), and read the `caller`
+of the refusal it logs. On Kubernetes it is the ingress controller's pod
+address, or the narrowest range those pods are given. Behind the listed
+proxy, the caller is the address it names in `X-Forwarded-For`. On Kubernetes
 it is a Deployment of one replica of the same image, the keys and the seal
 key mounted from secrets, a Service, an Ingress for the host, a liveness
 probe on `/healthz` and a readiness probe on `/readyz`. Pass `/v1/` and
@@ -3335,8 +3354,9 @@ docker exec push-relay substrate-push-relay check \
   --device-token "$TEST_INSTALL_TOKEN" --environment development
 ```
 
-which sends one reply alert, with the app's fallback words and an event id
-that resolves nowhere, and passes when Apple answers 200. A development build
+which sends one reply alert, with the app's fallback words, an event id that
+resolves nowhere and no badge, so the install's count is left as it was,
+and passes when Apple answers 200. A development build
 of the app shows its own Apple token in its diagnostics. Then
 `curl https://push.example.com/healthz` from outside.
 
@@ -3350,19 +3370,46 @@ what a server does with each are in the push plan's section 1 and in
 | Limit, per minute | Keyed by | Charged | Default | Variable |
 | --- | --- | --- | --- | --- |
 | pushes per install | a keyed digest of Apple's token | once the signature verifies | 20 | `SUBSTRATE_PUSH_RELAY_LIMIT_INSTALL` |
-| requests per caller | the caller's address | every request to `/v1/` | 600 | `SUBSTRATE_PUSH_RELAY_LIMIT_CALLER` |
-| registrations per caller | the caller's address | every register | 30 | `SUBSTRATE_PUSH_RELAY_LIMIT_REGISTER` |
+| requests per caller | the caller's address, an IPv6 caller's /64 | every request but `/healthz` and `/readyz` | 600 | `SUBSTRATE_PUSH_RELAY_LIMIT_CALLER` |
+| registrations per caller | the same | every register | 30 | `SUBSTRATE_PUSH_RELAY_LIMIT_REGISTER` |
 | pushes in all | nothing | once the signature verifies | 12,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL` |
 | registrations in all | nothing | every register | 3,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_REGISTER_TOTAL` |
-| refusals in all | nothing | every request refused before Apple is called | 3,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_REFUSED_TOTAL` |
+| refusals in all | nothing | every request refused before Apple is called, but one its caller's own limit holds | 3,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_REFUSED_TOTAL` |
 
 Each is a token bucket holding one minute's allowance, refilled evenly, and
-a request it stops is answered 429 `rate_limited` with `Retry-After`. Past
-the refusals in all, a request that would be refused is answered
-`rate_limited` instead and is not logged, so a flood of bad requests costs
-the logs a bounded amount; a push that verifies is never held by that limit.
-The keyed buckets live in one map of 100,000 entries, the least recently used
-dropped first.
+a request one of the first five stops is answered 429 `rate_limited` with
+`Retry-After`. The refusals in all bound the log, not the answers: past it a
+refusal is still answered with its own code, so a server still learns that a
+key expired or was refused and deletes the device, but it is counted
+(`substrate_push_relay_limited_total{limit="refused_total"}`) instead of
+logged. A request its own caller's limit holds is logged at debug alone and
+not charged to it, so one address cannot spend the others' share. The keyed
+buckets live in one map of 100,000 entries, the least recently used dropped
+first.
+
+**The replay window** holds the signature of every push sent until it can
+no longer be accepted, at most ten minutes. A signature is held only once
+the install's and the total limits let its push through, so the window
+holds at most eleven minutes of the total limit (132,000 at the default) and
+never drops a signature it holds; that is why the total limit stops at
+18,181 a minute, which fills the window's 200,000. Were it full anyway, a
+push is answered `rate_limited`.
+
+What Apple answers, and what the relay answers the server:
+
+| Apple | The relay | Why |
+| --- | --- | --- |
+| 200 | 200 `sent` | |
+| 410, or 400 `BadDeviceToken` or `DeviceTokenNotForTopic` | 410 `gone`, and the server deletes the device | `BadDeviceToken` is also a token of the other environment, a development build's token sent to `production`: its device is deleted, and the install registers again in its own environment when it next opens |
+| 403 `InvalidProviderToken`, 400 `TopicDisallowed` or `BadTopic` | 502 `upstream`, logged as an error | the key, its id, the team id or the topic is wrong |
+| 403 `BadEnvironmentKeyIdInToken` | 502 `upstream`, logged as an error naming the environment | a key issued for one environment is configured for the other |
+| 403 `ExpiredProviderToken` | the provider token is replaced and the push sent once more; 502 `upstream` if that is refused too, or if the token is under a minute old, when the relay's clock is the likelier fault | |
+| 429, 5xx, or no answer | 502 `upstream` | |
+| anything else | 500 `internal`, logged | |
+
+The connections to Apple stay open between pushes, and each is pinged after
+30 seconds without a frame and closed if the ping goes unanswered for 10, so
+one a NAT dropped while idle is replaced before a push waits on it.
 
 A log line carries the route, the status and code, the topic, the
 environment, the event, Apple's status, reason and `apns-id`, and the push
@@ -3377,9 +3424,11 @@ relay's own port is public:
 
 - `substrate_push_relay_requests_total{route, code}`: `code` is `sent`,
   `registered` or a refusal's code
-- `substrate_push_relay_apple_total{environment, status, reason}`
+- `substrate_push_relay_apple_total{environment, status, reason}`: `reason`
+  is one Apple documents, empty for none, or `other`
 - `substrate_push_relay_apple_seconds{environment}`
-- `substrate_push_relay_limited_total{limit}`
+- `substrate_push_relay_limited_total{limit}`: `install`, `caller`,
+  `register`, `total`, `register_total`, `refused_total` or `replay_window`
 - `substrate_push_relay_tokens_minted_total{environment}`
 
 When the relay is down, servers drop their pushes and count them failed;
