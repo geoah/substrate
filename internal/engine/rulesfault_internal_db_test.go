@@ -86,6 +86,19 @@ func (r *runsRepository) staged(t *testing.T, agent string, turns ...fakeTurn) s
 }
 
 var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, string){
+	// A delete of another person's device asks whether the hand is an
+	// admin: with the roles unread, it is refused.
+	"devices.go:guardDeviceOwner": func(t *testing.T, r *runsRepository) (bool, string) {
+		cy := r.mint(t, r.cyID, nil)
+		if _, err := r.putDevice(r.tokenCtx(r.cyID, cy.ID), cy.ID, deviceProps("v1.cy", "replies")); err != nil {
+			return false, err.Error()
+		}
+		ada := r.mint(t, r.adaID, nil)
+		r.fail("roles")
+		defer r.heal()
+		_, err := r.ds.Delete(r.tokenCtx(r.adaID, ada.ID), substrate.ActorPerson, typeDevice, cy.ID, substrate.DeleteInput{})
+		return errRefused(err)
+	},
 	// Reads.
 	"agentloop.go:dispatchQuery": func(t *testing.T, r *runsRepository) (bool, string) {
 		return r.toolRefused(t, "scribe", fakeCall{"query", toolArgs(t, map[string]any{"kind": r.note})})
