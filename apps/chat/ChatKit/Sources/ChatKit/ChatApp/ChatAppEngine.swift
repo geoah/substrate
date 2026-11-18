@@ -133,6 +133,12 @@ extension ChatApp {
             resume(&next)
         case let .pushSynced(facts):
             next.push = facts
+        case let .pushDelivered(threads):
+            let unheld = threads.filter { next.thread($0) == nil && !next.pushDelivered.contains($0) }
+            next.pushDelivered = Set(threads)
+            // A chat no list holds is read by name, with its mark: the list
+            // read under way is asked again with it.
+            if !unheld.isEmpty { refresh(&next) }
         case let .marksRead(marks):
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
@@ -159,7 +165,10 @@ extension ChatApp {
             }
         case let .sighted(thread, message, at): sighted(&next, thread: thread, message: message, at: at)
         case let .marksDue(at): marksDue(&next, at: at)
-        case let .markWritten(thread, sent, record): markWritten(&next, thread: thread, sent: sent, record)
+        case let .markWritten(thread, sent, record):
+            markWritten(&next, thread: thread, sent: sent, record)
+            // The server counts the mark now: its badge is asked again.
+            if next.pushListed { next.asks.append(badge(next)) }
         case let .markWriteFailed(thread, sent, refusal, failure):
             markWriteFailed(&next, thread: thread, sent: sent, refusal, failure)
         case let .threadsRead(threads):
@@ -682,6 +691,10 @@ extension ChatApp {
             retryMarks(&state)
             refresh(&state)
             for key in state.conversations.keys { state.conversations[key]?.resumeNudge += 1 }
+            // Another device may have read what this one never paged in:
+            // only the server's count says so.
+            if state.pushListed { state.asks.append(badge(state)) }
+            if state.pushHeld { state.asks.append(.readDelivered) }
         case .inactive:
             state.leaving = true
             // What was read and not yet written goes out while the app

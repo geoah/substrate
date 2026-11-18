@@ -53,7 +53,20 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
     private var features: (agents: Int, records: Int)
     /// What the server answers for `GET /api/v1/push/badge`; nil for a
     /// server that does not list `push`.
-    private var pushBadge: Int?
+    private var pushBadge: PushBadge?
+    /// The mark writes wait until `letGoMarks()`, as a server slow to
+    /// answer them does.
+    private var holdingMarks = false
+
+    enum PushBadge {
+        case fixed(Int)
+        /// The chats its marks say are unread, as the server counts them.
+        case counted
+        /// Answered 500: a read that does not reach a count.
+        case failing
+        /// The operator turned push off.
+        case off
+    }
     private var chats: [String: Chat] = [:]
     private var marks: [String: Mark] = [:]
     private var seq = 10
@@ -84,7 +97,11 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
     func become(records: Int) { lock.withLock { features.records = records } }
 
     /// The server lists `push` and counts this badge for the token.
-    func push(badge: Int) { lock.withLock { pushBadge = badge } }
+    func push(badge: Int) { lock.withLock { pushBadge = .fixed(badge) } }
+    func push(_ badge: PushBadge) { lock.withLock { pushBadge = badge } }
+
+    func holdMarks() { lock.withLock { holdingMarks = true } }
+    func letGoMarks() { lock.withLock { holdingMarks = false } }
 
     /// A chat with a question and its settled reply: `m<n>` are its
     /// messages, in order.
@@ -397,8 +414,19 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
                     ])
             }
             if method == "GET", path.hasSuffix("/api/v1/push/badge") {
-                guard let pushBadge else { return .json(404, ["error": ["code": "not_found", "message": "no such route"]]) }
-                return .json(200, ["badge": pushBadge])
+                switch pushBadge {
+                case nil: return .json(404, ["error": ["code": "not_found", "message": "no such route"]])
+                case let .fixed(count)?: return .json(200, ["badge": count])
+                case .failing?: return .json(500, ["error": ["code": "internal", "message": "no"]])
+                case .off?: return .json(403, ["error": ["code": "forbidden", "reason": "push_off", "message": "push is off"]])
+                case .counted?:
+                    let unread = chats.values.count { chat in
+                        guard let last = chat.lastMessage else { return false }
+                        let mark = marks[chat.id]
+                        return mark?.markedUnread == true || mark?.readThrough != last
+                    }
+                    return .json(200, ["badge": unread])
+                }
             }
             if method == "GET", path.hasSuffix("/api/v1/records") {
                 let text = query.first { $0.name == "filter" }?.value ?? "{}"
@@ -456,6 +484,11 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
         let text = url.absoluteString.removingPercentEncoding ?? url.absoluteString
         while lock.withLock({ held.contains { text.contains($0) } }), !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        if request.httpMethod == "POST", url.path.hasSuffix("/api/v1/records") {
+            while lock.withLock({ holdingMarks }), !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
         }
         switch answer(request) {
         case let .json(status, body):

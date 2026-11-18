@@ -25,6 +25,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1015,6 +1016,37 @@ for original_dir, copy_dir in (
             flag(f"{rel(os.path.join(copies, name))} is a copy of no fixture in {rel(original_dir)}")
         elif open(original, "rb").read() != open(os.path.join(copies, name), "rb").read():
             flag(f"{rel(os.path.join(copies, name))} differs from {rel(original)}; copy it again")
+
+
+# --- the release takes the relays the wire takes, and only those ---------
+#
+# A release stamps SUBSTRATE_APPLE_PUSH_RELAY into a push app and publishes
+# it in the authority document. One the app and the server refuse would
+# leave every install registered nowhere while the document names a relay,
+# so the release's check (`push_relay_valid`, .mise/pushrelay.sh) is held to
+# the wire's own vectors (endpoints.json, the kit's copy of
+# internal/pushwire/testdata's), and to a few the vectors leave out.
+
+VECTORS = os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources", "pushwire", "endpoints.json")
+RELAY_CHECK = os.path.join(ROOT, ".mise", "pushrelay.sh")
+if os.path.isfile(VECTORS) and os.path.isfile(RELAY_CHECK):
+    cases = [(row["relay"], not row.get("refused", False)) for row in json.loads(read(VECTORS))]
+    cases += [
+        ("https://push.example.com:65535", True),
+        ("https://push.example.com:65536", False),
+        ("https://push.example.com:99999", False),
+        ("https:///push", False),
+        ("https://:443/push", False),
+        ("none", False),
+        (" https://push.example.com", False),
+        ("https://push.example.com/" + "a" * 2048, False),
+    ]
+    for relay, accepted in cases:
+        ran = subprocess.run(
+            ["bash", "-c", '. "$1"; push_relay_valid "$2"', "pushrelay", RELAY_CHECK, relay], capture_output=True, check=False
+        )
+        if (ran.returncode == 0) != accepted:
+            flag(f"{rel(RELAY_CHECK)}: push_relay_valid {'refuses' if accepted else 'takes'} {relay[:80]!r}, which the wire {'takes' if accepted else 'refuses'}")
 
 
 for failure in failures:

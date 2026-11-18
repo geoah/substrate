@@ -564,6 +564,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// What the install's registration with its publisher's relay says of
     /// itself: read with the folder, then after each attempt to register.
     var push: PushFacts?
+    /// The threads of the pushed notifications standing on the device, as
+    /// last read: each is read by name with the lists (`beside`), so what a
+    /// push alerted in a chat the loaded lists do not hold is reconciled too.
+    var pushDelivered: Set<String> = []
     var guidance = Guidance()
     /// Whether the next sign-out forgets the saved chats: Sign Out does,
     /// Sign In Again after a refused token does not.

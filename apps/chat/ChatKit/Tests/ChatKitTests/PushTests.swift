@@ -34,7 +34,8 @@ struct HeldPush {
         }
         try? storage.write(JSONEncoder().encode(session), account: sessions.account)
         try? storage.write(
-            JSONEncoder().encode(PushState(tokenID: Self.tokenID, current: made(current), pending: pending.map(made))), account: registrar.account)
+            JSONEncoder().encode(PushState(tokenID: Self.tokenID, current: made(current), pending: pending.map { [made($0)] } ?? [])),
+            account: registrar.account)
         transport.on(
             "GET", "/.well-known/substrate/authority.json",
             json: #"{"apps":[{"client_id":"\#(Self.client)","name":"Chat","push":{"relay":"https://push.example.com"}}]}"#)
@@ -137,6 +138,116 @@ struct PushTests {
         #expect(server.count("/api/v1/push/badge") > 0)
     }
 
+    /// The only unread chat is opened while the server is slow to take the
+    /// mark: the server still counts it, and the badge never says so. Once
+    /// the mark is answered the server is asked again.
+    @Test func openingTheOnlyUnreadChatClearsTheBadgeBeforeTheServerTakesTheMark() async throws {
+        let server = MarkServer()
+        server.push(.counted)
+        server.chat("t1")
+        let rig = ChatRig(marks: server)
+        try await rig.signIn(following: server)
+        try await rig.harness.until { _ in rig.badge == 1 }
+        server.holdMarks()
+        await rig.harness.send(.sceneAppeared(scene: "s", restoring: nil))
+        let key = try await rig.open("t1")
+        let before = rig.notifications.calls.count
+        try await rig.see(key)
+        // Read here, and the server not told yet: the lower count shows.
+        #expect(!(await rig.harness.state.marking.isEmpty))
+        try await rig.harness.until(advancing: 0.1) { _ in rig.badge == 0 }
+        let asked = server.count("/api/v1/push/badge")
+        server.letGoMarks()
+        // The mark's write is due a few seconds on, and then answered.
+        for _ in 0 ..< 6 {
+            await rig.harness.advance(by: 1)
+            await rig.harness.settle()
+        }
+        let state = await rig.harness.state
+        #expect(state.marking.isEmpty && state.markSending.isEmpty && server.writes.count == 1)
+        #expect(server.count("/api/v1/push/badge") > asked)
+        #expect(rig.badge == 0)
+        // Never the server's stale 1 after the chat was opened.
+        #expect(!rig.notifications.calls.dropFirst(before).contains(.badge(1)))
+    }
+
+    /// Another device reads what this one never paged in: only the server's
+    /// count says so, and it is asked each time the app comes to the front.
+    /// A read that fails keeps the last count; push off is the app's own.
+    @Test func theServersBadgeIsAskedAtEveryReturnAndKeptThroughAFailedRead() async throws {
+        let server = MarkServer()
+        server.push(badge: 3)
+        server.chat("t1")
+        let rig = ChatRig(marks: server, platform: .ios)
+        try await rig.signIn(following: server)
+        try await rig.harness.until { _ in rig.badge == 3 }
+        server.push(badge: 5)
+        await rig.harness.send(.phase(.background))
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until(advancing: 0.1) { _ in rig.badge == 5 }
+
+        server.push(.failing)
+        let calls = rig.notifications.calls.count
+        let asked = server.count("/api/v1/push/badge")
+        await rig.harness.send(.phase(.background))
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until(advancing: 0.1) { _ in server.count("/api/v1/push/badge") > asked + 1 }
+        await rig.harness.settle()
+        #expect(!rig.notifications.calls.dropFirst(calls).contains { if case .badge = $0 { true } else { false } })
+
+        server.push(.off)
+        await rig.harness.send(.phase(.background))
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until(advancing: 0.1) { _ in rig.badge == 1 }
+    }
+
+    /// A chat archived on another device, which the loaded lists no longer
+    /// hold, and whose `read` push this phone never ran for: its alert goes
+    /// when the app comes to the front, its thread read by name.
+    @Test func anAlertInAChatTheListsDoNotHoldIsReconciledByName() async throws {
+        let server = MarkServer(records: 9)
+        server.push(badge: 0)
+        server.chat("t1", readThrough: "t1-m2")
+        server.chat("t9", readThrough: "t9-m2")
+        server.write("t9", archived: true)
+        let held = HeldPush()
+        let rig = ChatRig(marks: server, platform: .ios, push: held.registrar)
+        try await rig.signIn(following: server)
+        try await rig.harness.until { await $0.state.push?.held == true }
+        #expect(await rig.harness.state.thread("t9") == nil)
+        rig.notifications.deliver(DeliveredNotification(id: "r9", thread: "t9", userInfo: pushed("reply", thread: "t9")))
+        await rig.harness.send(.phase(.background))
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until(advancing: 0.5) { _ in rig.notifications.standing.isEmpty }
+        #expect(await rig.harness.state.pushDelivered == ["t9"])
+    }
+
+    /// The device keeps the chats' state on disk; Apple's token is in the
+    /// registration's Keychain item alone, never there.
+    @Test func noFileTheAppWritesHoldsApplesToken() async throws {
+        let server = MarkServer()
+        server.push(badge: 0)
+        server.chat("t1", readThrough: "t1-m2")
+        let held = HeldPush()
+        let rig = ChatRig(marks: server, platform: .ios, push: held.registrar)
+        try await rig.signIn(following: server)
+        try await rig.harness.until { await $0.state.push?.deviceToken != nil }
+        await rig.harness.send(.diagnostics(shown: true))
+        await rig.harness.send(.phase(.background))
+        await rig.harness.advance(by: 5)
+        await rig.harness.settle()
+        let token = String(repeating: "ab", count: 32)
+        var files = 0
+        let walker = FileManager.default.enumerator(at: rig.base, includingPropertiesForKeys: nil)
+        while let url = walker?.nextObject() as? URL {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            files += 1
+            #expect(!String(decoding: data, as: UTF8.self).contains(token), "\(url.lastPathComponent)")
+        }
+        #expect(files > 0)
+        #expect(await rig.harness.presentation.diagnostics?.text.contains(token) == false)
+    }
+
     @Test func whereTheServerDoesNotPushTheBadgeCountsChatsAlone() {
         var state = ChatAppState()
         state.preferences.showAutomated = true
@@ -228,6 +339,20 @@ struct PushTests {
         let unlisted = try app.apply(.init(.featuresRead(agents: 3, records: 9)), to: state)
         #expect(unlisted.asks.contains(.syncPush(listed: false, notifies: ["replies", "requests"])))
         #expect(!unlisted.asks.contains { if case .serverBadge = $0 { true } else { false } })
+    }
+
+    @Test func aRequestsAlertGoesWithItsOwnCardThoughAnotherInTheChatWaits() async {
+        let notifications = RecordedNotifications()
+        for (id, card) in [("q1", "c1"), ("q2", "c2"), ("q0", nil)] as [(String, String?)] {
+            var info = pushed("request", thread: "t1")
+            if let card { info[ChatNotifications.cardKey] = card }
+            notifications.deliver(DeliveredNotification(id: id, thread: "t1", userInfo: info))
+        }
+        await ChatApp.reconcile(notifications, read: [], settled: [], pending: ["t1": ["c2"]])
+        #expect(notifications.standing.map(\.id).sorted() == ["q0", "q2"])
+        // Cards of a chat whose cards were not read say nothing.
+        await ChatApp.reconcile(notifications, read: [], settled: [], pending: [:])
+        #expect(notifications.standing.count == 2)
     }
 
     @Test func reconcilingTakesBackOnlyWhatTheReadsSay() async {

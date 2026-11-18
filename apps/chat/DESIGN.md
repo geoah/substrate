@@ -645,9 +645,17 @@ and the badge the server counted.
   local build.
 - **The generation.** Each registration picks 16 random bytes, which every
   push of it carries back. It becomes current only once the server answered
-  the device's put; until then a push carrying either is accepted. A tap on
-  a push opens its chat only for the current or the pending generation;
-  signing out deletes the device and forgets both.
+  the device's put. Until then the attempt is kept with what the relay
+  sealed for it, and put again with that same key at the next launch or
+  refresh while it is still the one wanted; an attempt whose put may have
+  landed counts as registered (no notification of the app's own beside the
+  pushes) and its generation stays accepted until a later put or a delete
+  is confirmed, and an attempt that fails never takes an earlier one with
+  it. A generation replaced or given up stays accepted for a day, the life
+  of an event id, so a push already on its way still opens its chat. A tap
+  on a push opens its chat only for an accepted generation. Signing out
+  cancels any attempt in flight, refuses new ones for that sign-in, deletes
+  the device, and forgets every generation.
 - **The environment** is the exported build's own: `development` in a
   simulator, else the embedded profile's `aps-environment`, and
   `production` where there is no profile (TestFlight, the App Store).
@@ -656,15 +664,25 @@ and the badge the server counted.
   anywhere else; in front, a notification of a chat on screen, pushed or
   local, stays quiet.
 - **The badge** is the server's count (`GET /api/v1/push/badge`) wherever it
-  lists `push`, read whenever the app would count again; elsewhere the app
-  counts for itself by the server's rule: unread chats, `chat` mode alone,
-  whatever Show automated runs says.
+  lists `push`: read whenever the app would count again, whenever a mark
+  write of this device is answered, and every time the app comes to the
+  front. While a mark is unsent or on its way the lower of the server's and
+  the app's own count shows, since the server may not count it yet; a read
+  that fails keeps the last count; under `push_off`, and where the server
+  does not list `push` (the Mac included), the app counts for itself by the
+  server's rule: unread chats, `chat` mode alone, whatever Show automated
+  runs says.
 - **What waits** is read over all six conversation modes, so a request a
   push names in a scheduled run or a call opens from the list.
 - **Reconciling.** Whenever the server answers the lists (coming to the
   front, a background refresh) the app removes the pushed notifications the
-  reads say are seen: a reply's or a failure's whose chat reads as read,
-  and a request's whose chat has nothing waiting.
+  reads say are seen: a reply's or a failure's whose chat reads as read, a
+  request's whose chat has nothing waiting, and a request's that names its
+  card (the extension writes it) once that card no longer waits. Coming to
+  the front it also reads which chats the pushes standing on the device
+  name, and reads those by name with their marks, so an alert in a chat the
+  loaded lists do not hold (archived on another device, past the first
+  page) goes too, though this phone never ran for its `read`.
 - **Diagnostics** say whether the install is registered, with which Apple
   environment and since when; a development build also shows Apple's token
   on the sheet, never in what is shared, for a test push from the relay.

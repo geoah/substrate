@@ -206,6 +206,30 @@ struct PushPayloadTests {
     }
 }
 
+/// A transport that holds one path until the request is cancelled, as a
+/// network that never answers does.
+final class SlowTransport: HTTPTransport, @unchecked Sendable {
+    let inner: StubTransport
+    let path: String
+    private let lock = NSLock()
+    private var held = false
+
+    init(_ inner: StubTransport, holding path: String) {
+        self.inner = inner
+        self.path = path
+    }
+
+    var holding: Bool { lock.withLock { held } }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.url.map(StubTransport.path) == path {
+            lock.withLock { held = true }
+            try await Task.sleep(for: .seconds(60))
+        }
+        return try await inner.data(for: request)
+    }
+}
+
 /// A substrate, a publisher and a relay that agree, for the registrar.
 final class PushWorld: @unchecked Sendable {
     static let client = "https://apps.example.com/apps/chat/client.json"
@@ -292,7 +316,8 @@ struct PushRegistrarTests {
         expected["pushKey"] = "v1.k"
         #expect(NSDictionary(dictionary: properties).isEqual(to: expected))
         let state = try #require(await world.registrar.state())
-        #expect(state.current?.generation == "g1" && state.pending == nil && state.tokenID == PushWorld.tokenID)
+        #expect(state.current?.generation == "g1" && state.pending.isEmpty && state.tokenID == PushWorld.tokenID)
+        #expect(state.current?.pushKey == "v1.k")
         #expect(await world.registrar.accepts("g1"))
         #expect(!(await world.registrar.accepts("g0")))
     }
@@ -322,7 +347,11 @@ struct PushRegistrarTests {
         let facts = await world.registrar.sync(PushWorld.ask)
         #expect(facts.standing == .unmatched && !facts.held)
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
-        #expect(await world.registrar.state() == nil)
+        let state = try #require(await world.registrar.state())
+        #expect(state.current == nil && state.pending.isEmpty && !state.held)
+        // A push already on its way still opens its chat for a day.
+        #expect(await world.registrar.accepts("g1"))
+        world.pass(PushState.retirement + 1)
         #expect(!(await world.registrar.accepts("g1")))
     }
 
@@ -442,17 +471,86 @@ struct PushRegistrarTests {
         let facts = await world.registrar.sync(PushWorld.ask)
         #expect(facts.standing == .unavailable && facts.held)
         let state = try #require(await world.registrar.state())
-        #expect(state.current?.generation == "g1" && state.pending?.generation == "g2")
+        #expect(state.current?.generation == "g1" && state.pending.map(\.generation) == ["g2"])
         // Either is accepted while the new one waits: its put may have landed.
         #expect(await world.registrar.accepts("g1"))
         #expect(await world.registrar.accepts("g2"))
 
+        // The same attempt is put again, under the key the relay sealed for
+        // it: no second registration. 201 the first time, 200 after.
         world.transport.replace("PUT", PushWorld.devicePath, status: 200, json: PushWorld.record)
         #expect(await world.registrar.sync(PushWorld.ask).standing == .registered)
+        #expect(world.sent("POST", "/v1/register").count == 2)
         let after = try #require(await world.registrar.state())
-        #expect(after.current?.generation == "g3" && after.pending == nil)
+        #expect(after.current?.generation == "g2" && after.pending.isEmpty)
+        // The one it replaced stays accepted for an event id's day, no longer.
+        #expect(after.previous.map(\.generation) == ["g1"])
         let (first, second) = (await world.registrar.accepts("g1"), await world.registrar.accepts("g2"))
-        #expect(!first && !second)
+        #expect(first && second)
+        world.pass(PushState.retirement + 1)
+        #expect(!(await world.registrar.accepts("g1")))
+    }
+
+    /// The first put lands and its answer is lost; the app is launched again
+    /// and the put fails once more; then a new attempt fails at the relay.
+    /// The server pushes under the first attempt's generation all along: it
+    /// stays accepted, and the install counts as registered, so the app posts
+    /// nothing of its own beside the pushes.
+    @Test func aPutWhoseAnswerWasLostStaysHeldThroughARelaunchAndAFailedRetry() async throws {
+        let world = PushWorld()
+        world.transport.replace("PUT", PushWorld.devicePath, status: 500, json: #"{"error":{"code":"internal","message":"no"}}"#)
+        let lost = await world.registrar.sync(PushWorld.ask)
+        #expect(lost.standing == .unavailable && lost.held)
+        #expect(await world.registrar.accepts("g1"))
+        #expect(await world.registrar.facts().held)
+
+        // A relaunch: another registrar over the same Keychain.
+        world.transport.replace("PUT", PushWorld.devicePath, status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
+        let relaunched = world.registrar
+        let retried = await relaunched.sync(PushWorld.ask)
+        #expect(retried.standing == .unavailable && retried.held)
+        #expect(world.sent("POST", "/v1/register").count == 1)
+        let puts = world.sent("PUT", PushWorld.devicePath)
+        #expect(puts.count == 2 && puts[0].httpBody == puts[1].httpBody)
+        #expect(await relaunched.accepts("g1"))
+
+        // Something changed, and the new attempt never reaches the server.
+        world.device.set(token: String(repeating: "ef", count: 32))
+        world.transport.replace("POST", "/v1/register", status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
+        let failed = await relaunched.sync(PushWorld.ask)
+        #expect(failed.standing == .unavailable && failed.held)
+        let state = try #require(await relaunched.state())
+        #expect(state.pending.map(\.generation) == ["g1"] && state.current == nil)
+        #expect(await relaunched.accepts("g1"))
+        #expect(!(await relaunched.accepts("g2")))
+
+        // Then it goes through: the new one is current, and the first is
+        // accepted for a day.
+        world.transport.replace("POST", "/v1/register", json: #"{"pushKey":"v1.k2"}"#)
+        world.transport.replace("PUT", PushWorld.devicePath, status: 200, json: PushWorld.record)
+        #expect(await relaunched.sync(PushWorld.ask).standing == .registered)
+        let after = try #require(await relaunched.state())
+        #expect(after.current?.generation == "g3" && after.current?.pushKey == "v1.k2" && after.pending.isEmpty)
+        #expect(await relaunched.accepts("g1"))
+    }
+
+    /// The device put is held to the server's fixture both ways: its create
+    /// (`201`) and an update (`200`), which carries at least what the
+    /// fixture's update does.
+    @Test func thePutIsTheServersCreateThenItsUpdate() async throws {
+        let fixture = try PushWire.object("device-put", in: "pushserver")
+        let update = try #require(fixture["update"] as? [String: Any])
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).standing == .registered)
+        world.device.set(token: String(repeating: "cd", count: 32))
+        world.transport.replace("POST", "/v1/register", json: #"{"pushKey":"v1.Rm9yd2FyZA"}"#)
+        world.transport.replace("PUT", PushWorld.devicePath, status: try #require(update["status"] as? Int), json: PushWorld.record)
+        #expect(await world.registrar.sync(PushWorld.ask).standing == .registered)
+        let second = try #require(world.sent("PUT", PushWorld.devicePath).last)
+        let sent = try #require((try JSONSerialization.jsonObject(with: second.httpBody ?? Data()) as? [String: Any])?["properties"] as? [String: Any])
+        let expected = try #require((update["body"] as? [String: Any])?["properties"] as? [String: Any])
+        for (key, value) in expected { #expect(NSDictionary(dictionary: [key: value]).isEqual(to: [key: sent[key] as Any]), "\(key)") }
+        #expect(await world.registrar.state()?.current?.pushKey == "v1.Rm9yd2FyZA")
     }
 
     @Test func aRelayThatRefusesTheAppStopsAndOneThatFailsKeepsWhatWasHeld() async throws {
@@ -462,7 +560,7 @@ struct PushRegistrarTests {
         world.transport.replace("POST", "/v1/register", status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
         let failed = await world.registrar.sync(PushWorld.ask)
         #expect(failed.standing == .unavailable && failed.held)
-        #expect(await world.registrar.state()?.pending == nil)
+        #expect(await world.registrar.state()?.pending.isEmpty == true)
 
         world.transport.replace("POST", "/v1/register", status: 403, json: #"{"error":{"code":"environment_refused","message":"no"}}"#)
         let refused = await world.registrar.sync(PushWorld.ask)
@@ -482,6 +580,54 @@ struct PushRegistrarTests {
         #expect(await world.registrar.state() == nil)
         let (current, pending) = (await world.registrar.accepts("g1"), await world.registrar.accepts("g2"))
         #expect(!current && !pending)
+    }
+
+    /// A delete the server does not answer is left to it, which deletes the
+    /// device with its token: the sign-out forgets everything all the same.
+    @Test func aSignOutWhoseDeleteFailsForgetsEverythingAllTheSame() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.transport.replace("DELETE", PushWorld.devicePath, status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
+        await world.registrar.signOut(try #require(await world.sessions.load()))
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        #expect(await world.registrar.state() == nil)
+        #expect(!(await world.registrar.accepts("g1")))
+    }
+
+    /// Sign Out never waits behind an attempt stuck on the network: the
+    /// attempt is cancelled, saves nothing, and no attempt starts for the
+    /// sign-in being signed out.
+    @Test func aSignOutCancelsTheAttemptInFlightAndNoneStartsAfter() async throws {
+        let world = PushWorld()
+        let slow = SlowTransport(world.transport, holding: "/v1/register")
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: slow, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        let attempt = Task { await registrar.sync(PushWorld.ask) }
+        while !slow.holding { try await Task.sleep(for: .milliseconds(10)) }
+        let started = ContinuousClock.now
+        await registrar.signOut(try #require(await world.sessions.load()))
+        #expect(ContinuousClock.now - started < .seconds(3))
+        _ = await attempt.value
+        #expect(await registrar.state() == nil)
+        #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+        let asked = world.transport.requests.count
+        #expect(await registrar.sync(PushWorld.ask).standing == .unknown)
+        #expect(world.transport.requests.count == asked)
+    }
+
+    @Test func aRedirectedDocumentOrAnUnknownRefusalIsNoAnswerNow() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.transport.replace("GET", "/.well-known/substrate/authority.json", status: 302, headers: ["Location": "https://elsewhere.example.com/x"])
+        let redirected = await world.registrar.sync(PushWorld.ask)
+        #expect(redirected.standing == .unavailable && redirected.held)
+        #expect(world.transport.requests.allSatisfy { $0.url?.host != "elsewhere.example.com" })
+
+        world.publish(#","push":{"relay":"https://push.example.com"}"#)
+        world.transport.replace("GET", "/api/v1/push/key", status: 403, json: #"{"error":{"code":"forbidden","reason":"something_new","message":"no"}}"#)
+        let unknown = await world.registrar.sync(PushWorld.ask)
+        #expect(unknown.standing == .unavailable && unknown.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).isEmpty)
     }
 
     @Test func anotherSignInsRegistrationIsForgotten() async throws {

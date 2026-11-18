@@ -53,6 +53,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case featuresRead(agents: Int, records: Int, push: Int = 0)
     /// An attempt to register with the publisher's push relay ended here.
     case pushSynced(PushFacts)
+    /// The threads of the pushed notifications standing on the device.
+    case pushDelivered([String])
     /// The person's marks of some threads, read on their own.
     case marksRead(Marks)
     /// The mark of a thread the person spoke in, read after they did.

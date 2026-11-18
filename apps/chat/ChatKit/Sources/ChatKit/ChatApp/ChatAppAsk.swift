@@ -136,16 +136,24 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case cancelAllNotifications
     case badge(Int)
     /// The badge as the server counts it, where it lists `push`: what a push
-    /// sets it to. `fallback` is the app's own count, set where the server
-    /// does not answer.
-    case serverBadge(fallback: Int)
+    /// sets it to. `local` is the app's own count, set where the operator
+    /// turned push off; `ceiling` is set while a mark of this device is
+    /// unsent or on its way, when the server may not count it yet and the
+    /// lower of the two is shown. A read that does not reach the server
+    /// leaves the badge as it is.
+    case serverBadge(local: Int, ceiling: Int?)
     /// Registers with the publisher's push relay where it is due, or gives
     /// a registration up (`PushRegistrar.sync`).
     case syncPush(listed: Bool, notifies: [String])
     /// The pushed notifications that what was read says are seen, taken
-    /// back: a reply's or a failure's whose thread is read, and a
-    /// request's whose thread has nothing waiting.
-    case reconcilePush(read: [String], settled: [String])
+    /// back: a reply's or a failure's whose thread is read, a request's
+    /// whose thread has nothing waiting, and a request's for a card that no
+    /// longer waits, where `pending` holds the cards that do, by thread.
+    case reconcilePush(read: [String], settled: [String], pending: [String: [String]])
+    /// The threads of the pushed notifications standing on the device: read
+    /// by name with the lists, so one the loaded lists do not hold is
+    /// reconciled too.
+    case readDelivered
     /// The threads a window in front shows: a notification of one, pushed
     /// or local, stays quiet while the app is in front.
     case showing([String])

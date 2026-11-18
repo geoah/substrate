@@ -1075,12 +1075,17 @@ words, numbers and words of closed sets. It is a bounded ring in the
 repository's folder, kept across launches and gone at a sign-out
 ([its design](chat/DESIGN.md#diagnostics)).
 
-**Notifications.** The server has no push channel, so the app notifies what it
-sees: a reply that settles in a chat not on screen, and a new question or
-suggestion waiting on the owner, each once; a reply waits five seconds for
-a mark, so one read on another device stays quiet. On iOS a turn still streaming when
-the app leaves is kept running as a continued processing task, which iOS draws
-with a Stop button, and a refresh task checks now and then when iOS lets it.
+**Notifications.** On iPhone and iPad, where the server lists `push` and the
+install holds a registration with its publisher's relay, the server pushes
+replies, failures and requests and the app posts none of its own
+([Pushes](#pushes), [its design](chat/DESIGN.md#pushes)). Without a
+registration (on the Mac, on a server without push, under a password
+sign-in) the app notifies what it sees: a reply that settles in a chat not on
+screen, and a new question or suggestion waiting on the owner, each once; a
+reply waits five seconds for a mark, so one read on another device stays
+quiet. On iOS a turn still streaming when the app leaves is kept running as a
+continued processing task, which iOS draws with a Stop button, and a refresh
+task checks now and then when iOS lets it.
 
 **The Action Button.** Two App Shortcuts: New Chat (an assistant, else the
 default; optionally listening) and Talk to an Assistant (listening from the

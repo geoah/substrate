@@ -67,6 +67,8 @@ RUN=""
 source "$ROOT/.mise/apple.sh"
 # shellcheck source=.mise/apps-android.sh
 source "$ROOT/.mise/apps-android.sh"
+# shellcheck source=.mise/pushrelay.sh
+source "$ROOT/.mise/pushrelay.sh"
 
 say() { echo "apps: $*"; }
 die() {
@@ -121,11 +123,12 @@ app_has_apple() { app_has "$1" ios || app_has "$1" macos; }
 app_push() { [ "$(jq -r '.push // false' "$(app_json "$1")")" = true ]; }
 
 # The push relay a release builds into every app that takes pushes, and the
-# authority document names for it: SUBSTRATE_APPLE_PUSH_RELAY, an https
-# origin with an optional path (no user info, query or fragment, at most
-# 2,048 characters), or `none` for a build that registers nowhere. Refused
-# where an app of $@ takes pushes and it is unset, so no release leaves its
-# builds without a relay while the document still names one.
+# authority document names for it: SUBSTRATE_APPLE_PUSH_RELAY, a relay the
+# wire takes (push_relay_valid, .mise/pushrelay.sh), or `none` for a build
+# that registers nowhere. Refused where an app of $@ takes pushes and it is
+# unset, so no release leaves its builds without a relay while the document
+# still names one; and refused empty wherever it is set, since an empty one
+# would read as `none` and drop the relay from the live document.
 push_relay_env() {
 	local app relay="${SUBSTRATE_APPLE_PUSH_RELAY-}"
 	for app in "$@"; do
@@ -134,13 +137,11 @@ push_relay_env() {
 			die "$app takes pushes (\"push\": true in its app.json); set SUBSTRATE_APPLE_PUSH_RELAY to its push relay's https origin, or to none for a build that registers nowhere"
 		break
 	done
-	[ -n "$relay" ] && [ "$relay" != none ] || return 0
-	[ "${#relay}" -le 2048 ] || die "SUBSTRATE_APPLE_PUSH_RELAY is longer than 2,048 characters"
-	case "$relay" in
-	https://*@* | *\?* | *#* | *\\* | *[!!-~]*) die "SUBSTRATE_APPLE_PUSH_RELAY is an https origin with an optional path, of printable characters, and no user info, query or fragment: $relay" ;;
-	https://?*) ;;
-	*) die "SUBSTRATE_APPLE_PUSH_RELAY is an https origin with an optional path, or none: $relay" ;;
-	esac
+	[ -n "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ] || return 0
+	[ -n "$relay" ] || die "SUBSTRATE_APPLE_PUSH_RELAY is set and empty; set it to the push relay's https origin, or to none"
+	[ "$relay" != none ] || return 0
+	push_relay_valid "$relay" ||
+		die "SUBSTRATE_APPLE_PUSH_RELAY is no relay the app and the server take (an https URL with a host, a port from 1 to 65535 if any, an optional path, and no user info, query or fragment): $relay"
 }
 
 # What a push app's build is stamped with (SUBSTRATE_PUSH_RELAY, read from
@@ -1871,8 +1872,9 @@ site() {
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site}"
 	site_url >/dev/null || exit 1
 	dry_only
-	# Unset carries every push app's relay forward from the live document.
-	[ -z "${SUBSTRATE_APPLE_PUSH_RELAY:-}" ] || push_relay_env
+	# Unset carries every push app's relay forward from the live document;
+	# set, it is held as a release holds it, and an empty one is refused.
+	[ -z "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ] || push_relay_env
 	if [ -z "$DRY" ]; then
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"

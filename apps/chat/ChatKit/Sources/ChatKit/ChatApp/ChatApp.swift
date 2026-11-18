@@ -436,6 +436,7 @@ public struct ChatApp: LinkedApp {
         case .serverBadge: "badge"
         case .syncPush: "push"
         case .reconcilePush: "reconcile"
+        case .readDelivered: "delivered"
         case .showing: "showing"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,

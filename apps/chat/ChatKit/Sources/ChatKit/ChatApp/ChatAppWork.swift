@@ -593,13 +593,20 @@ extension ChatApp {
             return Self.device(notifications) { await $0.cancelAll() }
         case let .badge(count):
             return Self.device(notifications) { await $0.setBadge(count) }
-        case let .serverBadge(fallback):
+        case let .serverBadge(local, ceiling):
             guard let notifications else { return .none }
             return .once {
-                // A server that does not answer leaves the app's own count.
-                var count = fallback
-                if let client = await source.current(), let served = try? await client.pushBadge() { count = served ?? fallback }
+                // Push off: the app counts for itself. A read that does not
+                // reach the server keeps the last count it gave.
+                guard let client = await source.current() else { return nil }
+                let served: Int?
+                do {
+                    served = try await client.pushBadge()
+                } catch {
+                    return nil
+                }
                 guard !Task.isCancelled else { return nil }
+                let count = served.map { min($0, ceiling ?? $0) } ?? local
                 await notifications.setBadge(count)
                 return nil
             }
@@ -610,8 +617,11 @@ extension ChatApp {
                 let ask = PushAsk(listed: listed, notifies: notifies, permitted: permitted == .on || permitted == .notTimeSensitive)
                 return Event(.pushSynced(await push.sync(ask)))
             }
-        case let .reconcilePush(read, settled):
-            return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled)) }
+        case let .reconcilePush(read, settled, pending):
+            return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled), pending: pending) }
+        case .readDelivered:
+            guard let notifications else { return .none }
+            return .once { Event(.pushDelivered(await Self.deliveredThreads(notifications))) }
         case let .showing(threads):
             return Self.device(notifications) { await $0.showing(threads: Set(threads)) }
         case .askPermission:

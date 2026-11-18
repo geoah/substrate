@@ -32,6 +32,18 @@ extension ChatAppState {
         }.map(\.id).sorted()
     }
 
+    /// The cards that still wait, by thread, of the threads whose cards were
+    /// read with the lists (`cardThreads`): a request's alert for any other
+    /// card of one of them was decided.
+    var pushPending: [String: [String]] {
+        var out: [String: [String]] = [:]
+        for thread in cardThreads {
+            out[thread] = (interactions + requests + approvals)
+                .filter { $0["thread"]?.referenceID == thread && ChatApp.waits($0) }.map(\.id).sorted()
+        }
+        return out
+    }
+
     /// The threads in which nothing waits on the person any more: a
     /// request a push alerted for in one of them was decided.
     var pushSettled: [String] {
@@ -48,13 +60,18 @@ extension ChatPreferences {
 
 extension ChatApp {
     /// What sets the badge: the server's count where it lists `push`, so
-    /// the screen shows what a push sets; else the app's own.
+    /// the screen shows what a push sets; else the app's own. While a mark
+    /// this device moved is unsent or on its way the server may not count
+    /// it yet: the lower of the two is shown, and the server is asked again
+    /// once the write is answered (`markWritten`).
     func badge(_ state: State) -> ChatAppAsk {
-        state.pushListed ? .serverBadge(fallback: state.unreadCount) : .badge(state.unreadCount)
+        guard state.pushListed else { return .badge(state.unreadCount) }
+        let moving = !state.marking.isEmpty || !state.markSending.isEmpty
+        return .serverBadge(local: state.unreadCount, ceiling: moving ? state.unreadCount : nil)
     }
 
     func reconcile(_ state: State) -> ChatAppAsk {
-        .reconcilePush(read: state.pushRead, settled: state.pushSettled)
+        .reconcilePush(read: state.pushRead, settled: state.pushSettled, pending: state.pushPending)
     }
 
     /// The events that answer the lists from the server: what a reconcile
@@ -84,15 +101,28 @@ extension ChatApp {
         return out
     }
 
-    /// Takes back what a push alerted that the reads say is seen.
-    static func reconcile(_ notifications: any Notifications, read: Set<String>, settled: Set<String>) async {
+    /// Takes back what a push alerted that the reads say is seen. A
+    /// request's alert that names its card (the extension writes it) goes
+    /// as soon as that card no longer waits, though another in the chat
+    /// still does; one that names none goes once nothing in its chat waits.
+    static func reconcile(_ notifications: any Notifications, read: Set<String>, settled: Set<String>, pending: [String: [String]] = [:]) async {
         for shown in await notifications.delivered() {
             guard let push = shown.push else { continue }
             switch push.event {
             case .reply, .failed: if read.contains(push.thread) { await notifications.cancel(shown.id) }
-            case .request: if settled.contains(push.thread) { await notifications.cancel(shown.id) }
+            case .request:
+                if settled.contains(push.thread) {
+                    await notifications.cancel(shown.id)
+                } else if let card = shown.userInfo[ChatNotifications.cardKey], let waiting = pending[push.thread], !waiting.contains(card) {
+                    await notifications.cancel(shown.id)
+                }
             case .read: await notifications.cancel(shown.id)
             }
         }
+    }
+
+    /// The threads of the pushed notifications standing on the device.
+    static func deliveredThreads(_ notifications: any Notifications) async -> [String] {
+        Array(Set(await notifications.delivered().compactMap { $0.push?.thread })).sorted()
     }
 }

@@ -639,7 +639,7 @@ struct LinkControllerTests {
                 notifies: ["replies"], registeredAt: now)
         }
         try storage.write(
-            JSONEncoder().encode(PushState(tokenID: "71ac09be44", current: made("gC"), pending: made("gP"))), account: "session.push")
+            JSONEncoder().encode(PushState(tokenID: "71ac09be44", current: made("gC"), pending: [made("gP")])), account: "session.push")
         let device = "/api/v1/substrate.reamde.dev/core/device/71ac09be44"
         let stub = StubTransport().on("POST", "/oauth/revoke").on("DELETE", device, status: 204)
         let registrar = PushRegistrar(

@@ -9,11 +9,13 @@ import FoundationNetworking
 
 /// An install's registration with its publisher's push relay, kept in the
 /// secure store beside the session: for one sign-in (its token's id), the
-/// registration in use, and the one being made, until the server took its
-/// device record. Nothing in it is a secret the relay or the server lacks;
-/// it is kept beside the session so it goes where the session goes.
+/// registration the server confirmed, the attempts it may hold, and the
+/// generations of earlier ones still accepted. Nothing in it is a secret the
+/// relay or the server lacks; it is kept beside the session so it goes where
+/// the session goes.
 public struct PushState: Codable, Equatable, Sendable {
-    /// One registration: what was sent to the relay, and when.
+    /// One registration: what was sent to the relay, what it sealed, and
+    /// when.
     public struct Registration: Codable, Equatable, Sendable {
         /// Picked at random for this registration: every push of it carries
         /// it back, so a push meant for another opens and offers nothing.
@@ -27,10 +29,14 @@ public struct PushState: Codable, Equatable, Sendable {
         public var environment: PushEnvironment
         public var notifies: [String]
         public var registeredAt: Date
+        /// What the relay sealed for it, once it answered: the device record's
+        /// `pushKey`, so a put whose answer was lost is made again with the
+        /// same key.
+        public var pushKey: String?
 
         public init(
             generation: String, relay: String, publicKey: String, deviceToken: String, environment: PushEnvironment, notifies: [String],
-            registeredAt: Date
+            registeredAt: Date, pushKey: String? = nil
         ) {
             self.generation = generation
             self.relay = relay
@@ -39,28 +45,102 @@ public struct PushState: Codable, Equatable, Sendable {
             self.environment = environment
             self.notifies = notifies
             self.registeredAt = registeredAt
+            self.pushKey = pushKey
         }
     }
+
+    /// A generation of an earlier registration of this sign-in, accepted
+    /// until `until`: an event id lives 24 hours, so a push sent under it may
+    /// still be delivered, tapped or acted on that long.
+    public struct Retired: Codable, Equatable, Sendable {
+        public var generation: String
+        public var until: Date
+
+        public init(generation: String, until: Date) {
+            self.generation = generation
+            self.until = until
+        }
+    }
+
+    /// How long a replaced or given-up generation stays accepted: the life
+    /// of an event id.
+    public static let retirement: TimeInterval = 24 * 3600
+    /// How many unconfirmed attempts are kept: an older one goes to
+    /// `previous`.
+    static let attempts = 4
 
     /// The sign-in the registrations are for: its device record is named by
     /// this token's id.
     public var tokenID: String
+    /// The registration whose put the server answered.
     public var current: Registration?
-    /// Made and not yet answered by the server's put: a push carrying its
-    /// generation is accepted beside the current one's, since the put may
-    /// have landed with its answer lost.
-    public var pending: Registration?
+    /// Attempts made since, oldest first. One with a `pushKey` was put, or
+    /// was about to be, and the server may hold it with the answer lost: its
+    /// generation is accepted and the install counts as registered until a
+    /// later put or a delete is confirmed.
+    public var pending: [Registration]
+    public var previous: [Retired]
 
-    public init(tokenID: String, current: Registration? = nil, pending: Registration? = nil) {
+    public init(tokenID: String, current: Registration? = nil, pending: [Registration] = [], previous: [Retired] = []) {
         self.tokenID = tokenID
         self.current = current
         self.pending = pending
+        self.previous = previous
     }
 
-    /// Whether a push's generation is one of this sign-in's registrations.
-    public func accepts(_ generation: String) -> Bool {
-        !generation.isEmpty && (current?.generation == generation || pending?.generation == generation)
+    /// The server pushes, or may push, to this install.
+    public var held: Bool { current != nil || pending.contains { $0.pushKey != nil } }
+
+    /// The registration the server holds or may hold, the newest attempt
+    /// first.
+    public var latest: Registration? { pending.last { $0.pushKey != nil } ?? current }
+
+    /// Whether a push's generation is one of this sign-in's registrations, or
+    /// one retired less than a day ago.
+    public func accepts(_ generation: String, at now: Date) -> Bool {
+        guard !generation.isEmpty else { return false }
+        if current?.generation == generation || pending.contains(where: { $0.generation == generation }) { return true }
+        return previous.contains { $0.generation == generation && $0.until > now }
     }
+
+    /// Every registration made so far retired, each for a day, and none held.
+    mutating func retireAll(at now: Date) {
+        let until = now.addingTimeInterval(Self.retirement)
+        previous += ([current].compactMap { $0 } + pending).map { Retired(generation: $0.generation, until: until) }
+        current = nil
+        pending = []
+        prune(at: now)
+    }
+
+    /// `made` is what the server holds now: what it replaced is retired.
+    mutating func confirm(_ made: Registration, at now: Date) {
+        let until = now.addingTimeInterval(Self.retirement)
+        previous += ([current].compactMap { $0 } + pending).filter { $0.generation != made.generation }
+            .map { Retired(generation: $0.generation, until: until) }
+        current = made
+        pending = []
+        prune(at: now)
+    }
+
+    mutating func prune(at now: Date) {
+        previous.removeAll { $0.until <= now }
+        while pending.count > Self.attempts {
+            let oldest = pending.removeFirst()
+            previous.append(Retired(generation: oldest.generation, until: now.addingTimeInterval(Self.retirement)))
+        }
+    }
+}
+
+/// Whether a push belongs to the sign-in in use.
+public enum PushVerdict: Sendable, Equatable {
+    /// Its generation is one of this sign-in's registrations.
+    case accepted
+    /// It is another sign-in's, a signed-out one's, or one this install no
+    /// longer accepts.
+    case refused
+    /// The Keychain could not be read (before the first unlock after a
+    /// restart): nothing can be said either way.
+    case unknown
 }
 
 /// What the app's engine knows of its pushes, read without the network.
@@ -135,7 +215,7 @@ public struct PushAsk: Codable, Equatable, Sendable {
 /// record, for the session in a store: the kit's half of pushes, which an
 /// app runs at launch, at each background refresh and when its switches or
 /// its permission change (`sync`), at sign-out (`signOut`), and when a
-/// notification is opened or acted on (`accepts`).
+/// notification is opened or acted on (`verdict`, `client(accepting:)`).
 ///
 /// It registers only where three name the same relay: the build
 /// (`buildRelay`, stamped at release), the publisher's authority document at
@@ -154,6 +234,9 @@ public struct PushRegistrar: Sendable {
     public let clientID: String
     public let now: @Sendable () -> Date
     public let generation: @Sendable () -> String
+    /// Shared by every copy of this value: the attempts in flight, and the
+    /// sign-ins being signed out.
+    let control = PushControl()
 
     /// How long a registration is used before it is made again: well inside
     /// the relay's 90 days, and how installs move to a new seal key.
@@ -176,9 +259,6 @@ public struct PushRegistrar: Sendable {
     /// Where the state is kept, beside the session.
     public var account: String { sessions.account + ".push" }
 
-    /// What every change to the state is serialised on.
-    private var transitions: String { "\(sessions.storage.location)|\(account)" }
-
     // MARK: Reading
 
     /// The state as kept; nil where none is, or it could not be read.
@@ -189,28 +269,66 @@ public struct PushRegistrar: Sendable {
 
     /// What is kept, for the engine, without the network.
     public func facts() async -> PushFacts {
-        guard let session = await sessions.load(), let state = await state(), state.tokenID == session.tokenID, let current = state.current
+        guard let session = await sessions.load(), let state = await state(), state.tokenID == session.tokenID, state.held
         else { return PushFacts(standing: .unknown) }
-        return facts(.registered, current)
+        return facts(.registered, state)
     }
 
-    /// Whether a push's generation is the current or the pending one of the
-    /// sign-in in use. A push for an earlier registration of this install
-    /// (another server, another sign-in, one signed out) is not: it opens
-    /// nothing, fetches nothing and offers no action.
-    public func accepts(_ generation: String) async -> Bool {
-        guard let session = await sessions.load(), let state = await state() else { return false }
-        return state.tokenID == session.tokenID && state.accepts(generation)
+    /// Whether a push's generation belongs to the sign-in in use: its
+    /// current registration, an attempt the server may hold, or one retired
+    /// less than a day ago. A push for an earlier registration of this
+    /// install (another server, another sign-in, one signed out) opens
+    /// nothing, fetches nothing and offers no action. Where the Keychain
+    /// cannot be read (before the first unlock) it is `unknown`, which is not
+    /// another sign-in's.
+    public func verdict(_ generation: String) async -> PushVerdict {
+        let session: Session
+        switch await sessions.read() {
+        case let .found(found): session = found
+        case .missing: return .refused
+        case .failed: return .unknown
+        }
+        switch await sessions.data(account: account) {
+        case let .found(data):
+            guard let state = try? JSONDecoder().decode(PushState.self, from: data), state.tokenID == session.tokenID,
+                !control.isLeaving(session.tokenID)
+            else { return .refused }
+            return state.accepts(generation, at: now()) ? .accepted : .refused
+        case .missing: return .refused
+        case .failed: return .unknown
+        }
+    }
+
+    public func accepts(_ generation: String) async -> Bool { await verdict(generation) == .accepted }
+
+    /// The client of the session a push belongs to, for a write a push's
+    /// action makes: read once, and only while the push's generation is that
+    /// session's, so a decision accepted under one sign-in is never sent with
+    /// another's token.
+    public func client(accepting generation: String) async -> SubstrateClient? {
+        guard case let .found(session) = await sessions.read(), let state = await state(), state.tokenID == session.tokenID,
+            !control.isLeaving(session.tokenID), state.accepts(generation, at: now())
+        else { return nil }
+        return SubstrateClient(session, transport: transport)
+    }
+
+    /// The repository a push belongs to, as `Session.identity` names it;
+    /// nil where the push is not this sign-in's.
+    public func identity(accepting generation: String) async -> String? {
+        guard case let .found(session) = await sessions.read(), let state = await state(), state.tokenID == session.tokenID,
+            state.accepts(generation, at: now())
+        else { return nil }
+        return session.identity
     }
 
     // MARK: Registering
 
     /// Registers where it is due, gives up a registration that no longer
-    /// holds, and answers where it stands. One attempt at a time, and never
-    /// beside a sign-out: one that saved after a sign-out forgot the
-    /// registrations would bring a signed-out one back.
+    /// holds, and answers where it stands. One attempt at a time; a
+    /// sign-out cancels the one in flight and none starts for a sign-in
+    /// being signed out.
     public func sync(_ ask: PushAsk) async -> PushFacts {
-        (try? await SessionTransitions.shared.run(transitions) { await register(ask) }) ?? PushFacts(standing: .unavailable)
+        await control.serial { await register(ask) }
     }
 
     private func register(_ ask: PushAsk) async -> PushFacts {
@@ -222,6 +340,7 @@ public struct PushRegistrar: Sendable {
             return PushFacts(standing: .unknown)
         case .failed: return await facts()
         }
+        guard !control.isLeaving(session.tokenID) else { return PushFacts(standing: .unknown) }
         let client = SubstrateClient(session, transport: transport)
         var state = await state()
         // Another sign-in's registration: its device goes with its token.
@@ -251,43 +370,45 @@ public struct PushRegistrar: Sendable {
         } catch is SessionExpired {
             return await giveUp(.unavailable, state, client)
         } catch {
-            return unavailable(state)
+            return facts(.unavailable, state)
         }
 
         let deviceToken: String
         do {
             deviceToken = try await device.deviceToken()
         } catch {
-            return unavailable(state)
+            return facts(.unavailable, state)
         }
         let notifies = ask.notifies.sorted()
-        if let current = state?.current,
-            !Self.due(
-                current, relay: build, publicKey: key.publicKey, deviceToken: deviceToken,
-                environment: environment, notifies: notifies, now: now())
-        {
-            // The record may be gone (deleted by the server after the relay
-            // refused a push, or by hand): it is put again.
+        func wanted(_ made: PushState.Registration) -> Bool {
+            !Self.due(made, relay: build, publicKey: key.publicKey, deviceToken: deviceToken, environment: environment, notifies: notifies, now: now())
+        }
+        var next = state ?? PushState(tokenID: tokenID)
+
+        // An attempt the server may hold, and still the one wanted: put again
+        // with the key it was sealed, which lands the same record whether or
+        // not the first put did.
+        if let attempt = next.pending.last(where: { $0.pushKey != nil }), wanted(attempt) {
+            return await put(attempt, &next, device: device, client: client)
+        }
+        // The confirmed one, still wanted, with nothing newer the server may
+        // hold. Its record may be gone (deleted by the server after the
+        // relay refused a push, or by hand): then it is made again.
+        if let current = next.current, !next.pending.contains(where: { $0.pushKey != nil }), wanted(current) {
             do {
-                if try await client.record(SubstrateClient.deviceKind, tokenID) != nil { return facts(.registered, current) }
+                if try await client.record(SubstrateClient.deviceKind, tokenID) != nil { return facts(.registered, next) }
             } catch {
-                return facts(.registered, current)
+                return facts(.registered, next)
             }
         }
 
-        let made = PushState.Registration(
+        var made = PushState.Registration(
             generation: generation(), relay: build, publicKey: key.publicKey, deviceToken: deviceToken, environment: environment,
             notifies: notifies, registeredAt: now())
-        var next = state ?? PushState(tokenID: tokenID)
-        next.pending = made
+        next.pending.append(made)
+        guard await save(next, for: tokenID) else { return facts(.unavailable, state) }
         do {
-            try await save(next)
-        } catch {
-            return unavailable(state)
-        }
-        let pushKey: String
-        do {
-            pushKey = try await PushRelay.register(
+            made.pushKey = try await PushRelay.register(
                 PushRelay.RegisterRequest(
                     platform: "apns", token: deviceToken, topic: device.topic, environment: environment.rawValue, publicKey: key.publicKey,
                     generation: made.generation),
@@ -295,27 +416,33 @@ public struct PushRegistrar: Sendable {
         } catch let refusal as PushRelay.Refusal where refusal.stops {
             return await giveUp(.refused, next, client)
         } catch {
-            next.pending = nil
-            try? await save(next)
-            return unavailable(next)
+            // It never reached the server: only it goes, and every earlier
+            // attempt the server may hold stays accepted.
+            next.pending.removeAll { $0.generation == made.generation }
+            _ = await save(next, for: tokenID)
+            return facts(.unavailable, next)
         }
+        next.pending[next.pending.count - 1] = made
+        guard await save(next, for: tokenID) else { return facts(.unavailable, next) }
+        return await put(made, &next, device: device, client: client)
+    }
+
+    /// The device record put with `made`'s key, and `made` current once the
+    /// server answers. A put that may have landed leaves it held.
+    private func put(
+        _ made: PushState.Registration, _ next: inout PushState, device: any PushRegistration, client: SubstrateClient
+    ) async -> PushFacts {
+        guard let pushKey = made.pushKey else { return facts(.unavailable, next) }
         do {
-            try await client.putDevice(tokenID: tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: notifies)
+            try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
         } catch let refused as ServerError where refused.isPermanent {
             return await giveUp(.refused, next, client)
         } catch {
-            // It may have landed with its answer lost: the pending generation
-            // stays accepted beside the current one until the next attempt.
-            return unavailable(next)
+            return facts(.unavailable, next)
         }
-        next.current = made
-        next.pending = nil
-        do {
-            try await save(next)
-        } catch {
-            return unavailable(next)
-        }
-        return facts(.registered, made)
+        next.confirm(made, at: now())
+        guard await save(next, for: next.tokenID) else { return facts(.unavailable, next) }
+        return facts(.registered, next)
     }
 
     /// Whether a registration is made again: Apple's token, the relay, the
@@ -333,60 +460,139 @@ public struct PushRegistrar: Sendable {
 
     // MARK: Giving up
 
-    /// Signing out: the device record is deleted first, while the token can
-    /// still delete it, and then every registration of the sign-in is
-    /// forgotten, the current and the pending one alike, so every push
-    /// already delivered or still queued for it no longer matches. A
-    /// delete that fails is left to the server, which deletes the device
-    /// with its token.
+    /// Signing out: the sign-in is marked as leaving, so no attempt starts or
+    /// saves for it, and the attempt in flight is cancelled rather than
+    /// waited for; the device record is deleted while the token can still
+    /// delete it; then every registration of the sign-in is forgotten, the
+    /// current, the pending and the retired alike, so every push already
+    /// delivered or still queued for it no longer matches. A delete that
+    /// fails is left to the server, which deletes the device with its token.
     public func signOut(_ session: Session) async {
-        _ = try? await SessionTransitions.shared.run(transitions) { await forget(session) }
-    }
-
-    private func forget(_ session: Session) async {
-        if let state = await state(), state.tokenID == session.tokenID, state.current != nil || state.pending != nil, let tokenID = session.tokenID {
-            var client = SubstrateClient(session, transport: transport)
-            client.pause = { _ in throw CancellationError() }
-            try? await client.delete(SubstrateClient.deviceKind, tokenID)
+        control.leave(session.tokenID)
+        await control.settle(within: .seconds(2))
+        if let state = await state(), state.tokenID == session.tokenID, state.held, let tokenID = session.tokenID {
+            var deleting = SubstrateClient(session, transport: transport)
+            deleting.pause = { _ in throw CancellationError() }
+            let client = deleting
+            _ = await PushControl.within(.seconds(5)) {
+                try? await client.delete(SubstrateClient.deviceKind, tokenID)
+            }
         }
         try? await clear()
     }
 
-    /// Stops using a registration: its device record deleted, then the
-    /// registration forgotten. Where the delete could not be made now the
-    /// registration stays held, since the server may still push to it, and
-    /// the next attempt deletes it.
+    /// Stops using a registration: its device record deleted, then each
+    /// generation retired for a day. Where the delete could not be made now
+    /// the registration stays held, since the server may still push to it,
+    /// and the next attempt deletes it.
     private func giveUp(_ standing: PushFacts.Standing, _ state: PushState?, _ client: SubstrateClient) async -> PushFacts {
-        guard let state, state.current != nil || state.pending != nil else { return PushFacts(standing: standing) }
-        do {
-            try await client.delete(SubstrateClient.deviceKind, state.tokenID)
-        } catch is SessionExpired {
-            // The token is gone, and its device with it.
-        } catch {
-            return PushFacts(standing: standing, held: state.current != nil, environment: state.current?.environment, since: state.current?.registeredAt)
+        guard var state else { return PushFacts(standing: standing) }
+        if state.held {
+            do {
+                try await client.delete(SubstrateClient.deviceKind, state.tokenID)
+            } catch is SessionExpired {
+                // The token is gone, and its device with it.
+            } catch {
+                return facts(standing, state)
+            }
         }
-        try? await clear()
+        state.retireAll(at: now())
+        _ = await save(state, for: state.tokenID)
         return PushFacts(standing: standing)
     }
 
-    private func unavailable(_ state: PushState?) -> PushFacts {
-        guard let current = state?.current else { return PushFacts(standing: .unavailable) }
-        var out = facts(.registered, current)
-        out.standing = .unavailable
-        return out
+    private func facts(_ standing: PushFacts.Standing, _ state: PushState?) -> PushFacts {
+        guard let state, state.held, let latest = state.latest else { return PushFacts(standing: standing) }
+        return PushFacts(
+            standing: standing, held: true, environment: latest.environment, since: latest.registeredAt,
+            deviceToken: latest.environment == .development ? latest.deviceToken : nil)
     }
 
-    private func facts(_ standing: PushFacts.Standing, _ current: PushState.Registration) -> PushFacts {
-        PushFacts(
-            standing: standing, held: true, environment: current.environment, since: current.registeredAt,
-            deviceToken: current.environment == .development ? current.deviceToken : nil)
-    }
-
-    private func save(_ state: PushState) async throws {
-        try await sessions.write(try JSONEncoder().encode(state), account: account)
+    /// Saves unless the sign-in is being signed out: a save after the
+    /// sign-out forgot the registrations would bring one back.
+    private func save(_ state: PushState, for tokenID: String) async -> Bool {
+        guard !control.isLeaving(tokenID), let data = try? JSONEncoder().encode(state) else { return false }
+        do {
+            try await sessions.write(data, account: account)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func clear() async throws {
         try await sessions.delete(account: account)
+    }
+}
+
+/// The registrar's attempts, one at a time, and the sign-ins being signed
+/// out: shared by every copy of one registrar.
+final class PushControl: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tail: Task<Void, Never>?
+    private var running: [UUID: Task<PushFacts, Never>] = [:]
+    private var leaving: Set<String> = []
+
+    /// Runs `operation` after the ones before it; cancelled with its caller,
+    /// or by a sign-out.
+    func serial(_ operation: @escaping @Sendable () async -> PushFacts) async -> PushFacts {
+        let id = UUID()
+        let task: Task<PushFacts, Never> = lock.withLock {
+            let previous = tail
+            let task = Task<PushFacts, Never> {
+                await previous?.value
+                if Task.isCancelled { return PushFacts(standing: .unavailable) }
+                return await operation()
+            }
+            running[id] = task
+            tail = Task { _ = await task.value }
+            return task
+        }
+        let out = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        _ = lock.withLock { running.removeValue(forKey: id) }
+        return out
+    }
+
+    /// The sign-in of `tokenID` is being signed out: every attempt in flight
+    /// is cancelled, and none starts or saves for it again.
+    func leave(_ tokenID: String?) {
+        let tasks = lock.withLock {
+            if let tokenID { leaving.insert(tokenID) }
+            return Array(running.values)
+        }
+        for task in tasks { task.cancel() }
+    }
+
+    func isLeaving(_ tokenID: String?) -> Bool {
+        guard let tokenID else { return false }
+        return lock.withLock { leaving.contains(tokenID) }
+    }
+
+    /// Waits for the cancelled attempts to end, at most `limit`: one that
+    /// does not still saves nothing for a sign-in that is leaving.
+    func settle(within limit: Duration) async {
+        let tail = lock.withLock { self.tail }
+        _ = await Self.within(limit) { await tail?.value }
+    }
+
+    /// `work`, given up after `limit`; true where it finished in time.
+    static func within(_ limit: Duration, _ work: @escaping @Sendable () async -> Void) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await work()
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
     }
 }
