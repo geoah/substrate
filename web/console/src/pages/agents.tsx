@@ -46,6 +46,7 @@ import { useLiveRecords } from "@/hooks/use-live-records"
 import { earliestRead, useThreadMarks } from "@/hooks/use-thread-marks"
 import {
   agentPurpose,
+  byActivity,
   chatCapable,
   chatRows,
   openingMessages,
@@ -85,15 +86,14 @@ function useMedia(query: string): boolean {
 /** How long an archive offers its Undo. */
 export const UNDO_MS = 6000
 
-/** The chats of every part read, each once, most recently active first. */
+/** The chats of every part read, each once, the one that last happened
+ * first (`threadActiveAt`). */
 function mergeChats(...parts: (SubstrateRecord[] | undefined)[]) {
   const seen = new Map<string, SubstrateRecord>()
   for (const part of parts)
     for (const thread of part ?? [])
       if (!seen.has(thread.id)) seen.set(thread.id, thread)
-  return [...seen.values()].sort((a, b) =>
-    a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0
-  )
+  return byActivity([...seen.values()])
 }
 
 const SEARCH = {
@@ -179,9 +179,9 @@ export function AgentsPage() {
     [allAgents]
   )
   // The chats to open and to start from: the ones in the list, never one
-  // the person put away.
+  // the person put away, the one that last happened first.
   const recent = useMemo(
-    () => conversations.data?.records ?? [],
+    () => byActivity(conversations.data?.records ?? []),
     [conversations.data]
   )
   const threads = useMemo(

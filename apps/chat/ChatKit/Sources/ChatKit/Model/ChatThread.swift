@@ -25,8 +25,21 @@ struct ChatThread: Hashable, Sendable, Identifiable {
     /// server keeps it as the model wrote it, Markdown and all.
     var preview: String? { record["lastReply"]?.text.map(plainText(markdown:)) }
     var startedAt: Date { record["startedAt"]?.string.flatMap(Timestamp.parse) ?? record.createdDate }
-    /// The row's last write, which every settle makes.
-    var activeAt: Date { record.updatedDate }
+    /// When the chat last happened, which the list orders, groups and
+    /// stamps it by: while a turn runs, the row's last write; else when its
+    /// last turn settled. Not `updatedAt` once settled: a write that is no
+    /// turn (a migration stamping `lastMessage`, a recount of what waits)
+    /// moves it, and one such write dates every chat it touched to that
+    /// instant. A settled row without `finishedAt` falls back to its last
+    /// write.
+    var activeAt: Date {
+        if !running, let settled = record["finishedAt"]?.string.flatMap(Timestamp.parse) { return settled }
+        return record.updatedDate
+    }
+
+    /// The row's last write: what the server orders a list of threads by,
+    /// so where the window of a list read so far ends.
+    var writtenAt: Date { record.updatedDate }
     var automated: Bool { mode != "chat" }
     /// The newest message the thread held when it last settled, which a
     /// person's mark is compared with; nil from a server older than marks,

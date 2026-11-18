@@ -9,7 +9,12 @@ import { ChevronRightIcon } from "lucide-react"
 import { ActorMark } from "@/components/identity/actor-ref"
 import { Skeleton } from "@/components/ui/skeleton"
 import { agentIdentity } from "@/lib/actor-identity"
-import { chatRows, openingMessages, threadActiveAt } from "@/lib/agent-chat"
+import {
+  byActivity,
+  chatRows,
+  openingMessages,
+  threadActiveAt,
+} from "@/lib/agent-chat"
 import {
   conversationsQueryOptions,
   openingMessagesQueryOptions,
@@ -21,7 +26,7 @@ const SHOWN_CHATS = 3
 export function RecentChats() {
   const conversations = useQuery(conversationsQueryOptions(SHOWN_CHATS))
   const threads = useMemo(
-    () => conversations.data?.records ?? [],
+    () => byActivity(conversations.data?.records ?? []),
     [conversations.data]
   )
   const openings = useQuery(

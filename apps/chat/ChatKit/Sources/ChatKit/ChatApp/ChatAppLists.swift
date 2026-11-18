@@ -114,7 +114,7 @@ extension ChatAppState {
     /// held are the folder's and say nothing of where the window ends.
     private func inWindow(_ thread: ChatThread) -> Bool {
         guard window.read, let end = window.end else { return true }
-        return thread.activeAt >= end
+        return thread.writtenAt >= end
     }
 
     /// The archived chats, as the Archived list draws them.

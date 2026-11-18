@@ -1527,7 +1527,7 @@ struct SeededRun {
                 // Unless the list was read again from its start since, and
                 // the chat's place is past the pages read so far: it is
                 // there once the list is scrolled to it.
-                if let end = state.window.end, let held = state.thread(thread), held.activeAt < end, presentation.list.more {
+                if let end = state.window.end, let held = state.thread(thread), held.writtenAt < end, presentation.list.more {
                     shelved = nil
                     return settledList(state, presentation, settled: settled)
                 }
