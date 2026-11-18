@@ -477,3 +477,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0333](0333-a-mirror-of-an-outside-service-keeps-all-of-its-history.md) | A mirror of an outside service keeps all of its history | accepted |
 | [0334](0334-every-deletion-is-kept-unless-a-deployment-sets-how-long.md) | Every deletion is kept unless a deployment sets how long | accepted |
 | [0335](0335-a-publishers-push-relay-seals-each-installs-address-to-one-sign-ins-key-and-builds-every-push-from-an-event-a-thread-a-count-and-an-opaque-id.md) | A publisher's push relay seals each install's address to one sign-in's key, and builds every push from an event, a thread, a count and an opaque id | accepted |
+| [0336](0336-an-install-that-takes-pushes-is-a-device-record-named-by-its-token-and-dies-with-it.md) | An install that takes pushes is a device record named by its token, and dies with it | accepted |
+| [0337](0337-a-server-calls-out-on-its-own-initiative-only-to-push-only-through-the-relay-its-apps-verified-publisher-names.md) | A server calls out on its own initiative only to push, only through the relay its app's verified publisher names | accepted |
