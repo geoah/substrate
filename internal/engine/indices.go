@@ -80,12 +80,15 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind,
 		}
 		if conn == nil {
 			if conn, err = lockIndexBuilds(ctx, admin, progress.waiting); err != nil {
+				if ctx.Err() != nil {
+					return &indexBuildCut{kind: s.kind, phase: indexCutQueued, err: err}
+				}
 				return fmt.Errorf("substrate/engine: index build lock for %s: %w", s.kind, err)
 			}
 		}
 		if err := s.rebuild(ctx, conn, progress.building); err != nil {
 			if ctx.Err() != nil {
-				return &indexBuildCut{kind: s.kind, err: err}
+				return &indexBuildCut{kind: s.kind, phase: indexCutPreparing, err: err}
 			}
 			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)
 		}
@@ -93,19 +96,37 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind,
 	return nil
 }
 
-// indexBuildCut is a build the caller's context ended before it finished,
-// so the declaration it was for was not applied. Its text says the wait was
-// the database's: a concurrent build waits for every older transaction, and
-// "context deadline exceeded" alone was read as a budget the caller should
-// raise. An agent's call reads the kind off it (agentvocabulary.go).
+// indexBuildCut is index work the caller's context ended before it
+// finished, so the declaration it was for was not applied. It says which
+// phase the end met and nothing about why the phase took the time: a build
+// may wait on another transaction or simply scan a large table. Its text
+// leaves out the driver's error, which can carry transport details and is
+// what a model reads; Unwrap keeps it. "context deadline exceeded" alone
+// was read as a budget the caller should raise. An agent's call reads the
+// kind and the phase off it (agentvocabulary.go).
 type indexBuildCut struct {
-	kind string
-	err  error
+	kind  string
+	phase indexCutPhase
+	err   error
 }
 
+// indexCutPhase is where index work stood when its caller's context ended.
+type indexCutPhase int
+
+const (
+	// indexCutQueued: waiting for another session's builds to release the
+	// build lock (lockIndexBuilds), before any of this call's own.
+	indexCutQueued indexCutPhase = iota + 1
+	// indexCutPreparing: in this call's own rebuild, whichever of its steps
+	// (rebuild).
+	indexCutPreparing
+)
+
 func (e *indexBuildCut) Error() string {
-	return fmt.Sprintf("substrate/engine: create index for %s: the index was still being built when the call ended, so nothing was applied; "+
-		"a concurrent index build waits for every older transaction in the database to end (%v)", e.kind, e.err)
+	if e.phase == indexCutQueued {
+		return fmt.Sprintf("substrate/engine: create index for %s: the call ended while it was waiting for another index build on the database to finish, so the declaration was not applied", e.kind)
+	}
+	return fmt.Sprintf("substrate/engine: create index for %s: the call ended before the index was ready, so the declaration was not applied", e.kind)
 }
 
 func (e *indexBuildCut) Unwrap() error { return e.err }

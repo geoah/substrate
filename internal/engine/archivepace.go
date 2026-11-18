@@ -164,8 +164,8 @@ func (s *service) invocationStarted() { s.invocations.Add(1) }
 func (s *service) invocationEnded()   { s.invocations.Add(-1) }
 
 // indexBuildStarted and indexBuildEnded bracket every index build a
-// vocabulary apply runs in this process (vocabularywrite.go): while one
-// runs, no pass pauses (the header).
+// vocabulary apply runs in this process (vocabularywrite.go buildIndexes):
+// while one runs, no pass pauses (the header).
 func (s *service) indexBuildStarted() { s.indexBuilds.Add(1) }
 func (s *service) indexBuildEnded()   { s.indexBuilds.Add(-1) }
 

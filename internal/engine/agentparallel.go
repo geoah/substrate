@@ -35,9 +35,9 @@ type toolRun struct {
 
 	out string
 	ok  bool
-	// cutIndex is the kind whose index build a `vocabulary` call was still
-	// waiting on when its time ran out (indexBuildCut), empty otherwise.
-	cutIndex string
+	// cut is the index work a `vocabulary` call's context ended before it
+	// finished (indexBuildCut), nil otherwise.
+	cut *indexBuildCut
 	// changes collects the changelog entries the dispatch committed (a
 	// mutate's writes, a propose's request row, a function tool's applied
 	// effects), stamped onto the tool row as `changes`. A sub-agent call
@@ -172,7 +172,7 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 			c.finishedAt = c.startedAt
 		}
 		if !c.refused {
-			l.in.outcome.noteTool(c.call.Name, c.out, c.ok, c.cutIndex)
+			l.in.outcome.noteTool(c.call.Name, c.out, c.ok, c.cut)
 		}
 		job := ""
 		if c.job != nil {

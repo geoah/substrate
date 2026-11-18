@@ -65,6 +65,10 @@ func TestAnArchitectsDeclarationBuildsItsIndexWhileAnArchivePassPausesForAgents(
 	}
 
 	asked, answer := make(chan struct{}), make(chan struct{})
+	// Released on every way out: a model call still held blocks the fake's
+	// server at cleanup.
+	release := sync.OnceFunc(func() { close(answer) })
+	defer release()
 	fake.script(mossModel,
 		fakeTurn{calls: []fakeCall{{"architect", toolArgs(t, map[string]any{
 			"input": "The owner asked to keep garden notes, each on a pad. The owner asked for this.",
@@ -106,7 +110,7 @@ func TestAnArchitectsDeclarationBuildsItsIndexWhileAnArchivePassPausesForAgents(
 
 	// The architect applies the kind: its reference's index is built with
 	// the pass's snapshot older than the build.
-	close(answer)
+	release()
 	var got chatted
 	select {
 	case got = <-chat:
