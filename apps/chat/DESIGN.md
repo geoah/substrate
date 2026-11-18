@@ -736,8 +736,10 @@ and the badge the server counted.
   raced against the whole operation: at the deadline the push is delivered
   as it came, and what is still out is cancelled and never waited for. It
   is delivered once, with what was made or as it came, whether the work or
-  `serviceExtensionTimeWillExpire` comes first. On any failure the alert
-  keeps the app's fallback words. It links
+  `serviceExtensionTimeWillExpire` comes first. Just before it shows what
+  it read, it asks again whether the push is accepted: a sign-out while it
+  read leaves the plain fallback, with no chat text and no badge. On any
+  failure the alert keeps the app's fallback words. It links
   ChatKit and the kit's API and never a view. A server reachable only at
   home or over a VPN cannot be asked from elsewhere; there the fallback is
   the normal case, and Settings says so.
@@ -751,7 +753,11 @@ and the badge the server counted.
   action from a push for another registration, or one whose session is
   gone by the time it is sent, decides nothing and reads nothing with the
   session held now, and a notification says to open the chat to decide. Otherwise it writes over the version the notification showed, so
-  a card that changed since is refused by the server.
+  a card that changed since is refused by the server. A reply typed into
+  a push's notification is held to the same session: every copy of it
+  goes with the client of the session that accepts the push, read as it
+  leaves, so one whose session changed goes to no server, its text stays
+  in the chat, and a notification says to open the chat to reply.
 - **Taking notifications back.** The app has the `remote-notification`
   background mode. When iOS runs it for a `read` push whose generation
   matches, it resolves the event id and removes exactly the delivered

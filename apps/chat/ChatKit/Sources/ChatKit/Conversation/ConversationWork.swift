@@ -2,6 +2,7 @@ import Foundation
 import SubstrateAPI
 import SubstrateCore
 import SubstrateRuntime
+import SubstrateScreens
 
 /// The effects' work: the streams, the reads, Stop and the waits, each
 /// reading the client when it runs, never keeping it.
@@ -13,10 +14,25 @@ extension Conversation {
         let timeZone = environment.timeZone.identifier
         let quiet = quiet
         switch effect.ask {
-        case let .chat(agent, thread, message, id, repliesTo):
+        case let .chat(agent, thread, message, id, repliesTo, bound):
+            let push = environment[PushRegistrarKey.self]
             return .sequence {
                 Self.relay { yield in
-                    guard let client = await source.current() else { return }
+                    // A reply typed into a push's notification goes with the
+                    // client of the session that accepts that push, read as
+                    // the request leaves: once another sign-in holds the app,
+                    // nothing is sent, to its server or any.
+                    let chosen: SubstrateClient?
+                    if let bound {
+                        chosen = await push?.acceptance(of: bound).client
+                        if chosen == nil {
+                            yield(.streamEnded(Failure(.send, .sessionChanged, at: clock.now), outcome: ids.next()))
+                            return
+                        }
+                    } else {
+                        chosen = await source.current()
+                    }
+                    guard let client = chosen else { return }
                     do {
                         let events = ChatAPI.chat(
                             client, agent: agent, thread: thread, message: message, messageID: id, repliesTo: repliesTo, timezone: timeZone,

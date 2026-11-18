@@ -129,6 +129,9 @@ public struct Conversation: Controller, Equatable {
         /// The action's time is up: a copy still unanswered stops being
         /// sent, and the message stands in the chat.
         var expired = false
+        /// The generation of the push it was typed into: every copy goes
+        /// with the client of the session that accepts it, or nowhere.
+        var generation: String?
     }
 
     /// What became of it: sent, or why not, with the text kept in the

@@ -234,6 +234,12 @@ public enum ChatNotifications {
         NotificationRequest(id: "chat|refused", title: "Nothing was decided", body: "Open the chat to decide.", timeSensitive: true)
     }
 
+    /// A reply typed into a push's notification that was not sent: the
+    /// session that accepted the push is not the one held now.
+    static func replyRefused() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Nothing was sent", body: "Open the chat to reply.", timeSensitive: true)
+    }
+
     /// What tells one response from every other: its notification, what
     /// that notification was about when it was shown, the action and the
     /// text. The same response heard twice acts once.

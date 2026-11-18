@@ -95,7 +95,9 @@ public struct ConversationState: Codable, Equatable, Sendable {
 
     /// What an applied event asks the runtime to do, made fresh by each.
     enum Ask: Codable, Equatable, Sendable {
-        case chat(agent: String, thread: String?, message: String, id: String?, repliesTo: String? = nil)
+        /// `bound`: the generation of the push the message was typed into,
+        /// whose accepting session alone sends it.
+        case chat(agent: String, thread: String?, message: String, id: String?, repliesTo: String? = nil, bound: String? = nil)
         /// Wakes the engine to send an unanswered message again.
         case repeatWait(id: String, seconds: Double)
         /// Reads for the message a send wrote under its id.
@@ -381,4 +383,8 @@ struct UnsentMessage: Codable, Hashable, Sendable {
     /// the server takes that with the message: every copy says it, one
     /// sent after a kill too.
     var repliesTo: String?
+    /// The generation of the push it was typed into: every copy, one sent
+    /// after a kill too, goes with the client of the session that accepts
+    /// that push, or not at all. A Send Again in the chat drops it.
+    var bound: String?
 }

@@ -291,6 +291,67 @@ struct PushContentTests {
         #expect(String(decoding: body, as: UTF8.self).contains("\"ifVersion\":4"))
     }
 
+    /// A reply typed into a push's notification goes with the session that
+    /// accepted the push, or nowhere: the session changes after the push was
+    /// accepted and before the reply leaves, and no server hears it; the
+    /// person is told to open the chat to reply.
+    @Test func aReplyFromAPushWhoseSessionChangedIsSentNowhere() async throws {
+        let held = HeldPush()
+        let rig = ChatRig(push: held.registrar)
+        try await rig.signIn(agents: 3)
+        // A chat no list holds: its row is read by name, and the reply waits
+        // for it.
+        rig.server.route("GET", "/llm/thread/t9", .json(200, threadRow().replacingOccurrences(of: threadID, with: "t9")))
+        rig.server.hold("/llm/thread/t9")
+        let info: [String: String] = [
+            ChatNotifications.threadKey: "t9", PushPayload.Key.event: "reply", PushPayload.Key.thread: "t9", PushPayload.Key.generation: "gC",
+            PushPayload.Key.eventID: "e",
+        ]
+        rig.notifications.respond(
+            NotificationResponse(id: "apns-r", category: ChatNotifications.replyCategory, action: .named("reply"), userInfo: info, text: "On my way"))
+        try await rig.harness.until { _ in rig.server.count("/llm/thread/t9") > 0 }
+        // Another sign-in takes the Keychain before the reply leaves.
+        var other = try #require(await held.registrar.sessions.load())
+        other.tokenID = "0b5e1a7c33"
+        other.secret = "another"
+        try await held.registrar.sessions.save(other)
+        rig.server.letGo("/llm/thread/t9")
+        try await rig.harness.until { _ in rig.notifications.calls.contains { if case .finished = $0 { true } else { false } } }
+        await rig.harness.settle()
+        #expect(!rig.server.requests.contains { $0.hasPrefix("POST") && $0.contains("/chat") })
+        #expect(held.transport.requests.allSatisfy { !($0.url?.path.hasSuffix("/chat") ?? false) })
+        let notice = rig.notifications.calls.compactMap { call -> NotificationRequest? in
+            if case let .schedule(request) = call, request.id == "chat|refused" { request } else { nil }
+        }
+        #expect(notice.map(\.body) == ["Open the chat to reply."])
+    }
+
+    /// A sign-out while the last read is out: the push is asked about again
+    /// just before it is shown, accepted no more, and the plain fallback is
+    /// delivered, with no chat text and no badge.
+    @Test func aSignOutDuringTheLastReadShowsNothingItRead() async throws {
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply"))),
+            .init(
+                method: "GET", path: "/llm/message/5b90e3c1f2",
+                answer: .json(
+                    200,
+                    #"{"id":"5b90e3c1f2","kind":"\#(Kinds.message)","version":1,"properties":{"role":"assistant","content":"**Here** is the summary you asked for.","thread":{"ref":"\#(Kinds.thread)/\#(threadID)"}}}"#
+                )),
+            .init(method: "GET", path: "/llm/thread/\(threadID)", answer: .json(200, threadRow())),
+        ])
+        let signedOut = Ran()
+        server.onRequest { request in
+            if request.contains("/llm/thread/") { signedOut.mark() }
+        }
+        let checking: ChatPush.Accepting = { _ in
+            signedOut.value ? PushAcceptance(.refused) : PushAcceptance(.accepted, client: client)
+        }
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: checking, until: later)
+        #expect(signedOut.value)
+        #expect(content == .fallback(dropsBadge: true))
+    }
+
     @Test func aReadThatStartsInTimeAndRunsPastIsCutAtTheDeadline() async throws {
         let (server, client) = server([
             .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply")))

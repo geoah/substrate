@@ -62,7 +62,13 @@ public enum ChatPush {
             guard var client = acceptance.client, !push.eventID.isEmpty else { return .fallback(dropsBadge: false) }
             // A busy server is not waited out: there is no time for it.
             client.pause = { _ in throw CancellationError() }
-            return await resolve(push, client: client, race: race)
+            let content = await resolve(push, client: client, race: race)
+            guard case .shown = content else { return content }
+            // Asked again just before it is shown: a sign-out while it was
+            // read accepts the push no more, and then nothing read for it
+            // is shown, and no badge either.
+            guard race.live, await accepting(push.generation).verdict == .accepted else { return .fallback(dropsBadge: true) }
+            return content
         }
     }
 

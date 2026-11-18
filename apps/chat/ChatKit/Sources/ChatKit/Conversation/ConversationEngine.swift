@@ -498,7 +498,7 @@ extension Conversation {
         let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
         send(
             &state, message: reply.text, agent: agent, at: reply.at, baseline: baseline, fromDraft: false, id: sendsIDs ? reply.id : nil,
-            typed: true)
+            typed: true, bound: reply.generation)
     }
 
     /// The action's time is up with the reply unanswered: it stops being
@@ -558,7 +558,9 @@ extension Conversation {
         state.copies += 1
         state.tries += 1
         state.asks.append(
-            .chat(agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo))
+            .chat(
+                agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo,
+                bound: pending.bound))
     }
 
     /// Send Again: the same request once more. The id is the one the
@@ -572,6 +574,8 @@ extension Conversation {
         let known = joining ? join(&state) : ([], -1)
         startRun(&state)
         pending.sentAt = at
+        // Pressed in the chat, by the person signed in now.
+        pending.bound = nil
         state.pending = pending
         state.unsentFailure = nil
         state.tries = 0
@@ -675,7 +679,8 @@ extension Conversation {
     // MARK: Runs, continued
 
     private func send(
-        _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil
+        _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil,
+        bound: String? = nil
     ) {
         // A turn runs on the thread and the server takes a message into
         // it: the send's stream is that turn's, so the one being read is
@@ -731,14 +736,15 @@ extension Conversation {
         state.stopping = false
         guard let id else {
             state.run = .send(run)
-            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil))
+            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil, bound: bound))
             return
         }
         // The request leaves once the device keeps the message (`kept`),
         // so a kill at any moment after leaves the id to send it under.
         run.unkept = true
         state.run = .send(run)
-        state.pending = UnsentMessage(id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil)
+        state.pending = UnsentMessage(
+            id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil, bound: bound)
         state.copies = 0
         state.tries = 0
         state.unsentFailure = nil

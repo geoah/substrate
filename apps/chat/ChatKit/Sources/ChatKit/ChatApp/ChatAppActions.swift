@@ -96,7 +96,10 @@ extension ChatApp {
             // where no window has shown the chat since the launch.
             let child = state.key(of: thread) ?? key
             if state.conversations[child] == nil { converse(&state, thread, key: child) }
-            state.conversations[child]?.reply = Conversation.Reply(id: message, text: text, at: at)
+            // From a push, held to the session that accepted it: the
+            // conversation sends it with that session's client or not at all.
+            state.conversations[child]?.reply = Conversation.Reply(
+                id: message, text: text, at: at, generation: pushed ? response.userInfo[PushPayload.Key.generation] : nil)
             act.reply = child
         case .approve, .decline, .option:
             guard let id = response.userInfo[ChatNotifications.cardKey], let version = response.userInfo[ChatNotifications.versionKey].flatMap(Int.init)
@@ -210,12 +213,23 @@ extension ChatApp {
         // The next reply into this chat, where one waited for this one.
         defer { if !state.deferred.isEmpty { resume(&state) } }
         if let stamp = state.acting.first(where: { $0.value.reply == key })?.key {
+            if outcome.failure?.why == .sessionChanged { return unboundReply(&state, stamp) }
             finish(&state, stamp, failure: outcome.failure)
         } else if outcome.failure == nil, let thread = state.conversations[key]?.thread {
             // It arrived after the app said it had not: that is taken back.
             state.asks.append(.cancelNotification(Self.failedID(thread)))
             state.failedActions.remove(thread)
         }
+    }
+
+    /// A reply typed into a push's notification whose sign-in is no longer
+    /// the one held: nothing was sent, its text is kept in the chat, and the
+    /// person is sent there to reply.
+    private func unboundReply(_ state: inout State, _ stamp: String) {
+        guard let act = state.acting.removeValue(forKey: stamp) else { return }
+        state.asks.append(.cancel("actWait:\(stamp)"))
+        let keep = state.disk.map { KeptDrafts(lease: $0, drafts: state.drafts) }
+        state.asks.append(.finishAction(act.response, cancel: nil, notify: ChatNotifications.replyRefused(), keep: keep))
     }
 
     /// A card's write was answered: where a notification asked for it, the

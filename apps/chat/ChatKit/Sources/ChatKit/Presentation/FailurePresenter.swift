@@ -182,7 +182,8 @@ enum FailurePresenter {
             case .keyRefused?: return run(.providerKeyRefused, status: "error", failure, c)
             case nil: return refused(status, failure, c)
             }
-        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI, .ended, .closed, .interrupted, .disk:
+        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .sessionChanged, .needsApproval, .notTheAPI, .ended, .closed,
+            .interrupted, .disk:
             return attempted(failure, c)
         }
     }
@@ -403,6 +404,7 @@ enum FailurePresenter {
         case .streamEnded: return "The connection dropped."
         case .notTheAPI: return "The server answered with something \(ChatManifest.appName) can't read."
         case .sessionEnded: return "Your sign-in ended."
+        case .sessionChanged: return "You're signed in differently now."
         case .needsApproval: return "\(ChatManifest.appName) needs your approval for that."
         case .ended: return "The server closed the connection."
         case .closed: return "\(ChatManifest.appName) closed while it was being sent."
