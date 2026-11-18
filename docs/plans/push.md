@@ -860,15 +860,19 @@ thread is its own wait. A second event with the same key restarts its wait.
   through that message (the mark's `readThrough` is it or a later message,
   by 0313's order) or the mark says `archived`.
 - **`failed`**: 5 seconds. Then it is dropped if the person's mark took a
-  position since the turn began. That is the only signal the server reads:
+  position at or after the settle; one taken during the turn (a client
+  marking the message it just sent) saw nothing of how it ended. That is the
+  only signal the server reads:
   a failure often writes no message, and a mark write that moves nothing
   stamps nothing (`prepareThreadMark`), so a person watching a failure on the
   Mac may still get the push on the phone. That is accepted; the device
   showing the chat keeps the push quiet itself (section 5).
 - **`request`**: 5 seconds. Then it is dropped if the record is no longer
-  pending at that version, or, when a settle raised it, if the mark reads
-  through the message that settle wrote. A newer version of the same record
-  is a new item.
+  pending at that version, or, when a turn raised it, if the mark reads
+  through the message that turn's settle wrote. The turn records what it
+  raised, so its settle pushes the request and no reply, and names the
+  message the request is read at. A newer version of the same record is a
+  new item.
 - **`read`**: 2 seconds, keyed by the recipient and the thread alone, so
   every source in that time folds into one `read` that takes back all the
   alerts they cover.
@@ -912,22 +916,27 @@ Authorization: Bearer <the app's token>
 | `reply` | the `llm/message`, at its version | |
 | `failed` | the `llm/thread` | |
 | `request` | the `llm/interaction`, `llm/approval` or `core/recordpatchrequest`, at its version | `actions` |
-| `read` | none | `alerts` |
+| `read` | none | `covers` |
 
 `actions` is decided now, when the id is resolved, through the asking
 token's view: true only if it can read the record, the record is still
-pending at that version, and it could write its decision. A `failed` event
+pending at that version, the person's roles and the token write its kind
+whole (an app's agent scopes may reach the row; a person's roles never do by
+a row), and the token passes the continuation check the decision's own write
+passes. A `failed` event
 resolves while the thread's `status` is still `error` or `overbudget`, not
 only at the version that settled, since later writes to the thread move its
 version.
 
-A `read` answers the alerts it takes back, each by its fingerprint:
+A `read` answers the alerts it takes back, each by its fingerprint, under
+`covers` (the shape pull requests 2, 3a and 3b were built to; the fixture is
+`internal/api/testdata/push/event-read.json`):
 
 ```json
 {
   "event": "read",
   "thread": "8f2c41d07a",
-  "alerts": ["Zk1wN2xYc3RyaW5nMQ", "cTlrM2xhdGVyMDAwMg"]
+  "covers": {"alerts": ["Zk1wN2xYc3RyaW5nMQ", "cTlrM2xhdGVyMDAwMg"]}
 }
 ```
 
@@ -936,7 +945,7 @@ An alert's fingerprint is a function of its event id alone, pinned in
 
 ```text
 Fingerprint(eventId) = base64url, no padding, of the first 16 bytes of
-                       SHA-256("substrate-push-alert-v1\n" + eventId)
+                       SHA-256("substrate-push-event-fingerprint-v1\n" + eventId)
 ```
 
 The server records the fingerprint of every alert it sends (below), and the
@@ -979,9 +988,11 @@ definition of what a token may see.
 ### The badge
 
 One rule, counted by the server: the live `llm/thread` rows the token's view
-reads with `mode` `chat` and `status` not `running`, that are unread for the
-person, and that the person has not archived unless `waitingOnPerson` is
-above 0. Unread is 0313's: `markedUnread` set, or `lastMessage` set and not
+reads with `mode` `chat`, that act for the person (`heldTo.onBehalfOf`), with
+`status` not `running`, that are unread for the person, and that the person
+has not archived unless `waitingOnPerson` is above 0. Another person's chats
+never count, even for an admin whose view reads them: the admin has no mark
+of them, so they would stay unread for good. Unread is 0313's: `markedUnread` set, or `lastMessage` set and not
 the person's `readThrough`; with no mark there is no `readThrough`, so a
 thread with a `lastMessage` is unread. It stops counting at 999, the one cap
 everywhere: the server's count, the relay's bound and the app's display.
@@ -991,9 +1002,10 @@ It counts `chat` alone because that is what Substrate Chat lists by default
 install's preference: counting automated runs would raise a number the
 person never sees go down. The app adopts the same rule (section 5).
 
-The engine finds the unread candidates in one query; the view keeps those
-the token reads, memoizing coverage per agent, so a scoped token costs one
-check per agent, not per thread.
+The engine finds the unread candidates a page at a time; the view keeps
+those the token reads, memoizing coverage per agent, so a scoped token costs
+one check per agent, not per thread, and the count pages on until it keeps
+999 or the candidates run out.
 
 ```http
 GET /api/v1/push/badge
@@ -1518,9 +1530,9 @@ func Verify(header string, pub ed25519.PublicKey, now time.Time, body []byte) er
 // are the same when Endpoint gives the same address for both.
 func Endpoint(relay, path string) (string, error)
 
-// Fingerprint names an alert by its event id (section 4): base64url of the
-// first 16 bytes of SHA-256("substrate-push-alert-v1\n" + eventID).
-func Fingerprint(eventID string) string
+// EventFingerprint names an alert by its event id (section 4): base64url of
+// the first 16 bytes of SHA-256("substrate-push-event-fingerprint-v1\n" + eventID).
+func EventFingerprint(eventID string) string
 ```
 
 ### Pull request 1: the relay (M)
