@@ -1137,8 +1137,9 @@ description = "Build multi-arch and push. TAG=<tag> (default: dev), TARGET=<Dock
 #
 # TARGET builds another stage of the one Dockerfile under $IMAGE: the
 # `latest` workflow sets IMAGE=ghcr.io/geoah/substrate-slack-socket
-# TARGET=slack-socket for the Socket Mode bridge. Unset, the build is the
-# Dockerfile's last stage, the server image.
+# TARGET=slack-socket for the Socket Mode bridge, and
+# IMAGE=ghcr.io/geoah/substrate-push-relay TARGET=push-relay for the push
+# relay. Unset, the build is the Dockerfile's last stage, the server image.
 run = '''
     set -e
     version="$(git describe --tags --always --dirty)"
@@ -1458,15 +1459,25 @@ run = [
 ]
 
 [tasks."ci:image"]
-description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
+description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml, and the push relay's image builds and serves"
 # Build, then boot. The build alone passed for a release image that could not
 # start: its runtime created no /var/lib/substrate, so a fresh volume came up
 # root-owned and the server died at boot. .mise/imagesmoke.sh runs the image
 # under compose.yaml with fresh volumes and a throwaway Postgres and holds what
 # a person would check by hand, ending with the console rendered in headless
 # Chrome, which is what `console:browser` prepares.
+#
+# The push relay's image is published from the same commits (latest.yml), so
+# it is built and booted here too: .mise/relaysmoke.sh starts it with keys it
+# generates, never an Apple key, and probes /healthz and /readyz.
 depends = ["console:browser"]
-run = ["docker build -t $IMAGE:ci .", ".mise/imagesmoke.sh $IMAGE:ci"]
+run = [
+  "docker build -t $IMAGE:ci .",
+  ".mise/imagesmoke.sh $IMAGE:ci",
+  "docker build --target push-relay -t $IMAGE-push-relay:ci .",
+  ".mise/relaysmoke.sh $IMAGE-push-relay:ci",
+]
+
 
 [tasks."ci:llm"]
 description = "CI job `llm live`: the live suite with both keys required, and its spend in the run summary"

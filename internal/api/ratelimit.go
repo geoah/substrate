@@ -2,12 +2,12 @@ package api
 
 import (
 	"math"
-	"net"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/geoah/substrate/internal/peer"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -194,10 +194,7 @@ func peerIP(r *http.Request) string {
 	if addr == "" {
 		addr = r.RemoteAddr
 	}
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
-	}
-	return addr
+	return peer.Host(addr)
 }
 
 // limiterRepository keys a bucket by repository name. Only a name a

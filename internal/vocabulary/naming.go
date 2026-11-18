@@ -6,6 +6,8 @@ import (
 	"net"
 	"regexp"
 	"strings"
+
+	"github.com/geoah/substrate/internal/recordid"
 )
 
 // Three naming rules are kept as regular-expression SOURCE, because one of them
@@ -56,28 +58,10 @@ var (
 	reMetaKey       = regexp.MustCompile(`^` + metaNamespaceRE + `/` + metaNameRE + `$`)
 	reMetaNamespace = regexp.MustCompile(`^` + metaNamespaceRE + `$`)
 	reMetaName      = regexp.MustCompile(`^` + metaNameRE + `$`)
-	// reID is the record-id alphabet. Minted ids are 26 lowercase Crockford
-	// base32 characters (MintedID); a writer's own id is its provider key
-	// ENCODED into this set, which is RFC 3986 unreserved (ALPHA / DIGIT /
-	// "-" / "." / "_" / "~") plus the two extra pchars a path segment
-	// admits, ":" and "@", plus "/".
-	//
-	// The "/" is there for exactly one reason: a DECLARATION's id is a KIND
-	// REFERENCE ("samples.substrate.reamde.dev/tasks/task"), and the grammar has one
-	// spelling. A "/" is legal in a URI path segment only when percent-
-	// encoded, so a client writes `%2F` and the API decodes it once
-	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire
-	// is percent-decoded twice.
-	//
-	// A declaration of the repository's own is named under `~`
-	// (`~/tasks/task`), so an id may also open with `~/` (decision record
-	// 0259); the alphabet itself is unchanged.
-	reID = regexp.MustCompile(`^(~/)?[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 )
 
-// MaxIDLen caps a writer-supplied id: long enough for any encoded provider
-// key, short enough that ids stay index keys rather than payloads.
-const MaxIDLen = 128
+// MaxIDLen caps a writer-supplied id (recordid.MaxLen).
+const MaxIDLen = recordid.MaxLen
 
 // ValidAuthority reports whether s is a legal DNS-style authority name.
 func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
@@ -169,10 +153,9 @@ func DerivedMintedID(parts ...string) string {
 // needs only the encoding. Both are opaque: neither can spell a title.
 func MintedID(s string) bool { return reMinted.MatchString(s) || reUUID.MatchString(s) }
 
-// ValidID reports whether s is a legal record id (see reID).
-func ValidID(s string) bool {
-	return len(s) <= MaxIDLen && reID.MatchString(s)
-}
+// ValidID reports whether s is a legal record id: the alphabet and the
+// length recordid holds, which says why each character is in it.
+func ValidID(s string) bool { return recordid.Valid(s) }
 
 // The DNS limits an authority is held to when a repository claims one as its
 // own: 253 characters in all and 63 per label (RFC 1035 §2.3.4). A published

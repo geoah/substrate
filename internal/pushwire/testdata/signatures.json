@@ -1,0 +1,107 @@
+{
+  "seed": "pJI95DggswHvGm-ooOQvmfD8Qu5dkBjrnUBGlOX3UaE",
+  "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+  "t": 1763459123,
+  "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+  "signedBytes": "substrate-push-v1\n1763459123\n4c8091d2317548e4b6a65ab4424539aa3aa146fd5d0e438c8d715afe095ba50b",
+  "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+  "cases": [
+    {
+      "name": "signed now",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "ok"
+    },
+    {
+      "name": "the relay's clock 300 s ahead",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459423,
+      "verify": "ok"
+    },
+    {
+      "name": "the relay's clock 300 s behind",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763458823,
+      "verify": "ok"
+    },
+    {
+      "name": "stale: the relay's clock 301 s ahead",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459424,
+      "verify": "stale"
+    },
+    {
+      "name": "stale: the relay's clock 301 s behind",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763458822,
+      "verify": "stale"
+    },
+    {
+      "name": "another key",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "oUGcwSgl9laPlfoGOUKE-ywonNDkFmw-l_0yom3h7Hk",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "a changed body",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":4,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "another time over the same signature",
+      "header": "t=1763459124,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "no signature",
+      "header": "",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "the parts in another order",
+      "header": "s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ,t=1763459123",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "a padded signature",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ==",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459123,
+      "verify": "refused"
+    },
+    {
+      "name": "a repeat: the first request again, within the window",
+      "header": "t=1763459123,s=yi_hOGK9VQnonDA-PBTrobvDAVBBekxDZKiFW12CgHctI4O_sMPBkv5rtKNEcaXEh7xf4JHmjpwwrIEb9aYLDQ",
+      "body": "{\"pushKey\":\"v1.fixture\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"4uuJ6453coPIdTvToSBpYO626IcOls4q-LSA0HKlbW98tTN2XpYTAOTW2yzjHn3-\"}",
+      "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+      "now": 1763459133,
+      "verify": "ok",
+      "relay": "replayed"
+    }
+  ]
+}

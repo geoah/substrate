@@ -1,7 +1,8 @@
 # The images of main: ghcr.io/geoah/substrate:main-<sha12> for every commit on
 # main whose ci run went green, and ghcr.io/geoah/substrate:latest for the tip.
 # The Socket Mode bridge gets the same two names under
-# ghcr.io/geoah/substrate-slack-socket, built from the same commit.
+# ghcr.io/geoah/substrate-slack-socket, and the push relay under
+# ghcr.io/geoah/substrate-push-relay, each built from the same commit.
 #
 # Neither is a stable release tag in the usual sense: `latest` moves with
 # every green commit on main, and neither has release notes behind it. Both
@@ -120,6 +121,13 @@ jobs:
         env:
           IMAGE: ghcr.io/geoah/substrate-slack-socket
           TARGET: slack-socket
+      # The publisher's push relay (cmd/substrate-push-relay), the
+      # Dockerfile's `push-relay` stage, under its own repository and the
+      # same rules. A deployment pins its main-<sha12> by digest.
+      - run: mise run image:main
+        env:
+          IMAGE: ghcr.io/geoah/substrate-push-relay
+          TARGET: push-relay
 
   latest:
     name: point latest at main's tip
@@ -161,3 +169,6 @@ jobs:
       - run: mise run image:latest
         env:
           IMAGE: ghcr.io/geoah/substrate-slack-socket
+      - run: mise run image:latest
+        env:
+          IMAGE: ghcr.io/geoah/substrate-push-relay

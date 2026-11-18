@@ -16,6 +16,7 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 
+	"github.com/geoah/substrate/internal/peer"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -350,27 +351,11 @@ func (c Config) Validate() error {
 	return ValidateCredentialKey(c.CredentialKey)
 }
 
-// TrustedProxyPrefixes parses SUBSTRATE_TRUSTED_PROXIES: each entry is a CIDR
-// (`10.42.0.0/16`) or one address, which stands for itself alone.
+// TrustedProxyPrefixes parses SUBSTRATE_TRUSTED_PROXIES (peer.ParseTrusted):
+// each entry is a CIDR (`10.42.0.0/16`) or one address, which stands for
+// itself alone.
 func (c Config) TrustedProxyPrefixes() ([]netip.Prefix, error) {
-	var out []netip.Prefix
-	for _, raw := range strings.Split(c.TrustedProxies, ",") {
-		entry := strings.TrimSpace(raw)
-		if entry == "" {
-			continue
-		}
-		if p, err := netip.ParsePrefix(entry); err == nil {
-			out = append(out, p.Masked())
-			continue
-		}
-		a, err := netip.ParseAddr(entry)
-		if err != nil {
-			return nil, fmt.Errorf("SUBSTRATE_TRUSTED_PROXIES entry %q is neither a CIDR (10.42.0.0/16) nor an address (10.42.0.7)", entry)
-		}
-		a = a.Unmap()
-		out = append(out, netip.PrefixFrom(a, a.BitLen()))
-	}
-	return out, nil
+	return peer.ParseTrusted(c.TrustedProxies)
 }
 
 // AuthorityDocs parses SUBSTRATE_INSECURE_AUTHORITY_DOCS into authority and

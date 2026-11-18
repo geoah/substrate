@@ -1,0 +1,62 @@
+[
+  {
+    "name": "a generation broken over two lines",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfL\\nE3W0iVXra0A\"}"
+  },
+  {
+    "name": "a public key broken by CR LF",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJF\\r\\nzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfLE3W0iVXra0A\"}"
+  },
+  {
+    "name": "a padded generation",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfLE3W0iVXra0A==\"}"
+  },
+  {
+    "name": "a generation in standard base64",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"+//+AQIDBAUGBwgJCgsMDQ\"}"
+  },
+  {
+    "name": "an unknown platform",
+    "route": "register",
+    "body": "{\"platform\":\"fcm\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfLE3W0iVXra0A\"}"
+  },
+  {
+    "name": "an unknown environment",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"sandbox\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfLE3W0iVXra0A\"}"
+  },
+  {
+    "name": "a token that is not hex",
+    "route": "register",
+    "body": "{\"platform\":\"apns\",\"token\":\"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\",\"topic\":\"dev.reamde.substrate.chat\",\"environment\":\"production\",\"publicKey\":\"fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o\",\"generation\":\"jPFx1d3VWfLE3W0iVXra0A\"}"
+  },
+  {
+    "name": "an event id that reaches 32 characters only by its line breaks",
+    "route": "push",
+    "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":1,\"eventId\":\"_I4vSfgyAdI2ZIKEObnH--sP2tMr0Q\\n\\n\"}"
+  },
+  {
+    "name": "an event id broken over two lines",
+    "route": "push",
+    "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":1,\"eventId\":\"qQJXdrSiA9Sy0pkp7FfdZGsRuu00etar\\nCEafF9US-UmyfZ2XBzjFsfrZs5Vy9COM\"}"
+  },
+  {
+    "name": "an unknown event",
+    "route": "push",
+    "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"typing\",\"thread\":\"8f2c41d07a\",\"badge\":1,\"eventId\":\"qQJXdrSiA9Sy0pkp7FfdZGsRuu00etarCEafF9US-UmyfZ2XBzjFsfrZs5Vy9COM\"}"
+  },
+  {
+    "name": "a thread that is no record id",
+    "route": "push",
+    "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"reply\",\"thread\":\"a b\",\"badge\":1,\"eventId\":\"qQJXdrSiA9Sy0pkp7FfdZGsRuu00etarCEafF9US-UmyfZ2XBzjFsfrZs5Vy9COM\"}"
+  },
+  {
+    "name": "a badge over 999",
+    "route": "push",
+    "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":1000,\"eventId\":\"qQJXdrSiA9Sy0pkp7FfdZGsRuu00etarCEafF9US-UmyfZ2XBzjFsfrZs5Vy9COM\"}"
+  }
+]
