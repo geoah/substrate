@@ -85,6 +85,12 @@ published image instead, replace its `build: .` with
 deployment pins the bridge and the server at the same commit. Releases do not
 publish it yet: it has no version tags.
 
+`ghcr.io/geoah/substrate-push-relay` is the push relay an app's publisher
+runs ([running the push relay](#running-the-push-relay)), the Dockerfile's
+`push-relay` stage, for the same two platforms and under the same rules:
+`main-<sha12>` and `latest`, no version tags. A server operator does not run
+it.
+
 The server runs as uid 65532 and writes two paths: the data root
 (`SUBSTRATE_DATA_ROOT`, `/var/lib/substrate` in `compose.yaml`) and `/keys`,
 where the compose entrypoint mints the credential key. The image creates both,
@@ -3219,6 +3225,166 @@ the CLI's own build; and its reads assume the `substrate_app` role, because
 row level security does
 not bind a superuser and an operator DSN usually is one — without that,
 `inspect` would count every repository's rows and report them as one user's.
+
+## Running the push relay
+
+The push relay is how a substrate server reaches a published app on a closed
+phone. Only the app's publisher can sign an Apple push for its app, so the
+publisher runs one relay, and every server sends its pushes through it.
+Somebody running a substrate server runs nothing here. What it accepts and
+why is [decision 0335](decisions/0335-a-publishers-push-relay-seals-each-installs-address-to-one-sign-ins-key-and-builds-every-push-from-an-event-a-thread-a-count-and-an-opaque-id.md);
+the design is the push plan, `docs/plans/push.md`.
+
+It is `substrate-push-relay`, in its own image,
+`ghcr.io/geoah/substrate-push-relay`: no server, no CLI, no console, no
+Python. It keeps nothing on disk and has no database. In memory it holds one
+Apple provider token per environment, the limits' buckets, the replay window
+and its connections to Apple. Run one replica: the replay window is per
+process, so a request captured and replayed to a second replica within ten
+minutes is sent again. A relay nothing calls answers only its health checks,
+so it may run before any server or app uses it.
+
+### What it needs
+
+| Variable | Holds | Example |
+| --- | --- | --- |
+| `SUBSTRATE_PUSH_RELAY_APNS_TEAM_ID` | the team id the Apple keys belong to | |
+| `SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_FILE`, `SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_ID` | Apple's token-auth key (`.p8`) for `production` and its key id; the file readable by uid 65532 | `/keys/production.p8` |
+| `SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_FILE`, `SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_ID` | the same for `development`; the same file where one key serves both | `/keys/development.p8` |
+| `SUBSTRATE_PUSH_RELAY_APNS_TOPICS` | the bundle ids it pushes to, comma separated | `com.example.chat` |
+| `SUBSTRATE_PUSH_RELAY_SEAL_KEY` | the base64 of 32 random bytes (`openssl rand -base64 32`) | |
+| `SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS` | the seal key before a rotation, optional | |
+| `SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS` | where Prometheus metrics listen, optional; unset is none | `:9090` |
+| `SUBSTRATE_PUSH_RELAY_LIMIT_*` | the limits below, optional | |
+| `PORT`, `SUBSTRATE_BIND_ADDRESS`, `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT` | the listener, as the server's ([TLS and the reverse proxy](#tls-and-the-reverse-proxy)); the image sets 8080, every interface, and true | |
+| `SUBSTRATE_TRUSTED_PROXIES` | the TLS terminator in front, so the limits key on the caller and not on it | `10.0.0.0/8` |
+| `LOG_LEVEL`, `LOG_FORMAT` | as the server's | `info`, `json` |
+
+At least one environment needs both its key file and its key id, and an
+environment with neither refuses registrations for it. The relay refuses to
+start without a team id, a topic or a seal key, with half an environment, or
+with a key that is not a P-256 `.p8`. An app's builds for TestFlight and the
+App Store register in `production`; development builds, and the builds a
+publisher's own feed exports for debugging, in `development`.
+
+The seal key and the Apple keys are the secrets. A leaked Apple key is revoked
+and replaced in Apple's developer account. A leaked seal key is replaced and
+dropped, never kept as previous: every install's key is then refused once,
+its server deletes the device, and the install registers again the next time
+it opens. Decision 0335 says what that does not undo.
+
+**Rotating the seal key** is setting the old one as
+`SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS` and a new one as
+`SUBSTRATE_PUSH_RELAY_SEAL_KEY`. The relay opens with both and seals with the
+new one, installs move to it as they register again (every 30 days at the
+most), and the previous one is removed after 90 days, when every key it
+sealed has expired.
+
+### Running it
+
+Behind a TLS terminator on a public host the publisher chooses, pinned by
+digest. With `TEAM_ID`, `KEY_ID`, `SEAL_KEY` and `DIGEST` set in the shell,
+and one key serving both environments:
+
+```bash
+docker run -d --name push-relay --restart unless-stopped \
+  -p 127.0.0.1:8090:8080 \
+  -v /srv/push-relay/keys:/keys:ro \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_TEAM_ID=$TEAM_ID" \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_FILE=/keys/apns.p8" \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_ID=$KEY_ID" \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_FILE=/keys/apns.p8" \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_ID=$KEY_ID" \
+  -e "SUBSTRATE_PUSH_RELAY_APNS_TOPICS=com.example.chat" \
+  -e "SUBSTRATE_PUSH_RELAY_SEAL_KEY=$SEAL_KEY" \
+  "ghcr.io/geoah/substrate-push-relay@sha256:$DIGEST"
+```
+
+with `https://push.example.com` proxied to `127.0.0.1:8090`. On Kubernetes
+it is a Deployment of one replica of the same image, the keys and the seal
+key mounted from secrets, a Service, an Ingress for the host, a liveness
+probe on `/healthz` and a readiness probe on `/readyz`. Pass `/v1/` and
+`/healthz` through the ingress and nothing else, and scrape the metrics from
+the pod.
+
+`/healthz` answers 200 while the process serves; `/readyz` once every
+environment's key parsed and a provider token was minted for it. Neither
+calls Apple, so an outage there restarts nothing and takes nothing out of
+service. A key Apple refuses shows in the logs, in
+`substrate_push_relay_apple_total{reason="InvalidProviderToken"}`, and in
+`check`.
+
+### Checking it
+
+After the first start and after any change of key:
+
+```bash
+docker exec push-relay substrate-push-relay check
+```
+
+`check` reads the relay's own configuration, mints a provider token for each
+environment and sends one alert, to a device token no install holds, on the
+first topic, and prints what Apple answered for each. `BadDeviceToken` says
+the request reached Apple and was read with the key: it does not prove the
+key may send to that topic in that environment, and `check` says so.
+`InvalidProviderToken` is a key, key id or team id Apple refuses, and fails
+the check. The acceptance is one real push to a consenting test install:
+
+```bash
+docker exec push-relay substrate-push-relay check \
+  --device-token "$TEST_INSTALL_TOKEN" --environment development
+```
+
+which sends one reply alert, with the app's fallback words and an event id
+that resolves nowhere, and passes when Apple answers 200. A development build
+of the app shows its own Apple token in its diagnostics. Then
+`curl https://push.example.com/healthz` from outside.
+
+### What it answers, logs and counts
+
+The API is `POST /v1/register`, which an app calls, and `POST /v1/push`,
+which a server calls, signed; the bodies, the closed set of refusal codes and
+what a server does with each are in the push plan's section 1 and in
+`internal/pushwire`, whose `testdata/` holds a fixture of each. A body over 4 KiB is refused before it is read.
+
+| Limit, per minute | Keyed by | Charged | Default | Variable |
+| --- | --- | --- | --- | --- |
+| pushes per install | a keyed digest of Apple's token | once the signature verifies | 20 | `SUBSTRATE_PUSH_RELAY_LIMIT_INSTALL` |
+| requests per caller | the caller's address | every request to `/v1/` | 600 | `SUBSTRATE_PUSH_RELAY_LIMIT_CALLER` |
+| registrations per caller | the caller's address | every register | 30 | `SUBSTRATE_PUSH_RELAY_LIMIT_REGISTER` |
+| pushes in all | nothing | once the signature verifies | 12,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL` |
+| registrations in all | nothing | every register | 3,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_REGISTER_TOTAL` |
+| refusals in all | nothing | every request refused before Apple is called | 3,000 | `SUBSTRATE_PUSH_RELAY_LIMIT_REFUSED_TOTAL` |
+
+Each is a token bucket holding one minute's allowance, refilled evenly, and
+a request it stops is answered 429 `rate_limited` with `Retry-After`. Past
+the refusals in all, a request that would be refused is answered
+`rate_limited` instead and is not logged, so a flood of bad requests costs
+the logs a bounded amount; a push that verifies is never held by that limit.
+The keyed buckets live in one map of 100,000 entries, the least recently used
+dropped first.
+
+A log line carries the route, the status and code, the topic, the
+environment, the event, Apple's status, reason and `apns-id`, and the push
+key's fingerprint (the first 12 hex characters of its SHA-256). It never
+carries a push key, Apple's token, a public key, an event id, a thread or a
+badge. The caller's address is on refusals, the lines abuse is read from,
+and never on a push that was sent. The fingerprints and the times still link
+one registration's pushes, so keep the relay's logs a week or less.
+
+The metrics, on `SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS` alone because the
+relay's own port is public:
+
+- `substrate_push_relay_requests_total{route, code}`: `code` is `sent`,
+  `registered` or a refusal's code
+- `substrate_push_relay_apple_total{environment, status, reason}`
+- `substrate_push_relay_apple_seconds{environment}`
+- `substrate_push_relay_limited_total{limit}`
+- `substrate_push_relay_tokens_minted_total{environment}`
+
+When the relay is down, servers drop their pushes and count them failed;
+nothing queues and nothing is deleted, and the apps show what they missed when
+they open.
 
 ## What it does not do
 
