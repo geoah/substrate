@@ -65,6 +65,10 @@ public struct PushState: Codable, Equatable, Sendable {
     /// How long a replaced or given-up generation stays accepted: the life
     /// of an event id.
     public static let retirement: TimeInterval = 24 * 3600
+    /// How long after it was sent a put may still land on the server: a
+    /// request the server accepted commits within its lifetime. A delete is
+    /// final only once it was sent this long after the last put.
+    public static let putLifetime: TimeInterval = 120
     /// How many unconfirmed attempts are kept: an older one goes to
     /// `previous`.
     static let attempts = 4
@@ -80,15 +84,30 @@ public struct PushState: Codable, Equatable, Sendable {
     /// later put or a delete is confirmed.
     public var pending: [Registration]
     public var previous: [Retired]
+    /// When the last put of this sign-in's device record was sent: saved
+    /// before it is sent, so a put whose answer was lost is known.
+    public var putAt: Date?
+    /// A registration given up whose delete may not be final: a put sent
+    /// less than `putLifetime` before it may still land and make the record
+    /// again. Then it is deleted again on a sync from this time on.
+    public var deleteAgainAt: Date?
 
-    public init(tokenID: String, current: Registration? = nil, pending: [Registration] = [], previous: [Retired] = []) {
+    public init(
+        tokenID: String, current: Registration? = nil, pending: [Registration] = [], previous: [Retired] = [], putAt: Date? = nil,
+        deleteAgainAt: Date? = nil
+    ) {
         self.tokenID = tokenID
         self.current = current
         self.pending = pending
         self.previous = previous
+        self.putAt = putAt
+        self.deleteAgainAt = deleteAgainAt
     }
 
-    /// The server pushes, or may push, to this install.
+    /// The server pushes, or may push, to this install. Not while a
+    /// registration given up is only retiring: the app then posts its own
+    /// notifications, and a late put may bring a push beside one for a
+    /// moment.
     public var held: Bool { current != nil || pending.contains { $0.pushKey != nil } }
 
     /// The registration the server holds or may hold, the newest attempt
@@ -198,21 +217,24 @@ public struct PushFacts: Codable, Equatable, Sendable {
     }
 }
 
-/// What the person and the server allow, for one attempt to register.
-public struct PushAsk: Codable, Equatable, Sendable {
+/// What the person and the server want, as the app last said it
+/// (`PushRegistrar.want`): read by each attempt when it runs, never when it
+/// was queued, so an attempt queued earlier does what a fresh one would.
+struct PushWish: Sendable {
     /// The server lists the `push` feature.
-    public var listed: Bool
+    var listed: Bool
     /// The events the person wants pushed (`replies`, `requests`); none is
     /// both switches off.
-    public var notifies: [String]
-    /// The person allows notifications.
-    public var permitted: Bool
+    var notifies: [String]
+    /// Whether the person allows notifications, asked when the attempt runs.
+    var permitted: @Sendable () async -> Bool
+}
 
-    public init(listed: Bool, notifies: [String], permitted: Bool) {
-        self.listed = listed
-        self.notifies = notifies
-        self.permitted = permitted
-    }
+/// A wish and a permission at once, for tests.
+struct PushAsk: Equatable, Sendable {
+    var listed: Bool
+    var notifies: [String]
+    var permitted: Bool
 }
 
 /// Registers an install with its publisher's relay and keeps its device
@@ -352,12 +374,33 @@ public struct PushRegistrar: Sendable {
 
     // MARK: Registering
 
-    /// Registers where it is due, gives up a registration that no longer
-    /// holds, and answers where it stands. The attempt is queued behind the
-    /// registrar's other work and runs to its end, whether or not its caller
-    /// still waits; none saves or puts for a sign-in being signed out.
-    public func sync(_ ask: PushAsk) async -> PushFacts {
-        await control.enqueue { await register(ask) }.value
+    /// What is wanted from now on: the app says it whenever it changes (a
+    /// switch, the permission, the server's document), before it asks for a
+    /// sync. Every attempt reads the newest when it runs.
+    public func want(listed: Bool, notifies: [String], permitted: @escaping @Sendable () async -> Bool) {
+        control.want(PushWish(listed: listed, notifies: notifies, permitted: permitted))
+    }
+
+    /// Brings the server and the Keychain into line with what is wanted
+    /// when the attempt runs (`want`), for the sign-in in use now, and
+    /// answers where it stands. The attempt is queued behind the registrar's
+    /// other work and runs to its end, whether or not its caller still waits.
+    /// It acts for this sign-in alone: run once another is in use, it does
+    /// nothing; and it saves and puts nothing for one being signed out.
+    public func sync() async -> PushFacts {
+        let tokenID: String?
+        switch await sessions.read() {
+        case let .found(session): tokenID = session.tokenID
+        case .missing: tokenID = nil
+        case .failed: return PushFacts(standing: .unreadable)
+        }
+        return await control.enqueue { await register(for: tokenID) }.value
+    }
+
+    /// `want` and `sync` at once, for tests.
+    func sync(_ ask: PushAsk) async -> PushFacts {
+        want(listed: ask.listed, notifies: ask.notifies, permitted: { ask.permitted })
+        return await sync()
     }
 
     /// The client the registrar's own requests go with: each ends within the
@@ -369,16 +412,21 @@ public struct PushRegistrar: Sendable {
         return client
     }
 
-    private func register(_ ask: PushAsk) async -> PushFacts {
+    private func register(for bound: String?) async -> PushFacts {
         let session: Session
         switch await sessions.read() {
         case let .found(found): session = found
         case .missing:
-            try? await clear()
+            // Nobody is signed in: what is kept is no sign-in's any more.
+            if bound == nil { try? await clear() }
             return PushFacts(standing: .unknown)
         case .failed: return PushFacts(standing: .unreadable)
         }
-        guard !control.isLeaving(session.tokenID) else { return PushFacts(standing: .unknown) }
+        // Queued for another sign-in than the one in use now: nothing is
+        // done for this one with what was meant for that.
+        guard session.tokenID == bound, !control.isLeaving(session.tokenID), let wish = control.wanted else {
+            return PushFacts(standing: .unknown)
+        }
         let client = pushClient(session)
         // A Keychain that cannot answer is no absent registration: nothing
         // is made over what it may hold.
@@ -393,9 +441,9 @@ public struct PushRegistrar: Sendable {
             try? await clear()
             state = nil
         }
-        guard ask.listed else { return await giveUp(.notListed, state, client) }
-        guard !ask.notifies.isEmpty else { return await giveUp(.switchedOff, state, client) }
-        guard ask.permitted else { return await giveUp(.notPermitted, state, client) }
+        guard wish.listed else { return await giveUp(.notListed, state, client) }
+        guard !wish.notifies.isEmpty else { return await giveUp(.switchedOff, state, client) }
+        guard await wish.permitted() else { return await giveUp(.notPermitted, state, client) }
         guard let device, let environment = device.environment() else { return await giveUp(.notEntitled, state, client) }
         guard let build = buildRelay, build != "none", PushRelay.endpoint(build, path: PushRelay.pushPath) != nil,
             let tokenID = session.tokenID, session.isApp
@@ -424,7 +472,7 @@ public struct PushRegistrar: Sendable {
         } catch {
             return facts(.unavailable, state)
         }
-        let notifies = ask.notifies.sorted()
+        let notifies = wish.notifies.sorted()
         func wanted(_ made: PushState.Registration) -> Bool {
             !Self.due(made, relay: build, publicKey: key.publicKey, deviceToken: deviceToken, environment: environment, notifies: notifies, now: now())
         }
@@ -476,7 +524,9 @@ public struct PushRegistrar: Sendable {
     }
 
     /// The device record put with `made`'s key, and `made` current once the
-    /// server answers. A put that may have landed leaves it held.
+    /// server answers. A put that may have landed leaves it held. When it was
+    /// sent is saved before it is sent: a delete is final only once a put can
+    /// no longer land after it.
     private func put(
         _ made: PushState.Registration, _ next: inout PushState, device: any PushRegistration, client: SubstrateClient
     ) async -> PushFacts {
@@ -484,6 +534,9 @@ public struct PushRegistrar: Sendable {
         // A sign-out under way: no put is started for it. One already sent
         // ends before the sign-out's delete starts, which is queued after.
         guard !control.isLeaving(next.tokenID) else { return PushFacts(standing: .unknown) }
+        let unsent = next
+        next.putAt = now()
+        guard await save(next, for: next.tokenID) else { return facts(.unavailable, unsent) }
         do {
             try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
         } catch let refused as ServerError where refused.isPermanent {
@@ -493,6 +546,8 @@ public struct PushRegistrar: Sendable {
         }
         let before = next
         next.confirm(made, at: now())
+        // The record is this registration's now: nothing is left to delete.
+        next.deleteAgainAt = nil
         guard await save(next, for: next.tokenID) else { return facts(.unavailable, before) }
         return facts(.registered, next)
     }
@@ -531,15 +586,21 @@ public struct PushRegistrar: Sendable {
     /// device it put.
     public func signOut(_ session: Session) async {
         control.leave(session.tokenID)
+        // What was wanted was this sign-in's: the next says its own.
+        control.forgetWish()
         let forgetting = control.enqueue { await forget(session) }
         _ = await PushControl.within(control.signOutBound) { await forgetting.value }
     }
 
-    /// What a sign-out leaves to the queue. Where the sign-out failed
-    /// meanwhile (`signOutFailed`), nothing: the person is still signed in.
+    /// What a sign-out leaves to the queue, for its own sign-in alone: the
+    /// device and the state kept for its token, never another's. Where the
+    /// sign-out failed meanwhile (`signOutFailed`), nothing: the person is
+    /// still signed in.
     private func forget(_ session: Session) async {
-        guard control.isLeaving(session.tokenID) else { return }
-        if let state = await state(), state.tokenID == session.tokenID, state.held, let tokenID = session.tokenID {
+        guard control.isLeaving(session.tokenID), let tokenID = session.tokenID,
+            case let .found(state) = await stored(), state.tokenID == tokenID
+        else { return }
+        if state.held || state.deleteAgainAt != nil {
             try? await pushClient(session).delete(SubstrateClient.deviceKind, tokenID)
         }
         try? await clear()
@@ -555,21 +616,37 @@ public struct PushRegistrar: Sendable {
     /// Stops using a registration: its device record deleted, then each
     /// generation retired for a day. Where the delete could not be made now
     /// the registration stays held, since the server may still push to it,
-    /// and the next attempt deletes it.
+    /// and the next attempt deletes it. A delete sent less than
+    /// `PushState.putLifetime` after the last put is not final, since that put
+    /// may still land and make the record again: the state is kept retiring,
+    /// and a sync from `deleteAgainAt` on deletes again. What it answers is
+    /// what was saved: where the retirement could not be saved, the stored
+    /// state, still held, and the next sync deletes again.
     private func giveUp(_ standing: PushFacts.Standing, _ state: PushState?, _ client: SubstrateClient) async -> PushFacts {
-        guard var state else { return PushFacts(standing: standing) }
-        if state.held {
+        guard let stored = state else { return PushFacts(standing: standing) }
+        var next = stored
+        let retiring = !stored.held && stored.deleteAgainAt != nil
+        if retiring, let again = stored.deleteAgainAt, now() < again { return facts(standing, stored) }
+        if stored.held || retiring {
+            let sent = now()
             do {
-                try await client.delete(SubstrateClient.deviceKind, state.tokenID)
+                try await client.delete(SubstrateClient.deviceKind, stored.tokenID)
+                if let putAt = stored.putAt, sent.timeIntervalSince(putAt) < PushState.putLifetime {
+                    next.deleteAgainAt = putAt.addingTimeInterval(PushState.putLifetime)
+                } else {
+                    next.deleteAgainAt = nil
+                }
             } catch is SessionExpired {
                 // The token is gone, and its device with it.
+                next.deleteAgainAt = nil
             } catch {
-                return facts(standing, state)
+                return facts(standing, stored)
             }
         }
-        state.retireAll(at: now())
-        _ = await save(state, for: state.tokenID)
-        return PushFacts(standing: standing)
+        next.retireAll(at: now())
+        guard next != stored else { return facts(standing, stored) }
+        guard await save(next, for: next.tokenID) else { return facts(standing, stored) }
+        return facts(standing, next)
     }
 
     private func facts(_ standing: PushFacts.Standing, _ state: PushState?) -> PushFacts {
@@ -596,14 +673,16 @@ public struct PushRegistrar: Sendable {
     }
 }
 
-/// The registrar's work on the server and in the Keychain, and the
-/// sign-ins being signed out: shared by every copy of one registrar.
+/// The registrar's work on the server and in the Keychain, what is wanted
+/// of it, and the sign-ins being signed out: shared by every copy of one
+/// registrar.
 ///
 /// Every attempt and every sign-out's forgetting runs on one queue, in the
 /// order it was queued, each to its end: nothing is cancelled or overtaken,
 /// and a caller that stops waiting does not stop the work. What bounds a
 /// wait is each request's own limit (`URLSessionTransport.push`), so the
-/// work before always ends and the queue moves on.
+/// work before always ends and the queue moves on. An attempt carries no
+/// wish of its own: it reads `wanted` when it runs.
 final class PushControl: @unchecked Sendable {
     /// How long a sign-out waits for its turn before it returns, leaving
     /// its delete to run when the work before it ends.
@@ -612,6 +691,7 @@ final class PushControl: @unchecked Sendable {
     private let lock = NSLock()
     private var tail: Task<Void, Never>?
     private var leaving: Set<String> = []
+    private var wish: PushWish?
     private var bound = PushControl.signOutWait
 
     var signOutBound: Duration {
@@ -632,6 +712,14 @@ final class PushControl: @unchecked Sendable {
             return task
         }
     }
+
+    func want(_ wish: PushWish) { lock.withLock { self.wish = wish } }
+
+    /// What is wanted now; nil before the app has said, and after a
+    /// sign-out until the next sign-in says its own.
+    var wanted: PushWish? { lock.withLock { wish } }
+
+    func forgetWish() { lock.withLock { wish = nil } }
 
     /// The sign-in of `tokenID` is being signed out: no attempt queued or
     /// still to come saves or puts for it. One under way is not stopped; the

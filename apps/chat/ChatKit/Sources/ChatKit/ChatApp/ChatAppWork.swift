@@ -612,11 +612,14 @@ extension ChatApp {
             }
         case let .syncPush(listed, notifies):
             guard let push else { return .none }
-            return .once {
+            // Said now, as the effect starts, in the order they are asked:
+            // every attempt, this one and any still queued, reads the newest
+            // when it runs, and the permission then.
+            push.want(listed: listed, notifies: notifies) {
                 let permitted = await notifications?.permission()
-                let ask = PushAsk(listed: listed, notifies: notifies, permitted: permitted == .on || permitted == .notTimeSensitive)
-                return Event(.pushSynced(await push.sync(ask)))
+                return permitted == .on || permitted == .notTimeSensitive
             }
+            return .once { Event(.pushSynced(await push.sync())) }
         case let .reconcilePush(read, settled, pending):
             return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled), pending: pending) }
         case .readDelivered:

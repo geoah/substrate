@@ -656,11 +656,20 @@ and the badge the server counted.
   on a push opens its chat only for an accepted generation. Every attempt
   and every sign-out's forgetting runs on one queue, in order, each to its
   end, and nothing on it is cancelled: each request ends within 20 seconds
-  and a busy server is not waited out, so the queue always moves on.
-  Signing out marks the sign-in leaving, so no attempt saves or puts for it
-  again, queues the device's delete and the forgetting of every generation
-  behind the work in flight, waits for them at most 7 seconds, and lets
-  them finish in their turn.
+  and a busy server is not waited out, so the queue always moves on. An
+  attempt carries no settings: it brings the server and the Keychain to
+  what is wanted when it runs (the switches and the server's document as
+  the app last said them, the permission read then), so one queued before
+  a change does what a fresh one would. It acts for the sign-in in use when
+  it was asked for and no other. A delete sent less than 2 minutes after
+  the last put is not final, since that put may still land: the
+  registration is kept retiring, and the next sync after those 2 minutes
+  deletes again (meanwhile the app posts its own notifications, and a
+  push may come beside one). Signing out marks the sign-in leaving, so no
+  attempt saves or puts for it again, queues the device's delete and the
+  forgetting of every generation behind the work in flight, for its own
+  sign-in alone, waits for them at most 7 seconds, and lets them finish in
+  their turn.
 - **The environment** is the exported build's own: `development` in a
   simulator, else the embedded profile's `aps-environment`, and
   `production` where there is no profile (TestFlight, the App Store).

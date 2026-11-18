@@ -21,45 +21,48 @@ public enum Deadline {
     ///
     /// One claim decides it: whoever answers claims first, and the work
     /// loses its claim once the deadline has passed or the caller was
-    /// cancelled, however late the timer runs. Nothing starts where the
-    /// race is decided already, the fallback is answered before the work is
-    /// cancelled, from another task, so a cancellation handler that takes
-    /// its time holds nobody, and work that ignores its cancellation runs on
-    /// unwaited, its answer dropped.
+    /// cancelled, however late the timer runs. The cancellation handler is
+    /// in place before anything else: inside it the caller's cancellation is
+    /// checked, then the claim is made, then the work starts, so a
+    /// cancellation at any point refuses the work's claim. The fallback is
+    /// answered before the work is cancelled, from another task, so a
+    /// cancellation handler that takes its time holds nobody, and work that
+    /// ignores its cancellation runs on unwaited, its answer dropped.
     public static func race<T: Sendable>(
         until deadline: ContinuousClock.Instant, or fallback: T, _ work: @escaping @Sendable (Race) async -> T
     ) async -> T {
         let claim = Claim(deadline: deadline)
-        guard !Task.isCancelled, claim.open else { return fallback }
         let answer = AnswerOnce<T>()
-        let task = Task {
-            // Started after the race was decided: the work does not run.
-            guard claim.open else {
+        let timer = Wake()
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled, claim.open else { return fallback }
+            let task = Task {
+                // Started after the race was decided: the work does not run.
+                guard claim.open else {
+                    if claim.fall() { answer.resume(fallback) }
+                    return
+                }
+                let value = await work(Race(claim: claim))
+                if claim.take() {
+                    answer.resume(value)
+                } else if claim.fall() {
+                    answer.resume(fallback)
+                }
+            }
+            // Wakes at the deadline, or at once when the caller is
+            // cancelled: it answers first, then cancels the work.
+            timer.start {
+                try? await Task.sleep(until: deadline, clock: .continuous)
                 if claim.fall() { answer.resume(fallback) }
-                return
+                task.cancel()
             }
-            let value = await work(Race(claim: claim))
-            if claim.take() {
-                answer.resume(value)
-            } else if claim.fall() {
-                answer.resume(fallback)
-            }
-        }
-        let timer = Task {
-            try? await Task.sleep(until: deadline, clock: .continuous)
-            guard claim.fall() else { return }
-            answer.resume(fallback)
-            task.cancel()
-        }
-        let value = await withTaskCancellationHandler {
-            await withCheckedContinuation { answer.set($0) }
+            let value = await withCheckedContinuation { answer.set($0) }
+            timer.wake()
+            return value
         } onCancel: {
-            // The timer answers and cancels the work, on its own task.
             claim.cancel()
-            timer.cancel()
+            timer.wake()
         }
-        timer.cancel()
-        return value
     }
 
     /// `race` for work that has nothing to check as it goes.
@@ -67,6 +70,31 @@ public enum Deadline {
         until deadline: ContinuousClock.Instant, or fallback: T, _ work: @escaping @Sendable () async -> T
     ) async -> T {
         await race(until: deadline, or: fallback) { (_: Race) in await work() }
+    }
+}
+
+/// The race's timer: woken at the deadline, or before it by the caller's
+/// cancellation or answer, which may come before the timer has started.
+final class Wake: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var woken = false
+
+    func start(_ body: @escaping @Sendable () async -> Void) {
+        let task = Task { await body() }
+        let early = lock.withLock {
+            self.task = task
+            return woken
+        }
+        if early { task.cancel() }
+    }
+
+    func wake() {
+        let task = lock.withLock {
+            woken = true
+            return self.task
+        }
+        task?.cancel()
     }
 }
 

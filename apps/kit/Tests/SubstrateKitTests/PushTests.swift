@@ -212,6 +212,28 @@ final class Box<T>: @unchecked Sendable {
     var value: T?
 }
 
+/// A value a test's concurrent work reads, under a lock.
+final class Holder<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var held: T?
+
+    var value: T? {
+        get { lock.withLock { held } }
+        set { lock.withLock { held = newValue } }
+    }
+}
+
+/// A switch a test's concurrent work reads, under a lock.
+final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open: Bool
+
+    init(open: Bool) { self.open = open }
+
+    var isOpen: Bool { lock.withLock { open } }
+    func close() { lock.withLock { open = false } }
+}
+
 /// A count a test's concurrent work keeps.
 final class Counter: @unchecked Sendable {
     private let lock = NSLock()
@@ -683,7 +705,7 @@ struct PushRegistrarTests {
             sessions: world.sessions, device: world.device, transport: slow, buildRelay: "https://push.example.com", clientID: PushWorld.client)
         registrar.control.signOutBound = .milliseconds(300)
         let attempt = Task { await registrar.sync(PushWorld.ask) }
-        while !slow.holding { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { slow.holding })
         let started = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
         #expect(ContinuousClock.now - started < .seconds(1))
@@ -707,17 +729,17 @@ struct PushRegistrarTests {
             sessions: world.sessions, device: world.device, transport: ordered, buildRelay: "https://push.example.com", clientID: PushWorld.client)
         registrar.control.signOutBound = .milliseconds(300)
         let attempt = Task { await registrar.sync(PushWorld.ask) }
-        while !ordered.events.contains("start PUT \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { ordered.events.contains("start PUT \(PushWorld.devicePath)") })
         let started = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
         #expect(ContinuousClock.now - started < .seconds(1))
         _ = await attempt.value
-        while !ordered.events.contains("end DELETE \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { ordered.events.contains("end DELETE \(PushWorld.devicePath)") })
         let events = ordered.events
         let putEnded = try #require(events.firstIndex(of: "end PUT \(PushWorld.devicePath)"))
         let deleteStarted = try #require(events.firstIndex(of: "start DELETE \(PushWorld.devicePath)"))
         #expect(putEnded < deleteStarted)
-        while world.storage.stored(account: registrar.account) != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
     }
 
     /// A caller that stops waiting does not stop its attempt: the put it
@@ -728,7 +750,7 @@ struct PushRegistrarTests {
         let registrar = PushRegistrar(
             sessions: world.sessions, device: world.device, transport: ordered, buildRelay: "https://push.example.com", clientID: PushWorld.client)
         let caller = Task { await registrar.sync(PushWorld.ask) }
-        while !ordered.events.contains("start PUT \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { ordered.events.contains("start PUT \(PushWorld.devicePath)") })
         caller.cancel()
         let facts = await caller.value
         #expect(facts.standing == .registered)
@@ -835,9 +857,7 @@ struct PushRegistrarTests {
         #expect(await world.registrar.sync(PushWorld.ask).held)
         world.device.set(token: String(repeating: "cd", count: 32))
         let attempt = Task { await registrar.sync(PushWorld.ask) }
-        while world.transport.requests.count(where: { $0.url.map(StubTransport.path) == "/api/v1/push/key" }) < 2 {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        #expect(await Self.eventually { world.transport.requests.count(where: { $0.url.map(StubTransport.path) == "/api/v1/push/key" }) >= 2 })
         let signing = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
         #expect(ContinuousClock.now - signing < .seconds(1))
@@ -845,7 +865,7 @@ struct PushRegistrarTests {
         // its forgetting run when the attempt before them has ended.
         #expect(await registrar.verdict("g1") == .refused)
         _ = await attempt.value
-        while world.storage.stored(account: registrar.account) != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
     }
 
@@ -888,7 +908,7 @@ struct PushRegistrarTests {
             sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
         registrar.control.signOutBound = .milliseconds(300)
         let stalled = Task { await registrar.sync(PushWorld.ask) }
-        while registers.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await Self.eventually { registers.count >= 1 })
         let signing = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
         #expect(ContinuousClock.now - signing < .seconds(1))
@@ -925,6 +945,156 @@ struct PushRegistrarTests {
         #expect(!cancelled.open && !cancelled.take() && cancelled.fall())
         let won = Claim(deadline: .now + .seconds(30))
         #expect(won.take() && !won.fall() && !won.open)
+    }
+
+    /// An attempt does what is wanted when it runs, not what was wanted when
+    /// it was asked for: the switch-off said last wins though its attempt
+    /// ran first, and the permission is read as the attempt runs.
+    @Test func anAttemptDoesWhatIsWantedWhenItRunsNotWhenItWasAsked() async throws {
+        let world = PushWorld()
+        let registrar = world.registrar
+        #expect(await registrar.sync(PushWorld.ask).held)
+        let puts = world.sent("PUT", PushWorld.devicePath).count
+        // Work ahead holds the queue while an attempt is asked for with
+        // "on" wanted; the switch goes off before that attempt runs.
+        let ahead = registrar.control.enqueue { await Self.uncancellable(seconds: 0.5) }
+        registrar.want(listed: true, notifies: ["replies"], permitted: { true })
+        let early = Task { await registrar.sync() }
+        try await Task.sleep(for: .milliseconds(100))
+        registrar.want(listed: true, notifies: [], permitted: { true })
+        let off = await registrar.sync()
+        let ran = await early.value
+        _ = await ahead.value
+        #expect(ran.standing == .switchedOff && off.standing == .switchedOff && !off.held)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == puts)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+
+        let allowed = Gate(open: true)
+        registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { allowed.isOpen })
+        allowed.close()
+        #expect(await registrar.sync().standing == .notPermitted)
+    }
+
+    /// A's attempt queued, then A signs out and B signs in before the queue
+    /// drains: what was queued for A does nothing for B, and A's forgetting
+    /// leaves B alone.
+    @Test func whatWasQueuedForOneSignInLeavesTheNextUntouched() async throws {
+        let world = PushWorld()
+        let registers = Counter()
+        let stalling = HookTransport(world.transport) { request in
+            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 1.5) }
+        }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        registrar.control.signOutBound = .milliseconds(200)
+        registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
+        let inFlight = Task { await registrar.sync() }
+        #expect(await Self.eventually { registers.count >= 1 })
+        let queued = Task { await registrar.sync() }
+        try await Task.sleep(for: .milliseconds(100))
+        let signedOut = try #require(await world.sessions.load())
+        await registrar.signOut(signedOut)
+        // B signs in, and says what it wants, before the queue drains.
+        var signedIn = signedOut
+        signedIn.tokenID = "0b5e1a7c33"
+        signedIn.secret = "another"
+        try await world.sessions.save(signedIn)
+        registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
+        _ = await inFlight.value
+        _ = await queued.value
+        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
+        let device = "/api/v1/substrate.reamde.dev/core/device/0b5e1a7c33"
+        #expect(world.transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") != "Bearer another" })
+        #expect(world.sent("PUT", device).isEmpty)
+        #expect(await world.sessions.load()?.tokenID == "0b5e1a7c33")
+        // B's own attempt registers B.
+        let record = PushWorld.record.replacingOccurrences(of: PushWorld.tokenID, with: "0b5e1a7c33")
+        world.transport.on("PUT", device, status: 201, json: record)
+        world.transport.on("GET", device, json: record)
+        #expect(await registrar.sync().standing == .registered)
+        #expect(await registrar.state()?.tokenID == "0b5e1a7c33")
+    }
+
+    /// A sign-out's forgetting removes only what is kept for its own
+    /// sign-in, never another's.
+    @Test func aSignOutForgetsOnlyWhatIsKeptForItsOwnSignIn() async throws {
+        let world = PushWorld()
+        let registrar = world.registrar
+        let another = PushState(
+            tokenID: "0b5e1a7c33",
+            current: .init(
+                generation: "gB", relay: "https://push.example.com", publicKey: "key", deviceToken: String(repeating: "ab", count: 32),
+                environment: .development, notifies: ["replies"], registeredAt: Date(), pushKey: "v1.k"))
+        let kept = try JSONEncoder().encode(another)
+        try world.storage.write(kept, account: registrar.account)
+        await registrar.signOut(try #require(await world.sessions.load()))
+        #expect(world.storage.stored(account: registrar.account) == kept)
+        #expect(world.sent("DELETE", "/api/v1/substrate.reamde.dev/core/device/0b5e1a7c33").isEmpty)
+    }
+
+    /// A put that lands after the delete that gave its registration up: a
+    /// delete sent within a put's lifetime is not final, so the next sync
+    /// once that lifetime is over deletes again, a relaunch's included.
+    @Test func aPutThatLandsAfterADeleteThatFoundNothingIsDeletedAgain() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        let off = PushAsk(listed: true, notifies: [], permitted: true)
+        // The put has not landed yet: the delete finds nothing.
+        world.pass(10)
+        world.transport.replace("DELETE", PushWorld.devicePath, status: 404, json: #"{"error":{"code":"not_found","message":"no"}}"#)
+        let first = await world.registrar.sync(off)
+        #expect(first.standing == .switchedOff && !first.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        #expect(await world.registrar.state()?.deleteAgainAt != nil)
+        // It lands now. Within its lifetime nothing more is sent.
+        world.pass(60)
+        _ = await world.registrar.sync(off)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        // Past it, the next sync, after a relaunch, deletes again, for good.
+        world.pass(60)
+        world.transport.replace("DELETE", PushWorld.devicePath, status: 204)
+        let relaunched = world.registrar
+        _ = await relaunched.sync(off)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 2)
+        #expect(await relaunched.state()?.deleteAgainAt == nil)
+        world.pass(600)
+        _ = await relaunched.sync(off)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 2)
+    }
+
+    /// A retirement the Keychain would not keep is not reported: the stored
+    /// state, still held, is, and the next sync deletes again.
+    @Test func aRetirementThatWasNotSavedLeavesTheRegistrationHeld() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        let off = PushAsk(listed: true, notifies: [], permitted: true)
+        world.pass(300)
+        world.storage.failWrites(of: world.registrar.account, with: MemoryStorage.locked)
+        let unsaved = await world.registrar.sync(off)
+        #expect(unsaved.standing == .switchedOff && unsaved.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        world.storage.failWrites(of: world.registrar.account, with: nil)
+        let saved = await world.registrar.sync(off)
+        #expect(!saved.held && world.sent("DELETE", PushWorld.devicePath).count == 2)
+        #expect(await world.registrar.state()?.held == false)
+    }
+
+    /// A caller cancelled at any point before the work claims gets the
+    /// fallback: the cancellation is in place before the work starts.
+    @Test func aCallerCancelledBeforeTheWorkClaimsGetsTheFallback() async throws {
+        for _ in 0 ..< 20 {
+            let caller = Holder<Task<String, Never>>()
+            let task = Task {
+                await Deadline.race(until: .now + .seconds(30), or: "fallback") {
+                    while caller.value == nil { await Task.yield() }
+                    caller.value?.cancel()
+                    return "won"
+                }
+            }
+            caller.value = task
+            let answered = await task.value
+            #expect(answered == "fallback")
+        }
     }
 
     /// A deadline already passed, or a caller already cancelled, starts no
@@ -988,6 +1158,17 @@ struct PushRegistrarTests {
         #expect(early == "done")
         try await Task.sleep(for: .seconds(1.5))
         #expect(published.count == 1)
+    }
+
+    /// Whether `condition` holds within `seconds`: a wait that fails the
+    /// test, never one that hangs it.
+    static func eventually(within seconds: Double = 10, _ condition: @Sendable () -> Bool) async -> Bool {
+        let until = ContinuousClock.now + .seconds(seconds)
+        while !condition() {
+            guard ContinuousClock.now < until else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
     }
 
     static func uncancellable(seconds: Double) async {
