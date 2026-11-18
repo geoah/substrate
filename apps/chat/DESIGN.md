@@ -653,9 +653,14 @@ and the badge the server counted.
   is confirmed, and an attempt that fails never takes an earlier one with
   it. A generation replaced or given up stays accepted for a day, the life
   of an event id, so a push already on its way still opens its chat. A tap
-  on a push opens its chat only for an accepted generation. Signing out
-  cancels any attempt in flight, refuses new ones for that sign-in, deletes
-  the device, and forgets every generation.
+  on a push opens its chat only for an accepted generation. Every attempt
+  and every sign-out's forgetting runs on one queue, in order, each to its
+  end, and nothing on it is cancelled: each request ends within 20 seconds
+  and a busy server is not waited out, so the queue always moves on.
+  Signing out marks the sign-in leaving, so no attempt saves or puts for it
+  again, queues the device's delete and the forgetting of every generation
+  behind the work in flight, waits for them at most 7 seconds, and lets
+  them finish in their turn.
 - **The environment** is the exported build's own: `development` in a
   simulator, else the embedded profile's `aps-environment`, and
   `production` where there is no profile (TestFlight, the App Store).

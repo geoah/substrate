@@ -87,6 +87,12 @@ public struct URLSessionTransport: HTTPTransport {
     /// that is not there, since every caller says so in its own words.
     public static let shared = URLSessionTransport(session: makeSession())
 
+    /// The session a push registration's requests go over, to the relay and
+    /// to the server: each ends within `pushLimit` seconds, whatever the
+    /// network does, so the registrar's queue always moves on.
+    public static let push = URLSessionTransport(session: makeSession(timeout: pushLimit, resource: pushLimit))
+    public static let pushLimit: TimeInterval = 20
+
     /// A session whose every task refuses redirects, so a stream an app
     /// reads from it directly refuses them too.
     public static func makeSession(

@@ -249,12 +249,17 @@ final class HookTransport: HTTPTransport, @unchecked Sendable {
 final class SlowTransport: HTTPTransport, @unchecked Sendable {
     let inner: StubTransport
     let path: String
+    let limit: Double
     private let lock = NSLock()
     private var held = false
 
-    init(_ inner: StubTransport, holding path: String) {
+    /// - Parameter limit: the request's own time limit, as the push
+    ///   transport's: the request is answered nothing until then, whatever
+    ///   cancels it, and then times out.
+    init(_ inner: StubTransport, holding path: String, for limit: Double) {
         self.inner = inner
         self.path = path
+        self.limit = limit
     }
 
     var holding: Bool { lock.withLock { held } }
@@ -262,7 +267,42 @@ final class SlowTransport: HTTPTransport, @unchecked Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         if request.url.map(StubTransport.path) == path {
             lock.withLock { held = true }
-            try await Task.sleep(for: .seconds(60))
+            await PushRegistrarTests.uncancellable(seconds: limit)
+            throw URLError(.timedOut)
+        }
+        return try await inner.data(for: request)
+    }
+}
+
+/// A transport that writes down when each request starts and ends, holding
+/// those that `stall` names for as long as it says: whatever cancels them,
+/// or, with `cancellable`, failing at once when cancelled, as a URLSession
+/// request does.
+final class OrderedTransport: HTTPTransport, @unchecked Sendable {
+    let inner: StubTransport
+    let stall: @Sendable (URLRequest) -> Double?
+    let cancellable: Bool
+    private let lock = NSLock()
+    private var log: [String] = []
+
+    init(_ inner: StubTransport, cancellable: Bool = false, stall: @escaping @Sendable (URLRequest) -> Double?) {
+        self.inner = inner
+        self.cancellable = cancellable
+        self.stall = stall
+    }
+
+    var events: [String] { lock.withLock { log } }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let name = "\(request.httpMethod ?? "GET") \(request.url.map(StubTransport.path) ?? "")"
+        lock.withLock { log.append("start " + name) }
+        defer { lock.withLock { log.append("end " + name) } }
+        if let seconds = stall(request) {
+            if cancellable {
+                try await Task.sleep(for: .seconds(seconds))
+            } else {
+                await PushRegistrarTests.uncancellable(seconds: seconds)
+            }
         }
         return try await inner.data(for: request)
     }
@@ -632,25 +672,84 @@ struct PushRegistrarTests {
         #expect(!(await world.registrar.accepts("g1")))
     }
 
-    /// Sign Out never waits behind an attempt stuck on the network: the
-    /// attempt is cancelled, saves nothing, and no attempt starts for the
-    /// sign-in being signed out.
-    @Test func aSignOutCancelsTheAttemptInFlightAndNoneStartsAfter() async throws {
+    /// Sign Out waits for an attempt stuck on the network at most its bound
+    /// and stops nothing: the attempt ends at its request's own limit,
+    /// saves and puts nothing for the sign-in leaving, and none starts for
+    /// it after.
+    @Test func aSignOutWaitsAtMostItsBoundAndNoAttemptStartsForItAfter() async throws {
         let world = PushWorld()
-        let slow = SlowTransport(world.transport, holding: "/v1/register")
+        let slow = SlowTransport(world.transport, holding: "/v1/register", for: 2)
         let registrar = PushRegistrar(
             sessions: world.sessions, device: world.device, transport: slow, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        registrar.control.signOutBound = .milliseconds(300)
         let attempt = Task { await registrar.sync(PushWorld.ask) }
         while !slow.holding { try await Task.sleep(for: .milliseconds(10)) }
         let started = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
-        #expect(ContinuousClock.now - started < .seconds(3))
+        #expect(ContinuousClock.now - started < .seconds(1))
         _ = await attempt.value
-        #expect(await registrar.state() == nil)
-        #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+        // Queued after the sign-out's forgetting, so it runs after it.
         let asked = world.transport.requests.count
         #expect(await registrar.sync(PushWorld.ask).standing == .unknown)
         #expect(world.transport.requests.count == asked)
+        #expect(await registrar.state() == nil)
+        #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+    }
+
+    /// A sign-out's delete starts only once the put in flight has ended:
+    /// one queue, each piece of work to its end, in order.
+    @Test func aSignOutsDeleteStartsOnlyOnceThePutInFlightHasEnded() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.device.set(token: String(repeating: "cd", count: 32))
+        let ordered = OrderedTransport(world.transport) { $0.httpMethod == "PUT" ? 1.5 : nil }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: ordered, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        registrar.control.signOutBound = .milliseconds(300)
+        let attempt = Task { await registrar.sync(PushWorld.ask) }
+        while !ordered.events.contains("start PUT \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        let started = ContinuousClock.now
+        await registrar.signOut(try #require(await world.sessions.load()))
+        #expect(ContinuousClock.now - started < .seconds(1))
+        _ = await attempt.value
+        while !ordered.events.contains("end DELETE \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        let events = ordered.events
+        let putEnded = try #require(events.firstIndex(of: "end PUT \(PushWorld.devicePath)"))
+        let deleteStarted = try #require(events.firstIndex(of: "start DELETE \(PushWorld.devicePath)"))
+        #expect(putEnded < deleteStarted)
+        while world.storage.stored(account: registrar.account) != nil { try await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    /// A caller that stops waiting does not stop its attempt: the put it
+    /// sent ends and is kept.
+    @Test func aCallerThatStopsWaitingDoesNotStopTheAttempt() async throws {
+        let world = PushWorld()
+        let ordered = OrderedTransport(world.transport, cancellable: true) { $0.httpMethod == "PUT" ? 1 : nil }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: ordered, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        let caller = Task { await registrar.sync(PushWorld.ask) }
+        while !ordered.events.contains("start PUT \(PushWorld.devicePath)") { try await Task.sleep(for: .milliseconds(10)) }
+        caller.cancel()
+        let facts = await caller.value
+        #expect(facts.standing == .registered)
+        #expect(await registrar.state()?.current != nil)
+    }
+
+    /// Every request the registrar sends goes over a session that ends it
+    /// within 20 seconds, and a busy server is not waited out: an attempt
+    /// always ends, so the queue moves on.
+    @Test func everyRequestEndsWithinItsLimitAndABusyServerIsNotWaitedOut() async throws {
+        let plain = PushRegistrar(sessions: SessionStore(storage: MemoryStorage()), device: nil, buildRelay: nil, clientID: "")
+        let transport = try #require(plain.transport as? URLSessionTransport)
+        #expect(transport.session.configuration.timeoutIntervalForResource == 20)
+        #expect(transport.session.configuration.timeoutIntervalForRequest == 20)
+        let world = PushWorld()
+        world.transport.replace(
+            "PUT", PushWorld.devicePath, status: 503, headers: ["Retry-After": "5"], json: #"{"error":{"code":"unavailable","message":"busy"}}"#)
+        let started = ContinuousClock.now
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unavailable && ContinuousClock.now - started < .seconds(2))
+        #expect(world.sent("PUT", PushWorld.devicePath).count == 1)
     }
 
     @Test func aRedirectedDocumentOrAnUnknownRefusalIsNoAnswerNow() async throws {
@@ -726,21 +825,28 @@ struct PushRegistrarTests {
 
         let world = PushWorld()
         let stuck = HookTransport(world.transport) { request in
-            if request.httpMethod == "DELETE" || request.url.map(StubTransport.path) == "/v1/register" { await Self.uncancellable(seconds: 12) }
+            if request.httpMethod == "DELETE" || request.url.map(StubTransport.path) == "/v1/register" { await Self.uncancellable(seconds: 3) }
         }
         let registrar = PushRegistrar(
             sessions: world.sessions, device: world.device, transport: stuck, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        registrar.control.signOutBound = .milliseconds(300)
         // Registered once over the plain transport, so the sign-out has a
         // device to delete.
         #expect(await world.registrar.sync(PushWorld.ask).held)
         world.device.set(token: String(repeating: "cd", count: 32))
         let attempt = Task { await registrar.sync(PushWorld.ask) }
-        while world.sent("POST", "/v1/register").count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        while world.transport.requests.count(where: { $0.url.map(StubTransport.path) == "/api/v1/push/key" }) < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         let signing = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
-        #expect(ContinuousClock.now - signing < .seconds(9))
-        #expect(await registrar.state() == nil)
-        attempt.cancel()
+        #expect(ContinuousClock.now - signing < .seconds(1))
+        // Nothing is accepted for the sign-in from now on; its delete and
+        // its forgetting run when the attempt before them has ended.
+        #expect(await registrar.verdict("g1") == .refused)
+        _ = await attempt.value
+        while world.storage.stored(account: registrar.account) != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
     }
 
     /// A put a sign-out overtakes is never sent: the sign-out's delete is
@@ -754,10 +860,9 @@ struct PushRegistrarTests {
         let session = try #require(await world.sessions.load())
         let box = Box<PushRegistrar>()
         let hooked = HookTransport(world.transport) { request in
-            // The person signs out while the attempt reads its key.
-            // An attempt that does not stop for its cancellation is stood in
-            // for: what refuses its put is the sign-in leaving.
-            if request.url.map(StubTransport.path) == "/api/v1/push/key" { box.value?.control.leave(session.tokenID, cancelling: false) }
+            // The person signs out while the attempt reads its key: what
+            // refuses its put is the sign-in leaving.
+            if request.url.map(StubTransport.path) == "/api/v1/push/key" { box.value?.control.leave(session.tokenID) }
         }
         // On the world's clock, so the attempt is still the one wanted and
         // is put again rather than made anew.
@@ -769,42 +874,24 @@ struct PushRegistrarTests {
         #expect(world.sent("PUT", PushWorld.devicePath).count == puts)
     }
 
-    /// An attempt that stalls is waited for at most the queue's bound: the
-    /// next one registers, and the one let go writes nothing when it wakes.
-    @Test func aStalledAttemptIsLetGoAfterTheBoundAndWritesNothingWhenItWakes() async throws {
+    /// A sign-out queues behind an attempt stuck on the network and returns
+    /// within its bound; the next sign-in's attempt runs once the stuck one
+    /// has ended and the sign-out has forgotten its registrations, and
+    /// registers.
+    @Test func theNextSignInRegistersOnceWhatWasQueuedBeforeItHasEnded() async throws {
         let world = PushWorld()
         let registers = Counter()
         let stalling = HookTransport(world.transport) { request in
-            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 3) }
+            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 2) }
         }
         let registrar = PushRegistrar(
             sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
-        registrar.control.wait = .milliseconds(300)
+        registrar.control.signOutBound = .milliseconds(300)
         let stalled = Task { await registrar.sync(PushWorld.ask) }
         while registers.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
-        let started = ContinuousClock.now
-        let next = await registrar.sync(PushWorld.ask)
-        #expect(next.standing == .registered && ContinuousClock.now - started < .seconds(2))
-        let kept = try #require(world.storage.stored(account: registrar.account))
-        let woke = await stalled.value
-        #expect(woke.standing != .registered)
-        #expect(world.storage.stored(account: registrar.account) == kept)
-        #expect(world.sent("PUT", PushWorld.devicePath).count == 1)
-    }
-
-    /// A sign-out lets a stalled attempt go: the next sign-in registers at
-    /// once, and what the stalled one would write when it wakes is refused.
-    @Test func aSignOutLetsAStalledAttemptGoAndTheNextSignInRegistersAtOnce() async throws {
-        let world = PushWorld()
-        let registers = Counter()
-        let stalling = HookTransport(world.transport) { request in
-            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 8) }
-        }
-        let registrar = PushRegistrar(
-            sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
-        let stalled = Task { await registrar.sync(PushWorld.ask) }
-        while registers.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        let signing = ContinuousClock.now
         await registrar.signOut(try #require(await world.sessions.load()))
+        #expect(ContinuousClock.now - signing < .seconds(1))
         // The next sign-in, with a token of its own.
         var signedIn = try #require(await world.sessions.load())
         signedIn.tokenID = "0b5e1a7c33"
@@ -814,14 +901,30 @@ struct PushRegistrarTests {
         let record = PushWorld.record.replacingOccurrences(of: PushWorld.tokenID, with: "0b5e1a7c33")
         world.transport.on("PUT", device, status: 201, json: record)
         world.transport.on("GET", device, json: record)
-        let started = ContinuousClock.now
         let facts = await registrar.sync(PushWorld.ask)
-        #expect(facts.standing == .registered && ContinuousClock.now - started < .seconds(3))
+        #expect(facts.standing == .registered)
         #expect(await registrar.state()?.tokenID == "0b5e1a7c33")
-        let kept = try #require(world.storage.stored(account: registrar.account))
-        _ = await stalled.value
-        #expect(world.storage.stored(account: registrar.account) == kept)
+        // The stuck attempt ended before: it put nothing for the sign-in
+        // that left.
+        let woke = await stalled.value
+        #expect(!woke.held)
         #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+    }
+
+    /// The work loses its claim once the deadline has passed or the caller
+    /// was cancelled, however late the timer runs; the fallback's claim is
+    /// anyone's until the work's is taken.
+    @Test func theWorkLosesItsClaimOnceTheDeadlinePassesWhateverTheTimerDid() async throws {
+        let late = Claim(deadline: .now + .milliseconds(50))
+        #expect(late.open)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!late.open && !late.take())
+        #expect(late.fall() && !late.fall())
+        let cancelled = Claim(deadline: .now + .seconds(30))
+        cancelled.cancel()
+        #expect(!cancelled.open && !cancelled.take() && cancelled.fall())
+        let won = Claim(deadline: .now + .seconds(30))
+        #expect(won.take() && !won.fall() && !won.open)
     }
 
     /// A deadline already passed, or a caller already cancelled, starts no
