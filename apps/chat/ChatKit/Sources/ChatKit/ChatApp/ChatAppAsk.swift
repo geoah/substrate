@@ -52,7 +52,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case openings([String])
     case read(thread: String, first: Int, epoch: Int, version: Int)
     case prefetch(Lease, [Prefetch])
-    case fetchThread(String)
+    /// `bound`: the push that asked for it, whose accepting session alone
+    /// reads it.
+    case fetchThread(String, bound: PushBinding? = nil)
     /// The row of a thread whose mark is ahead of it, read again: `mark` is
     /// the version of the mark it is read for.
     case rereadBehind(thread: String, mark: Int)
@@ -84,11 +86,15 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
 
     case rename(thread: String, subject: String, before: Record?)
     case setKey(provider: String, key: String)
-    case readCard(CardReference, target: Bool)
+    /// `bound`: the push whose decision it follows, whose accepting session
+    /// alone reads it.
+    case readCard(CardReference, target: Bool, bound: PushBinding? = nil)
     /// Which of a thread's resolved cards are the person's own (`me` in
     /// the filter): `cards` are the ones asked about.
     case readOwn(thread: String, cards: [String])
-    case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
+    /// `generation`: a decision from a push's notification, sent only with
+    /// the client of the session that push belongs to.
+    case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int, bound: PushBinding? = nil)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 
     case readGuidance
@@ -125,7 +131,10 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// device told, which may suspend the app at that word. `keep` is
     /// written first, in this effect and with no wait: a reply's text that
     /// went back into the drafts is in the folder before the app may stop.
-    case finishAction(NotificationResponse, cancel: String?, notify: NotificationRequest?, keep: KeptDrafts? = nil)
+    /// `unbound`: what is posted in `notify`'s place where the response's
+    /// push is no longer accepted when it is posted: words that say nothing
+    /// of its chat.
+    case finishAction(NotificationResponse, cancel: String?, notify: NotificationRequest?, keep: KeptDrafts? = nil, unbound: NotificationRequest? = nil)
     /// A reply's notification, shown once `seconds` passed: a mark that
     /// arrives first takes it back, so a reply read on a device beside this
     /// one does not sound here.

@@ -95,6 +95,9 @@ struct Failure: Codable, Hashable, Sendable {
         case streamEnded
         /// A 401: the sign-in ended.
         case sessionEnded
+        /// A reply typed into a push's notification, whose sign-in is no
+        /// longer the one held: nothing was sent, to this server or any.
+        case sessionChanged
         /// A 403 `insufficient_scope`: the approval does not reach.
         case needsApproval
         /// An answer that was not the API's: a gateway's page, a redirect, a
@@ -216,7 +219,7 @@ struct Failure: Codable, Hashable, Sendable {
     /// cannot run anything twice.
     var neverSent: Bool {
         switch why {
-        case .offline, .unreachable: true
+        case .offline, .unreachable, .sessionChanged: true
         default: false
         }
     }

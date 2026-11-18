@@ -132,6 +132,17 @@ public protocol Controller: Sendable {
     /// The key an effect runs under: starting one cancels the effect running
     /// under the same key, whose result is then dropped.
     func key(of effect: Effect) -> String?
+    /// What ends an effect the session changed under: one that asked for a
+    /// client and ended once the session it started under was no longer
+    /// held. What it still answered was dropped, or it ended without
+    /// answering, so this event, applied in its place, ends what waits on it
+    /// (a sheet's receipt, a spinner) in the app's own words. Nil where
+    /// nothing waits on it. It may follow the effect's own last answer, so
+    /// it leaves a wait already ended as it is. One that writes state a
+    /// newer effect may own since (a mark, not a receipt of its own) belongs
+    /// to an effect under a key the newer one shares: starting the newer one
+    /// replaces it, and a replaced effect's ending is never applied.
+    func ended(bySessionChange effect: Effect) -> Event?
     /// The instant the presentation stops being true as drawn (a countdown's
     /// end), when the runtime delivers `event(atTick:)`.
     func nextChange(of presentation: Presentation) -> Date?
@@ -187,6 +198,7 @@ public extension Controller {
         effects(of: event, on: state, presented: presentation)
     }
     func key(of effect: Effect) -> String? { nil }
+    func ended(bySessionChange effect: Effect) -> Event? { nil }
     func nextChange(of presentation: Presentation) -> Date? { nil }
     func parts(of presentation: Presentation) -> [PresentationPart] { [PresentationPart(presentation)] }
     func children(in state: State) -> [ChildKey: Child] { [:] }

@@ -10,7 +10,12 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     let hop: @Sendable (@escaping @Sendable () -> Void) async -> Void
     private let traceSink: (@Sendable (RuntimeTrace) -> Void)?
 
-    var link: LinkSnapshot?
+    /// The link above, whoever set it: the session it names moves the
+    /// session epoch every effect starts under.
+    var link: LinkSnapshot? {
+        didSet { sessions.observe(link) }
+    }
+    let sessions = SessionEpoch()
     var root: Host<Root>!
     private(set) var counters = RuntimeCounters()
     /// The effects started so far, in every host, and those of them still
@@ -69,9 +74,12 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         switch drop {
         case .epoch?: counters.droppedByEpoch += 1
         case .generation?: counters.droppedByGeneration += 1
+        case .session?: counters.droppedBySession += 1
         case nil: break
         }
     }
+
+    func countEndedBySession() { counters.endedBySession += 1 }
 
     func effectStarted() -> Int {
         effectsStarted += 1

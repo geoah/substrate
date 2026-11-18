@@ -21,12 +21,14 @@ struct HeldPush {
     let transport = StubTransport()
     let registrar: PushRegistrar
 
-    init(current: String = "gC", pending: String? = nil) {
+    /// - Parameter named: the repository of the session the registrar
+    ///   holds, where a test needs it to be another than the rig's.
+    init(current: String = "gC", pending: String? = nil, named: String = repository) {
         let sessions = SessionStore(storage: storage)
         registrar = PushRegistrar(
             sessions: sessions, device: ScriptedPush(), transport: transport, buildRelay: "https://push.example.com", clientID: Self.client)
         let session = Session(
-            server: origin, repository: repository, secret: "secret", tokenID: Self.tokenID, clientID: Self.client, scopes: ["full"])
+            server: origin, repository: named, secret: "secret", tokenID: Self.tokenID, clientID: Self.client, scopes: ["full"])
         func made(_ generation: String) -> PushState.Registration {
             .init(
                 generation: generation, relay: "https://push.example.com", publicKey: "key", deviceToken: String(repeating: "ab", count: 32),
@@ -412,5 +414,48 @@ struct PushTests {
         notifications.deliver(DeliveredNotification(id: "chat|t1|reply", thread: "t1", userInfo: [ChatNotifications.threadKey: "t1"]))
         await ChatApp.reconcile(notifications, read: ["t1"], settled: ["t2"])
         #expect(notifications.standing.map(\.id).sorted() == ["chat|t1|reply", "q1", "r2"])
+    }
+
+    /// A pushed decision whose session is gone by the time it is sent is its
+    /// own outcome: nothing is written, nothing is read with the session
+    /// held now, no failure stands on the card, and the person is sent to
+    /// the chat to decide.
+    @Test func aPushedDecisionThatLostItsSessionSendsThePersonToTheChatToDecide() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .ios)
+        let state = signedInState()
+        var info = pushed("request", thread: "t1")
+        info[ChatNotifications.threadKey] = "t1"
+        info[ChatNotifications.cardKey] = "ap1"
+        info[ChatNotifications.versionKey] = "4"
+        info[ChatPush.sessionKey] = try #require(state.session?.identity)
+        let response = NotificationResponse(id: "apns-1", category: ChatNotifications.approvalCategory, action: .named("approve"), userInfo: info)
+        let acted = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m", at: Date())), to: state)
+        #expect(acted.asks.contains { if case let .writeCard("ap1", _, _, 4, bound?) = $0 { bound.generation == "gC" } else { false } })
+        let unbound = try app.apply(.init(.cardWriteUnbound("ap1")), to: acted)
+        #expect(unbound.acting.isEmpty)
+        #expect(unbound.cards["ap1"]?.busy == nil && unbound.cards["ap1"]?.problem == nil)
+        #expect(!unbound.asks.contains { if case .readCard = $0 { true } else { false } })
+        #expect(unbound.asks.contains(.finishAction(response, cancel: nil, notify: ChatNotifications.refused(), unbound: ChatNotifications.refused())))
+        #expect(ChatNotifications.refused().body == "Open the chat to decide.")
+    }
+
+    /// Only an accepted push's response names its session: one for another
+    /// registration that came with the key anyway decides nothing.
+    @Test func aSessionNamedByAPushThatWasNotAcceptedIsDropped() async throws {
+        let held = HeldPush(current: "gC")
+        let rig = ChatRig(push: held.registrar)
+        try await rig.signIn()
+        let identity = try #require(await rig.harness.state.session?.identity)
+        var info = pushed("request", thread: "t1", generation: "gOld")
+        info[ChatNotifications.threadKey] = "t1"
+        info[ChatNotifications.cardKey] = "ap1"
+        info[ChatNotifications.versionKey] = "4"
+        info[ChatPush.sessionKey] = identity
+        rig.notifications.respond(NotificationResponse(id: "apns-1", category: ChatNotifications.approvalCategory, action: .named("approve"), userInfo: info))
+        try await rig.harness.until { _ in rig.notifications.calls.contains { if case .finished = $0 { true } else { false } } }
+        await rig.harness.settle()
+        #expect(!rig.server.requests.contains { $0.contains("approval/ap1") })
+        #expect(held.transport.requests.allSatisfy { !($0.url?.path.contains("approval") ?? false) })
+        #expect(rig.notifications.calls.contains { if case let .schedule(request) = $0 { request.id == "chat|refused" } else { false } })
     }
 }

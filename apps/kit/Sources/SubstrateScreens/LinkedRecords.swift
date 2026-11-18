@@ -244,10 +244,14 @@ public struct LinkedRecords: Equatable, Sendable {
         return next
     }
 
-    /// Whether `link` carries a token `before` did not: a sign-in, or a new
-    /// approval, which moves its scopes or when its access ends.
+    /// A token other than the one before: a sign-in, an approval, or any
+    /// other token id. The runtime holds an effect's client to the token it
+    /// started under and sends nothing of it under another, so whatever
+    /// holds one starts again.
     static func newAccess(from before: LinkSnapshot?, to link: LinkSnapshot) -> Bool {
-        link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+        link.signedIn
+            && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds
+                || before?.tokenID != link.tokenID)
     }
 
     private func keyed(_ records: [Record], in state: State) -> [String: Record] {
@@ -295,8 +299,13 @@ public struct LinkedRecords: Equatable, Sendable {
     /// one that left otherwise (discarded, dropped as stale, reset away) is
     /// not. A write queued here and not in the report yet stays laid over,
     /// unless the report is the one its own queueing answered, after which
-    /// it has left.
+    /// it has left. Every record a write of which left is marked stale as
+    /// its read is asked for (`effects`), and only a read's answer clears
+    /// it: a read dropped on its way (another token) leaves it to the next
+    /// read, or to the watch's opening, never to a write laid over a newer
+    /// value the watch already brought.
     private func report(_ entries: [OutboxEntry], confirming ids: Set<UUID>, landed: Set<UUID>, into state: inout State) {
+        let before = state.queue
         let reported = Set(entries.map(\.id))
         var waiting = state.unconfirmed.subtracting(reported)
         let left = state.queue.filter { !reported.contains($0.id) && (!waiting.contains($0.id) || ids.contains($0.id)) }
@@ -306,6 +315,8 @@ public struct LinkedRecords: Equatable, Sendable {
         }
         state.queue = entries.filter { kinds(in: state).contains($0.kind) } + state.queue.filter { waiting.contains($0.id) }
         state.unconfirmed = waiting
+        let kept = Set(state.queue.map(\.id))
+        for entry in before where !kept.contains(entry.id) { state.stale.insert(entry.key) }
         fold(&state)
     }
 

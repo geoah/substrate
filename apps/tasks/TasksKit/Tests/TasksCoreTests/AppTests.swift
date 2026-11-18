@@ -269,6 +269,17 @@ struct AppTests {
         }
     }
 
+    /// A session change ends nothing of Tasks': no records' effect leaves a
+    /// wait behind, and what a reread would have marked to read again is
+    /// the newer session's to mark; a discovery waits on nothing.
+    @Test func aSessionChangeEndsNothingOfTheAppsEffects() throws {
+        let app = try Rig().app
+        #expect(app.ended(bySessionChange: .records(.reread(["k1"]))) == nil)
+        #expect(app.ended(bySessionChange: .records(.read(over: ["k"]))) == nil)
+        #expect(app.ended(bySessionChange: .settings(.reread(["k2"]))) == nil)
+        #expect(app.ended(bySessionChange: .discover) == nil)
+    }
+
     @Test func aDraggedTaskWritesItsOwnPositionAlone() async throws {
         let (_, harness) = try await loaded([
             taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2"),

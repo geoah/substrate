@@ -129,6 +129,9 @@ public struct Conversation: Controller, Equatable {
         /// The action's time is up: a copy still unanswered stops being
         /// sent, and the message stands in the chat.
         var expired = false
+        /// The push it was typed into: every copy goes with the client of
+        /// the session that accepts it, or nowhere.
+        var binding: PushBinding?
     }
 
     /// What became of it: sent, or why not, with the text kept in the
@@ -147,6 +150,9 @@ public struct Conversation: Controller, Equatable {
     struct ReplyOutcome: Codable, Equatable, Sendable {
         var id: String
         var failure: Failure?
+        /// A copy may have reached the server: a failure is never told as
+        /// nothing sent.
+        var mayHaveLanded = false
     }
 
     /// A send of unknown delivery the check found: its thread, and what it
@@ -193,6 +199,10 @@ public struct Conversation: Controller, Equatable {
     let rowReplied: Int
     /// A reply typed into a notification of this thread, to send.
     let reply: Reply?
+    /// The push this conversation acts for, made for a notification's
+    /// action and not yet opened by the person: every request it makes goes
+    /// with the client of the session that accepts that push, or nowhere.
+    let bound: PushBinding?
     /// A scene in front shows it.
     let visible: Bool
     /// Moved by the list for each change of a message the watch reports
@@ -307,9 +317,10 @@ public struct Conversation: Controller, Equatable {
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
         pollNudge: Int, resumeNudge: Int, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
         kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil,
-        rowTurns: Set<Int> = [], rowReplied: Int = -1, reply: Reply? = nil
+        rowTurns: Set<Int> = [], rowReplied: Int = -1, reply: Reply? = nil, bound: PushBinding? = nil
     ) {
         self.key = key
+        self.bound = bound
         self.seed = seed
         self.facts = facts
         self.online = online

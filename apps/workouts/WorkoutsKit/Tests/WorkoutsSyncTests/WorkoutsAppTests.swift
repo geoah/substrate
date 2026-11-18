@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateAPI
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
@@ -71,6 +72,119 @@ struct WorkoutsAppTests {
         await harness.send(.sync)
         #expect(Self.names(harness.effects).contains("sync"))
         #expect(await harness.presentation.flushing)
+    }
+
+    @Test("another token while a sync runs starts the sync again, so its end is heard; with none running it starts nothing")
+    func newTokenMidSync() async throws {
+        let harness = Self.harness(directory: nil)
+        var link = Self.snapshot()
+        link.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(link)
+        await harness.send(.sync)
+        #expect(await harness.presentation.flushing)
+        harness.clearTrace()
+        link.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(link)
+        #expect(Self.names(harness.effects) == ["sync"])
+        await harness.deliver(.syncEnded(Self.account, problem: nil))
+        #expect(await !harness.presentation.flushing)
+        harness.clearTrace()
+        link.tokenID = "5c2e7d9a10"
+        await harness.runtime.linkChanged(link)
+        #expect(harness.effects.isEmpty)
+    }
+
+    @Test("an import the sign-in changed under ends its sheet: its receipt says why, though what it answered was dropped")
+    func importAcrossASignInChange() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("workouts-app-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The Keychain answers once the test lets it: the import asks for
+        // its client, and another sign-in lands before it has one.
+        let keychain = Latch()
+        let stub = StubTransport()
+        var environment = AppEnvironment.testing()
+        environment.folders = WorkoutsFolders(base: directory)
+        environment.client = ClientSource {
+            await keychain.wait()
+            return SubstrateClient(server: Self.server, token: "a", transport: stub)
+        }
+        let app = WorkoutsApp(directory: directory, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        let harness = ControllerHarness(app, environment: environment, performsEffects: true)
+        // A package not yet writable: no sync asks for a client beside it.
+        var link = Self.snapshot(training: nil)
+        link.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(link)
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.signedIn }
+        let receipt = UUID()
+        let measurement = RecordWrite(kind: RecordCodec().kinds.bodyMeasurement, id: "m1", properties: ["weight": 80])
+        await harness.send(.importRecords(routines: [], measurements: [measurement], exercises: [], receipt: receipt))
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 1 }
+        link.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(link)
+        await keychain.open()
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.outcomes[receipt] != nil }
+        #expect(await harness.presentation.outcomes[receipt] == .some(WorkoutsApp.signInChanged))
+        #expect(await harness.runtime.counters.endedBySession == 1)
+        #expect(stub.requests.isEmpty)
+    }
+
+    @Test("an add in another account replaces the one the switch left running, whose end then leaves the new add's mark alone")
+    func addSampleAcrossAnAccountSwitch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("workouts-app-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Every client is handed over when the test lets that one through,
+        // in the order they were asked for.
+        let keychain = Turnstile()
+        let stub = StubTransport()
+        var environment = AppEnvironment.testing()
+        environment.folders = WorkoutsFolders(base: directory)
+        environment.client = ClientSource {
+            await keychain.pass()
+            return SubstrateClient(server: Self.server, token: "a", transport: stub)
+        }
+        let app = WorkoutsApp(directory: directory, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        let harness = ControllerHarness(app, environment: environment, performsEffects: true)
+        var ada = Self.snapshot("ada")
+        ada.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(ada)
+        // The sign-in's sync asks first, then the add.
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 1 }
+        await harness.settle()
+        let before = await harness.runtime.activity.running
+        await harness.send(.addSampleRoutine)
+        #expect(await harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 2 }
+        // The work the first add started, by the runtime's numbers.
+        let adding = await harness.runtime.activity.running.subtracting(before)
+        #expect(!adding.isEmpty)
+        // Another account: Add is free again, and an add starts there.
+        var bob = Self.snapshot("bob")
+        bob.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(bob)
+        #expect(await !harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.canWrite }
+        await harness.send(.addSampleRoutine)
+        #expect(await harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 4 }
+        // The first account's add ends now, under the switch.
+        await keychain.release(1)
+        try await harness.until(timeout: .seconds(60)) { await $0.runtime.activity.running.isDisjoint(with: adding) }
+        await harness.settle()
+        #expect(await harness.presentation.addingSample)
+        #expect(await harness.runtime.counters.endedBySession == 0)
+        await keychain.releaseAll()
+    }
+
+    @Test("a session change ends the sync's mark and the sample's; work that waits on nothing ends as nothing")
+    func sessionChangeEndings() {
+        let app = WorkoutsApp(directory: nil, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        for effect: WorkoutsApp.Effect in [.sync(Self.account), .seedLibrary(Self.account), .exchange(Self.account, local: [], hidden: [], exercises: [])] {
+            #expect(app.ended(bySessionChange: effect) == .syncEnded(Self.account, problem: nil))
+        }
+        #expect(app.ended(bySessionChange: .addSample(Self.account)) == .addingSample(false))
+        #expect(app.ended(bySessionChange: .reread(Self.account, [RoutineID("r1")])) == nil)
     }
 
     @Test("an outbox read reads again the routines of the conflicts it did not hold before, and only those")
@@ -180,5 +294,56 @@ struct WorkoutsAppTests {
         #expect(await harness.presentation.history.isEmpty)
         #expect(await harness.presentation.hiddenSessions.contains("s1"))
         #expect(WorkoutsFolders(base: directory).folder(Self.account)?.tombstones.all == ["s1"])
+    }
+}
+
+/// Where a wait holds until the test opens it.
+actor Latch {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var opened = false
+
+    var waiting: Int { waiters.count }
+
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        opened = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
+    }
+}
+
+/// Where each wait holds until the test lets that one through, by the order
+/// the waits came in.
+actor Turnstile {
+    private var arrived: [CheckedContinuation<Void, Never>?] = []
+    private var released: Set<Int> = []
+    private var all = false
+
+    var waiting: Int { arrived.count }
+
+    func pass() async {
+        if all { return }
+        let index = arrived.count
+        if released.contains(index) {
+            arrived.append(nil)
+            return
+        }
+        await withCheckedContinuation { arrived.append($0) }
+    }
+
+    func release(_ index: Int) {
+        released.insert(index)
+        guard index < arrived.count, let waiter = arrived[index] else { return }
+        arrived[index] = nil
+        waiter.resume()
+    }
+
+    func releaseAll() {
+        all = true
+        for index in arrived.indices { release(index) }
     }
 }

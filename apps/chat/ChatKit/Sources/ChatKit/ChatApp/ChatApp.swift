@@ -408,7 +408,7 @@ public struct ChatApp: LinkedApp {
         case .retryUnsent: "unsentRetry"
         case .savePreferences: "preferences"
         case .prefetch: "prefetch"
-        case let .fetchThread(thread): "fetch:\(thread)"
+        case let .fetchThread(thread, _): "fetch:\(thread)"
         case let .rereadBehind(thread, _): "behind:\(thread)"
         case let .page(_, part, _): "page:\(part.rawValue)"
         case let .readOlder(thread, _, _): "older:\(thread)"
@@ -419,8 +419,8 @@ public struct ChatApp: LinkedApp {
         case .applyFeed: "feedApply"
         case let .rename(thread, _, _): "rename:\(thread)"
         case .setKey: "key"
-        case let .readCard(reference, _): "card:\(reference.id)"
-        case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
+        case let .readCard(reference, _, _): "card:\(reference.id)"
+        case let .writeCard(id, _, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
         case .categories: "categories"
         case let .actionWait(id, _): "actWait:\(id)"
         case let .cardHold(id, _): "cardHold:\(id)"
@@ -475,7 +475,7 @@ public struct ChatApp: LinkedApp {
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge,
                 continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
                 landed: landed, landedOn: landedOn, draftFound: entry.draftFound, rowTurns: held.map { persistedTurns($0.records) } ?? [],
-                rowReplied: held.map { Self.Child.replied($0.records) } ?? -1, reply: entry.reply)
+                rowReplied: held.map { Self.Child.replied($0.records) } ?? -1, reply: entry.reply, bound: entry.bound)
         }
         return out
     }

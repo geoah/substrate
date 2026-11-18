@@ -102,7 +102,11 @@ public enum ChatNotifications {
             actions: [NotificationAction(id: Action.reply.id, title: "Reply", input: NotificationTextInput(button: "Send", placeholder: "Message"))]),
         NotificationCategory(
             id: approvalCategory,
-            actions: [NotificationAction(id: Action.approve.id, title: "Approve"), NotificationAction(id: Action.decline.id, title: "Decline")]),
+            // A decision is never made from a locked screen, pushed or local.
+            actions: [
+                NotificationAction(id: Action.approve.id, title: "Approve", requiresUnlock: true),
+                NotificationAction(id: Action.decline.id, title: "Decline", requiresUnlock: true),
+            ]),
         NotificationCategory(id: openCategory, actions: [NotificationAction(id: Action.open.id, title: "Open Chat", opensApp: true)]),
     ]
 
@@ -221,6 +225,32 @@ public enum ChatNotifications {
         NotificationRequest(
             id: prefix(thread) + "failed", title: agent, body: "\(sentence) \(kept)", thread: thread, timeSensitive: true,
             userInfo: [threadKey: thread], subtitle: title)
+    }
+
+    /// An action from a push this install can no longer act on (another
+    /// sign-in's, or one it no longer accepts): nothing was decided, and the
+    /// person decides in the chat.
+    static func refused() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Nothing was decided", body: "Open the chat to decide.", timeSensitive: true)
+    }
+
+    /// A reply typed into a push's notification that was not sent: the
+    /// session that accepted the push is not the one held now.
+    static func replyRefused() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Nothing was sent", body: "Open the chat to reply.", timeSensitive: true)
+    }
+
+    /// A reply typed into a push's notification that may have reached the
+    /// server, told once the push's session is no longer held: nothing of
+    /// its chat.
+    static func replyUncertain() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Your reply may have been sent", body: "Open the chat to check.", timeSensitive: true)
+    }
+
+    /// A decision from a push's notification that may have been made, told
+    /// once the push's session is no longer held: nothing of its chat.
+    static func decisionUncertain() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Your decision may have been made", body: "Open the chat to check.", timeSensitive: true)
     }
 
     /// What tells one response from every other: its notification, what

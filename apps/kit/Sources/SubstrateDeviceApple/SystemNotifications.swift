@@ -125,6 +125,7 @@ public struct SystemNotifications: Notifications {
             var options: UNNotificationActionOptions = []
             if action.opensApp { options.insert(.foreground) }
             if action.destructive { options.insert(.destructive) }
+            if action.requiresUnlock { options.insert(.authenticationRequired) }
             guard let input = action.input else {
                 return UNNotificationAction(identifier: action.id, title: action.title, options: options)
             }

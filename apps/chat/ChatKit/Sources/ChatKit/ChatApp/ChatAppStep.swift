@@ -54,7 +54,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// An attempt to register with the publisher's push relay ended here.
     case pushSynced(PushFacts)
     /// The threads of the pushed notifications standing on the device.
-    case pushDelivered([String])
+    /// `identity`: the repository whose session accepted their pushes.
+    case pushDelivered([String], identity: String?)
     /// The person's marks of some threads, read on their own.
     case marksRead(Marks)
     /// The mark of a thread the person spoke in, read after they did.
@@ -173,6 +174,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case approveAsked(String, approve: Bool)
     case cardWritten(String, Record)
     case cardWriteFailed(String, Failure)
+    /// A decision from a push was not sent: the session that accepted the
+    /// push is not the one held now, and nothing was written.
+    case cardWriteUnbound(String)
     case cardRetried(CardReference)
     case setting(row: String, toggle: Bool?, choice: String?)
     case settingsOpened

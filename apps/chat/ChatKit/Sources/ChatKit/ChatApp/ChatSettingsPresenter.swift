@@ -93,7 +93,8 @@ extension ChatApp {
             : "replies and questions notify while the app is open."
         guard platform == .ios else { return "Your server has no push here: " + local }
         if state.pushHeld {
-            return "Replies and questions reach this device from your server even while Substrate Chat is closed."
+            return "Replies and questions reach this device from your server even while Substrate Chat is closed. "
+                + "A server only your home network or a VPN reaches can't be asked what they say from elsewhere, so there they show without it."
         }
         switch state.push?.standing {
         case .noRelay? where state.session?.scopes == nil:

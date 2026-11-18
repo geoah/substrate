@@ -230,6 +230,25 @@ public enum PushVerdict: Sendable, Equatable {
     case unknown
 }
 
+/// What a push's generation is to this install, with what it may then do,
+/// from one read of the session and of the state: the client and the
+/// repository are those of the very session that accepted it, so nothing a
+/// push asks for is sent with a session read after a switch.
+public struct PushAcceptance: Sendable {
+    public var verdict: PushVerdict
+    /// The accepting session's client; nil unless `accepted`.
+    public var client: SubstrateClient?
+    /// The accepting session's repository, as `Session.identity` names it;
+    /// nil unless `accepted`.
+    public var identity: String?
+
+    public init(_ verdict: PushVerdict, client: SubstrateClient? = nil, identity: String? = nil) {
+        self.verdict = verdict
+        self.client = verdict == .accepted ? client : nil
+        self.identity = verdict == .accepted ? identity : nil
+    }
+}
+
 /// What the app's engine knows of its pushes, read without the network.
 public struct PushFacts: Codable, Equatable, Sendable {
     /// Where the last attempt to register stands.
@@ -309,7 +328,7 @@ struct PushAsk: Equatable, Sendable {
 /// record, for the session in a store: the kit's half of pushes, which an
 /// app runs at launch, at each background refresh and when its switches or
 /// its permission change (`sync`), at sign-out (`signOut`), and when a
-/// notification is opened or acted on (`verdict`, `client(accepting:)`).
+/// notification is opened or acted on (`acceptance(of:)`).
 ///
 /// It registers only where three name the same relay: the build
 /// (`buildRelay`, stamped at release), the publisher's authority document at
@@ -400,45 +419,32 @@ public struct PushRegistrar: Sendable {
     /// nothing, fetches nothing and offers no action. Where the Keychain
     /// cannot be read (before the first unlock) it is `unknown`, which is not
     /// another sign-in's.
-    public func verdict(_ generation: String) async -> PushVerdict {
+    ///
+    /// The session and the state are each read once, and an accepted push
+    /// carries the client and the repository of that same session: a write
+    /// it asks for goes with them or not at all, never with a session read
+    /// again later, which may be another sign-in's.
+    public func acceptance(of generation: String) async -> PushAcceptance {
         let session: Session
         switch await sessions.read() {
         case let .found(found): session = found
-        case .missing: return .refused
-        case .failed: return .unknown
+        case .missing: return PushAcceptance(.refused)
+        case .failed: return PushAcceptance(.unknown)
         }
-        switch await sessions.data(account: account) {
-        case let .found(data):
-            guard let state = try? JSONDecoder().decode(PushState.self, from: data), state.tokenID == session.tokenID,
-                !control.isLeaving(session.tokenID)
-            else { return .refused }
-            return state.accepts(generation, at: now()) ? .accepted : .refused
-        case .missing: return .refused
-        case .failed: return .unknown
+        switch await stored() {
+        case let .found(state):
+            guard state.tokenID == session.tokenID, !control.isLeaving(session.tokenID), state.accepts(generation, at: now()) else {
+                return PushAcceptance(.refused)
+            }
+            return PushAcceptance(.accepted, client: SubstrateClient(session, transport: transport), identity: session.identity)
+        case .missing: return PushAcceptance(.refused)
+        case .failed: return PushAcceptance(.unknown)
         }
     }
+
+    public func verdict(_ generation: String) async -> PushVerdict { await acceptance(of: generation).verdict }
 
     public func accepts(_ generation: String) async -> Bool { await verdict(generation) == .accepted }
-
-    /// The client of the session a push belongs to, for a write a push's
-    /// action makes: read once, and only while the push's generation is that
-    /// session's, so a decision accepted under one sign-in is never sent with
-    /// another's token.
-    public func client(accepting generation: String) async -> SubstrateClient? {
-        guard case let .found(session) = await sessions.read(), let state = await state(), state.tokenID == session.tokenID,
-            !control.isLeaving(session.tokenID), state.accepts(generation, at: now())
-        else { return nil }
-        return SubstrateClient(session, transport: transport)
-    }
-
-    /// The repository a push belongs to, as `Session.identity` names it;
-    /// nil where the push is not this sign-in's.
-    public func identity(accepting generation: String) async -> String? {
-        guard case let .found(session) = await sessions.read(), let state = await state(), state.tokenID == session.tokenID,
-            state.accepts(generation, at: now())
-        else { return nil }
-        return session.identity
-    }
 
     // MARK: Registering
 

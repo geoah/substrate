@@ -12,6 +12,13 @@
 	     so it has no relay to register with. -->
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- The Keychain group the app and its notification service extension
+	     share: the app's own identifier, so the session every build wrote is
+	     already in it. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)dev.reamde.substrate.chat</string>
+	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>webcredentials:$(SUBSTRATE_SITE_HOST)</string>

@@ -24,6 +24,10 @@ extension WorkoutsApp {
                 // it syncs once its package is known to be writable.
                 return [.stopSync] + (account.map { [.openAccount($0), .followOutbox($0)] } ?? [])
             }
+            // Another token for the same account while a sync runs: the
+            // runtime sends nothing more of it and drops how it ends, so it
+            // starts again with the new token, and its end is heard.
+            if state.flushing, state.canWrite, state.link?.tokenID != previous.link?.tokenID, let account { return [.sync(account)] }
             return state.canWrite && !previous.canWrite ? account.map { [.sync($0)] } ?? [] : []
         case let .accountOpened(opened, _, _, _, _, _):
             return opened == account && state.canWrite ? [.sync(opened)] : []
@@ -113,11 +117,32 @@ extension WorkoutsApp {
         }
     }
 
-    /// One sync at a time, stopped when the account changes; one outbox
+    /// What a change of sign-in under an effect that asked the server ends:
+    /// the sync's mark, the sample's, and a sheet waiting on an import's
+    /// receipt, which is told why. What the effect answered was dropped by
+    /// the runtime, or never came. A mark another effect may own since is
+    /// ended only by an effect under its key: a newer one replaces it, and
+    /// the replaced one's ending is never applied.
+    public func ended(bySessionChange effect: Effect) -> Event? {
+        switch effect {
+        case let .sync(ref), let .exchange(ref, _, _, _), let .seedLibrary(ref): .syncEnded(ref, problem: nil)
+        case .addSample: .addingSample(false)
+        case let .importRecords(_, _, _, _, receipt): .outcome(receipt, problem: Self.signInChanged)
+        default: nil
+        }
+    }
+
+    /// Why a change asked of the server under one sign-in was not seen
+    /// through: another sign-in, or a sign-out, came first.
+    static let signInChanged = "the sign-in changed before this finished, so it may not have been made."
+
+    /// One sync at a time, stopped when the account changes; one sample's
+    /// add, replaced by the next, which owns the adding mark; one outbox
     /// followed; the rest run to their end.
     public func key(of effect: Effect) -> String? {
         switch effect {
         case .sync, .exchange, .seedLibrary, .stopSync: "sync"
+        case .addSample: "sample"
         case .followOutbox: "outbox"
         case .openAccount: "account"
         default: nil

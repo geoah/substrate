@@ -24,6 +24,7 @@ shape by yamlfmt.
 import json
 import math
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -675,9 +676,49 @@ for app in apps:
 # targets.yml) carry `aps-environment`; and an app that does not say it
 # takes pushes carries none, since nothing would ever register it. Only the
 # site variant: a local build's client id is a loopback one, which no
-# publisher verifies, so it has no relay.
+# publisher verifies, so it has no relay. A push shows what it is about
+# only through a notification service extension, and a `read` takes
+# notifications back only where iOS may run the app for it, so an app that
+# takes pushes also lists, in `apple.extensions`, an app extension of its
+# targets.yml whose Info.plist names `com.apple.usernotifications.service`,
+# and its iOS Info.plist names the `remote-notification` background mode.
 
 SITE_ENTITLEMENTS = re.compile(r"^\s*SUBSTRATE_IOS_ENTITLEMENTS_YES:\s*(\S+)\s*$", re.M)
+
+
+def target_blocks(path):
+    """Each target of an xcodegen targets.yml, by name, with its text."""
+    out, name, lines, in_targets = {}, None, [], False
+    for line in read(path).splitlines() + ["end:"]:
+        if re.match(r"\S", line):
+            if name:
+                out[name] = "\n".join(lines)
+            name, lines = None, []
+            in_targets = line.rstrip() == "targets:"
+            continue
+        m = re.match(r"  ([A-Za-z0-9_]+):\s*$", line)
+        if in_targets and m:
+            if name:
+                out[name] = "\n".join(lines)
+            name, lines = m.group(1), []
+        elif name:
+            lines.append(line)
+    return out
+
+
+def block_setting(block, key):
+    m = re.search(rf"^\s*{re.escape(key)}:\s*(\S+)\s*$", block, re.M)
+    return m.group(1).strip("'\"") if m else None
+
+
+def plist_at(value):
+    """A targets.yml path, relative to apps/xcode, read as a property list."""
+    path = os.path.normpath(os.path.join(APPS, "xcode", value))
+    try:
+        with open(path, "rb") as f:
+            return path, plistlib.load(f)
+    except (OSError, ValueError):
+        return path, None
 
 for app in apps:
     path = os.path.join(APPS, app, "app.json")
@@ -705,6 +746,26 @@ for app in apps:
         flag(f"{rel(path)}: push is true, and {rel(entitlements) if entitlements else rel(targets_yml)} carries no aps-environment")
     if not push and entitled:
         flag(f"{rel(entitlements)} carries aps-environment, and {rel(path)} does not say push: true")
+    if not push:
+        continue
+    blocks = target_blocks(targets_yml)
+    apple = doc.get("apple") if isinstance(doc.get("apple"), dict) else {}
+    extensions = apple.get("extensions") if isinstance(apple.get("extensions"), list) else []
+    serving = False
+    for block in blocks.values():
+        if block_setting(block, "PRODUCT_BUNDLE_IDENTIFIER") not in extensions or block_setting(block, "type") != "app-extension":
+            continue
+        plist = block_setting(block, "INFOPLIST_FILE")
+        _, info = plist_at(plist) if plist else (None, None)
+        point = ((info or {}).get("NSExtension") or {}).get("NSExtensionPointIdentifier")
+        serving = serving or point == "com.apple.usernotifications.service"
+    if not serving:
+        flag(f"{rel(path)}: push is true, and apple.extensions names no app extension of {rel(targets_yml)} that is a notification service")
+    main = next((b for b in blocks.values() if block_setting(b, "PRODUCT_BUNDLE_IDENTIFIER") == apple.get("bundleID")), None)
+    plist = block_setting(main, "INFOPLIST_FILE") if main else None
+    info_path, info = plist_at(plist) if plist else (None, None)
+    if "remote-notification" not in ((info or {}).get("UIBackgroundModes") or []):
+        flag(f"{rel(path)}: push is true, and {rel(info_path) if info_path else rel(targets_yml)} names no remote-notification background mode")
 
 
 # --- an app's accent is named once, in app.json --------------------------
@@ -997,17 +1058,26 @@ for name in sorted(set(listed) - set(used)):
 # relay's half, which `internal/pushwire` writes from the code (its
 # testdata/README.md), and the server's, which `internal/api`'s push tests
 # run through the real handler (internal/api/testdata/push/README.md). The
-# kit's tests read copies of the ones they need, under
-# kit/Tests/SubstrateKitTests/Resources/pushwire/ and .../pushserver/, and
+# kit's tests and ChatKit's read copies of the ones they need, under
+# pushwire/ and pushserver/ in kit/Tests/SubstrateKitTests/Resources/ and
+# chat/ChatKit/Tests/ChatKitTests/Fixtures/, and
 # each copy is the original byte for byte, so a change of the wire fails
 # here until the copy follows it. Where the tree holds no original folder
 # yet there is nothing to compare with.
 
-for original_dir, copy_dir in (
-    (os.path.join(ROOT, "internal", "pushwire", "testdata"), "pushwire"),
-    (os.path.join(ROOT, "internal", "api", "testdata", "push"), "pushserver"),
+COPY_ROOTS = (
+    os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources"),
+    os.path.join(APPS, "chat", "ChatKit", "Tests", "ChatKitTests", "Fixtures"),
+)
+for (original_dir, copy_dir), root in (
+    (pair, root)
+    for pair in (
+        (os.path.join(ROOT, "internal", "pushwire", "testdata"), "pushwire"),
+        (os.path.join(ROOT, "internal", "api", "testdata", "push"), "pushserver"),
+    )
+    for root in COPY_ROOTS
 ):
-    copies = os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources", copy_dir)
+    copies = os.path.join(root, copy_dir)
     if not (os.path.isdir(original_dir) and os.path.isdir(copies)):
         continue
     for name in sorted(os.listdir(copies)):

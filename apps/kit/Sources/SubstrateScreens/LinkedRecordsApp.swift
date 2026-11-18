@@ -31,6 +31,9 @@ where Event: LinkedRecordsEvent, Effect: LinkedRecordsEffect, State: LinkedRecor
     func ownKey(of effect: Effect) -> String?
     /// The work of an effect that is not the records'.
     func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event>
+    /// What a change of session ends of an effect that is not the records'
+    /// (`Controller.ended(bySessionChange:)`).
+    func ownEnded(bySessionChange effect: Effect) -> Event?
 }
 
 public extension LinkedRecordsApp {
@@ -38,6 +41,7 @@ public extension LinkedRecordsApp {
     func ownEffects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect] { [] }
     func ownKey(of effect: Effect) -> String? { nil }
     func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> { .none }
+    func ownEnded(bySessionChange effect: Effect) -> Event? { nil }
 
     func event(atOpen replayed: Bool) -> Event? { .records(.opened) }
 
@@ -66,6 +70,16 @@ public extension LinkedRecordsApp {
     func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         guard let records = effect.recordsEffect else { return performOwn(effect, in: environment) }
         return linked.perform(records, in: environment).map(Event.records)
+    }
+
+    /// The records' effects leave nothing waiting: a read and a watch start
+    /// again on a new token (`newAccess`) and stop on a sign-out, and a
+    /// reread's records are marked stale before it is asked for and until a
+    /// read answers, so the next read or the watch's opening reads again one
+    /// dropped on its way.
+    func ended(bySessionChange effect: Effect) -> Event? {
+        guard effect.recordsEffect == nil else { return nil }
+        return ownEnded(bySessionChange: effect)
     }
 }
 

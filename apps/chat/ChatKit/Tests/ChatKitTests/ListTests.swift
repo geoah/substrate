@@ -1052,7 +1052,8 @@ struct FirstScreenOfAWindow {
         let rig = ChatRig(marks: server)
         // The window draws as soon as the session is there, before the
         // folder is read or the server has answered anything.
-        await rig.runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: nil, online: true))
+        await rig.runtime.linkChanged(
+            LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: nil, tokenID: HeldPush.tokenID, online: true))
         await rig.harness.send(.sceneAppeared(scene: "s", restoring: nil, left: nil, lands: true))
         try await rig.signIn(flagged: server)
         #expect(await rig.harness.presentation.scenes["s"]?.thread == "c002")

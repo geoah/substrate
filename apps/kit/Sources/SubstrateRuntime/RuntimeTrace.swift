@@ -27,15 +27,21 @@ public struct RuntimeCounters: Equatable, Sendable {
         case epoch
         /// The controller closed or reset since.
         case generation
+        /// The effect asked for a client, and the session it started under
+        /// is no longer the one held.
+        case session
     }
 
     public var delivered = 0
     public var droppedByEpoch = 0
     public var droppedByGeneration = 0
+    public var droppedBySession = 0
+    /// Effects the session changed under, ended by their controller's word.
+    public var endedBySession = 0
 
     public init() {}
 
-    public var dropped: Int { droppedByEpoch + droppedByGeneration }
+    public var dropped: Int { droppedByEpoch + droppedByGeneration + droppedBySession }
 }
 
 /// The effects a runtime has at work: a test that asserts something did not

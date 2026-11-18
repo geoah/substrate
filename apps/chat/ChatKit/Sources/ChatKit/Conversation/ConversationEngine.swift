@@ -125,6 +125,8 @@ extension Conversation {
             run.named = true
             run.started = true
             next.run = .send(run)
+            // The server took the message.
+            next.mayHaveLanded = true
             if run.resumes { next.turnFailure = nil }
             if next.thread == nil { next.thread = thread }
             // The server took the message: the optimistic turn is confirmed.
@@ -498,7 +500,7 @@ extension Conversation {
         let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
         send(
             &state, message: reply.text, agent: agent, at: reply.at, baseline: baseline, fromDraft: false, id: sendsIDs ? reply.id : nil,
-            typed: true)
+            typed: true, bound: reply.binding)
     }
 
     /// The action's time is up with the reply unanswered: it stops being
@@ -515,7 +517,7 @@ extension Conversation {
     private func replySettled(_ state: inout State, _ failure: Failure?) {
         guard let id = state.replying else { return }
         state.replying = nil
-        state.replyOutcome = ReplyOutcome(id: id, failure: failure)
+        state.replyOutcome = ReplyOutcome(id: id, failure: failure, mayHaveLanded: state.mayHaveLanded)
     }
 
     /// The server holds the message `id` (nil for one sent under no id).
@@ -558,7 +560,9 @@ extension Conversation {
         state.copies += 1
         state.tries += 1
         state.asks.append(
-            .chat(agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo))
+            .chat(
+                agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo,
+                bound: pending.bound))
     }
 
     /// Send Again: the same request once more. The id is the one the
@@ -572,6 +576,8 @@ extension Conversation {
         let known = joining ? join(&state) : ([], -1)
         startRun(&state)
         pending.sentAt = at
+        // Pressed in the chat, by the person signed in now.
+        pending.bound = nil
         state.pending = pending
         state.unsentFailure = nil
         state.tries = 0
@@ -634,6 +640,14 @@ extension Conversation {
     /// `repeatWindow` of the press; then, and after a refusal, the message
     /// stands unsent with Send Again.
     private func unanswered(_ state: inout State, _ run: State.Send, failure: Failure?, outcome: UUID) {
+        // A copy the push's sign-in can no longer send, after one that may
+        // have reached the server: what became of the message is not known,
+        // and is said so, never that nothing was sent. Nothing more can go.
+        if failure?.why == .sessionChanged, state.mayHaveLanded {
+            let unknown = state.lastFailure ?? Failure(.message, .unanswered, at: failure?.at)
+            state.failure = unknown
+            return stand(&state, run, unknown)
+        }
         if let failure { state.failure = failure }
         let failure = failure ?? Failure(.send, .streamEnded)
         let refused = failure.refusal() != nil || failure.neverSent || failure.report == .accessEnded
@@ -650,7 +664,7 @@ extension Conversation {
                 if !run.joins {
                     return send(
                         &state, message: run.message, agent: run.agent, at: run.sentAt, baseline: run.baseline, fromDraft: false, id: nil,
-                        typed: true)
+                        typed: true, bound: run.bound)
                 }
             }
             unsent(&state, run.message, typed: true, failure: failure, unconfirmed: false)
@@ -660,6 +674,8 @@ extension Conversation {
             return
         }
         if refused { return stand(&state, run, failure) }
+        // No answer, a 5xx, a timeout: this copy may have landed.
+        state.mayHaveLanded = true
         guard state.tries <= Self.repeatDelays.count else { return stand(&state, run, failure) }
         // Shown as reconnecting, never as a failure, while it waits.
         state.lastFailure = failure.attempting(.message)
@@ -675,7 +691,8 @@ extension Conversation {
     // MARK: Runs, continued
 
     private func send(
-        _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil
+        _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil,
+        bound: PushBinding? = nil
     ) {
         // A turn runs on the thread and the server takes a message into
         // it: the send's stream is that turn's, so the one being read is
@@ -704,6 +721,7 @@ extension Conversation {
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: baseline, sentAt: at, typed: typed ?? fromDraft)
         run.id = id
+        run.bound = bound
         (run.joins, run.held, run.replied) = (joining, known.0, known.1)
         // Sent from the composer while a question's card is aside for it:
         // this is the answer, in the person's own words.
@@ -729,18 +747,21 @@ extension Conversation {
         // A turn that was being read is still being written.
         if !joining { state.connected = false }
         state.stopping = false
+        state.mayHaveLanded = false
         guard let id else {
             state.run = .send(run)
-            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil))
+            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil, bound: bound))
             return
         }
         // The request leaves once the device keeps the message (`kept`),
         // so a kill at any moment after leaves the id to send it under.
         run.unkept = true
         state.run = .send(run)
-        state.pending = UnsentMessage(id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil)
+        state.pending = UnsentMessage(
+            id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil, bound: bound)
         state.copies = 0
         state.tries = 0
+        state.mayHaveLanded = false
         state.unsentFailure = nil
     }
 
@@ -959,6 +980,7 @@ extension Conversation {
                 unsent(&state, run.message, typed: run.typed, failure: failure, unconfirmed: false)
                 return
             }
+            state.mayHaveLanded = true
             end(&state, run, unknown: failure, outcome: outcome)
         case let .attach(run)?:
             guard let failure else {

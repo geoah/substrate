@@ -33,6 +33,17 @@ enum ChatServices {
             clientID: ChatManifest.manifest.clientID)
     }
 
+    /// A `read` push: what it covers taken back, for this install's
+    /// registration alone, with the client of the session that accepted it.
+    static func takeBack(_ userInfo: [String: String]) async -> Bool {
+        // iOS gives the app about 30 seconds: one deadline for all of it,
+        // the Keychain's reads included, the extension's own.
+        let deadline = ContinuousClock.now + ChatPush.budget
+        guard let registrar = push else { return false }
+        return await ChatPush.takeBack(
+            userInfo, accepting: { await registrar.acceptance(of: $0) }, notifications: notifications, until: deadline)
+    }
+
     static func start() {
         SystemNotifications.installDelegate()
         _ = background

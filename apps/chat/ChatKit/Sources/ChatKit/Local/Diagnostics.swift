@@ -118,6 +118,7 @@ extension Diagnostic {
         case .timeout: line = line.with("why", word: "timeout")
         case .streamEnded: line = line.with("why", word: "stream_ended")
         case .sessionEnded: line = line.with("why", word: "session_ended")
+        case .sessionChanged: line = line.with("why", word: "session_changed")
         case .needsApproval: line = line.with("why", word: "needs_approval")
         case let .notTheAPI(status): line = line.with("why", word: "not_the_api").with("status", status)
         case .ended: line = line.with("why", word: "ended")

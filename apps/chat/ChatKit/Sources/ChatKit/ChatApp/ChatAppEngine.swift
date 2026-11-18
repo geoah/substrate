@@ -141,7 +141,9 @@ extension ChatApp {
             // pushes on the device are reconciled without waiting for the
             // next return to the front.
             if facts.held, !held { next.asks.append(.readDelivered) }
-        case let .pushDelivered(threads):
+        case let .pushDelivered(threads, identity):
+            // Read for the session that accepted their pushes, and no other.
+            guard identity == next.session?.identity else { break }
             let unheld = threads.filter { next.thread($0) == nil && !next.pushDelivered.contains($0) }
             next.pushDelivered = Set(threads)
             // A chat no list holds is read by name, with its mark: the list
@@ -456,6 +458,8 @@ extension ChatApp {
         case let .cardRetried(reference):
             retry(&next, reference)
         case let .cardWritten(id, record):
+            // A decision a push asked for: what it reads next is that push's.
+            let bound = next.acting.values.first { $0.card?.id == id }.flatMap { PushBinding($0.response.userInfo) }
             resolvedHere(&next, id, record)
             next.cards[id, default: State.Card()].record = record
             next.cards[id]?.busy = nil
@@ -471,16 +475,23 @@ extension ChatApp {
             // An approved call runs after the decision, under the engine:
             // the card follows it to its end.
             if record.kind == Kinds.approval, record["state"]?.string == "approved" {
-                next.asks.append(.readCard(.approval(id), target: false))
+                next.asks.append(.readCard(.approval(id), target: false, bound: bound))
             }
             decided(&next, card: id, failure: nil)
         case let .cardWriteFailed(id, failure):
             next.cards[id, default: State.Card()].busy = nil
             if failure.report == nil { next.cards[id]?.problem = failure }
-            if let reference = next.reference(of: id) ?? next.acting.values.first(where: { $0.card?.id == id })?.card {
-                next.asks.append(.readCard(reference, target: false))
+            let act = next.acting.values.first { $0.card?.id == id }
+            if let reference = next.reference(of: id) ?? act?.card {
+                next.asks.append(.readCard(reference, target: false, bound: act.flatMap { PushBinding($0.response.userInfo) }))
             }
             decided(&next, card: id, failure: failure)
+        case let .cardWriteUnbound(id):
+            // Nothing was written, and the card is the session's that
+            // accepted the push, not this one's: it is not read here, and
+            // the person is sent to the chat to decide.
+            next.cards[id]?.busy = nil
+            unbound(&next, card: id)
         case let .setting(row, toggle, choice): setting(&next, row, toggle, choice)
         case .settingsOpened:
             next.asks.append(.readPermission)
@@ -501,11 +512,13 @@ extension ChatApp {
             // A tap opens its chat, in the window that takes the route.
             if next.session != nil, response.action == .open {
                 // A push names its thread only for this install's
-                // registration (`ChatApp.opened`); one for another opens the
-                // list.
-                if let thread = response.userInfo[ChatNotifications.threadKey] {
+                // registration (`ChatApp.opened`), and opens it only while
+                // the app holds the session that accepted it: else the list.
+                let pushed = PushPayload(response.userInfo) != nil
+                let held = !pushed || PushBinding(response.userInfo)?.identity == next.session?.identity
+                if let thread = response.userInfo[ChatNotifications.threadKey], held {
                     next.route = .thread(thread)
-                } else if PushPayload(response.userInfo) != nil {
+                } else if pushed {
                     next.route = .list
                 }
             }
@@ -535,15 +548,18 @@ extension ChatApp {
 
     // MARK: The session
 
-    /// Rule 6: a sign-out, or a sign-in to another repository, starts the
-    /// chats over: the runtime drops every result still on its way and
-    /// closes every conversation, and nothing of one session publishes into
-    /// the next. The folder is closed, and deleted on a Sign Out.
+    /// Rule 6: a sign-out, a sign-in to another repository, or another token
+    /// for the same one, starts the chats over: the runtime drops every
+    /// result still on its way and closes every conversation, and nothing of
+    /// one session publishes into the next. The folder is closed, and deleted
+    /// on a Sign Out; a new token for the same repository keeps it.
     private func linked(_ state: inout State, _ link: LinkSnapshot) {
         let session = ChatSession(link)
         let online = link.online ?? true
-        if session?.identity != state.session?.identity {
-            let forget = state.forgetOnSignOut
+        let switched = session?.identity != state.session?.identity
+        let renewed = !switched && session != nil && session?.tokenID != state.session?.tokenID
+        if switched || renewed {
+            let forget = switched && state.forgetOnSignOut
             let old = state.session
             state = initialState
             state.restarted = true
@@ -1035,6 +1051,9 @@ extension ChatApp {
                 thread: thread, agent: row?.agentID, unsent: unsent?.id, newFrom: state.newFrom(thread))
         }
         state.scenes[scene, default: State.Scene()].current = key
+        // Opened by the person: what it reads from here is theirs, with the
+        // session held, as any chat they open.
+        state.conversations[key]?.bound = nil
         guard state.session != nil else { return }
         // Before the folder is read, its open asks for what the windows show.
         if state.transcripts[thread] == nil, let disk = state.disk {
@@ -1265,14 +1284,14 @@ extension ChatApp {
     /// A card's answer or decision, written over the version read: the
     /// card says it is out, and keeps what it set, so a write that fails
     /// can be asked again.
-    func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String) {
+    func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String, bound: PushBinding? = nil) {
         var card = state.cards[id] ?? State.Card()
         card.busy = busy
         card.problem = nil
         card.tried = State.Card.Tried(properties: properties, busy: busy)
         state.cards[id] = card
         let kind = record.kind.isEmpty ? Kinds.interaction : record.kind
-        state.asks.append(.writeCard(id, kind: kind, properties: properties, ifVersion: record.version))
+        state.asks.append(.writeCard(id, kind: kind, properties: properties, ifVersion: record.version, bound: bound))
     }
 
     /// Try Again on a card's failure. A write that failed is asked again as

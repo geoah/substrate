@@ -2,6 +2,7 @@ import ChatKit
 import Foundation
 import SubstrateKit
 import Testing
+import UserNotifications
 
 @testable import SubstrateChat
 
@@ -200,5 +201,121 @@ private struct LegacySession: Codable {
             let words = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
             #expect(words != key && !words.isEmpty, "\(key) is not in Localizable.strings")
         }
+    }
+}
+
+/// What the notification service extension delivers, compiled here from
+/// its own file (`PushDelivery.swift`): an extension has no test target.
+@Suite struct ExtensionDelivery {
+    static func pushed() -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.body = "A chat has a new reply."
+        content.badge = 3
+        content.categoryIdentifier = "chat.approval"
+        content.userInfo = ["substrate": ["v": 1, "event": "reply", "thread": "t1", "g": "gC", "eventId": "e1"], "aps": ["badge": 3]]
+        return content
+    }
+
+    @Test func whatTheItemSaysReplacesTheWordsAndKeepsThePush() throws {
+        let content = Self.pushed()
+        let request = NotificationRequest(
+            id: "x", title: "Moss", body: "Here is the summary.", thread: "t1", category: nil, userInfo: ["thread": "t1", "card": "c1"],
+            subtitle: "Weekend plans")
+        PushDelivery.apply(.shown(request), to: content)
+        #expect(content.title == "Moss" && content.subtitle == "Weekend plans" && content.body == "Here is the summary.")
+        // No category: no action is offered.
+        #expect(content.categoryIdentifier == "")
+        #expect(content.threadIdentifier == "t1")
+        #expect(content.userInfo["thread"] as? String == "t1" && content.userInfo["card"] as? String == "c1")
+        // The relay's own values stay, for a tap, an action and a take-back.
+        let substrate = try #require(content.userInfo["substrate"] as? [String: Any])
+        #expect(substrate["g"] as? String == "gC" && substrate["eventId"] as? String == "e1")
+        #expect(content.badge == 3)
+    }
+
+    @Test func anotherRegistrationsPushDropsItsBadgeAndAnUnreadKeychainKeepsIt() {
+        let foreign = Self.pushed()
+        PushDelivery.apply(.fallback(dropsBadge: true), to: foreign)
+        #expect(foreign.badge == nil && foreign.body == "A chat has a new reply.")
+        let unknown = Self.pushed()
+        PushDelivery.apply(.fallback(dropsBadge: false), to: unknown)
+        #expect(unknown.badge == 3)
+    }
+
+    @Test func thePushIsDeliveredOnceWhicheverEndsFirst() {
+        final class Count: @unchecked Sendable {
+            var delivered: [UNNotificationContent] = []
+        }
+        let count = Count()
+        let once = DeliverOnce(Self.pushed()) { count.delivered.append($0) }
+        // The work ends first: what it made goes.
+        #expect(once.deliver(.fallback(dropsBadge: false)))
+        // iOS calls time after: nothing more is delivered.
+        #expect(!once.expire(PushExpiry()))
+        #expect(count.delivered.count == 1 && count.delivered.first?.badge == 3)
+    }
+
+    /// iOS ends the extension while the first Keychain read is still out:
+    /// the delivery is claimed first, as the plain fallback with no chat
+    /// text and no badge, and the work, stopped after, delivers nothing,
+    /// though the Keychain then accepts the push.
+    @Test func anExpiryWhileTheKeychainIsReadClaimsTheDeliveryFirst() async throws {
+        final class Delivered: @unchecked Sendable {
+            private let lock = NSLock()
+            private var kept: [UNNotificationContent] = []
+            func append(_ content: UNNotificationContent) { lock.withLock { kept.append(content) } }
+            var all: [UNNotificationContent] { lock.withLock { kept } }
+        }
+        actor Keychain {
+            private var waiters: [CheckedContinuation<Void, Never>] = []
+            private var opened = false
+            var waiting: Int { waiters.count }
+            func read() async -> PushAcceptance {
+                if !opened { await withCheckedContinuation { waiters.append($0) } }
+                return PushAcceptance(.accepted)
+            }
+            func open() {
+                opened = true
+                for waiter in waiters { waiter.resume() }
+                waiters = []
+            }
+        }
+        let delivered = Delivered()
+        let keychain = Keychain()
+        let run = PushRun(Self.pushed()) { delivered.append($0) }
+        run.start(PushPayload.flatten(Self.pushed().userInfo), accepting: { _ in await keychain.read() }, until: .now + .seconds(60))
+        while await keychain.waiting == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(run.expire())
+        #expect(delivered.all.count == 1)
+        #expect(delivered.all.first?.badge == nil && delivered.all.first?.body == "A chat has a new reply.")
+        await keychain.open()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(delivered.all.count == 1)
+        #expect(!run.expire())
+    }
+
+    /// iOS ends the extension before the last check answered: nothing says
+    /// the push is still this sign-in's, so it goes as the plain fallback,
+    /// with no chat text and no badge.
+    @Test func anExpiryBeforeTheLastCheckShowsTheFallbackWithNoBadge() {
+        final class Count: @unchecked Sendable {
+            var delivered: [UNNotificationContent] = []
+        }
+        let count = Count()
+        let once = DeliverOnce(Self.pushed()) { count.delivered.append($0) }
+        #expect(once.expire(PushExpiry()))
+        #expect(!once.deliver(.fallback(dropsBadge: false)))
+        let delivered = count.delivered.first
+        #expect(count.delivered.count == 1 && delivered?.badge == nil && delivered?.body == "A chat has a new reply.")
+    }
+}
+
+/// The app and its extension read one session item: the definition both
+/// compile, at the place every earlier build kept it.
+@Suite struct SharedSessionStore {
+    @Test func theAppAndTheExtensionReadTheItemEveryBuildKept() {
+        let earlier = SessionStore(service: "dev.reamde.substrate.chat")
+        #expect(SessionStore.chat.account == earlier.account && SessionStore.chat.account == "session")
+        #expect(SessionStore.chat.storage.location == earlier.storage.location)
     }
 }

@@ -133,6 +133,34 @@ struct PushRelayTests {
         #expect(try await PushRelay.published(clientID: "http://127.0.0.1/substrate-chat", transport: StubTransport()) == nil)
     }
 
+    @Test func everyEventTheServerResolvesDecodes() async throws {
+        let transport = StubTransport()
+        for name in ["event-reply", "event-failed", "event-request-card-1", "event-request-card-2", "event-read"] {
+            let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Resources/pushserver"))
+            transport.replace("GET", "/api/v1/push/events/\(name)", json: try String(contentsOf: url, encoding: .utf8))
+        }
+        let client = SubstrateClient(server: URL(string: "https://s.example.com")!, token: "secret", transport: transport)
+        let reply = try #require(try await client.pushEvent("event-reply"))
+        #expect(reply.event == "reply" && reply.item?.kind == "substrate.reamde.dev/llm/message" && reply.item?.version == 1)
+        #expect(try await client.pushEvent("event-request-card-1")?.actions == true)
+        #expect(try await client.pushEvent("event-request-card-2")?.actions == false)
+        #expect(try await client.pushEvent("event-failed")?.item?.kind == "substrate.reamde.dev/llm/thread")
+        let read = try #require(try await client.pushEvent("event-read"))
+        #expect(read.item == nil && read.covers?.alerts == ["CetD8NWemKv7dBg-jASmqA"])
+        // Another token's, past its day, or no longer read: nothing.
+        transport.replace("GET", "/api/v1/push/events/gone", status: 404, json: #"{"error":{"code":"not_found","message":"no"}}"#)
+        #expect(try await client.pushEvent("gone") == nil)
+        #expect(transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer secret" })
+    }
+
+    @Test func anAlertIsNamedByTheFingerprintOfItsEventID() throws {
+        let vectors = try #require(try JSONSerialization.jsonObject(with: PushWire.data("fingerprints")) as? [[String: String]])
+        #expect(vectors.count >= 2)
+        for vector in vectors {
+            #expect(PushFingerprint.of(eventID: try #require(vector["eventId"])) == vector["fingerprint"])
+        }
+    }
+
     @Test func aRefusalNamesItsReason() throws {
         let body = Data(#"{"error":{"code":"forbidden","reason":"no_relay","message":"this token's app names no push relay"}}"#.utf8)
         let error = try #require(ServerError(status: 403, envelope: body))
@@ -1447,6 +1475,66 @@ struct PushRegistrarTests {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { continuation.resume() }
         }
+    }
+
+    /// Before the first unlock the Keychain answers nothing: a push then is
+    /// no other sign-in's, and nothing is decided for it either way.
+    @Test func aKeychainThatCannotBeReadSaysNothingOfAPush() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        #expect(await world.registrar.verdict("g1") == .accepted)
+        #expect(await world.registrar.verdict("g0") == .refused)
+        world.storage.failReads(of: world.registrar.account, with: MemoryStorage.locked)
+        #expect(await world.registrar.verdict("g1") == .unknown)
+        world.storage.failReads(of: world.registrar.account, with: nil)
+        world.storage.failReads(of: world.sessions.account, with: MemoryStorage.locked)
+        let unread = await world.registrar.acceptance(of: "g1")
+        #expect(unread.verdict == .unknown && unread.client == nil && unread.identity == nil)
+    }
+
+    /// A push's verdict, its client and its repository come from one read of
+    /// the session: a switch after the check leaves the client the one that
+    /// accepted it, and a check after the switch accepts nothing.
+    @Test func aPushsClientIsTheSessionsThatAcceptedItAndNoOther() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        let accepted = await world.registrar.acceptance(of: "g1")
+        let client = try #require(accepted.client)
+        #expect(accepted.verdict == .accepted && client.token == "secret" && client.server.host == "s.example.com")
+        #expect(accepted.identity == "https://s.example.com|r.example.com")
+        let refused = await world.registrar.acceptance(of: "g0")
+        #expect(refused.verdict == .refused && refused.client == nil && refused.identity == nil)
+        var other = try #require(await world.sessions.load())
+        other.tokenID = "0b5e1a7c33"
+        other.secret = "another"
+        try await world.sessions.save(other)
+        #expect(client.token == "secret")
+        let after = await world.registrar.acceptance(of: "g1")
+        #expect(after.verdict == .refused && after.client == nil && after.identity == nil)
+    }
+
+    /// The deadline answers when it comes, and a cancelled caller at once,
+    /// whatever the work does.
+    @Test func aDeadlineAnswersAtItsTimeAndACancelledCallerAtOnce() async throws {
+        let started = ContinuousClock.now
+        let late = await Deadline.race(until: .now + .milliseconds(200), or: "fallback") {
+            await Self.uncancellable(seconds: 3)
+            return "late"
+        }
+        #expect(late == "fallback" && ContinuousClock.now - started < .seconds(2))
+        let done = await Deadline.race(until: .now + .seconds(30), or: "fallback") { "done" }
+        #expect(done == "done")
+        let caller = Task {
+            await Deadline.race(until: .now + .seconds(30), or: "fallback") {
+                await Self.uncancellable(seconds: 3)
+                return "late"
+            }
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        let cancelled = ContinuousClock.now
+        caller.cancel()
+        let answered = await caller.value
+        #expect(answered == "fallback" && ContinuousClock.now - cancelled < .seconds(2))
     }
 
     @Test func anotherSignInsRegistrationIsForgotten() async throws {

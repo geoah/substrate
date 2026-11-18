@@ -709,6 +709,92 @@ and the badge the server counted.
 - **Diagnostics** say whether the install is registered, with which Apple
   environment and since when; a development build also shows Apple's token
   on the sheet, never in what is shared, for a test push from the relay.
+- **The notification service extension** (`SubstrateChatNotifications`,
+  `dev.reamde.substrate.chat.notifications`) runs before a `reply`, a
+  `failed` or a `request` alert shows. It reads the session from the
+  Keychain group the app and it share (the app's own identifier, so every
+  earlier build's item is already there), through the one definition of
+  the store both compile (`Shared/ChatSessions.swift`), and checks the
+  push's generation first, in one read that also gives the client of the
+  session that accepted it, the only client its requests go with
+  (`PushRegistrar.acceptance(of:)`): one for another registration fetches nothing,
+  offers nothing and drops its badge; one the Keychain could not be read
+  for (before the first unlock after a restart) fetches nothing, and sets
+  its badge only where the last check before it shows can read the
+  Keychain and accepts it. Then it resolves the event id
+  (`GET /api/v1/push/events/{eventId}`), reads that item at its version, and
+  shows it as the local notification of the same item would
+  (`ChatPush.content`, built with `ChatNotifications`): a reply's start, at
+  most 240 characters of its text, cut between characters as read and
+  before its Markdown is read, with an ellipsis where it was cut (and the
+  agent's "replied" where it holds nothing to show, never the thread's later
+  words); a failure's sentence, an error's and a run over its budget's
+  alike; a card with its own `card` and `version` in its `userInfo`. An
+  approval offers Approve and Decline only while the resolution says it is
+  pending now; a question only opens its chat, and only then, since its
+  options are a category registered at run time. One deadline on the
+  monotonic clock, 20 seconds, started before the Keychain is read, is
+  raced against the whole operation: at the deadline the push is delivered
+  as it came, and what is still out is cancelled and never waited for. It
+  is delivered once, with what was made or as it came, whether the work or
+  `serviceExtensionTimeWillExpire` comes first; at the system's expiry, the
+  delivery is claimed before the work is stopped, with only what the last
+  check before showing confirmed, or else the plain fallback with no badge.
+  Just before it shows what it read, it asks again whether the push is
+  accepted, and only that answer lets anything read show or a badge be
+  set: a sign-out while it read, a check unanswered, or the work cancelled
+  leaves the plain fallback, with no chat text and no badge. On any
+  failure the alert keeps the app's fallback words. It links
+  ChatKit and the kit's API and never a view. A server reachable only at
+  home or over a VPN cannot be asked from elsewhere; there the fallback is
+  the normal case, and Settings says so.
+- **Deciding from the lock screen.** Approve and Decline require the device
+  to be unlocked, pushed or local. A decision from a push is bound to the
+  session that accepted it: the response carries that session's identity,
+  the action is dispatched only while the app still holds it, and the write
+  is sent with that session's own client, read once with the generation
+  checked again, so a sign-in changed since sends nothing with the new
+  token. A response names a session only where its push was accepted. An
+  action from a push for another registration, or one whose session is
+  gone by the time it is sent, decides nothing and reads nothing with the
+  session held now, and a notification says to open the chat to decide. Otherwise it writes over the version the notification showed, so
+  a card that changed since is refused by the server. A reply typed into
+  a push's notification is held to the same session: every copy of it
+  goes with the client of the session that accepts the push, read as it
+  leaves, so one whose session changed goes to no server, its text stays
+  in the chat, and a notification says to open the chat to reply.
+- **Every effect is held to its session.** The runtime stamps every
+  effect, a push's or not, with the session epoch it starts under (the
+  kit's rule): its client is that session's, every request is checked
+  again as it leaves, and once a sign-in, a sign-out or a switch has moved
+  the epoch nothing more is sent and its result is dropped. A push's
+  binding is an extra check on top of it.
+- **Everything a push starts is held to it.** A push's binding is its
+  generation and the repository of the session that accepted it. Every
+  request a push leads to goes with the client of the session that
+  accepts it then, for that repository, or nowhere: the extension's reads,
+  the background `read`'s, a reply's copies and its compatibility retry,
+  the read of a chat a reply waits for, the reads its conversation makes
+  until the person opens the chat, a decision and the card reads after it.
+  The extension's and the background `read`'s client asks whether the
+  push is still accepted before every request it sends. Before anything
+  it led to is shown (a preview, a fallback with its badge, a badge,
+  a notification taken back, an action's notice, a chat opened) the push
+  is asked about again: one no longer accepted shows nothing of its chat
+  and no badge, and an action's notice says only whether it may have gone
+  through. A reply's notice says nothing was sent only where no copy of it
+  may have landed: once one copy went unanswered or met a 5xx or a
+  timeout, a later refusal still says it may have been sent.
+- **Taking notifications back.** The app has the `remote-notification`
+  background mode. When iOS runs it for a `read` push whose generation
+  matches, it resolves the event id and removes exactly the delivered
+  notifications whose event-id fingerprints (`PushFingerprint`, the wire's
+  `EventFingerprint`) the resolution lists, a fallback alert among them,
+  then sets the server's badge, all within one deadline that starts before
+  the Keychain is read and with no request repeated: past it nothing more
+  is taken back and no badge set, whatever answers late; a `read` for another registration, or whose resolution
+  names another thread, removes nothing. Where iOS does not run it, the
+  push's badge still applies, and coming to the front reconciles the rest.
 
 ### Notifications
 

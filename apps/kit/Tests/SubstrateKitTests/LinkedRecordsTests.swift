@@ -126,8 +126,13 @@ struct LinkedRecordsTests {
         _ = reading.step(.loaded([], cursor: nil, queue: []))
         _ = reading.step(.linked(online))
         #expect(reading.step(.linked(approved)) == [.read(over: [noteKind])])
+        // Another token alone, its scopes and its end the same: the watch
+        // holds the old one, which no request of it may carry now.
+        var renewed = approved
+        renewed.tokenID = "0b5e1a7c33"
+        #expect(stepper.step(.linked(renewed)) == [.follow(cursor, over: [noteKind])])
         // The same token moving nothing else starts nothing.
-        var moved = approved
+        var moved = renewed
         moved.waiting = 3
         #expect(stepper.step(.linked(moved)).isEmpty)
     }
@@ -179,6 +184,44 @@ struct LinkedRecordsTests {
         #expect(stepper.state.records[RecordFold.key(noteKind, "n1")]?.properties["title"] == "Oat milk")
         #expect(stepper.state.records[RecordFold.key(noteKind, "n2")]?.properties["title"] == "Bread")
         #expect(effects == [.reread([RecordFold.key(noteKind, "n1"), RecordFold.key(noteKind, "n2")])])
+        // Both are marked stale until their read answers.
+        #expect(stepper.state.stale == [RecordFold.key(noteKind, "n1"), RecordFold.key(noteKind, "n2")])
+    }
+
+    /// A delayed outbox report lays an older rename over a newer name the
+    /// watch already brought, and asks for the record's read again; a new
+    /// token comes while that read is out, and its answer is never heard.
+    /// The record stays marked stale, so the watch, opened again with the
+    /// new token, reads it again, and the newer name shows.
+    @Test func aWriteLaidOverStaysStaleUntilARereadAnswersThoughANewTokenDropsTheFirst() {
+        var stepper = Stepper()
+        let key = RecordFold.key(noteKind, "n1")
+        let cursor = WatchCursor(seq: 3, generation: "g")
+        _ = stepper.step(.loaded([note("n1", "Milk")], cursor: cursor, queue: []))
+        var first = online
+        first.tokenID = "71ac09be44"
+        #expect(stepper.step(.linked(first)) == [.follow(cursor, over: [noteKind])])
+        _ = stepper.step(.watchOpened(cursor))
+        let rename = OutboxEntry(method: .patch, kind: noteKind, recordID: "n1", properties: ["title": "Oat milk"])
+        _ = stepper.step(.wrote(LocalWrite(entries: [rename])))
+        _ = stepper.step(.enqueued([rename.id], queue: [rename], landed: []))
+        // Another device renamed it since, and the watch brought that.
+        _ = stepper.step(.changed(key, note("n1", "Almond milk", version: 3)))
+        // The outbox reports the older rename landed: laid over, read again.
+        #expect(stepper.step(.queueReported([], landed: [rename.id])) == [.reread([key])])
+        #expect(stepper.state.records[key]?.properties["title"] == "Oat milk")
+        #expect(stepper.state.stale == [key])
+        // A new token while that read is out: the watch starts again with
+        // it, and the read's answer is dropped, nothing ending it.
+        var second = first
+        second.tokenID = "0b5e1a7c33"
+        #expect(stepper.step(.linked(second)) == [.follow(cursor, over: [noteKind])])
+        #expect(stepper.state.stale == [key])
+        // Opened again, the watch reads the stale record again.
+        #expect(stepper.step(.watchOpened(cursor)) == [.reread([key])])
+        _ = stepper.step(.changed(key, note("n1", "Almond milk", version: 3)))
+        #expect(stepper.state.records[key]?.properties["title"] == "Almond milk")
+        #expect(stepper.state.stale.isEmpty)
     }
 
     @Test func aReadAgainThatFailedIsTriedWhenTheNetworkComesBack() {

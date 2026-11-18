@@ -123,12 +123,23 @@ extension ChatApp {
 
     /// The threads of the pushed notifications standing on the device whose
     /// generation `accepted` says is this sign-in's.
-    static func deliveredThreads(_ notifications: any Notifications, accepted: (String) async -> Bool) async -> [String] {
+    ///
+    /// - Parameter accepted: the repository of the session that accepts a
+    ///   generation, or nil.
+    /// - Returns: the threads, and the repository whose session accepted
+    ///   their pushes: they are read for it alone.
+    static func deliveredThreads(
+        _ notifications: any Notifications, accepted: (String) async -> String?
+    ) async -> (threads: [String], identity: String?) {
         var threads: Set<String> = []
+        var identity: String?
         for shown in await notifications.delivered() {
-            guard let push = shown.push, !threads.contains(push.thread), await accepted(push.generation) else { continue }
+            guard let push = shown.push, !threads.contains(push.thread), let accepting = await accepted(push.generation) else { continue }
+            // One session accepts them all; one that does not agree reads nothing.
+            guard identity == nil || identity == accepting else { return ([], nil) }
+            identity = accepting
             threads.insert(push.thread)
         }
-        return threads.sorted()
+        return (threads.sorted(), identity)
     }
 }

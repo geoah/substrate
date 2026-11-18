@@ -6,6 +6,9 @@ protocol LoopServices: AnyObject {
     /// The link's snapshot as the link last made it: what every controller
     /// reads, and what a controller made later is told.
     var link: LinkSnapshot? { get set }
+    /// The session the link names, and how many times it changed: what
+    /// every effect is stamped with as it starts.
+    var sessions: SessionEpoch { get }
     var performsEffects: Bool { get }
     /// Runs `body` on the runtime's executor, then settles what it asked.
     var hop: @Sendable (@escaping @Sendable () -> Void) async -> Void { get }
@@ -15,6 +18,9 @@ protocol LoopServices: AnyObject {
     func afterPresent(_ work: @escaping () -> Void)
     func trace(_ entry: RuntimeTrace)
     func count(delivered: Bool, drop: RuntimeCounters.Drop?)
+    /// An effect the session changed under was ended by its controller's
+    /// word (`Controller.ended(bySessionChange:)`).
+    func countEndedBySession()
     /// An effect's work started, numbered in the order effects start in the
     /// whole runtime, or ended (its last result handed back, or none coming).
     func effectStarted() -> Int
