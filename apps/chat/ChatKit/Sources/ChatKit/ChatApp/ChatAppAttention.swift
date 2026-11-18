@@ -85,6 +85,8 @@ extension ChatApp {
 
     /// Posts a card's notification, in place of its reply's.
     private func post(_ state: inout State, card record: Record) {
+        // A held registration's push says it.
+        guard !state.pushHeld else { return }
         let thread = record["thread"]?.referenceID
         let row = thread.flatMap { state.thread($0) }
         // An approval names the agent that asked, a sub-agent included.

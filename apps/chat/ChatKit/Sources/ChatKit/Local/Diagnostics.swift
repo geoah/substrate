@@ -1,4 +1,6 @@
 import Foundation
+import SubstrateAuth
+import SubstrateCore
 
 /// One line of the diagnostics file a person can share (Settings, Share
 /// Diagnostics): a decision the app made, or a time it measured. Which
@@ -195,6 +197,14 @@ public struct DiagnosticsReport: Codable, Equatable, Sendable {
     public var empty: String?
     public var share: String
     public var done: String
+    /// Whether this install takes pushes: registered, with which Apple
+    /// environment and since when, or why not. In the text too.
+    public var push: String?
+    /// Apple's token for this install, in a `development` build alone, so
+    /// the relay's operator can send it one test push: shown on the sheet
+    /// with what it is for, and never in the text that is shared.
+    public var pushToken: String?
+    public var pushTokenNote: String?
 
     /// The text as it is shown and shared, with the build that wrote it
     /// under its heading: the build's own version, which the device's
@@ -206,15 +216,31 @@ public struct DiagnosticsReport: Codable, Equatable, Sendable {
     }
 
     static let heading = "Substrate Chat diagnostics"
+
+    /// Whether the install takes pushes, in words.
+    static func words(_ push: PushFacts) -> String {
+        guard push.held else { return "Push: not registered (\(push.standing.rawValue))." }
+        let environment = push.environment.map { " with Apple's \($0.rawValue) service" } ?? ""
+        let since = push.since.map { " since " + Timestamp.format($0) } ?? ""
+        return "Push: registered\(environment)\(since)."
+    }
     static let promise =
         "What the app decided and how long things took: streams that dropped, failures by their kind, writes and their retries. "
         + "No message, title, name, address or token is in it."
 
-    init(lines: [String], platform: ChatPlatform, agents: Int?, records: Int?) {
+    init(lines: [String], platform: ChatPlatform, agents: Int?, records: Int?, push: PushFacts? = nil) {
         title = "Diagnostics"
         note = Self.promise
-        let head = Diagnostic("report").with("platform", platform).with("agents", agents).with("records", records).with("lines", lines.count)
+        let head = Diagnostic("report").with("platform", platform).with("agents", agents).with("records", records)
+            .with("push", push?.standing).with("push_held", push?.held).with("lines", lines.count)
         text = ([Self.heading, head.text] + lines).joined(separator: "\n")
+        if let push {
+            self.push = Self.words(push)
+            if let token = push.deviceToken {
+                pushToken = token
+                pushTokenNote = "This development build's push token, for a test push from the relay. It is not in what you share."
+            }
+        }
         empty = lines.isEmpty ? "Nothing has been written yet." : nil
         share = "Share"
         done = "Done"

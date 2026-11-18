@@ -25,6 +25,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -595,7 +596,7 @@ for app in apps:
     for key, kind in FIELDS.items():
         if not isinstance(doc.get(key), kind):
             flag(f"{rel(path)}: {key} is missing or not a {kind.__name__}")
-    for key in sorted(set(doc) - set(FIELDS) - set(PLATFORM_FIELDS) - {"accent"}):
+    for key in sorted(set(doc) - set(FIELDS) - set(PLATFORM_FIELDS) - {"accent", "push"}):
         flag(f"{rel(path)}: {key} is no app.json field (apps/README.md lists them)")
     if doc.get("id") != app:
         flag(f"{rel(path)}: id is {doc.get('id')!r}, and the app's folder is {app}")
@@ -661,6 +662,49 @@ for app in apps:
     has_ui = any(os.path.isdir(os.path.join(APPS, app, ui)) for ui in ("apple", "android"))
     if isinstance(icon, str) and has_ui and not os.path.isfile(os.path.join(APPS, app, icon)):
         flag(f"{rel(path)}: icon {icon} is not a file in apps/{app}")
+
+
+# --- an app that takes pushes is entitled to them, and only such an app ---
+#
+# `"push": true` in app.json says an app registers with its publisher's push
+# relay (docs/plans/push.md): the release stamps the relay into its iPhone
+# and iPad build and lists it in the authority document, and App Store
+# Connect turns Push Notifications on for its App ID. A build that is not
+# entitled to pushes registers nowhere, so the app's iOS entitlements for a
+# release (the `-site` variant, SUBSTRATE_IOS_ENTITLEMENTS_YES in its
+# targets.yml) carry `aps-environment`; and an app that does not say it
+# takes pushes carries none, since nothing would ever register it. Only the
+# site variant: a local build's client id is a loopback one, which no
+# publisher verifies, so it has no relay.
+
+SITE_ENTITLEMENTS = re.compile(r"^\s*SUBSTRATE_IOS_ENTITLEMENTS_YES:\s*(\S+)\s*$", re.M)
+
+for app in apps:
+    path = os.path.join(APPS, app, "app.json")
+    try:
+        doc = json.loads(read(path))
+    except (OSError, ValueError):
+        continue
+    if not isinstance(doc, dict):
+        continue
+    push = doc.get("push", False)
+    if not isinstance(push, bool):
+        flag(f"{rel(path)}: push is {push!r}, and it is true or false")
+        continue
+    if push and "ios" not in (doc.get("platforms") or []):
+        flag(f"{rel(path)}: push is true, and platforms names no ios: pushes reach iPhone and iPad builds alone")
+    targets_yml = os.path.join(APPS, app, "apple", "targets.yml")
+    if not os.path.exists(targets_yml):
+        if push:
+            flag(f"{rel(path)}: push is true, and apps/{app} has no apple/targets.yml naming the entitlements that would carry it")
+        continue
+    found = SITE_ENTITLEMENTS.search(read(targets_yml))
+    entitlements = os.path.normpath(os.path.join(APPS, "xcode", found.group(1))) if found else None
+    entitled = bool(entitlements) and os.path.exists(entitlements) and "<key>aps-environment</key>" in read(entitlements)
+    if push and not entitled:
+        flag(f"{rel(path)}: push is true, and {rel(entitlements) if entitlements else rel(targets_yml)} carries no aps-environment")
+    if not push and entitled:
+        flag(f"{rel(entitlements)} carries aps-environment, and {rel(path)} does not say push: true")
 
 
 # --- an app's accent is named once, in app.json --------------------------
@@ -945,6 +989,64 @@ for name, where in sorted(used.items()):
         flag(f"apps/README.md lists {name} with no reason")
 for name in sorted(set(listed) - set(used)):
     flag(f"apps/README.md lists {name}, which no package or project takes")
+
+
+# --- the push wire's fixtures the apps read are the wire's own -----------
+#
+# The relay, the server and the apps test against one set of fixtures: the
+# relay's half, which `internal/pushwire` writes from the code (its
+# testdata/README.md), and the server's, which `internal/api`'s push tests
+# run through the real handler (internal/api/testdata/push/README.md). The
+# kit's tests read copies of the ones they need, under
+# kit/Tests/SubstrateKitTests/Resources/pushwire/ and .../pushserver/, and
+# each copy is the original byte for byte, so a change of the wire fails
+# here until the copy follows it. Where the tree holds no original folder
+# yet there is nothing to compare with.
+
+for original_dir, copy_dir in (
+    (os.path.join(ROOT, "internal", "pushwire", "testdata"), "pushwire"),
+    (os.path.join(ROOT, "internal", "api", "testdata", "push"), "pushserver"),
+):
+    copies = os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources", copy_dir)
+    if not (os.path.isdir(original_dir) and os.path.isdir(copies)):
+        continue
+    for name in sorted(os.listdir(copies)):
+        original = os.path.join(original_dir, name)
+        if not os.path.isfile(original):
+            flag(f"{rel(os.path.join(copies, name))} is a copy of no fixture in {rel(original_dir)}")
+        elif open(original, "rb").read() != open(os.path.join(copies, name), "rb").read():
+            flag(f"{rel(os.path.join(copies, name))} differs from {rel(original)}; copy it again")
+
+
+# --- the release takes the relays the wire takes, and only those ---------
+#
+# A release stamps SUBSTRATE_APPLE_PUSH_RELAY into a push app and publishes
+# it in the authority document. One the app and the server refuse would
+# leave every install registered nowhere while the document names a relay,
+# so the release's check (`push_relay_valid`, .mise/pushrelay.sh) is held to
+# the wire's own vectors (endpoints.json, the kit's copy of
+# internal/pushwire/testdata's), and to a few the vectors leave out.
+
+VECTORS = os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources", "pushwire", "endpoints.json")
+RELAY_CHECK = os.path.join(ROOT, ".mise", "pushrelay.sh")
+if os.path.isfile(VECTORS) and os.path.isfile(RELAY_CHECK):
+    cases = [(row["relay"], not row.get("refused", False)) for row in json.loads(read(VECTORS))]
+    cases += [
+        ("https://push.example.com:65535", True),
+        ("https://push.example.com:65536", False),
+        ("https://push.example.com:99999", False),
+        ("https:///push", False),
+        ("https://:443/push", False),
+        ("none", False),
+        (" https://push.example.com", False),
+        ("https://push.example.com/" + "a" * 2048, False),
+    ]
+    for relay, accepted in cases:
+        ran = subprocess.run(
+            ["bash", "-c", '. "$1"; push_relay_valid "$2"', "pushrelay", RELAY_CHECK, relay], capture_output=True, check=False
+        )
+        if (ran.returncode == 0) != accepted:
+            flag(f"{rel(RELAY_CHECK)}: push_relay_valid {'refuses' if accepted else 'takes'} {relay[:80]!r}, which the wire {'takes' if accepted else 'refuses'}")
 
 
 for failure in failures:

@@ -180,7 +180,11 @@ extension ChatAppState {
         approvals.filter { $0["thread"]?.referenceID == thread && $0["requestedIn"]?.referenceID != nil }.map(\.id)
     }
 
-    var unreadCount: Int { threads.count { unread($0) } }
+    /// The badge: the unread chats, and only chats, however the list shows
+    /// automated runs. It is the server's rule for the count a push sets
+    /// (`chat` is what Substrate Chat lists by default), so the number on
+    /// the icon is one the person can see go down.
+    var unreadCount: Int { threads.count { $0.mode == "chat" && unread($0) } }
 
     /// The settled chats that read as unread, listed or opened on their own.
     var unreadThreads: Set<String> {

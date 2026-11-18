@@ -3,6 +3,9 @@
 public enum ChatRoute: Codable, Equatable, Sendable {
     case thread(String)
     case newChat(agent: String?, listen: Bool)
+    /// The chat list: a push meant for an earlier registration of this
+    /// install opens no chat.
+    case list
 }
 
 /// Where the app is on the screen.

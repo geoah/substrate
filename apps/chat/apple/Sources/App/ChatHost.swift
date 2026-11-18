@@ -27,6 +27,9 @@ final class ChatHost {
         var preferences: any PreferenceStore
         var notifications: (any Notifications)?
         var background: (any BackgroundWork)?
+        /// The registration with the publisher's push relay: the device's
+        /// alone, never a fixture's.
+        var push: PushRegistrar?
         /// The device's network where nil.
         var connectivity: (any Connectivity)?
 
@@ -34,7 +37,7 @@ final class ChatHost {
             Parts(
                 sessions: .chat, transport: URLSessionTransport.shared, folders: ApplicationFolders(name: "SubstrateChat"),
                 preferences: DefaultsPreferenceStore(defaults: .standard), notifications: ChatServices.notifications,
-                background: ChatServices.background)
+                background: ChatServices.background, push: ChatServices.push)
         }
     }
 
@@ -78,6 +81,7 @@ final class ChatHost {
         }
         environment.devices.notifications = parts.notifications
         environment.devices.background = parts.background
+        environment[PushRegistrarKey.self] = parts.push
         if let connectivity = parts.connectivity { environment.devices.connectivity = connectivity }
         #if os(iOS)
         let platform = ChatPlatform.ios

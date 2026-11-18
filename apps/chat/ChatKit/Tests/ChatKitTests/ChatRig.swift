@@ -1,9 +1,11 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
+import SubstrateScreens
 import SubstrateTesting
 import Testing
 
@@ -128,7 +130,8 @@ struct ChatRig {
     init(
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
         base: URL = temporaryFolder("chat"), transport: (any HTTPTransport)? = nil, clock: TestClock = TestClock(),
-        ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil, page: Int = 100
+        ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil, page: Int = 100,
+        push: PushRegistrar? = nil
     ) {
         server = ChatServer(routes)
         self.clock = clock
@@ -142,10 +145,11 @@ struct ChatRig {
         // A seeded run watches every wait the app makes on it.
         let waits: any RuntimeClock = watch.map { WatchedClock(clock: clock, watch: $0) } ?? clock
         client.pause = { seconds in try await waits.sleep(until: waits.now.addingTimeInterval(seconds)) }
-        let environment = AppEnvironment(
+        var environment = AppEnvironment(
             clock: waits, ids: ids, locale: Locale(identifier: "en_US"),
             timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
             devices: DeviceServices(transport: transport, notifications: notifications, background: background))
+        environment[PushRegistrarKey.self] = push
         harness = ControllerHarness(
             ChatApp(storage: storage, preferences: preferences, platform: platform, verifiesParts: true, page: page), clock: clock,
             environment: environment)
@@ -153,8 +157,11 @@ struct ChatRig {
 
     var runtime: Runtime<ChatApp> { harness.runtime }
 
+    /// Signed in with the token a held push registration names
+    /// (`HeldPush`): a push sync is asked for it.
     func signIn() async throws {
-        await runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: scopes, online: true))
+        await runtime.linkChanged(
+            LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: scopes, tokenID: HeldPush.tokenID, online: true))
         try await harness.until { harness in
             let state = await harness.state
             return state.loaded && !state.refreshing

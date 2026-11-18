@@ -16,10 +16,20 @@ extension ChatApp {
         case let .diskOpened(disk):
             lines.append(
                 Diagnostic("launch").with("platform", platform).with("folder_read", disk.state != nil).with("unsent", disk.unsent.count))
-        case let .featuresRead(agents, records):
+        case let .featuresRead(agents, records, push):
             // Said when it moves: the document is read with every refresh.
-            if previous.agentsRevision != agents || previous.recordsRevision != state.recordsRevision || previous.flags != state.flags {
-                lines.append(Diagnostic("features").with("agents", agents).with("records", records).with("flags", state.flags))
+            if previous.agentsRevision != agents || previous.recordsRevision != state.recordsRevision || previous.flags != state.flags
+                || previous.pushRevision != push
+            {
+                lines.append(
+                    Diagnostic("features").with("agents", agents).with("records", records).with("flags", state.flags)
+                        .with("push", push > 0 ? push : nil))
+            }
+        case let .pushSynced(facts):
+            // Said when it moves: where the registration stands, never its
+            // token, its key or its relay.
+            if previous.push?.standing != facts.standing || previous.push?.held != facts.held {
+                lines.append(Diagnostic("push").with("standing", facts.standing).with("held", facts.held))
             }
         case let .refreshFailed(failure), let .readFailed(failure), let .keyFailed(failure):
             lines.append(Diagnostic("failure").with(failure))

@@ -309,6 +309,7 @@ apple_release_build() {
 		${SITE[@]+"${SITE[@]}"}
 	)
 	if app_has "$app" macos; then SETTINGS+=(SUBSTRATE_SPARKLE_KEY="$SPARKLE_KEY"); fi
+	if app_push "$app"; then SETTINGS+=("SUBSTRATE_PUSH_RELAY=$(push_relay_stamp)"); fi
 	local name="$scheme-${version%%+*}" entries='{}'
 	if app_has "$app" macos; then
 		apple_archive "$app" "$scheme" macOS "$scratch" "${SUBSTRATE_APPLE_EXPORT_MACOS:-debugging}"
@@ -364,6 +365,7 @@ apple_testflight_build() {
 		SUBSTRATE_PRIVACY_POLICY="$SUBSTRATE_APPLE_PRIVACY_URL"
 		${SITE[@]+"${SITE[@]}"}
 	)
+	if app_push "$app"; then SETTINGS+=("SUBSTRATE_PUSH_RELAY=$(push_relay_stamp)"); fi
 	apple_archive "$app" "$scheme" iOS "$scratch" app-store-connect
 	APPLE_IPA="$(find "$scratch/iOS" -maxdepth 1 -name '*.ipa' | head -1)"
 	[ -n "$APPLE_IPA" ] || die "$app's App Store Connect export made no IPA"
@@ -497,15 +499,17 @@ PY
 	plutil -insert "$key" -string "$minimum" "$plist"
 	plutil -insert "$(app_get "$app" .apple.clientIDKey)" -string "$APPLE_CLIENT" "$plist"
 	plutil -insert "$(app_get "$app" .apple.redirectKey)" -string "$APPLE_REDIRECT" "$plist"
+	if [ "$platform" = iOS ] && app_push "$app"; then plutil -insert SubstratePushRelay -string "$(push_relay_stamp)" "$plist"; fi
 	if [ "$platform" = iOS ]; then
 		(cd "$scratch/$platform-placeholder" && zip -qr "../iOS/$scheme.ipa" Payload)
 	fi
 }
 
 # Holds a built app's Info.plist to what the release stamped: the bundle id
-# app.json names, the version, and the client id and redirect under the
-# keys app.json names, so a build that would sign in as another app, or as
-# a local one, never reaches a feed. Sets APPLE_MINIMUM, the system the
+# app.json names, the version, the client id and redirect under the keys
+# app.json names, and a push app's relay, so a build that would sign in as
+# another app, or as a local one, or register with another relay, never
+# reaches a feed. Sets APPLE_MINIMUM, the system the
 # build needs, which its feed entry carries.
 apple_check() {
 	local app="$1" platform="$2" plist="$3" client_key redirect_key key expected got
@@ -526,6 +530,13 @@ apple_check() {
 		got="$(plutil -extract "$key" raw -o - "$plist" 2>/dev/null || true)"
 		[ "$got" = "$expected" ] || die "$app's $platform build has $key '$got', and the release stamped '$expected'"
 	done
+	# A push app's iPhone and iPad build registers with the relay it was
+	# stamped with, or nowhere where that is `none`; the Mac's takes none yet.
+	if [ "$platform" = iOS ] && app_push "$app"; then
+		expected="$(push_relay_stamp)"
+		got="$(plutil -extract SubstratePushRelay raw -o - "$plist" 2>/dev/null || true)"
+		[ "$got" = "$expected" ] || die "$app's $platform build has SubstratePushRelay '$got', and the release stamped '$expected'"
+	fi
 	if [ "$platform" = macOS ]; then key=LSMinimumSystemVersion; else key=MinimumOSVersion; fi
 	APPLE_MINIMUM="$(plutil -extract "$key" raw -o - "$plist" 2>/dev/null || true)"
 	[ -n "$APPLE_MINIMUM" ] || die "$app's $platform build names no $key"
@@ -566,7 +577,16 @@ store_profiles() {
 	done < <(find "$archive/Products/Applications" \( -name '*.app' -o -name '*.appex' \) -type d -print0)
 	dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 	mkdir -p "$dir"
-	lines="$(xcrun swift "$APPLE_ROOT/apps/xcode/scripts/appstoreconnect.swift" profiles "$dir" "$hashes" "${bundles[@]}")" || return 1
+	# The App ID of an app that takes pushes needs Push Notifications before
+	# its App Store profile is made, so a release never depends on a
+	# development build having turned it on first.
+	local push=() app
+	for bundle in "${bundles[@]}"; do
+		for app in $(ui_apps); do
+			if [ "$(app_get "$app" .apple.bundleID)" = "$bundle" ] && app_push "$app"; then push+=("$bundle"); fi
+		done
+	done
+	lines="$(SUBSTRATE_APPLE_PUSH_BUNDLES="${push[*]-}" xcrun swift "$APPLE_ROOT/apps/xcode/scripts/appstoreconnect.swift" profiles "$dir" "$hashes" "${bundles[@]}")" || return 1
 	while read -r bundle uuid; do
 		mapping="$(jq -c --arg b "$bundle" --arg u "$uuid" '. + {($b): $u}' <<<"$mapping")"
 	done <<<"$lines"

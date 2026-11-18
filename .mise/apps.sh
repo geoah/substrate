@@ -67,6 +67,8 @@ RUN=""
 source "$ROOT/.mise/apple.sh"
 # shellcheck source=.mise/apps-android.sh
 source "$ROOT/.mise/apps-android.sh"
+# shellcheck source=.mise/pushrelay.sh
+source "$ROOT/.mise/pushrelay.sh"
 
 say() { echo "apps: $*"; }
 die() {
@@ -115,6 +117,50 @@ app_has() {
 	return 1
 }
 app_has_apple() { app_has "$1" ios || app_has "$1" macos; }
+
+# Whether an app takes pushes from its publisher's relay: `"push": true` in
+# its app.json.
+app_push() { [ "$(jq -r '.push // false' "$(app_json "$1")")" = true ]; }
+
+# The push relay a release builds into every app that takes pushes, and the
+# authority document names for it: SUBSTRATE_APPLE_PUSH_RELAY, a relay the
+# wire takes (push_relay_valid, .mise/pushrelay.sh), or `none` for a build
+# that registers nowhere. Refused where an app of $@ takes pushes and it is
+# unset, so no release leaves its builds without a relay while the document
+# still names one; and refused empty wherever it is set, since an empty one
+# would read as `none` and drop the relay from the live document.
+push_relay_env() {
+	local app relay="${SUBSTRATE_APPLE_PUSH_RELAY-}"
+	for app in "$@"; do
+		app_push "$app" || continue
+		[ -n "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ] ||
+			die "$app takes pushes (\"push\": true in its app.json); set SUBSTRATE_APPLE_PUSH_RELAY to its push relay's https origin, or to none for a build that registers nowhere"
+		break
+	done
+	[ -n "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ] || return 0
+	[ -n "$relay" ] || die "SUBSTRATE_APPLE_PUSH_RELAY is set and empty; set it to the push relay's https origin, or to none"
+	[ "$relay" != none ] || return 0
+	push_relay_valid "$relay" ||
+		die "SUBSTRATE_APPLE_PUSH_RELAY is no relay the app and the server take (an https URL with a host, a port from 1 to 65535 if any, an optional path, and no user info, query or fragment): $relay"
+}
+
+# What a push app's build is stamped with (SUBSTRATE_PUSH_RELAY, read from
+# its Info.plist as SubstratePushRelay): the relay, or `none`.
+push_relay_stamp() { echo "${SUBSTRATE_APPLE_PUSH_RELAY:-none}"; }
+
+# The relay the authority document names for app $1, whose client id is
+# $2, against the published document $3: SUBSTRATE_APPLE_PUSH_RELAY where
+# it is set, nothing for `none`, and where it is unset what the live
+# document says for that app, carried forward as the publisher's name is.
+site_push_relay() {
+	local app="$1" client="$2" published="$3"
+	app_push "$app" || return 0
+	if [ -n "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ]; then
+		[ "$SUBSTRATE_APPLE_PUSH_RELAY" = none ] || echo "$SUBSTRATE_APPLE_PUSH_RELAY"
+		return 0
+	fi
+	jq -r --arg client "$client" '[.apps // [] | .[] | select(.client_id == $client) | .push.relay // empty | strings] | first // empty' <<<"$published"
+}
 
 # The apps with a UI on any platform: the default release, and the apps the
 # site speaks for. The one at the release folder's root (the console's, the
@@ -1193,7 +1239,7 @@ site_build() {
 			+ [$new | to_entries[] | select(.key as $name | $names | index($name) | not) | {package: .key, versions: (.value | sort_by(-.version))}])
 		| sort_by(.package)' <<<"$published")"
 
-	local details="[]" ids="[]" apps="[]" links="[]" listed="" entry fingerprints
+	local details="[]" ids="[]" apps="[]" links="[]" listed="" entry fingerprints relay
 	for app in $(ui_apps); do
 		mkdir -p "$out/apps/$app"
 		client_document "$app" >"$out/apps/$app/client.json"
@@ -1220,6 +1266,10 @@ site_build() {
 					'. + [{relation: ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
 						target: {namespace: "android_app", package_name: $package, sha256_cert_fingerprints: $fingerprints}}]' <<<"$links")"
 			fi
+		fi
+		relay="$(site_push_relay "$app" "$site/apps/$app/client.json" "$published")"
+		if [ -n "$relay" ]; then
+			entry="$(jq -c --arg relay "$relay" '. + {push: {relay: $relay}}' <<<"$entry")"
 		fi
 		apps="$(jq -c --argjson entry "$entry" '. + [$entry]' <<<"$apps")"
 	done
@@ -1501,7 +1551,8 @@ stage_root() {
 # What a staged build was made for, as JSON: the mode (a dry run's stage
 # carries placeholders and unsigned builds, and never reaches a bucket), the
 # places it publishes to, which its builds carry stamped in (the feeds'
-# address, the client ids, the redirects and the site host), the authority
+# address, the client ids, the redirects, the site host and the push
+# relay), the authority
 # the site speaks for, and the identities its builds are signed with and
 # checked against. A rerun resumes a stage only where every one of them is
 # what the stage was made for.
@@ -1518,11 +1569,11 @@ stage_identity() {
 	fi
 	jq -n --arg mode "$([ -n "$DRY" ] && echo dry-run || echo release)" \
 		--arg release "${SUBSTRATE_APPLE_RELEASE_URL%/}" --arg site "$site" --arg upload "$upload" \
-		--arg authority "$authority" --arg team "${SUBSTRATE_APPLE_TEAM_ID:-}" \
+		--arg authority "$authority" --arg team "${SUBSTRATE_APPLE_TEAM_ID:-}" --arg push "${SUBSTRATE_APPLE_PUSH_RELAY-}" \
 		--arg apple "$([ -n "$DRY" ] && echo unsigned || echo "ios:${SUBSTRATE_APPLE_EXPORT_IOS:-debugging} macos:${SUBSTRATE_APPLE_EXPORT_MACOS:-debugging}")" \
 		--arg android "$android" '{
 			mode: $mode,
-			destinations: {release: $release, site: $site, siteUpload: $upload, authority: $authority},
+			destinations: {release: $release, site: $site, siteUpload: $upload, authority: $authority, pushRelay: $push},
 			signing: {appleTeam: $team, apple: $apple, androidCertificate: $android}
 		}'
 }
@@ -1782,6 +1833,7 @@ release() {
 			[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
 			[ -n "$(app_platforms "$app")" ] || die "$app has no UI on any platform its app.json names, so there is nothing of it to release"
 		done
+		push_relay_env "${RELEASE_APPS[@]}"
 		stamp "$channel"
 		REL_DIR="$(stage_root)/$build"
 		STAGE="$REL_DIR/stage"
@@ -1820,6 +1872,9 @@ site() {
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site}"
 	site_url >/dev/null || exit 1
 	dry_only
+	# Unset carries every push app's relay forward from the live document;
+	# set, it is held as a release holds it, and an empty one is refused.
+	[ -z "${SUBSTRATE_APPLE_PUSH_RELAY+x}" ] || push_relay_env
 	if [ -z "$DRY" ]; then
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
@@ -1918,6 +1973,7 @@ testflight() {
 		[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
 		app_has "$app" ios || die "$app has no iPhone and iPad UI, so there is nothing of it for TestFlight"
 	done
+	push_relay_env "${RELEASE_APPS[@]}"
 	# Every build reaches every tester the group gives it to, at once: never
 	# one of code nobody committed.
 	[ -z "$(git -C "$ROOT" status --porcelain)" ] || die "TestFlight builds are made from a clean tree; commit or set aside what is changed"

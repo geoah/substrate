@@ -1,9 +1,11 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
+import SubstrateScreens
 
 /// The effects' work: the reads, the watch, the device's folder and its
 /// services. Each reads the client when it runs and never keeps it.
@@ -26,6 +28,7 @@ extension ChatApp {
         let preferences = preferences
         let notifications = environment.devices.notifications
         let background = environment.devices.background
+        let push = environment[PushRegistrarKey.self]
         let ids = environment.ids
         @Sendable func failed(_ attempt: Failure.Attempt, _ error: any Error, _ client: SubstrateClient) -> Failure {
             Failure(attempt, error, server: client.server)
@@ -68,7 +71,7 @@ extension ChatApp {
                     .diskOpened(
                         .init(
                             lease: lease, state: state, drafts: storage.drafts(lease), unsent: storage.unsent(lease),
-                            preferences: preferences.load(identity), stale: stale)))
+                            preferences: preferences.load(identity), stale: stale, push: await push?.facts())))
             }
         case let .closeDisk(identity, deleting):
             // Fenced now, before any later effect starts.
@@ -228,7 +231,8 @@ extension ChatApp {
                         let discovery = try await client.discovery()
                         return Event(
                             .featuresRead(
-                                agents: discovery.feature("agents")?.revision ?? 0, records: discovery.feature("records")?.revision ?? 0))
+                                agents: discovery.feature("agents")?.revision ?? 0, records: discovery.feature("records")?.revision ?? 0,
+                                push: discovery.feature("push")?.revision ?? 0))
                     } catch is ServerError {
                         // The server's own answer: it has no such document.
                         return nil
@@ -589,6 +593,43 @@ extension ChatApp {
             return Self.device(notifications) { await $0.cancelAll() }
         case let .badge(count):
             return Self.device(notifications) { await $0.setBadge(count) }
+        case let .serverBadge(local, ceiling):
+            guard let notifications else { return .none }
+            return .once {
+                // Push off: the app counts for itself. A read that does not
+                // reach the server keeps the last count it gave.
+                guard let client = await source.current() else { return nil }
+                let served: Int?
+                do {
+                    served = try await client.pushBadge()
+                } catch {
+                    return nil
+                }
+                guard !Task.isCancelled else { return nil }
+                let count = served.map { min($0, ceiling ?? $0) } ?? local
+                await notifications.setBadge(count)
+                return nil
+            }
+        case let .syncPush(listed, notifies, tokenID):
+            guard let push else { return .none }
+            // Said now, as the effect starts, in the order they are asked:
+            // every attempt, this one and any still queued, reads the newest
+            // when it runs, and the permission then. The attempt is for the
+            // sign-in the ask was made under, whenever it runs.
+            push.want(listed: listed, notifies: notifies) {
+                let permitted = await notifications?.permission()
+                return permitted == .on || permitted == .notTimeSensitive
+            }
+            return .once { Event(.pushSynced(await push.sync(tokenID: tokenID))) }
+        case let .reconcilePush(read, settled, pending):
+            return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled), pending: pending) }
+        case .readDelivered:
+            guard let notifications, let push else { return .none }
+            // Only this sign-in's pushes: a fallback alert another sign-in's
+            // push left never sends its thread's id to this server.
+            return .once { Event(.pushDelivered(await Self.deliveredThreads(notifications) { await push.accepts($0) })) }
+        case let .showing(threads):
+            return Self.device(notifications) { await $0.showing(threads: Set(threads)) }
         case .askPermission:
             guard let notifications else { return .none }
             return .once { Event(.permissionRead(await notifications.requestPermission())) }
@@ -603,7 +644,11 @@ extension ChatApp {
                         // An action is answered in the background, under
                         // ids minted for it as it arrives.
                         guard case .named = response.action else {
-                            yield(.notificationOpened(response))
+                            // A push opens its chat only for this install's
+                            // registration.
+                            let generation = response.userInfo[PushPayload.Key.generation]
+                            let accepted = if let generation, let push { await push.accepts(generation) } else { false }
+                            yield(.notificationOpened(Self.opened(response, accepted: accepted)))
                             continue
                         }
                         yield(
@@ -686,7 +731,10 @@ extension ChatApp {
         threads.flagsUnserved = plan.flags && !flagged
         if flagged {
             let pinned = try await ChatLists.all(client, .pinned, modes: modes(plan), page: plan.page)
-            let waiting = try await ChatLists.all(client, .waiting, modes: modes(plan), page: plan.page)
+            // What waits on the person, in any conversation mode, however
+            // the list shows automated runs: a request a push names may be
+            // a scheduled run's or a call's, and it opens from here.
+            let waiting = try await ChatLists.all(client, .waiting, modes: conversationModes, page: plan.page)
             (threads.pinned, threads.waiting) = (pinned.records, waiting.records)
             // The watch opens from the oldest head of the reads.
             chats.head = min(chats.head, pinned.head, waiting.head)

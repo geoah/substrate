@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "cbe99ba2167b28c6808b8c2e3875ac42e6768f2ce96f106a14169443767727d9"
+    public const val VALUE: String = "428579ddcc06558e0d7a24bc1bfa1aa2afca963bdb53cff6b3f25f719e957938"
 }
 
 /**
@@ -840,6 +840,7 @@ public data class LinkSnapshot(
     val server: String? = null,
     val repository: String? = null,
     val scopes: List<String>? = null,
+    val tokenID: String? = null,
     val accessEnds: String? = null,
     val generation: Long,
     val online: Boolean? = null,

@@ -987,6 +987,7 @@
         {"name": "server", "type": "URL?"},
         {"name": "repository", "type": "String?"},
         {"name": "scopes", "type": "[String]?"},
+        {"name": "tokenID", "type": "String?"},
         {"name": "accessEnds", "type": "Date?"},
         {"name": "generation", "type": "Int"},
         {"name": "online", "type": "Bool?"},

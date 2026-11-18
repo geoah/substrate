@@ -20,6 +20,9 @@ public struct LinkSnapshot: Bridged, Equatable {
     /// An app session's approved scopes; nil for a password session, which
     /// reaches everything.
     public var scopes: [String]?
+    /// The id of the session's token record, which names its device record:
+    /// work asked for one sign-in is bound to it. An id, never the token.
+    public var tokenID: String?
     public var accessEnds: Date?
     /// Moved by every sign-out: background work scheduled under another
     /// writes nothing.
@@ -33,7 +36,7 @@ public struct LinkSnapshot: Bridged, Equatable {
     public var refused: Int
 
     public init(
-        phase: Phase = .signedOut, server: URL? = nil, repository: String? = nil, scopes: [String]? = nil,
+        phase: Phase = .signedOut, server: URL? = nil, repository: String? = nil, scopes: [String]? = nil, tokenID: String? = nil,
         accessEnds: Date? = nil, generation: Int = 0, online: Bool? = nil, packages: [String: Int] = [:],
         waiting: Int = 0, refused: Int = 0
     ) {
@@ -41,6 +44,7 @@ public struct LinkSnapshot: Bridged, Equatable {
         self.server = server
         self.repository = repository
         self.scopes = scopes
+        self.tokenID = tokenID
         self.accessEnds = accessEnds
         self.generation = generation
         self.online = online

@@ -36,6 +36,14 @@ public protocol Notifications: Sendable {
     /// `prefix`: what an app that schedules a whole plan takes back when
     /// the plan no longer holds them, across launches.
     func pending(prefix: String) async -> [String]
+    /// The notifications shown and still standing, the pushed ones among
+    /// them: what an app reconciles with what it reads when it comes to the
+    /// front, and takes back by id (`cancel(_:)`).
+    func delivered() async -> [DeliveredNotification]
+    /// The threads the app shows in front now: a notification of one of
+    /// them, pushed or local, shows nothing while the app is in front, since
+    /// the screen already says it.
+    func showing(threads: Set<String>) async
     /// What the owner does with the app's notifications from now on: a tap,
     /// an action, a dismissal, each once. One that came before anything
     /// read the stream (the tap that launched the app) is kept for the first
@@ -69,6 +77,8 @@ public extension Notifications {
     func cancelAll() async {}
     func setBadge(_ count: Int) async {}
     func pending(prefix: String) async -> [String] { [] }
+    func delivered() async -> [DeliveredNotification] { [] }
+    func showing(threads: Set<String>) async {}
     func responses() -> AsyncStream<NotificationResponse> { AsyncStream { $0.finish() } }
     func finished(_ response: NotificationResponse) async {}
 }

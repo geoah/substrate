@@ -20,14 +20,17 @@ var ErrRelay = errors.New("a push relay is an https URL with a host, an optional
 // normalized, so the server, the app and the publisher's tooling compare the
 // same strings. relay is an https URL with a host and a port, if any, from 1
 // to 65535, an optional path, and no user info, query or fragment, of at most
-// MaxRelay characters.
+// MaxRelay characters. Its host holds no "%" once decoded: an IPv6 zone
+// ("[fe80::1%25en0]") names an interface of one machine, which no
+// publisher's relay needs, and the app and the release tooling refuse it
+// and an escaped "%" alike.
 func Endpoint(relay, path string) (string, error) {
 	if !strings.HasPrefix(path, "/") || len(relay) > MaxRelay || strings.ContainsAny(relay, "?#\\") {
 		return "", ErrRelay
 	}
 	u, err := url.Parse(relay)
 	if err != nil || u.Scheme != "https" || !strings.HasPrefix(relay, "https://") || u.Host == "" || u.Hostname() == "" ||
-		u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(u.Host, "%") {
 		return "", ErrRelay
 	}
 	if port := u.Port(); port != "" || strings.HasSuffix(u.Host, ":") {

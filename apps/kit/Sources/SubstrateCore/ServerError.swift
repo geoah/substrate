@@ -19,6 +19,9 @@ public struct ServerError: LocalizedError, Sendable, Equatable {
 
     public let status: Int
     public let code: String
+    /// What narrows the code where a client acts on the case (`no_relay`
+    /// beside `forbidden`); nil where the envelope names none.
+    public let reason: String?
     public let message: String
     public let problems: [String]
     public let problemDetails: [ProblemDetail]
@@ -40,6 +43,7 @@ public struct ServerError: LocalizedError, Sendable, Equatable {
         else { return nil }
         self.status = status
         code = (error["code"] as? String) ?? ""
+        reason = error["reason"] as? String
         self.message = message
         problems = (error["problems"] as? [String]) ?? []
         problemDetails = ((error["problemDetails"] as? [[String: Any]]) ?? []).compactMap { detail in
@@ -51,10 +55,11 @@ public struct ServerError: LocalizedError, Sendable, Equatable {
 
     public init(
         status: Int, code: String = "", message: String, problems: [String] = [], problemDetails: [ProblemDetail] = [],
-        head: Int? = nil, generation: String? = nil
+        head: Int? = nil, generation: String? = nil, reason: String? = nil
     ) {
         self.status = status
         self.code = code
+        self.reason = reason
         self.message = message
         self.problems = problems
         self.problemDetails = problemDetails

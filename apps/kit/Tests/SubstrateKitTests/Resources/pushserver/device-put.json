@@ -1,0 +1,20 @@
+{
+  "path": "/api/v1/substrate.reamde.dev/core/device/{tokenId}",
+  "create": {
+    "body": {"properties": {"name": "iPhone", "platform": "ios", "pushKey": "v1.Qm9vbGVhbi", "notifies": ["replies", "requests"]}},
+    "status": 201
+  },
+  "update": {
+    "body": {"properties": {"name": "iPhone", "platform": "ios", "pushKey": "v1.Rm9yd2FyZA"}},
+    "status": 200
+  },
+  "refusals": [
+    {"why": "a create without notifies", "fresh": true, "body": {"properties": {"name": "iPhone", "platform": "ios", "pushKey": "v1.Qm9vbGVhbi"}}, "status": 422, "code": "validation"},
+    {"why": "notifies empty", "body": {"properties": {"notifies": []}}, "status": 422, "code": "validation"},
+    {"why": "a notifies value the kind does not know", "body": {"properties": {"notifies": ["everything"]}}, "status": 422, "code": "validation"},
+    {"why": "a name over 100 characters", "body": {"properties": {"name": "iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone iPhone"}}, "status": 422, "code": "validation"},
+    {"why": "a key a put body does not carry", "body": {"data": {"properties": {"name": "iPhone"}}}, "status": 400, "code": "bad_request"},
+    {"why": "a misspelled ifVersion", "body": {"ifversion": 1, "properties": {"name": "iPhone"}}, "status": 400, "code": "bad_request"},
+    {"why": "another token's id", "otherToken": true, "body": {"properties": {"name": "iPhone", "platform": "ios", "pushKey": "v1.Qm9vbGVhbi", "notifies": ["replies"]}}, "status": 403, "code": "forbidden"}
+  ]
+}

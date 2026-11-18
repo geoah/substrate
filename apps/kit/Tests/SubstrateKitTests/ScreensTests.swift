@@ -624,6 +624,44 @@ struct LinkControllerTests {
         #expect(try await SessionStore(storage: refusing).pendingRevocations().count == 1)
     }
 
+    /// The install's device record is deleted while the token can still
+    /// delete it, before the token is revoked, and every registration of the
+    /// sign-in is forgotten, the pending one with the current: a push still
+    /// queued for it opens nothing.
+    @Test func aSignOutDeletesTheDeviceBeforeItRevokesAndForgetsBothGenerations() async throws {
+        var signed = session
+        signed.tokenID = "71ac09be44"
+        let storage = MemoryStorage()
+        try storage.write(JSONEncoder().encode(signed), account: "session")
+        func made(_ generation: String) -> PushState.Registration {
+            .init(
+                generation: generation, relay: "https://push.example.com", publicKey: "k", deviceToken: "ab", environment: .development,
+                notifies: ["replies"], registeredAt: now)
+        }
+        try storage.write(
+            JSONEncoder().encode(PushState(tokenID: "71ac09be44", current: made("gC"), pending: [made("gP")])), account: "session.push")
+        let device = "/api/v1/substrate.reamde.dev/core/device/71ac09be44"
+        let stub = StubTransport().on("POST", "/oauth/revoke").on("DELETE", device, status: 204)
+        let registrar = PushRegistrar(
+            sessions: SessionStore(storage: storage), device: ScriptedPush(), transport: stub, buildRelay: "https://push.example.com",
+            clientID: "https://tasks.example.com/client.json")
+        let (before, waiting) = (await registrar.accepts("gC"), await registrar.accepts("gP"))
+        #expect(before && waiting)
+        var env = environment(transport: stub)
+        env[PushRegistrarKey.self] = registrar
+        let harness = ControllerHarness(link(storage), environment: env)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        await harness.send(.signOut)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
+        let order = stub.requests.map { "\($0.httpMethod ?? "") \($0.url.map(StubTransport.path) ?? "")" }
+        let deleted = try #require(order.firstIndex(of: "DELETE \(device)"))
+        let revoked = try #require(order.firstIndex(of: "POST /oauth/revoke"))
+        #expect(deleted < revoked)
+        #expect(storage.stored(account: "session.push") == nil)
+        let (current, pending) = (await registrar.accepts("gC"), await registrar.accepts("gP"))
+        #expect(!current && !pending)
+    }
+
     /// A sign-out whose removal the store refuses is no sign-out: the link
     /// stays signed in, the token stays kept for revocation and is not
     /// revoked as the one in use, the problem offers Try Again, and Settings

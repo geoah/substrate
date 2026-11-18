@@ -26,5 +26,6 @@
       "dark": "#A286FF"
     }
   },
-  "feed": "chat"
+  "feed": "chat",
+  "push": true
 }

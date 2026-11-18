@@ -1,4 +1,5 @@
 import ChatKit
+import Foundation
 import SubstrateKit
 
 /// The device services Chat's runtime uses, made once, before the app
@@ -16,8 +17,25 @@ enum ChatServices {
     static let background: (any BackgroundWork)? = nil
     #endif
 
+    /// Pushes from the publisher's relay, on iPhone and iPad; the Mac
+    /// follows once a development push has reached a development-signed Mac.
+    #if os(iOS)
+    static let remote: (any PushRegistration)? = RemoteNotifications(topic: Bundle.main.bundleIdentifier ?? "dev.reamde.substrate.chat")
+    #else
+    static let remote: (any PushRegistration)? = nil
+    #endif
+
+    /// The registration with the relay this build names, for the session in
+    /// the Keychain.
+    static let push: PushRegistrar? = remote.map {
+        PushRegistrar(
+            sessions: .chat, device: $0, buildRelay: Bundle.main.object(forInfoDictionaryKey: "SubstratePushRelay") as? String,
+            clientID: ChatManifest.manifest.clientID)
+    }
+
     static func start() {
         SystemNotifications.installDelegate()
         _ = background
+        _ = remote
     }
 }

@@ -286,6 +286,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         let (sessions, manifest, packages, outboxes, fixed) = (sessions, manifest, packages, outboxes, outbox)
         let transport = environment.devices.transport
         let folder = environment.folder
+        let push = environment[PushRegistrarKey.self]
         let now = environment.clock
         @Sendable func client(_ session: Session) -> SubstrateClient {
             SubstrateClient(server: session.server, token: session.secret, transport: transport)
@@ -398,8 +399,16 @@ public struct LinkController<App: LinkedApp>: Controller {
                     // The generation moves first: work scheduled before this
                     // writes nothing from here on.
                     generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
+                    // The install's device record goes while the token can
+                    // still delete it, and every registration of the
+                    // sign-in is retired before the token is revoked; what
+                    // is kept of them goes once the session is.
+                    await push?.signOut(session)
                     try await sessions.signOut(session, transport: transport)
+                    await push?.retired(session)
                 } catch {
+                    // Still signed in: pushes may register again.
+                    push?.signOutFailed(session)
                     return .signOutFailed(explain(error, app: manifest.appName, server: session.server), generation: generation)
                 }
                 // The sign-out only kept the token for revocation: it is
@@ -449,7 +458,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         LinkSnapshot(
             phase: state.session == nil ? .signedOut : state.accessEnded ? .accessEnded : .signedIn,
             server: state.session?.server, repository: state.session?.repository, scopes: state.session?.scopes,
-            accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
+            tokenID: state.session?.tokenID, accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
             packages: state.packages.compactMapValues(\.held), waiting: state.outbox.waiting, refused: state.outbox.parked.count)
     }
 

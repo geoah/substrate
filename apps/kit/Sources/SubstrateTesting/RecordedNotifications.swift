@@ -15,6 +15,8 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
         case badge(Int)
         /// The app said it had done what this response's action asked.
         case finished(NotificationResponse)
+        /// The threads the app said it shows in front, sorted.
+        case showing([String])
     }
 
     private let lock = NSLock()
@@ -22,6 +24,7 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     private var answered: NotificationPermission
     private var kept: [Call] = []
     private var held: [NotificationResponse] = []
+    private var shown: [DeliveredNotification] = []
     private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
     private var whenFinished: (@Sendable (NotificationResponse) -> Void)?
 
@@ -42,7 +45,7 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
                 case let .schedule(request): out[request.id] = request
                 case let .cancel(id): out[id] = nil
                 case .cancelAll: out = [:]
-                case .requestPermission, .register, .cancelThread, .badge, .finished: break
+                case .requestPermission, .register, .cancelThread, .badge, .finished, .showing: break
                 }
             }
             return out
@@ -82,15 +85,39 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     }
 
     public func cancel(_ id: String) async {
-        lock.withLock { kept.append(.cancel(id)) }
+        lock.withLock {
+            kept.append(.cancel(id))
+            shown.removeAll { $0.id == id }
+        }
     }
 
     public func cancel(thread: String) async {
-        lock.withLock { kept.append(.cancelThread(thread)) }
+        lock.withLock {
+            kept.append(.cancelThread(thread))
+            shown.removeAll { $0.thread == thread }
+        }
     }
 
     public func cancelAll() async {
-        lock.withLock { kept.append(.cancelAll) }
+        lock.withLock {
+            kept.append(.cancelAll)
+            shown = []
+        }
+    }
+
+    /// A notification the system shows, as a push the app never scheduled
+    /// is: what `delivered()` answers until it is taken back.
+    public func deliver(_ notification: DeliveredNotification) {
+        lock.withLock { shown.append(notification) }
+    }
+
+    /// The notifications shown and not taken back.
+    public var standing: [DeliveredNotification] { lock.withLock { shown } }
+
+    public func delivered() async -> [DeliveredNotification] { standing }
+
+    public func showing(threads: Set<String>) async {
+        lock.withLock { kept.append(.showing(threads.sorted())) }
     }
 
     public func setBadge(_ count: Int) async {

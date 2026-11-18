@@ -35,10 +35,7 @@ extension ChatApp {
             background: background.map(Self.choice), backgroundTitle: "Works for other agents",
             backgroundFooter: "These agents only take work from other agents, so they are not offered for chats.")
         let prefs = state.preferences
-        let reach =
-            platform == .ios
-            ? "iPhone and iPad have no push from your server: a reply notifies when the app sees it settle while it is open, or when iOS lets it check in the background."
-            : "Your server has no push: replies and questions notify while the app is open."
+        let reach = Self.reach(state, platform: platform)
         let denied = state.permission == .off
         // Not asked yet, or the app's offer was put off: asked from here.
         let unasked = state.permission == .notAsked
@@ -84,6 +81,30 @@ extension ChatApp {
         return ChatSettingsPresentation(
             assistants: assistants, guidance: guidance(state), sections: sections, notificationsDenied: denied,
             voiceLocale: prefs.voiceLocale)
+    }
+
+    /// How a reply or a question reaches the person while the app is not
+    /// open: through pushes where the install holds a registration, and
+    /// why not where it does not and the person could change that.
+    static func reach(_ state: State, platform: ChatPlatform) -> String {
+        let local =
+            platform == .ios
+            ? "a reply notifies when the app sees it settle while it is open, or when iOS lets it check in the background."
+            : "replies and questions notify while the app is open."
+        guard platform == .ios else { return "Your server has no push here: " + local }
+        if state.pushHeld {
+            return "Replies and questions reach this device from your server even while Substrate Chat is closed."
+        }
+        switch state.push?.standing {
+        case .noRelay? where state.session?.scopes == nil:
+            return "This sign-in doesn't notify a closed app: it has no access of Substrate Chat's own. "
+                + "Move to app access, where your server offers it, and it will. Until then " + local
+        case .off?:
+            return "Your server's operator turned push off: " + local
+        default:
+            break
+        }
+        return state.pushListed ? "Your server can't push to this device now: " + local : "Your server has no push: " + local
     }
 
     /// The owner's memories and instructions, in the words the console's

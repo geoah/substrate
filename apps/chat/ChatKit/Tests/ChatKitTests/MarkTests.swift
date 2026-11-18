@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
@@ -10,8 +11,8 @@ import Testing
 
 extension ChatRig {
     /// A device signed in to a server several share.
-    init(marks server: MarkServer, platform: ChatPlatform = .macos, base: URL = temporaryFolder("chat")) {
-        self.init([], platform: platform, base: base, transport: server)
+    init(marks server: MarkServer, platform: ChatPlatform = .macos, base: URL = temporaryFolder("chat"), push: PushRegistrar? = nil) {
+        self.init([], platform: platform, base: base, transport: server, push: push)
     }
 
     /// Signed in to a server that keeps marks: the list and the person's

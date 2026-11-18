@@ -219,8 +219,10 @@ extension ChatApp {
             state.archive.window.reading = false
         }
         for record in threads.named.map(newer) where !replaceHeld(&state, record) {
-            // No list holds it: a chat a window shows keeps its row beside them.
-            if open.contains(record.id) || state.others[record.id] != nil {
+            // No list holds it: a chat a window shows keeps its row beside
+            // them, and so does one a pushed alert on the device names, so
+            // its mark can take the alert back.
+            if open.contains(record.id) || state.others[record.id] != nil || state.pushDelivered.contains(record.id) {
                 state.others[record.id] = record
             } else if threads.waiting != nil, ChatThread(record: record).waiting > 0 {
                 // It came to wait after the lists were read: one of the
@@ -302,7 +304,9 @@ extension ChatApp {
     /// taken back by its mark and never by its row going missing.
     func beside(_ state: State) -> [String] {
         var seen: Set<String> = []
-        return (state.conversations.values.compactMap(\.thread).sorted() + state.others.keys.sorted() + state.announced.sorted())
+        return
+            (state.conversations.values.compactMap(\.thread).sorted() + state.others.keys.sorted() + state.announced.sorted()
+            + state.pushDelivered.sorted())
             .filter { seen.insert($0).inserted }
     }
 

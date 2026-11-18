@@ -1,0 +1,48 @@
+{
+  "now": 1763459123,
+  "key": {
+    "token": "02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be",
+    "topic": "dev.reamde.substrate.chat",
+    "environment": "production",
+    "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+    "generation": "jPFx1d3VWfLE3W0iVXra0A",
+    "issued": 1763459000
+  },
+  "signature": "t=1763459123,s=2giQ7mVy-fZcQhVdvzC-QDELpFUokicjBn-xIQvLXlnh8tj9Rb-5ln6QmbtPkGKK5EdZmYGCp2qQePwZQUQjCg",
+  "body": "{\"pushKey\":\"v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI\",\"event\":\"reply\",\"thread\":\"8f2c41d07a\",\"badge\":3,\"eventId\":\"TuPd03sorUAcP2jyq4S13Mp817hPpYPlf1PLlst5s8xd5JYjqE1vXupAwLb00BDu2GxYRi7JMoxU6n5h\"}",
+  "apple": {
+    "environment": "production",
+    "path": "/3/device/02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be",
+    "headers": {
+      "apns-collapse-id": "8f2c41d07a",
+      "apns-expiration": "1763480723",
+      "apns-priority": "10",
+      "apns-push-type": "alert",
+      "apns-topic": "dev.reamde.substrate.chat"
+    },
+    "payload": {
+      "aps": {
+        "alert": {
+          "loc-key": "SUBSTRATE_PUSH_REPLY"
+        },
+        "badge": 3,
+        "sound": "default",
+        "mutable-content": 1,
+        "thread-id": "8f2c41d07a"
+      },
+      "substrate": {
+        "v": 1,
+        "event": "reply",
+        "thread": "8f2c41d07a",
+        "g": "jPFx1d3VWfLE3W0iVXra0A",
+        "eventId": "TuPd03sorUAcP2jyq4S13Mp817hPpYPlf1PLlst5s8xd5JYjqE1vXupAwLb00BDu2GxYRi7JMoxU6n5h"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "status": "sent"
+    }
+  }
+}
