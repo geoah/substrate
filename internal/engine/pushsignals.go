@@ -17,7 +17,9 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/geoah/substrate/internal/scope"
@@ -70,10 +72,13 @@ func threadPushInfo(row *erow) (mode, person string) {
 }
 
 // signalSettle is a chat turn's settle, read in its own transaction after
-// the thread's patch: wasLast is the `lastMessage` the row held before it.
-// Only a `chat` thread with a person pushes a reply or a failure, and a
-// turn that raised a request pushes that request alone.
-func (t *txn) signalSettle(thread, status string, wasLast eref, started time.Time) error {
+// the thread's patch: wasLast is the `lastMessage` the row held before it,
+// and raised the records this turn raised that wait on a person
+// (agentLoop.noteRaised). Only a `chat` thread with a person pushes a reply
+// or a failure, and a turn that raised a request pushes that request alone:
+// its settle names the requests and the message it wrote, which is what the
+// person reads the requests in.
+func (t *txn) signalSettle(thread, status string, wasLast eref, started time.Time, raised []substrate.PushItem) error {
 	if t.ds.svc.pushSink == nil {
 		return nil
 	}
@@ -88,15 +93,20 @@ func (t *txn) signalSettle(thread, status string, wasLast eref, started time.Tim
 		return err
 	}
 	mode, person := threadPushInfo(row)
+	now := referenceTargetOf(row, propThreadLastMessage)
+	if len(raised) > 0 {
+		if conversationModes[mode] {
+			t.pushSignal(substrate.PushSignal{
+				Kind: substrate.PushSettled, Thread: thread, Mode: mode, Person: person, Status: status,
+				ThreadVersion: row.Version, TurnStarted: started, Raised: raised, Wrote: now.ID,
+			})
+		}
+		return nil
+	}
 	if mode != agentModeChat || person == "" {
 		return nil
 	}
-	raised, err := t.raisedSince(thread, started)
-	if err != nil || raised {
-		return err
-	}
 	message := ""
-	now := referenceTargetOf(row, propThreadLastMessage)
 	if now.ID != "" && now != wasLast {
 		msg, err := t.loadRow(now, false)
 		if err != nil {
@@ -108,34 +118,9 @@ func (t *txn) signalSettle(thread, status string, wasLast eref, started time.Tim
 	}
 	t.pushSignal(substrate.PushSignal{
 		Kind: substrate.PushSettled, Thread: thread, Mode: mode, Person: person,
-		Status: status, ThreadVersion: row.Version, TurnStarted: started, Message: message,
+		Status: status, ThreadVersion: row.Version, TurnStarted: started, Message: message, Wrote: now.ID,
 	})
 	return nil
-}
-
-// raisedSince reports whether a record of thread that still waits on a
-// person was created at or after since: what the turn that began then
-// raised.
-func (t *txn) raisedSince(threadID string, since time.Time) (bool, error) {
-	b := &builder{}
-	kinds := make([]string, 0, len(waitingKinds))
-	open := ""
-	for _, kind := range sortedKeys(waitingKinds) {
-		w := waitingKinds[kind]
-		kinds = append(kinds, kind)
-		if open != "" {
-			open += ` OR `
-		}
-		open += `(e.kind = ` + b.arg(kind) + ` AND e.states->>` + b.arg(w.machine) + ` = ` + b.arg(w.state) + `)`
-	}
-	where, err := threadRecordsWhere(t.ctx, t.tx, b, "e", kinds, threadID)
-	if err != nil {
-		return false, err
-	}
-	var raised bool
-	err = t.row(`SELECT EXISTS (SELECT 1 FROM records e WHERE e.deleted_at IS NULL AND (`+open+`) AND `+where+
-		` AND e.created_at >= `+b.arg(since)+`)`, b.args...).Scan(&raised)
-	return raised, err
 }
 
 // signalWaiting hands out the records a recount of thread's
@@ -165,10 +150,17 @@ func (t *txn) signalWaiting(thread *erow, held, n int, rows []*erow) {
 		if waits != (kind == substrate.PushRaised) {
 			continue
 		}
-		t.pushSignal(substrate.PushSignal{
-			Kind: kind, Thread: thread.ID, Mode: mode, Person: person,
-			Item: substrate.PushItem{Kind: r.Kind, ID: r.ID, Version: r.Version}, Token: t.principal,
-		})
+		item := substrate.PushItem{Kind: r.Kind, ID: r.ID, Version: r.Version}
+		t.pushSignal(substrate.PushSignal{Kind: kind, Thread: thread.ID, Mode: mode, Person: person, Item: item, Token: t.principal})
+		// The turn running on the thread raised it: its settle says so, and
+		// names the message the request is read in.
+		if kind == substrate.PushRaised {
+			if v, ok := t.ds.runningThreads.Load(thread.ID); ok {
+				if l, ok := v.(*agentLoop); ok {
+					t.afterCommit = append(t.afterCommit, func() { l.noteRaised(item) })
+				}
+			}
+		}
 	}
 }
 
@@ -191,11 +183,16 @@ func (t *txn) signalMark(before, row *erow, moved bool) {
 	t.pushSignal(substrate.PushSignal{Kind: substrate.PushMarked, Thread: thread.ID, Person: person.ID, Token: t.principal})
 }
 
-// pushRead runs fn in a read-only transaction as the system.
+// pushRead runs fn in a read-only snapshot on the pool: no write gate, no
+// changelog lock, no hand, so push's rechecks never queue behind a write
+// and answer on a read-only process too. fn reads and writes nothing else.
 func (ds *dataset) pushRead(ctx context.Context, fn func(t *txn) error) error {
-	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		return fn(t)
-	})
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	return fn(&txn{ctx: ctx, ds: ds, tx: tx, now: nowUTC(), internal: true})
 }
 
 // PushRecheck answers whether an alert is still worth sending, or what
@@ -254,9 +251,12 @@ func (t *txn) pushRecheck(c substrate.PushCheck) (string, error) {
 		if archived {
 			return substrate.PushArchived, nil
 		}
+		// Read at or after the settle: the person saw how the turn ended. A
+		// mark taken during the turn (a client marking the message it just
+		// sent) says nothing of the failure.
 		if mark != nil {
 			if at, ok := mark.Props[propMarkReadAt].(string); ok {
-				if read, err := time.Parse(time.RFC3339Nano, at); err == nil && !read.Before(c.TurnStarted) {
+				if read, err := time.Parse(time.RFC3339Nano, at); err == nil && !read.Before(c.SettledAt) {
 					return substrate.PushSeen, nil
 				}
 			}
@@ -280,32 +280,20 @@ func (t *txn) pushRecheck(c substrate.PushCheck) (string, error) {
 		if c.Request {
 			return substrate.PushSend, nil
 		}
-		// Raised by a settle the person has since read through: they saw
-		// the card where the settle left it.
-		row, err := t.loadRow(eref{Kind: typeThread, ID: c.Thread}, false)
-		if err != nil || row == nil || row.DeletedAt != nil {
-			return substrate.PushSend, err
-		}
-		if status, _ := row.Props["status"].(string); status == threadRunning {
-			return substrate.PushSend, nil
-		}
-		rec, err := t.loadRow(eref{Kind: c.Item.Kind, ID: c.Item.ID}, false)
-		if err != nil || rec == nil {
-			return substrate.PushSend, err
-		}
-		finished, _ := row.Props[propThreadFinished].(string)
-		if at, err := time.Parse(time.RFC3339Nano, finished); err != nil || rec.CreatedAt.After(at) {
-			return substrate.PushSend, nil
-		}
-		if seen, err := readsThrough(referenceTargetOf(row, propThreadLastMessage).ID); err != nil || seen {
+		// Raised by a turn whose settle the person has since read through:
+		// they saw the card where that settle left it.
+		if seen, err := readsThrough(c.SettleMessage); err != nil || seen {
 			return substrate.PushSeen, err
 		}
 	}
 	return substrate.PushSend, nil
 }
 
-// PushPending reports whether item still waits on a person: live, and in
-// its kind's waiting state.
+// PushPending reports whether item still waits on a person at the version
+// it names: live, in its kind's waiting state, and not written since. A
+// newer version of the record is a new item, so what a notification of the
+// old one offers is refused as the decision's version precondition would
+// be.
 func (ds *dataset) PushPending(ctx context.Context, item substrate.PushItem) (bool, error) {
 	var pending bool
 	err := ds.pushRead(ctx, func(t *txn) error {
@@ -325,12 +313,23 @@ func (t *txn) pushPending(item substrate.PushItem) (bool, error) {
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return false, err
 	}
-	return row.States[w.machine] == w.state, nil
+	return row.States[w.machine] == w.state && row.Version == item.Version, nil
 }
 
-// pushBadgeCandidates bounds the unread candidates one badge reads: the
-// count stops at substrate.PushBadgeMax, and the view may keep fewer.
-const pushBadgeCandidates = 4 * substrate.PushBadgeMax
+// PushMayDecide reports whether hand, with ctx's token, passes the check
+// the write that decides item passes beside its roles: the continuation of
+// the run the item is in (run.go continuation). A refusal is false, never
+// an error.
+func (ds *dataset) PushMayDecide(ctx context.Context, hand substrate.Actor, item substrate.PushItem) (bool, error) {
+	err := ds.continuation(ctx, hand, item.Kind, item.ID)
+	if errors.Is(err, substrate.ErrForbidden) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// pushBadgePage is how many unread candidates one page of the badge reads.
+const pushBadgePage = 500
 
 // PushBadgeThreads are the person's unread candidates for the badge, in one
 // query: the live `chat` threads that act for the person
@@ -341,7 +340,7 @@ const pushBadgeCandidates = 4 * substrate.PushBadgeMax
 // to be told of: an admin who reads them has no mark of them, and would
 // count them unread for good. Each carries its kind, id and `agent`, what
 // the caller's view decides a thread by.
-func (ds *dataset) PushBadgeThreads(ctx context.Context, person string) ([]*substrate.Record, error) {
+func (ds *dataset) PushBadgeThreads(ctx context.Context, person, after string) ([]*substrate.Record, error) {
 	if person == "" {
 		return nil, nil
 	}
@@ -361,7 +360,8 @@ func (ds *dataset) PushBadgeThreads(ctx context.Context, person string) ([]*subs
 		       OR (`+last+` IS NOT NULL AND `+last+` IS DISTINCT FROM `+read+`))
 		  AND (COALESCE(m.props->>'archived', '') <> 'true'
 		       OR COALESCE((th.props->>'waitingOnPerson')::bigint, 0) > 0)
-		ORDER BY th.id LIMIT `+b.arg(pushBadgeCandidates), b.args...)
+		  AND th.id > `+b.arg(after)+`
+		ORDER BY th.id LIMIT `+b.arg(pushBadgePage), b.args...)
 	if err != nil {
 		return nil, err
 	}

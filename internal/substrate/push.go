@@ -100,6 +100,12 @@ type PushSignal struct {
 	ThreadVersion int64
 	TurnStarted   time.Time
 	Message       string
+	// Wrote is the message the settle left the thread naming
+	// (`lastMessage`), whatever its role, and Raised the records the turn
+	// raised that wait on a person: a turn that raised one pushes it and no
+	// reply, and the person reads it at Wrote.
+	Wrote  string
+	Raised []PushItem
 	// A raise or a decide: the record, at the version the write left it.
 	Item PushItem
 	// A mark or a decide: the token the write came with, whose own device
@@ -130,10 +136,13 @@ type PushCheck struct {
 	Person string
 	Thread string
 	Item   PushItem
-	// Message is the message a reply names, and TurnStarted when a
-	// failure's turn began.
-	Message     string
-	TurnStarted time.Time
+	// Message is the message a reply names, and SettledAt when a failure
+	// settled: a mark taken at or after it saw the failure.
+	Message   string
+	SettledAt time.Time
+	// SettleMessage is the message the settle of the turn that raised a
+	// request left the thread naming: a mark through it saw the request.
+	SettleMessage string
 	// Request is true for a request alert a `read` asks about: the mark is
 	// not consulted, only whether the record still waits.
 	Request bool
@@ -163,13 +172,17 @@ type PushStore interface {
 	// covers it now.
 	PushRecheck(ctx context.Context, c PushCheck) (string, error)
 	// PushPending reports whether item still waits on a person at its
-	// version.
+	// version: a newer version of the record is a new item.
 	PushPending(ctx context.Context, item PushItem) (bool, error)
-	// PushBadgeThreads are the person's unread candidates for the badge:
-	// the live `chat` threads not running, unread for the person, not
-	// archived unless something waits on them. The caller keeps those the
-	// token's view reads and counts to PushBadgeMax.
-	PushBadgeThreads(ctx context.Context, person string) ([]*Record, error)
+	// PushMayDecide reports whether hand, with ctx's token, passes the
+	// continuation check the write deciding item passes beside its roles.
+	PushMayDecide(ctx context.Context, hand Actor, item PushItem) (bool, error)
+	// PushBadgeThreads is one page of the person's unread candidates for
+	// the badge, by id after `after`: the live `chat` threads that act for
+	// them, not running, unread for them, not archived unless something
+	// waits on them. An empty page is the end. The caller keeps those the
+	// token's view reads and pages on until PushBadgeMax.
+	PushBadgeThreads(ctx context.Context, person, after string) ([]*Record, error)
 	// DeletePushDevice deletes the device id as the system, only while it
 	// still holds pushKey, and reports whether it did.
 	DeletePushDevice(ctx context.Context, id, pushKey string) (bool, error)

@@ -68,6 +68,11 @@ func (t *txn) prepareDevice(sp *applySpec) (bool, error) {
 	if sp.ty.Identity != typeDevice || t.internal || t.movingRecords {
 		return false, nil
 	}
+	// A write of labels or annotations alone carries no properties, and the
+	// engine's fills land in them all the same.
+	if sp.props == nil {
+		sp.props = map[string]any{}
+	}
 	delete(sp.props, propDeviceSeenAt)
 	writer, err := t.deviceWriter()
 	if err != nil {
@@ -153,6 +158,11 @@ const deviceSweepBatch = 500
 // cascades to its device, and nothing else would reach one whose token
 // expired. It reports how many it deleted.
 func (ds *dataset) sweepExpiredDevices(ctx context.Context, now time.Time) (int, error) {
+	return ds.sweepDevices(ctx, now, deviceSweepBatch)
+}
+
+// sweepDevices is one sweep of at most batch devices.
+func (ds *dataset) sweepDevices(ctx context.Context, now time.Time, batch int) (int, error) {
 	if ds.svc.readOnly {
 		return 0, nil
 	}
@@ -160,12 +170,20 @@ func (ds *dataset) sweepExpiredDevices(ctx context.Context, now time.Time) (int,
 		// A repository whose upgrade has not declared the kind holds none.
 		return 0, nil
 	}
+	// The predicate runs before the LIMIT, so a sweep past the first batch
+	// is never needed to reach a device whose token went: each batch holds
+	// only devices to delete, and the next sweep takes the rest. An
+	// `expiresAt` the engine did not write is left for the Go check below
+	// rather than failing the cast.
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT d.id, tk.id IS NULL OR tk.deleted_at IS NOT NULL, COALESCE(tk.props->>'expiresAt', '')
 		FROM records d
 		LEFT JOIN records tk ON tk.kind = $2 AND tk.id = d.id
 		WHERE d.kind = $1 AND d.deleted_at IS NULL
-		ORDER BY d.id LIMIT $3`, typeDevice, kindToken, deviceSweepBatch)
+		  AND (tk.id IS NULL OR tk.deleted_at IS NOT NULL
+		       OR (tk.props->>'expiresAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+		           AND (tk.props->>'expiresAt')::timestamptz <= $4))
+		ORDER BY d.id LIMIT $3`, typeDevice, kindToken, batch, now)
 	if err != nil {
 		return 0, err
 	}
@@ -239,6 +257,13 @@ func (ds *dataset) PushDevices(ctx context.Context, person string) ([]substrate.
 	}
 	if _, err := ds.resolveType(typeDevice); err != nil {
 		return nil, nil
+	}
+	// A person taken out of the repository, or disabled, has no devices to
+	// push to, whatever records they left.
+	var member bool
+	if err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM records WHERE kind = $1 AND id = $2
+		AND deleted_at IS NULL AND COALESCE(props->>'disabled', '') <> 'true')`, kindActor, person).Scan(&member); err != nil || !member {
+		return nil, err
 	}
 	b := &builder{}
 	q := `SELECT d.id, d.props FROM records d WHERE d.kind = ` + b.arg(typeDevice) + ` AND d.deleted_at IS NULL AND ` +

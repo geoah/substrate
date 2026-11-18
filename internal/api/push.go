@@ -78,8 +78,10 @@ func viewReads(ctx context.Context, ds substrate.Dataset, rec *substrate.Record)
 }
 
 // viewDecides reports whether a view could write the decision of rec, a
-// record that waits on a person: each scoped layer writes its kind whole,
-// or reaches the row through an agent verb.
+// record that waits on a person. A person's layer must write the kind whole
+// by their roles: the agent verbs' row path is an app's, and a viewer or a
+// person whose role was taken away decides nothing. An app's layer writes
+// it whole, or reaches the row through an agent verb.
 func viewDecides(ctx context.Context, ds substrate.Dataset, rec *substrate.Record) (bool, error) {
 	switch d := ds.(type) {
 	case *scopedDataset:
@@ -89,7 +91,7 @@ func viewDecides(ctx context.Context, ds substrate.Dataset, rec *substrate.Recor
 			return false, err
 		}
 		if !whole {
-			if !d.rowKind(kind) {
+			if d.person || !d.rowKind(kind) {
 				return false, nil
 			}
 			ok, err := d.rowVisible(ctx, &substrate.Record{Kind: kind, ID: rec.ID, Properties: rec.Properties})
@@ -259,9 +261,15 @@ func (h *handler) getPushEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		item := e.Item
 		out.Item = &item
+		// Pending at the sealed version (a newer version is a new item),
+		// written whole by the token's view, and continued by this hand as
+		// the decision's own write would be.
 		actions, err := store.PushPending(ctx, e.Item)
 		if err == nil && actions {
 			actions, err = viewDecides(ctx, view, rec)
+		}
+		if err == nil && actions {
+			actions, err = store.PushMayDecide(ctx, ActorFrom(ctx), e.Item)
 		}
 		if err != nil {
 			writeSubstrateError(w, r, err)

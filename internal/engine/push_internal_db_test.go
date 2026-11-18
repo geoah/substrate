@@ -444,7 +444,7 @@ func TestTheEngineHandsOutWhatAPushIsAbout(t *testing.T) {
 	}
 	badge := func() map[string]bool {
 		t.Helper()
-		threads, err := r.ds.PushBadgeThreads(ctx, person)
+		threads, err := r.ds.PushBadgeThreads(ctx, person, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -511,28 +511,32 @@ func TestTheEngineHandsOutWhatAPushIsAbout(t *testing.T) {
 		t.Fatalf("a failed first call handed out %+v", settles)
 	}
 	failed := settles[0]
-	fcheck := substrate.PushCheck{Event: substrate.PushEventFailed, Person: person, Thread: failed.Thread, TurnStarted: failed.TurnStarted}
-	if got, _ := r.ds.PushRecheck(ctx, fcheck); got != substrate.PushSend {
-		t.Fatalf("an unread failure rechecks %q", got)
-	}
+	// A mark taken during the turn, before the settle, saw nothing of the
+	// failure; one at or after the settle saw it.
+	fcheck := substrate.PushCheck{Event: substrate.PushEventFailed, Person: person, Thread: failed.Thread, SettledAt: failed.At.Add(time.Hour)}
 	if _, err := r.read(reading, failed.Thread, "push-first-failed"); err != nil {
 		t.Fatal(err)
 	}
+	if got, _ := r.ds.PushRecheck(ctx, fcheck); got != substrate.PushSend {
+		t.Fatalf("a failure read before it settled rechecks %q", got)
+	}
+	fcheck.SettledAt = failed.At
 	if got, _ := r.ds.PushRecheck(ctx, fcheck); got != substrate.PushSeen {
-		t.Fatalf("a failure read since its turn began rechecks %q", got)
+		t.Fatalf("a failure read at its settle rechecks %q", got)
 	}
 
-	// A question: the turn raises it and hands out no settle; answering it
-	// hands out its decision with the token that wrote it.
+	// A question: the turn raises it, and its settle names it and the
+	// message it wrote, and no reply; answering it hands out its decision
+	// with the token that wrote it.
 	sink.take()
 	asked, _ := r.chat(t, ada, substrate.ActorPerson, "keeper", "",
 		fakeTurn{calls: []fakeCall{{"ask", runsAsk}}}, fakeTurn{content: "asked."}, fakeTurn{content: "noted."})
 	all := sink.take()
-	var raised []substrate.PushSignal
+	var raised, settledAsk []substrate.PushSignal
 	for _, sig := range all {
 		switch sig.Kind {
 		case substrate.PushSettled:
-			t.Fatalf("a turn that raised a request handed out a settle: %+v", sig)
+			settledAsk = append(settledAsk, sig)
 		case substrate.PushRaised:
 			raised = append(raised, sig)
 		}
@@ -541,9 +545,28 @@ func TestTheEngineHandsOutWhatAPushIsAbout(t *testing.T) {
 		t.Fatalf("the question handed out %+v", raised)
 	}
 	item := raised[0].Item
-	rcheck := substrate.PushCheck{Event: substrate.PushEventRequest, Person: person, Thread: asked, Item: item}
+	if len(settledAsk) != 1 || settledAsk[0].Message != "" || len(settledAsk[0].Raised) != 1 || settledAsk[0].Raised[0] != item ||
+		settledAsk[0].Wrote == "" || settledAsk[0].Wrote != lastMessageOf(t, r.ds, asked) {
+		t.Fatalf("the turn that asked settled as %+v, want the question raised, the message it wrote and no reply", settledAsk)
+	}
+	rcheck := substrate.PushCheck{Event: substrate.PushEventRequest, Person: person, Thread: asked, Item: item, SettleMessage: settledAsk[0].Wrote}
 	if got, _ := r.ds.PushRecheck(ctx, rcheck); got != substrate.PushSend {
 		t.Fatalf("a pending question rechecks %q", got)
+	}
+	// Read through the message its turn wrote, the person saw the card.
+	if _, err := r.read(reading, asked, settledAsk[0].Wrote); err != nil {
+		t.Fatal(err)
+	}
+	sink.take()
+	if got, _ := r.ds.PushRecheck(ctx, rcheck); got != substrate.PushSeen {
+		t.Fatalf("a question read through its turn's message rechecks %q", got)
+	}
+	// A newer version of the card is a new item: the old one is no longer
+	// pending at its version.
+	if stale := (substrate.PushItem{Kind: item.Kind, ID: item.ID, Version: item.Version - 1}); stale.Version > 0 {
+		if pending, _ := r.ds.PushPending(ctx, stale); pending {
+			t.Fatal("an older version of a pending card reads as pending")
+		}
 	}
 	if pending, err := r.ds.PushPending(ctx, item); err != nil || !pending {
 		t.Fatalf("a pending question: %v %v", pending, err)
@@ -611,7 +634,7 @@ func TestTheBadgeCountsChatsAlone(t *testing.T) {
 	}
 	badge := func(person string) map[string]bool {
 		t.Helper()
-		threads, err := r.ds.PushBadgeThreads(ctx, person)
+		threads, err := r.ds.PushBadgeThreads(ctx, person, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -637,4 +660,104 @@ func storedThread(t *testing.T, ds *dataset, id string) *erow {
 		t.Fatalf("thread %s: %v", id, err)
 	}
 	return row
+}
+
+// A write that rolls back hands out nothing, and push's rechecks answer
+// while a write holds the changelog: they read a snapshot and take neither
+// the write gate nor the lock.
+func TestPushReadsNeitherWaitOnWritesNorSeeRolledBackOnes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newRunsRepository(t)
+	sink := &signals{}
+	r.ds.svc.pushSink = sink
+	ada := r.person(r.adaID, substrate.ActorPerson)
+	person := actorID(substrate.ActorPerson)
+	thread, _ := r.chat(t, ada, substrate.ActorPerson, "lead", "", fakeTurn{content: "one."})
+	reply := lastMessageOf(t, r.ds, thread)
+	sink.take()
+
+	err := r.ds.inTx(ada, substrate.ActorPerson, false, func(tx *txn) error {
+		if _, err := tx.put(substrate.PutInput{Kind: typeThreadMark, Properties: map[string]any{propMarkThread: thread, propMarkReadThrough: reply}}); err != nil {
+			return err
+		}
+		return errors.New("roll back")
+	})
+	if err == nil || len(sink.take()) != 0 {
+		t.Fatalf("a rolled-back mark: %v, signals handed out", err)
+	}
+
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- r.ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+			if _, err := tx.put(substrate.PutInput{Kind: r.note, ID: fid("held"), Properties: map[string]any{"name": "held"}}); err != nil {
+				return err
+			}
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	quick, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	got, err := r.ds.PushRecheck(quick, substrate.PushCheck{Event: substrate.PushEventReply, Person: person, Thread: thread, Message: reply})
+	if err != nil || got != substrate.PushSend {
+		t.Fatalf("a recheck under a held write: %q, %v", got, err)
+	}
+	if _, err := r.ds.PushPending(quick, substrate.PushItem{Kind: vocabulary.KindLLMInteraction, ID: "none", Version: 1}); err != nil {
+		t.Fatalf("a pending read under a held write: %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A write of a device's labels alone carries no properties, and lands.
+func TestADeviceWriteOfLabelsAloneLands(t *testing.T) {
+	t.Parallel()
+	rr := newRolesRepository(t)
+	tok := rr.mint(t, rr.adaID, nil)
+	ctx := rr.tokenCtx(rr.adaID, tok.ID)
+	if _, err := rr.putDevice(ctx, tok.ID, deviceProps("v1.key", "replies")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rr.ds.Patch(ctx, substrate.ActorPerson, typeDevice, tok.ID, substrate.PatchInput{Labels: map[string]any{"example.com/room": "kitchen"}}); err != nil {
+		t.Fatalf("a patch of labels alone: %v", err)
+	}
+	if _, err := rr.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeDevice, ID: tok.ID, Labels: map[string]any{"example.com/room": "hall"}}); err != nil {
+		t.Fatalf("a put of labels alone: %v", err)
+	}
+}
+
+// The sweep's batch holds only devices to delete, so a batch smaller than
+// the live devices ahead of an expired one still reaches it.
+func TestTheDeviceSweepReachesPastLiveDevices(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	rr := newRolesRepository(t)
+	soon := time.Now().Add(time.Second)
+	var expired substrate.TokenInfo
+	for i := range 4 {
+		var exp *time.Time
+		if i == 3 {
+			exp = &soon
+		}
+		tok := rr.mint(t, rr.adaID, exp)
+		if exp != nil {
+			expired = tok
+		}
+		if _, err := rr.putDevice(rr.tokenCtx(rr.adaID, tok.ID), tok.ID, deviceProps("v1."+tok.ID, "replies")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "the token to expire", func() bool { return time.Now().After(soon) })
+	if n, err := rr.ds.sweepDevices(ctx, nowUTC(), 1); err != nil || n != 1 {
+		t.Fatalf("a sweep of one swept %d: %v", n, err)
+	}
+	if row := deviceRow(t, rr.ds, expired.ID); row == nil || row.DeletedAt == nil {
+		t.Fatal("the expired token's device outlived a sweep of one")
+	}
 }

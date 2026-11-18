@@ -1,6 +1,6 @@
-# one install of an app that takes pushes (decision record on the device
-# kind): its id is the id of the token it signed in with, the engine refuses
-# any other, and it is deleted with that token.
+# one install of an app that takes pushes (decision record 0336): its id is
+# the id of the token it signed in with, the engine refuses any other, and it
+# is deleted with that token.
 #
 # The engine holds every write of one (engine/devices.go): only a person, or
 # an app acting for them, writes one, and only at the id of the token the

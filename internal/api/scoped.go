@@ -64,6 +64,10 @@ type scopedDataset struct {
 	// agentCovered is talksTo's answer per agent: whether the grant's reads
 	// cover everything the agent reads (decision 0214).
 	agentCovered map[string]bool
+	// me is the actor record of the person the request acts for, read once
+	// (personActor) when meRead.
+	me     string
+	meRead bool
 }
 
 var _ substrate.Dataset = (*scopedDataset)(nil)

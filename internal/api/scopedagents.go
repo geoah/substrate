@@ -29,6 +29,10 @@ const (
 	kindApproval    = vocabulary.KindLLMApproval
 	kindThreadMark  = vocabulary.KindLLMThreadMark
 	kindRequest     = vocabulary.KindRecordPatchRequest
+	// kindDevice is read row by row in a person's view: their own devices
+	// alone, whatever their roles read (devices.go in the engine holds the
+	// writes the same way).
+	kindDevice = vocabulary.KindDevice
 	kindActorRow    = corePackage + "/actor"
 )
 
@@ -53,6 +57,9 @@ func (s *scopedDataset) rowKind(kind string) bool {
 // rowGated reports whether kind is reached row by row: the agent verbs reach
 // it and no read or write scope reaches it whole.
 func (s *scopedDataset) rowGated(ctx context.Context, kind string) (bool, error) {
+	if s.devicesHeld(kind) {
+		return true, nil
+	}
 	if !s.rowKind(kind) {
 		return false, nil
 	}
@@ -80,6 +87,9 @@ func (s *scopedDataset) visible(ctx context.Context, rec *substrate.Record) (boo
 	if rec == nil {
 		return false, nil
 	}
+	if s.devicesHeld(rec.Kind) {
+		return s.rowVisible(ctx, rec)
+	}
 	if ok, err := s.reads(ctx, rec.Kind); err != nil || ok {
 		return ok, err
 	}
@@ -106,8 +116,42 @@ func (s *scopedDataset) rowVisible(ctx context.Context, rec *substrate.Record) (
 	case kindRequest:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
 		return err == nil && s.grant.Decides(agent), err
+	case kindDevice:
+		me, err := s.personActor(ctx)
+		return err == nil && me != "" && referencedID(rec.Properties["person"], vocabulary.CoreKind("actor")) == me, err
 	}
 	return false, nil
+}
+
+// devicesHeld reports whether kind is the device kind in a person's view,
+// where a person reads their own devices alone: a device names the sign-in
+// and the push key of one install, which no other person's roles reach. An
+// admin reads the repository whole and every device in it.
+func (s *scopedDataset) devicesHeld(kind string) bool {
+	return s.person && kind == kindDevice
+}
+
+// personActor is the id of the actor record of the person the request acts
+// for, as the engine resolves it, kept for the request.
+func (s *scopedDataset) personActor(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	me, ok := s.me, s.meRead
+	s.mu.Unlock()
+	if ok {
+		return me, nil
+	}
+	store, held := pushStoreOf(s.inner)
+	if !held {
+		return "", nil
+	}
+	me, err := store.PushPerson(ctx)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	s.me, s.meRead = me, true
+	s.mu.Unlock()
+	return me, nil
 }
 
 // threadReached reports whether a row of kind on thread is one the grant
@@ -360,6 +404,14 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			in[i] = vocabulary.RecordPath(kindAgent, a)
 		}
 		props["agent"] = substrate.Cond{In: in}
+	case kindDevice:
+		// The person's own: the engine resolves `me` to their actor, and a
+		// condition naming anyone else reaches nothing.
+		narrowed = "person"
+		if c, named := props["person"]; named && (c.Eq != substrate.FilterMe || len(c.In) > 0) {
+			return noneReached(q)
+		}
+		props["person"] = substrate.Cond{Eq: substrate.FilterMe}
 	case kindMessage, kindInteraction, kindApproval, kindThreadMark, kindRequest:
 		narrowed = "thread"
 		c, named := props["thread"]
@@ -725,6 +777,13 @@ func (s *scopedDataset) ChangesBefore(ctx context.Context, before int64, f subst
 // recordVisible decides one feed row's record by kind and id: a kind read
 // whole needs no read, a row-gated one is read, tombstone included.
 func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (bool, error) {
+	if s.devicesHeld(kind) {
+		rec, err := s.rowOf(ctx, kind, id)
+		if err != nil || rec == nil {
+			return false, err
+		}
+		return s.rowVisible(ctx, rec)
+	}
 	if ok, err := s.reads(ctx, kind); err != nil || ok {
 		return ok, err
 	}

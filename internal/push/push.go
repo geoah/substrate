@@ -90,9 +90,16 @@ const (
 )
 
 // The relay's codes that delete the device (docs/plans/push.md section 1).
-var deletingCodes = map[string]bool{
-	"gone": true, "signature_refused": true, "key_refused": true, "key_expired": true,
-	"topic_refused": true, "environment_refused": true,
+// Each with the one status the relay answers it with: a deleting code
+// under any other status (a proxy's 502 carrying a body it relayed, a
+// relay that misspeaks) deletes nothing.
+var deletingCodes = map[string]int{
+	pushwire.CodeGone:               http.StatusGone,
+	pushwire.CodeSignatureRefused:   http.StatusUnauthorized,
+	pushwire.CodeKeyRefused:         http.StatusForbidden,
+	pushwire.CodeKeyExpired:         http.StatusForbidden,
+	pushwire.CodeTopicRefused:       http.StatusForbidden,
+	pushwire.CodeEnvironmentRefused: http.StatusForbidden,
 }
 
 // Answer is one send's classified answer.
@@ -180,7 +187,7 @@ func classify(status int, raw []byte) Answer {
 		a.Code = env.Error.Code
 	}
 	switch {
-	case deletingCodes[a.Code]:
+	case a.Code != "" && deletingCodes[a.Code] == status:
 		a.Outcome = Delete
 	case status == http.StatusTooManyRequests || a.Code == "rate_limited":
 		a.Outcome = Limited
@@ -190,25 +197,28 @@ func classify(status int, raw []byte) Answer {
 	return a
 }
 
-// Badge counts the person's unread `chat` threads that reads keeps, to
-// substrate.PushBadgeMax: the one rule a push and GET /api/v1/push/badge
-// both count by. reads is the asking token's view.
+// Badge counts the person's unread `chat` threads that reads keeps, paging
+// through the candidates until substrate.PushBadgeMax are kept or none are
+// left: the one rule a push and GET /api/v1/push/badge both count by. reads
+// is the asking token's view.
 func Badge(ctx context.Context, store substrate.PushStore, reads func(context.Context, *substrate.Record) (bool, error), person string) (int, error) {
-	threads, err := store.PushBadgeThreads(ctx, person)
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, th := range threads {
-		ok, err := reads(ctx, th)
-		if err != nil {
-			return 0, err
+	n, after := 0, ""
+	for {
+		threads, err := store.PushBadgeThreads(ctx, person, after)
+		if err != nil || len(threads) == 0 {
+			return n, err
 		}
-		if ok {
-			if n++; n == substrate.PushBadgeMax {
-				break
+		for _, th := range threads {
+			ok, err := reads(ctx, th)
+			if err != nil {
+				return 0, err
+			}
+			if ok {
+				if n++; n == substrate.PushBadgeMax {
+					return n, nil
+				}
 			}
 		}
+		after = threads[len(threads)-1].ID
 	}
-	return n, nil
 }

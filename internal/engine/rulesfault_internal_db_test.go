@@ -266,6 +266,21 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 	"people.go:adminsBut":      personRolesRefused,
 
 	// Continuations.
+	// Whether a push offers a card's decision is the continuation the
+	// decision's write passes: with the holders unread, it is refused.
+	"pushsignals.go:PushMayDecide": func(t *testing.T, r *runsRepository) (bool, string) {
+		thread := r.staged(t, "keeper", fakeTurn{calls: []fakeCall{{"ask", runsAsk}}}, fakeTurn{content: "asked."})
+		page, err := r.ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{Kinds: []string{vocabulary.KindLLMInteraction}}, First: 10})
+		if err != nil || len(page.Records) == 0 {
+			return false, fmt.Sprint("the question of ", thread, ": ", err)
+		}
+		q := page.Records[0]
+		r.fail("holders")
+		defer r.heal()
+		bo := substrate.PersonActor(r.boID)
+		_, err = r.ds.PushMayDecide(r.person(r.boID, bo), bo, substrate.PushItem{Kind: q.Kind, ID: q.ID, Version: q.Version})
+		return errRefused(err)
+	},
 	"agents.go:ChatAgent": func(t *testing.T, r *runsRepository) (bool, string) {
 		thread := r.staged(t, "scribe", fakeTurn{content: "first."})
 		r.fail("holders")

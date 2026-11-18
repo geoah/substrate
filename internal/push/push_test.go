@@ -129,6 +129,13 @@ func TestEveryRelayAnswerIsClassified(t *testing.T) {
 		{http.StatusGone, `not json`, Failed},
 		{http.StatusBadGateway, ``, Failed},
 		{http.StatusForbidden, `{"error":{"code":"something_new"}}`, Failed},
+		// A deleting code under a status it is never answered with deletes
+		// nothing: a proxy's error relaying a body, a relay that misspeaks.
+		{http.StatusBadGateway, `{"error":{"code":"gone"}}`, Failed},
+		{http.StatusInternalServerError, `{"error":{"code":"key_refused"}}`, Failed},
+		{http.StatusForbidden, `{"error":{"code":"gone"}}`, Failed},
+		{http.StatusGone, `{"error":{"code":"signature_refused"}}`, Failed},
+		{http.StatusUnauthorized, `{"error":{"code":"key_expired"}}`, Failed},
 	} {
 		if a := classify(c.status, []byte(c.body)); a.Outcome != c.want {
 			t.Errorf("%d %q classified %s, want %s", c.status, c.body, a.Outcome, c.want)
@@ -280,8 +287,17 @@ type pushStore struct {
 	threads []*substrate.Record
 }
 
-func (s pushStore) PushBadgeThreads(context.Context, string) ([]*substrate.Record, error) {
-	return s.threads, nil
+// PushBadgeThreads pages the threads in their order, 500 at a time.
+func (s pushStore) PushBadgeThreads(_ context.Context, _, after string) ([]*substrate.Record, error) {
+	start := 0
+	if after != "" {
+		for i, th := range s.threads {
+			if th.ID == after {
+				start = i + 1
+			}
+		}
+	}
+	return s.threads[start:min(start+500, len(s.threads))], nil
 }
 
 func TestTheBadgeIsWhatTheViewReadsAndStopsAt999(t *testing.T) {

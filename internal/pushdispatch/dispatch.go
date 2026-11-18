@@ -9,7 +9,6 @@
 package pushdispatch
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -41,8 +40,16 @@ const (
 	// MaxAlerted bounds the alerts remembered for a `read`; past it the
 	// oldest is forgotten.
 	MaxAlerted = 10000
-	// MaxInFlight bounds the requests to relays at once.
+	// MaxInFlight bounds the deliveries at once: each takes its slot before
+	// it reads anything, so the database reads and the requests to relays
+	// behind the holds are bounded together.
 	MaxInFlight = 4
+	// MaxHoldDelay bounds how far signals of one key that keep coming push
+	// its wait past the first: a thread a person keeps marking still gets
+	// its `read`.
+	MaxHoldDelay = 4 * Hold
+	// deliverTimeout bounds one delivery, its reads and its sends.
+	deliverTimeout = 30 * time.Second
 )
 
 // The outcomes substrate_push_total counts.
@@ -86,7 +93,8 @@ type Options struct {
 	Log       *slog.Logger
 	Now       func() time.Time
 	// Manual runs no goroutine of its own: holds fire only when Tick is
-	// called, and sends run on its goroutine. For tests on a fake clock.
+	// called, and deliveries run on its goroutine. For tests on a fake
+	// clock.
 	Manual bool
 }
 
@@ -99,16 +107,25 @@ type Dispatcher struct {
 	now    func() time.Time
 	manual bool
 
+	// ctx is every delivery's parent: Close cancels it, so a send in
+	// flight ends with the shutdown rather than its own timeout.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// mu guards everything below. A worker is started, and counted in
+	// workers, only under it and only while not closed, so Close's wait
+	// covers every delivery that will ever start.
 	mu       sync.Mutex
 	datasets Datasets
 	holds    map[holdKey]*hold
 	seq      uint64
+	queue    []*hold
+	workers  sync.WaitGroup
+	running  int
 	alerted  *alertedMap
 	wake     chan struct{}
 	done     chan struct{}
 	closed   bool
-	slots    chan struct{}
-	inflight sync.WaitGroup
 }
 
 var _ substrate.PushSink = (*Dispatcher)(nil)
@@ -119,8 +136,9 @@ func New(o Options) *Dispatcher {
 	d := &Dispatcher{
 		view: o.View, docs: o.Documents, sender: o.Sender, log: o.Log, now: o.Now, manual: o.Manual,
 		holds: map[holdKey]*hold{}, alerted: newAlertedMap(MaxAlerted),
-		wake: make(chan struct{}, 1), done: make(chan struct{}), slots: make(chan struct{}, MaxInFlight),
+		wake: make(chan struct{}, 1), done: make(chan struct{}),
 	}
+	d.ctx, d.cancel = context.WithCancel(context.Background())
 	if d.log == nil {
 		d.log = slog.Default()
 	}
@@ -135,14 +153,16 @@ func New(o Options) *Dispatcher {
 func (d *Dispatcher) Start(datasets Datasets) {
 	d.mu.Lock()
 	d.datasets = datasets
+	closed := d.closed
 	d.mu.Unlock()
-	if !d.manual {
+	if !d.manual && !closed {
 		go d.loop()
 	}
 }
 
-// Close stops the loop, drops what was waiting and waits for the sends in
-// flight.
+// Close stops the loop, drops what was waiting, cancels the deliveries in
+// flight and waits for them: after it returns no delivery runs, and none
+// starts.
 func (d *Dispatcher) Close() {
 	d.mu.Lock()
 	if d.closed {
@@ -151,9 +171,11 @@ func (d *Dispatcher) Close() {
 	}
 	d.closed = true
 	d.holds = map[holdKey]*hold{}
+	d.queue = nil
 	close(d.done)
 	d.mu.Unlock()
-	d.inflight.Wait()
+	d.cancel()
+	d.workers.Wait()
 }
 
 // holdKey is what one wait is keyed by: a reply, a failure and a request by
@@ -169,6 +191,7 @@ type holdKey struct {
 type hold struct {
 	key   holdKey
 	due   time.Time
+	first time.Time
 	seq   uint64
 	check substrate.PushCheck
 	// writers are the tokens whose writes caused a `read`, whose own
@@ -187,6 +210,19 @@ func (d *Dispatcher) PushSignal(s substrate.PushSignal) {
 	now := d.now()
 	switch s.Kind {
 	case substrate.PushSettled:
+		if len(s.Raised) > 0 {
+			// The turn raised requests: they push, and no reply does. The
+			// person reads them at the message the settle left.
+			for _, item := range s.Raised {
+				for k, h := range d.holds {
+					if k.repository == s.Repository && k.thread == s.Thread && k.event == substrate.PushEventRequest && k.item == item {
+						h.check.SettleMessage = s.Wrote
+					}
+				}
+				d.alerted.update(s.Repository, s.Thread, item, func(c *substrate.PushCheck) { c.SettleMessage = s.Wrote })
+			}
+			return
+		}
 		if s.Person == "" || s.Mode != "chat" {
 			return
 		}
@@ -195,27 +231,26 @@ func (d *Dispatcher) PushSignal(s substrate.PushSignal) {
 			d.hold(holdKey{
 				repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventReply,
 				item: substrate.PushItem{Kind: vocabulary.KindLLMMessage, ID: s.Message},
-			},
-				now.Add(Hold), substrate.PushCheck{Event: substrate.PushEventReply, Person: s.Person, Thread: s.Thread, Message: s.Message}, "")
+			}, now, Hold, substrate.PushCheck{Event: substrate.PushEventReply, Person: s.Person, Thread: s.Thread, Message: s.Message}, "")
 		case (s.Status == "error" || s.Status == "overbudget") && s.At.Sub(s.TurnStarted) > FailedAfter:
 			d.hold(holdKey{
 				repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventFailed,
 				item: substrate.PushItem{Kind: vocabulary.KindLLMThread, ID: s.Thread, Version: s.ThreadVersion},
-			},
-				now.Add(Hold), substrate.PushCheck{Event: substrate.PushEventFailed, Person: s.Person, Thread: s.Thread, TurnStarted: s.TurnStarted}, "")
+			}, now, Hold, substrate.PushCheck{Event: substrate.PushEventFailed, Person: s.Person, Thread: s.Thread, SettledAt: s.At}, "")
 		}
 	case substrate.PushRaised:
 		d.hold(holdKey{repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventRequest, item: s.Item},
-			now.Add(Hold), substrate.PushCheck{Event: substrate.PushEventRequest, Person: s.Person, Thread: s.Thread, Item: s.Item}, "")
+			now, Hold, substrate.PushCheck{Event: substrate.PushEventRequest, Person: s.Person, Thread: s.Thread, Item: s.Item}, "")
 	case substrate.PushMarked, substrate.PushDecided:
 		d.hold(holdKey{repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventRead},
-			now.Add(ReadHold), substrate.PushCheck{Event: substrate.PushEventRead, Person: s.Person, Thread: s.Thread}, s.Token)
+			now, ReadHold, substrate.PushCheck{Event: substrate.PushEventRead, Person: s.Person, Thread: s.Thread}, s.Token)
 	}
 }
 
-// hold starts a wait, or restarts the one already under key. Past MaxHolds
-// the oldest is dropped. d.mu is held.
-func (d *Dispatcher) hold(key holdKey, due time.Time, check substrate.PushCheck, writer string) {
+// hold starts a wait of wait from now, or restarts the one already under
+// key, never past MaxHoldDelay after its first signal. Past MaxHolds the
+// oldest is dropped. d.mu is held.
+func (d *Dispatcher) hold(key holdKey, now time.Time, wait time.Duration, check substrate.PushCheck, writer string) {
 	h, ok := d.holds[key]
 	if !ok {
 		if len(d.holds) >= MaxHolds {
@@ -228,11 +263,14 @@ func (d *Dispatcher) hold(key holdKey, due time.Time, check substrate.PushCheck,
 			delete(d.holds, oldest.key)
 			count(oldest.key.event, outcomeDropped)
 		}
-		h = &hold{key: key, check: check, writers: map[string]bool{}}
+		h = &hold{key: key, first: now, check: check, writers: map[string]bool{}}
 		d.holds[key] = h
 	}
 	d.seq++
-	h.seq, h.due = d.seq, due
+	h.seq, h.due = d.seq, now.Add(wait)
+	if ceiling := h.first.Add(MaxHoldDelay); h.due.After(ceiling) {
+		h.due = ceiling
+	}
 	if writer != "" {
 		h.writers[writer] = true
 	}
@@ -266,16 +304,16 @@ func (d *Dispatcher) loop() {
 				}
 			}
 		case <-timer.C:
-			d.fire(d.now(), true)
+			d.fire(d.now())
 		}
 	}
 }
 
-// Tick fires every hold due at now and runs its sends to the end: the
-// manual dispatcher's clock.
+// Tick fires every hold due at now and runs its deliveries to the end, on
+// the caller's goroutine: the manual dispatcher's clock.
 func (d *Dispatcher) Tick(now time.Time) {
-	d.fire(now, false)
-	d.inflight.Wait()
+	d.fire(now)
+	d.workers.Wait()
 }
 
 // Holds is how many waits are pending, for a test.
@@ -285,9 +323,14 @@ func (d *Dispatcher) Holds() int {
 	return len(d.holds)
 }
 
-// fire takes every hold due at now and delivers each.
-func (d *Dispatcher) fire(now time.Time, async bool) {
+// fire queues every hold due at now and starts workers for them, at most
+// MaxInFlight at once.
+func (d *Dispatcher) fire(now time.Time) {
 	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.datasets == nil {
+		return
+	}
 	var due []*hold
 	for k, h := range d.holds {
 		if !h.due.After(now) {
@@ -295,32 +338,65 @@ func (d *Dispatcher) fire(now time.Time, async bool) {
 			delete(d.holds, k)
 		}
 	}
-	datasets := d.datasets
-	d.mu.Unlock()
-	if datasets == nil {
+	slices.SortFunc(due, func(a, b *hold) int {
+		switch {
+		case a.seq < b.seq:
+			return -1
+		case a.seq > b.seq:
+			return 1
+		}
+		return 0
+	})
+	d.queue = append(d.queue, due...)
+	if d.manual {
+		// One worker, on the caller's goroutine.
+		start := d.running == 0 && len(d.queue) > 0
+		if start {
+			d.running++
+			d.workers.Add(1)
+		}
+		d.mu.Unlock()
+		if start {
+			d.work()
+		}
+		d.mu.Lock()
 		return
 	}
-	slices.SortFunc(due, func(a, b *hold) int { return cmp.Compare(a.seq, b.seq) })
-	for _, h := range due {
-		d.inflight.Add(1)
-		run := func() {
-			defer d.inflight.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := d.deliver(ctx, datasets, h); err != nil {
-				count(h.key.event, outcomeFailed)
-				d.log.Warn("substrate: a push could not be decided", "event", h.key.event, "error", err)
-			}
-		}
-		if async {
-			go run()
-		} else {
-			run()
-		}
+	for d.running < MaxInFlight && d.running < len(d.queue) {
+		d.running++
+		d.workers.Add(1)
+		go d.work()
 	}
 }
 
-// deliver decides one hold and sends what it decides.
+// work delivers queued holds until none are left: one slot of
+// MaxInFlight, taken before anything is read.
+func (d *Dispatcher) work() {
+	defer d.workers.Done()
+	for {
+		d.mu.Lock()
+		if d.closed || len(d.queue) == 0 {
+			d.running--
+			d.mu.Unlock()
+			return
+		}
+		h := d.queue[0]
+		d.queue = d.queue[1:]
+		datasets := d.datasets
+		d.mu.Unlock()
+		ctx, cancel := context.WithTimeout(d.ctx, deliverTimeout)
+		if err := d.deliver(ctx, datasets, h); err != nil {
+			count(h.key.event, outcomeFailed)
+			d.log.Warn("substrate: a push could not be decided", "event", h.key.event, "error", err)
+		}
+		cancel()
+	}
+}
+
+// deliver decides one hold and sends what it decides. Who may see it is
+// read now, after the hold and its slot: the person's devices, each one's
+// token live and not expired, and the view a request with that token gets
+// reading both the live thread and the item.
 func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) error {
 	ds, err := datasets.Dataset(ctx, h.key.repository)
 	if err != nil {
@@ -342,31 +418,54 @@ func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) er
 			return err
 		}
 	}
-	thread, err := ds.Get(ctx, vocabulary.KindLLMThread, h.key.thread)
-	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
-			count(h.key.event, outcomeUnreadable)
-			return nil
-		}
-		return err
-	}
-	item := h.key.item
-	if h.key.event == substrate.PushEventReply {
-		msg, err := ds.Get(ctx, item.Kind, item.ID)
-		if err != nil {
-			if errors.Is(err, substrate.ErrNotFound) {
-				count(h.key.event, outcomeSeen)
-				return nil
-			}
-			return err
-		}
-		item.Version = msg.Version
-	}
 	class := substrate.PushNotifiesReplies
 	if h.key.event == substrate.PushEventRequest {
 		class = substrate.PushNotifiesRequests
 	}
+	// What every recipient's devices are held to, read once and only once
+	// a device is found.
+	var thread, record *substrate.Record
+	item := h.key.item
+	read := func() (string, error) {
+		if thread != nil {
+			return "", nil
+		}
+		th, err := ds.Get(ctx, vocabulary.KindLLMThread, h.key.thread)
+		if errors.Is(err, substrate.ErrNotFound) {
+			return outcomeUnreadable, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		switch h.key.event {
+		case substrate.PushEventFailed:
+			record = th
+		default:
+			rec, err := ds.Get(ctx, item.Kind, item.ID)
+			if errors.Is(err, substrate.ErrNotFound) {
+				return outcomeSeen, nil
+			}
+			if err != nil {
+				return "", err
+			}
+			record = rec
+			if h.key.event == substrate.PushEventReply {
+				item.Version = rec.Version
+			}
+		}
+		thread = th
+		return "", nil
+	}
 	for _, person := range recipients {
+		devices, err := store.PushDevices(ctx, person)
+		if err != nil {
+			return err
+		}
+		devices = slices.DeleteFunc(devices, func(dv substrate.PushDevice) bool { return !slices.Contains(dv.Notifies, class) })
+		if len(devices) == 0 {
+			count(h.key.event, outcomeNoDevice)
+			continue
+		}
 		check := h.check
 		check.Person = person
 		answer, err := store.PushRecheck(ctx, check)
@@ -381,30 +480,70 @@ func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) er
 			count(h.key.event, outcomeArchived)
 			continue
 		}
-		devices, err := store.PushDevices(ctx, person)
-		if err != nil {
+		if why, err := read(); err != nil {
 			return err
+		} else if why != "" {
+			count(h.key.event, why)
+			return nil
 		}
-		devices = slices.DeleteFunc(devices, func(dv substrate.PushDevice) bool { return !slices.Contains(dv.Notifies, class) })
-		if len(devices) == 0 {
-			count(h.key.event, outcomeNoDevice)
-			continue
-		}
+		badges := map[string]int{}
 		for _, dv := range devices {
-			d.sendTo(ctx, ds, store, dv, thread, h.key.event, item, func(eventID string) alert {
-				return alert{
-					device: dv.ID, repository: h.key.repository, person: person, thread: h.key.thread,
-					event: h.key.event, item: item, check: check, fingerprint: pushwire.EventFingerprint(eventID),
-				}
-			})
+			d.sendAlert(ctx, ds, store, dv, thread, record, item, h, check, badges)
 		}
 	}
 	return nil
 }
 
+// sendAlert sends one alert to one device: its token's view reads the
+// thread and the item now, its app names a relay, and the alert is
+// remembered from before its request, so a `read` that comes while it is in
+// flight takes it back once the relay took it.
+func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice,
+	thread, record *substrate.Record, item substrate.PushItem, h *hold, check substrate.PushCheck, badges map[string]int,
+) {
+	event := h.key.event
+	view, err := d.view(ctx, ds, dv.Token)
+	if err != nil {
+		count(event, outcomeUnreadable)
+		return
+	}
+	for _, rec := range []*substrate.Record{thread, record} {
+		if ok, err := view.Reads(ctx, rec); err != nil || !ok {
+			count(event, outcomeUnreadable)
+			return
+		}
+	}
+	relay, signer, badge, outcome := d.prepare(ctx, store, dv, view, badges)
+	if outcome != "" {
+		count(event, outcome)
+		return
+	}
+	eventID, err := signer.SealEvent(substrate.PushEvent{Event: event, Thread: thread.ID, Item: item, IssuedAt: d.now()})
+	if err != nil {
+		count(event, outcomeFailed)
+		d.log.Warn("substrate: a push's event could not be sealed", "event", event, "error", err)
+		return
+	}
+	seq := d.alerted.add(alert{
+		device: dv.ID, repository: h.key.repository, person: check.Person, thread: h.key.thread,
+		event: event, item: item, check: check, fingerprint: pushwire.EventFingerprint(eventID),
+	})
+	took := d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
+		PushKey: dv.PushKey, Event: event, Thread: thread.ID, Badge: badge, EventID: eventID,
+	})
+	if takeBack, _ := d.alerted.sent(seq, took); takeBack {
+		// Covered while it was in flight: take it back now.
+		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, []string{pushwire.EventFingerprint(eventID)}, badge) {
+			d.alerted.forget(seq)
+		}
+	}
+}
+
 // deliverRead sends the `read` a mark or a decision causes to each device
-// of the person holding an alert it now covers, but the devices of the
-// tokens that wrote it, and forgets those alerts.
+// holding an alert it now covers, but the devices of the tokens that wrote
+// it, and forgets each alert once the relay took the `read` naming it. A
+// `read` names only fingerprints the device holds, so no view of the
+// thread is asked for.
 func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, h *hold) error {
 	held := d.alerted.of(h.key.repository, h.key.thread, h.key.person)
 	if len(held) == 0 {
@@ -423,98 +562,51 @@ func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, stor
 		if answer == substrate.PushSend {
 			continue
 		}
-		d.alerted.forget(a)
-		if h.writers[a.device] {
+		writer := h.writers[a.device]
+		if !d.alerted.covered(a.seq, writer) {
+			continue
+		}
+		if writer {
+			d.alerted.forget(a.seq)
 			continue
 		}
 		covered[a.device] = append(covered[a.device], a)
 	}
-	if len(covered) == 0 {
-		return nil
-	}
-	thread, err := ds.Get(ctx, vocabulary.KindLLMThread, h.key.thread)
-	if err != nil && !errors.Is(err, substrate.ErrNotFound) {
-		return err
-	}
-	byPerson := map[string][]substrate.PushDevice{}
-	for _, list := range covered {
-		person := list[0].person
-		if _, ok := byPerson[person]; ok {
-			continue
-		}
-		if byPerson[person], err = store.PushDevices(ctx, person); err != nil {
-			return err
-		}
-	}
+	devices := map[string]substrate.PushDevice{}
+	listed := map[string]bool{}
 	for device, list := range covered {
-		var dv *substrate.PushDevice
-		for i := range byPerson[list[0].person] {
-			if byPerson[list[0].person][i].ID == device {
-				dv = &byPerson[list[0].person][i]
+		person := list[0].person
+		if !listed[person] {
+			listed[person] = true
+			found, err := store.PushDevices(ctx, person)
+			if err != nil {
+				return err
+			}
+			for _, dv := range found {
+				devices[dv.ID] = dv
 			}
 		}
-		if dv == nil {
-			continue
-		}
+		dv, live := devices[device]
+		seqs := make([]uint64, len(list))
 		prints := make([]string, len(list))
 		for i, a := range list {
-			prints[i] = a.fingerprint
+			seqs[i], prints[i] = a.seq, a.fingerprint
 		}
-		d.sendRead(ctx, ds, store, *dv, thread, h.key.thread, prints)
+		if !live {
+			// The device went: nothing of it is left to take back.
+			d.alerted.forget(seqs...)
+			continue
+		}
+		relay, signer, badge, outcome := d.prepareRead(ctx, ds, store, dv)
+		if outcome != "" {
+			count(substrate.PushEventRead, outcome)
+			continue
+		}
+		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, prints, badge) {
+			d.alerted.forget(seqs...)
+		}
 	}
 	return nil
-}
-
-// sendTo sends one alert to one device and remembers it once the relay
-// took it.
-func (d *Dispatcher) sendTo(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice,
-	thread *substrate.Record, event string, item substrate.PushItem, remember func(eventID string) alert,
-) {
-	relay, signer, badge, outcome := d.prepare(ctx, ds, store, dv, thread)
-	if outcome != "" {
-		count(event, outcome)
-		return
-	}
-	eventID, err := signer.SealEvent(substrate.PushEvent{Event: event, Thread: thread.ID, Item: item, IssuedAt: d.now()})
-	if err != nil {
-		count(event, outcomeFailed)
-		d.log.Warn("substrate: a push's event could not be sealed", "event", event, "error", err)
-		return
-	}
-	if d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
-		PushKey: dv.PushKey, Event: event, Thread: thread.ID, Badge: badge, EventID: eventID,
-	}) {
-		d.alerted.add(remember(eventID))
-	}
-}
-
-// sendRead sends the `read` events that take prints back from one device,
-// as many as the fingerprints need: each event id holds what fits
-// pushwire.MaxEventID.
-func (d *Dispatcher) sendRead(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice,
-	thread *substrate.Record, threadID string, prints []string,
-) {
-	if thread == nil {
-		thread = &substrate.Record{Kind: vocabulary.KindLLMThread, ID: threadID}
-	}
-	relay, signer, badge, outcome := d.prepare(ctx, ds, store, dv, thread)
-	if outcome != "" {
-		count(substrate.PushEventRead, outcome)
-		return
-	}
-	ids, err := SealRead(signer, threadID, prints, d.now())
-	if err != nil {
-		count(substrate.PushEventRead, outcomeFailed)
-		d.log.Warn("substrate: a read's event could not be sealed", "error", err)
-		return
-	}
-	for _, id := range ids {
-		if !d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
-			PushKey: dv.PushKey, Event: substrate.PushEventRead, Thread: threadID, Badge: badge, EventID: id,
-		}) {
-			return
-		}
-	}
 }
 
 // SealRead seals prints into as few `read` event ids as hold them, each
@@ -541,22 +633,12 @@ func SealRead(signer substrate.PushSigner, thread string, prints []string, now t
 	return ids, nil
 }
 
-// prepare finds what a send to one device needs: the device's token's view
-// reads the thread, its app names a relay, the badge as that view counts
-// it, and the token's signer. A non-empty outcome is why not.
-func (d *Dispatcher) prepare(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice,
-	thread *substrate.Record,
+// prepare finds what a send to one device needs beside its view: its app
+// names a relay, the badge as the view counts it (once per token in one
+// delivery), and the token's signer. A non-empty outcome is why not.
+func (d *Dispatcher) prepare(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, view View,
+	badges map[string]int,
 ) (string, substrate.PushSigner, int, string) {
-	view, err := d.view(ctx, ds, dv.Token)
-	if err != nil {
-		return "", nil, 0, outcomeUnreadable
-	}
-	if thread.Properties != nil {
-		ok, err := view.Reads(ctx, thread)
-		if err != nil || !ok {
-			return "", nil, 0, outcomeUnreadable
-		}
-	}
 	relay, err := push.Relay(ctx, d.docs, dv.Token)
 	switch {
 	case errors.Is(err, push.ErrNoRelay):
@@ -565,9 +647,12 @@ func (d *Dispatcher) prepare(ctx context.Context, ds substrate.Dataset, store su
 		d.log.Warn("substrate: a push's relay could not be read", "error", err)
 		return "", nil, 0, outcomeFailed
 	}
-	badge, err := push.Badge(ctx, store, view.Reads, dv.Person)
-	if err != nil {
-		return "", nil, 0, outcomeFailed
+	badge, counted := badges[dv.Token.ID]
+	if !counted {
+		if badge, err = push.Badge(ctx, store, view.Reads, dv.Person); err != nil {
+			return "", nil, 0, outcomeFailed
+		}
+		badges[dv.Token.ID] = badge
 	}
 	signer, err := store.PushSigner(ctx, dv.ID)
 	if err != nil {
@@ -576,19 +661,48 @@ func (d *Dispatcher) prepare(ctx context.Context, ds substrate.Dataset, store su
 	return relay, signer, badge, ""
 }
 
-// send posts one push under the in-flight bound and acts on the answer. It
-// reports whether the relay took it.
+// prepareRead is prepare for a `read`, which names no thread its view must
+// read: the view counts the badge alone.
+func (d *Dispatcher) prepareRead(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice) (string, substrate.PushSigner, int, string) {
+	view, err := d.view(ctx, ds, dv.Token)
+	if err != nil {
+		return "", nil, 0, outcomeUnreadable
+	}
+	return d.prepare(ctx, store, dv, view, map[string]int{})
+}
+
+// sendReadIDs sends the `read` events that take prints back from one
+// device, sealed as SealRead splits them, and reports whether the relay
+// took every one.
+func (d *Dispatcher) sendReadIDs(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, relay string,
+	signer substrate.PushSigner, thread string, prints []string, badge int,
+) bool {
+	ids, err := SealRead(signer, thread, prints, d.now())
+	if err != nil {
+		count(substrate.PushEventRead, outcomeFailed)
+		d.log.Warn("substrate: a read's event could not be sealed", "error", err)
+		return false
+	}
+	for _, id := range ids {
+		if !d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
+			PushKey: dv.PushKey, Event: substrate.PushEventRead, Thread: thread, Badge: badge, EventID: id,
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// send posts one push and acts on the answer: the caller holds a delivery
+// slot. It reports whether the relay took it.
 func (d *Dispatcher) send(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, relay string,
 	signer substrate.PushSigner, req pushwire.PushRequest,
 ) bool {
-	select {
-	case d.slots <- struct{}{}:
-	case <-ctx.Done():
+	if ctx.Err() != nil {
 		count(req.Event, outcomeFailed)
 		return false
 	}
 	answer := d.sender.Send(ctx, relay, signer, req)
-	<-d.slots
 	host := relayHost(relay)
 	switch answer.Outcome {
 	case push.Sent:

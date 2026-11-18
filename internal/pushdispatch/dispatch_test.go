@@ -101,6 +101,8 @@ type fakeStore struct {
 	checks   []substrate.PushCheck
 	badgeN   int
 	devicesN int
+	// gone are the request records Get no longer finds, kind/id.
+	gone map[string]bool
 }
 
 func newFakeStore() *fakeStore {
@@ -111,6 +113,7 @@ func newFakeStore() *fakeStore {
 		messages: map[string]*substrate.Record{},
 		devices:  map[string][]substrate.PushDevice{},
 		signers:  map[string]*fakeSigner{},
+		gone:     map[string]bool{},
 	}
 }
 
@@ -123,6 +126,11 @@ func (s *fakeStore) Get(_ context.Context, kind, id string) (*substrate.Record, 
 		rec = s.threads[id]
 	case vocabulary.KindLLMMessage:
 		rec = s.messages[id]
+	default:
+		// A request's record: present unless gone names it.
+		if !s.gone[kind+"/"+id] {
+			rec = &substrate.Record{Kind: kind, ID: id, Version: 1, Properties: map[string]any{"thread": testThread}}
+		}
 	}
 	if rec == nil {
 		return nil, fmt.Errorf("%w: %s/%s", substrate.ErrNotFound, kind, id)
@@ -167,11 +175,22 @@ func (s *fakeStore) PushRecheck(_ context.Context, c substrate.PushCheck) (strin
 
 func (s *fakeStore) PushPending(context.Context, substrate.PushItem) (bool, error) { return true, nil }
 
-func (s *fakeStore) PushBadgeThreads(context.Context, string) ([]*substrate.Record, error) {
+func (s *fakeStore) PushMayDecide(context.Context, substrate.Actor, substrate.PushItem) (bool, error) {
+	return true, nil
+}
+
+// PushBadgeThreads pages s.badge by id, 500 at a time, as the engine does.
+func (s *fakeStore) PushBadgeThreads(_ context.Context, _, after string) ([]*substrate.Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.badgeN++
-	return s.badge, nil
+	var page []*substrate.Record
+	for _, th := range s.badge {
+		if th.ID > after && len(page) < 500 {
+			page = append(page, th)
+		}
+	}
+	return page, nil
 }
 
 func (s *fakeStore) DeletePushDevice(_ context.Context, id, key string) (bool, error) {
@@ -224,13 +243,23 @@ type fakeSender struct {
 	mu      sync.Mutex
 	sent    []sent
 	answers map[string]push.Answer
+	// during, when set, runs inside a send, before it answers.
+	during func(ctx context.Context, req pushwire.PushRequest)
 }
 
-func (f *fakeSender) Send(_ context.Context, relay string, _ substrate.PushSigner, req pushwire.PushRequest) push.Answer {
+func (f *fakeSender) Send(ctx context.Context, relay string, _ substrate.PushSigner, req pushwire.PushRequest) push.Answer {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.sent = append(f.sent, sent{relay, req})
-	if a, ok := f.answers[req.PushKey]; ok {
+	during := f.during
+	a, scripted := f.answers[req.PushKey]
+	f.mu.Unlock()
+	if during != nil {
+		during(ctx, req)
+	}
+	if ctx.Err() != nil {
+		return push.Answer{Outcome: push.Failed, Err: ctx.Err()}
+	}
+	if scripted {
 		return a
 	}
 	return push.Answer{Outcome: push.Sent, Status: http.StatusOK}
@@ -478,6 +507,7 @@ func TestAFailurePushesOnlyAfterATurnOfMoreThanFiveSeconds(t *testing.T) {
 		Kind: substrate.PushSettled, Mode: "chat", Person: testPerson, Status: "overbudget",
 		ThreadVersion: 9, TurnStarted: r.start.Add(-6 * time.Second),
 	})
+	settled := r.start
 	r.at(5 * time.Second)
 	got := r.sender.all()
 	if len(got) != 1 || got[0].req.Event != pushwire.EventFailed {
@@ -487,7 +517,7 @@ func TestAFailurePushesOnlyAfterATurnOfMoreThanFiveSeconds(t *testing.T) {
 	if e.Item != (substrate.PushItem{Kind: vocabulary.KindLLMThread, ID: testThread, Version: 9}) {
 		t.Fatalf("the failure seals %+v", e.Item)
 	}
-	if c := r.store.checks[0]; c.Event != substrate.PushEventFailed || !c.TurnStarted.Equal(r.start.Add(-6*time.Second)) {
+	if c := r.store.checks[0]; c.Event != substrate.PushEventFailed || !c.SettledAt.Equal(settled) {
 		t.Fatalf("the failure was checked as %+v", c)
 	}
 }
@@ -934,7 +964,7 @@ func TestTheAlertedMapForgetsTheOldest(t *testing.T) {
 	for i := range 5 {
 		m.add(alert{repository: testRepo, thread: testThread, person: testPerson, fingerprint: fmt.Sprint(i)})
 	}
-	m.forget(m.of(testRepo, testThread, testPerson)[0])
+	m.forget(m.of(testRepo, testThread, testPerson)[0].seq)
 	m.add(alert{repository: testRepo, thread: testThread, person: testPerson, fingerprint: "5"})
 	m.add(alert{repository: testRepo, thread: testThread, person: testPerson, fingerprint: "6"})
 	var got []string
@@ -984,5 +1014,199 @@ func TestTheLoopFiresWhatIsDue(t *testing.T) {
 			t.Fatal("the loop never fired the due hold")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A token revoked while its alert waits behind another delivery gets
+// nothing: the devices are listed once the delivery has its slot.
+func TestATokenRevokedWhileQueuedGetsNothing(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.device("actor-bo", "tok2")
+	r.message("m1", 1)
+	r.message("m2", 1)
+	r.reply(0, "m1")
+	r.signal(0, substrate.PushSignal{
+		Kind: substrate.PushSettled, Mode: "chat", Person: "actor-bo", Status: "ok",
+		Message: "m2", TurnStarted: r.start.Add(-time.Second),
+	})
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.PushKey != "key-tok1" {
+			return
+		}
+		r.store.mu.Lock()
+		delete(r.store.devices, "actor-bo")
+		r.store.mu.Unlock()
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	if got := r.sender.to("tok2"); len(got) != 0 {
+		t.Fatalf("a token revoked while queued was sent %+v", got)
+	}
+	if got := r.sender.to("tok1"); len(got) != 1 {
+		t.Fatalf("the first device got %d pushes", len(got))
+	}
+}
+
+// A device whose token reads the thread but not the item gets no alert.
+func TestATokenThatReadsTheThreadButNotTheItemGetsNothing(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.hidden["tok1"] = map[string]bool{"ap1": true}
+	r.raise(0, testPerson, "ap1", 1)
+	r.message("m1", 1)
+	r.hidden["tok1"]["m1"] = true
+	r.reply(0, "m1")
+	r.at(Hold)
+	if got := r.sender.all(); len(got) != 0 {
+		t.Fatalf("an item the token cannot read was alerted: %+v", got)
+	}
+	r.store.mu.Lock()
+	r.store.gone[vocabulary.KindLLMApproval+"/ap2"] = true
+	r.store.mu.Unlock()
+	r.raise(Hold, testPerson, "ap2", 1)
+	r.at(2 * Hold)
+	if got := r.sender.all(); len(got) != 0 {
+		t.Fatalf("a request whose record is gone was alerted: %+v", got)
+	}
+}
+
+// A `read` that covers an alert still in flight takes it back once the
+// relay took it, and never before.
+func TestAReadCoversAnAlertStillInFlight(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.message("m1", 1)
+	r.reply(0, "m1")
+	read := &hold{
+		key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+		check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+		writers: map[string]bool{},
+	}
+	r.sender.mu.Lock()
+	r.sender.during = func(ctx context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventReply {
+			return
+		}
+		// The person reads the reply while its push is in flight.
+		r.store.mu.Lock()
+		r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+		r.store.mu.Unlock()
+		if err := r.d.deliver(ctx, fakeDatasets{ds: r.store}, read); err != nil {
+			t.Error(err)
+		}
+		if n := len(r.readsTo("tok1")); n != 0 {
+			t.Errorf("a read went out before the alert it covers: %d", n)
+		}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	alerts := r.alertsTo("tok1", pushwire.EventReply)
+	reads := r.readsTo("tok1")
+	if len(alerts) != 1 || len(reads) != 1 || !slices.Equal(reads[0], []string{pushwire.EventFingerprint(alerts[0].req.EventID)}) {
+		t.Fatalf("alerts %+v, reads %v: want the in-flight alert taken back once sent", alerts, reads)
+	}
+	if n := r.d.alerted.size(); n != 0 {
+		t.Fatalf("%d alerts remembered after their take-back", n)
+	}
+}
+
+// Close cancels a delivery in flight, waits for it, and no delivery starts
+// after it returns.
+func TestCloseIsABarrier(t *testing.T) {
+	store := newFakeStore()
+	sender := &fakeSender{answers: map[string]push.Answer{}}
+	entered := make(chan struct{})
+	var once sync.Once
+	sender.during = func(ctx context.Context, _ pushwire.PushRequest) {
+		once.Do(func() { close(entered) })
+		<-ctx.Done()
+	}
+	start := time.Unix(1763459123, 0).UTC()
+	c := &clock{t: start}
+	docs := &fakeDocs{doc: authority.AuthorityDocument{Authority: "example.com", Apps: []authority.AuthorityApp{
+		{ClientID: testClientID, Push: &authority.AppPush{Relay: testRelay}},
+	}}}
+	d := New(Options{
+		View:      func(context.Context, substrate.Dataset, substrate.TokenInfo) (View, error) { return fakeView{}, nil },
+		Documents: docs, Sender: sender, Now: c.now,
+	})
+	d.Start(fakeDatasets{ds: store})
+	for i, id := range []string{"tok1", "tok2", "tok3", "tok4", "tok5", "tok6"} {
+		person := fmt.Sprintf("actor-%d", i)
+		store.devices[person] = []substrate.PushDevice{{
+			ID: id, Person: person, PushKey: "key-" + id, Notifies: []string{substrate.PushNotifiesReplies},
+			Token: substrate.TokenInfo{ID: id, ClientID: testClientID, AppAuthority: "example.com"},
+		}}
+		msg := fmt.Sprintf("m%d", i)
+		store.messages[msg] = &substrate.Record{Kind: vocabulary.KindLLMMessage, ID: msg, Version: 1, Properties: map[string]any{"thread": testThread}}
+		d.PushSignal(substrate.PushSignal{
+			Kind: substrate.PushSettled, Repository: testRepo, Thread: testThread, Mode: "chat", Person: person,
+			Status: "ok", Message: msg, At: start, TurnStarted: start,
+		})
+	}
+	c.set(start.Add(Hold))
+	d.fire(c.now())
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no delivery reached its send")
+	}
+	closed := make(chan struct{})
+	go func() { d.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not return while a send waited on its context")
+	}
+	before := len(sender.all())
+	if before > MaxInFlight {
+		t.Fatalf("%d sends ran at once, past %d", before, MaxInFlight)
+	}
+	d.PushSignal(substrate.PushSignal{Kind: substrate.PushSettled, Repository: testRepo, Thread: testThread, Mode: "chat", Person: "actor-0", Status: "ok", Message: "m0", At: start})
+	d.fire(start.Add(time.Hour))
+	time.Sleep(50 * time.Millisecond)
+	if after := len(sender.all()); after != before {
+		t.Fatalf("a delivery ran after Close: %d sends, then %d", before, after)
+	}
+}
+
+// Signals that keep coming under one key push its wait no further than
+// MaxHoldDelay past the first.
+func TestAHoldIsNotPushedPastItsCeiling(t *testing.T) {
+	r := newRig(t)
+	for i := range 20 {
+		r.signal(time.Duration(i)*time.Second, substrate.PushSignal{Kind: substrate.PushMarked, Person: testPerson, Token: "tok9"})
+	}
+	r.d.mu.Lock()
+	var due time.Time
+	for _, h := range r.d.holds {
+		due = h.due
+	}
+	r.d.mu.Unlock()
+	if want := r.start.Add(MaxHoldDelay); !due.Equal(want) {
+		t.Fatalf("the read is due at %v, want the ceiling %v", due, want)
+	}
+}
+
+// The badge pages on past a page the view keeps little of, to 999.
+func TestTheBadgePagesUntilItCounts999(t *testing.T) {
+	store := newFakeStore()
+	hidden := map[string]bool{}
+	for i := range 1600 {
+		id := fmt.Sprintf("th%05d", i)
+		store.badge = append(store.badge, &substrate.Record{Kind: vocabulary.KindLLMThread, ID: id})
+		if i < 550 {
+			hidden[id] = true
+		}
+	}
+	n, err := push.Badge(context.Background(), store, fakeView{hidden: hidden}.Reads, testPerson)
+	if err != nil || n != substrate.PushBadgeMax {
+		t.Fatalf("the badge counted %d, %v: want %d past a page the view hides", n, err, substrate.PushBadgeMax)
+	}
+	store.badge = store.badge[:1200]
+	if n, _ := push.Badge(context.Background(), store, fakeView{hidden: hidden}.Reads, testPerson); n != 650 {
+		t.Fatalf("the badge counted %d, want every readable candidate, 650", n)
 	}
 }

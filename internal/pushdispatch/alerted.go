@@ -1,12 +1,13 @@
 package pushdispatch
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// alert is one alert the relay took, remembered so a `read` can take it
+// alert is one alert sent or being sent, remembered so a `read` can take it
 // back: which device, whose and on which thread, what it was about, the
 // check that says whether it is covered now, and the fingerprint of its
 // event id, which the `read` names it by (pushwire.EventFingerprint).
@@ -16,6 +17,12 @@ type alert struct {
 	check                                     substrate.PushCheck
 	fingerprint                               string
 	seq                                       uint64
+	// sending is true from before the alert's request to the relay until
+	// its answer. A `read` that covers it meanwhile cannot take back what
+	// the device may not hold yet: it marks it takeBack, and the send takes
+	// it back once the relay took it, or drop where the device is the
+	// writer's own.
+	sending, takeBack, drop bool
 }
 
 // alertedMap is every alert remembered, at most max, the oldest forgotten
@@ -29,14 +36,15 @@ type alertedMap struct {
 	// grows, so the eviction walks forward from it and visits each seq
 	// once.
 	low  uint64
-	byID map[uint64]alert
+	byID map[uint64]*alert
 }
 
 func newAlertedMap(max int) *alertedMap {
-	return &alertedMap{max: max, low: 1, byID: map[uint64]alert{}}
+	return &alertedMap{max: max, low: 1, byID: map[uint64]*alert{}}
 }
 
-func (m *alertedMap) add(a alert) {
+// add remembers a, marked sending, and answers its seq.
+func (m *alertedMap) add(a alert) uint64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for len(m.byID) >= m.max {
@@ -49,29 +57,93 @@ func (m *alertedMap) add(a alert) {
 		}
 	}
 	m.seq++
-	a.seq = m.seq
-	m.byID[a.seq] = a
+	a.seq, a.sending = m.seq, true
+	m.byID[a.seq] = &a
+	return a.seq
 }
 
-// of is the alerts remembered on thread for person, every person's when
-// person is "", oldest first.
+// sent settles the send of alert seq: kept when the relay took it, gone
+// otherwise. It answers what a `read` asked of it meanwhile: take it back,
+// or forget it.
+func (m *alertedMap) sent(seq uint64, took bool) (takeBack, drop bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.byID[seq]
+	if !ok {
+		return false, false
+	}
+	a.sending = false
+	if !took || a.drop {
+		delete(m.byID, seq)
+		return false, took && a.drop
+	}
+	return a.takeBack, false
+}
+
+// of is a copy of the alerts remembered on thread for person, every
+// person's when person is "", oldest first, those still sending included.
 func (m *alertedMap) of(repository, thread, person string) []alert {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []alert
 	for _, a := range m.byID {
 		if a.repository == repository && a.thread == thread && (person == "" || a.person == person) {
-			out = append(out, a)
+			out = append(out, *a)
 		}
 	}
-	sortAlerts(out)
+	slices.SortFunc(out, func(a, b alert) int {
+		switch {
+		case a.seq < b.seq:
+			return -1
+		case a.seq > b.seq:
+			return 1
+		}
+		return 0
+	})
 	return out
 }
 
-func (m *alertedMap) forget(a alert) {
+// covered marks a `read`'s coverage of alert seq: a sent alert is answered
+// true, for the `read` to take back; one still sending is marked to be
+// taken back (or forgotten, drop) when its send settles, and answered
+// false.
+func (m *alertedMap) covered(seq uint64, drop bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.byID, a.seq)
+	a, ok := m.byID[seq]
+	if !ok {
+		return false
+	}
+	if a.sending {
+		if drop {
+			a.drop = true
+		} else {
+			a.takeBack = true
+		}
+		return false
+	}
+	return true
+}
+
+// forget forgets the alerts seqs.
+func (m *alertedMap) forget(seqs ...uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, seq := range seqs {
+		delete(m.byID, seq)
+	}
+}
+
+// update rewrites the check of every alert of item on thread with fn: a
+// settle naming the message its turn's requests are read at.
+func (m *alertedMap) update(repository, thread string, item substrate.PushItem, fn func(*substrate.PushCheck)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, a := range m.byID {
+		if a.repository == repository && a.thread == thread && a.item.Kind == item.Kind && a.item.ID == item.ID {
+			fn(&a.check)
+		}
+	}
 }
 
 // forgetDevice forgets every alert of a device that was deleted.
@@ -90,12 +162,4 @@ func (m *alertedMap) size() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.byID)
-}
-
-func sortAlerts(list []alert) {
-	for i := 1; i < len(list); i++ {
-		for j := i; j > 0 && list[j].seq < list[j-1].seq; j-- {
-			list[j], list[j-1] = list[j-1], list[j]
-		}
-	}
 }
