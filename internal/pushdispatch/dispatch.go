@@ -751,6 +751,7 @@ func (d *Dispatcher) takeBack(ctx context.Context, ds substrate.Dataset, store s
 	signer, err := store.PushSigner(ctx, device)
 	if err != nil {
 		count(substrate.PushEventRead, outcomeFailed)
+		d.log.Warn("substrate: a take-back's signer could not be derived; the next read takes it back", "error", err)
 		return false
 	}
 	ids, err := SealRead(signer, thread, prints, d.now())
