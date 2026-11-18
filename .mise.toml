@@ -615,7 +615,10 @@ depends = ["console:install"]
 # --audit-level high: a moderate advisory in a build-time devDependency is not
 # worth blocking every pull request in the repository, and a gate that cries
 # wolf gets an `|| true` bolted onto it within the month. High and critical
-# stop the line; the rest are read in the job's output.
+# stop the line; the rest are read in the job's output. An advisory no
+# release fixes yet is listed by its GHSA id under pnpm-workspace.yaml's
+# `auditConfig`, with why it may wait, and never by `--ignore-unfixable`,
+# which would pass over the next one unread.
 run = "pnpm audit --audit-level high"
 
 [tasks."audit:python"]

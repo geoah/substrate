@@ -3,3 +3,13 @@ packages: []
 # one today, and pnpm skips every script whose package is not named here, so
 # name a package only once its script is read and needed.
 allowBuilds: {}
+# The advisories `pnpm audit` passes over, each by its GHSA id. One goes here
+# only when no fixed version exists, so no bump or override can clear it, and
+# comes out once a fix ships and the lockfile takes it.
+# GHSA-fc5q-39xc-vjpf: picomatch ReDoS on repeated extglobs, every release
+# through 4.0.7 and no fix published. picomatch arrives only through the build
+# and lint tools (knip, vite, vitest and typescript-eslint, by tinyglobby and
+# fdir), matches globs this tree writes, and is in no bundle the console ships.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
