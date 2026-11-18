@@ -336,6 +336,59 @@ func TestTwoExpiredAnswersInAMinuteMintOnce(t *testing.T) {
 	}
 }
 
+// Once Apple has refused two tokens in a row as expired, the next is minted
+// no sooner than 20 minutes on, until Apple accepts a token, which brings
+// the floor back to a minute.
+func TestTwoRefusedTokensRaiseTheMintFloorUntilOneIsAccepted(t *testing.T) {
+	key := newKey(t)
+	var refuse atomic.Bool
+	refuse.Store(true)
+	a := newApple(t, key, "KEY0000001", func(string, *http.Request) (int, string) {
+		if refuse.Load() {
+			return http.StatusForbidden, ReasonExpiredProviderToken
+		}
+		return http.StatusOK, ""
+	})
+	clk := &clock{now: time.Unix(1_800_000_000, 0)}
+	var mints atomic.Int32
+	c := a.client(t, key, "KEY0000001", clk.Now, &mints)
+	send := func() Response {
+		t.Helper()
+		r, err := c.Send(context.Background(), note)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	send()
+	clk.Add(MinMintInterval)
+	send() // the first token refused a minute on: a second is minted, and refused too
+	if mints.Load() != 2 {
+		t.Fatalf("%d mints after two refused tokens", mints.Load())
+	}
+	clk.Add(RefusedMintInterval - time.Second)
+	send()
+	if mints.Load() != 2 {
+		t.Fatalf("a token minted %d times within 20 minutes of two refusals", mints.Load())
+	}
+	clk.Add(time.Second)
+	send()
+	if mints.Load() != 3 {
+		t.Fatalf("%d mints 20 minutes on, want a third", mints.Load())
+	}
+	refuse.Store(false)
+	if r := send(); r.Status != http.StatusOK {
+		t.Fatalf("an accepted token: %v", r)
+	}
+	refuse.Store(true)
+	send()
+	clk.Add(MinMintInterval)
+	send()
+	if mints.Load() != 4 {
+		t.Fatalf("%d mints a minute after a refusal that followed an accepted token, want the floor back at a minute", mints.Load())
+	}
+}
+
 // A send that gets no answer says why in a fixed category and never with
 // the URL, which holds the device token, and still unwraps to the cause.
 func TestASendWithNoAnswerNamesNoDeviceToken(t *testing.T) {

@@ -3405,7 +3405,7 @@ What Apple answers, and what the relay answers the server:
 | 410, or 400 `BadDeviceToken` or `DeviceTokenNotForTopic` | 410 `gone`, and the server deletes the device | `BadDeviceToken` is also a token of the other environment, a development build's token sent to `production`: its device is deleted, and the install registers again in its own environment when it next opens |
 | 403 `InvalidProviderToken`, 400 `TopicDisallowed` or `BadTopic` | 502 `upstream`, logged as an error | the key, its id, the team id or the topic is wrong |
 | 403 `BadEnvironmentKeyIdInToken` | 502 `upstream`, logged as an error naming the environment | a key issued for one environment is configured for the other |
-| 403 `ExpiredProviderToken` | the provider token is replaced and the push sent once more; 502 `upstream` if that is refused too, or if the token is under a minute old, when the relay's clock is the likelier fault | |
+| 403 `ExpiredProviderToken` | the provider token is replaced and the push sent once more; 502 `upstream` if that is refused too, or if the token is under a minute old, when the relay's clock is the likelier fault. Once Apple has refused two tokens in a row, none is minted sooner than 20 minutes after the last until Apple accepts one, since Apple refuses a provider that replaces its token more often | |
 | 429, 5xx, or no answer | 502 `upstream` | |
 | anything else | 500 `internal`, logged | |
 

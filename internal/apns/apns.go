@@ -47,6 +47,12 @@ const TokenLifetime = 50 * time.Minute
 // send would only add TooManyProviderTokenUpdates.
 const MinMintInterval = time.Minute
 
+// RefusedMintInterval is the floor instead once Apple has refused two
+// provider tokens in a row as expired, until it accepts one: a fresh token
+// refused too says the clock is wrong, not the token, and Apple refuses a
+// provider that replaces its token more often than every 20 minutes.
+const RefusedMintInterval = 20 * time.Minute
+
 // The HTTP/2 health check on a connection to Apple: a ping after this long
 // with no frame read, and the connection closed when the ping is not
 // answered in time, so a connection a NAT dropped while idle is found before
@@ -184,6 +190,11 @@ type Client struct {
 	mu     sync.Mutex
 	token  string
 	minted time.Time
+	// refused counts the provider tokens Apple refused as expired in a row,
+	// each token once however many sends it refused; lastRefused is the
+	// last of them. An answer that is not a 403 sets it back to none.
+	refused     int
+	lastRefused string
 }
 
 // New makes a Client. It mints nothing until asked.
@@ -231,7 +242,8 @@ func (c *Client) Token() (string, error) {
 }
 
 // expire drops the current provider token, but only if it is the one a
-// failing send carried and it is at least MinMintInterval old: many sends
+// failing send carried and it is old enough: MinMintInterval, or
+// RefusedMintInterval once Apple refused two tokens in a row. Many sends
 // refused for one token cause one mint, a refusal of an older token,
 // answered after a new one was minted, causes none, and a token Apple
 // refuses moments after it was minted is not replaced again. It reports
@@ -242,11 +254,30 @@ func (c *Client) expire(tok string) bool {
 	if c.token != tok {
 		return true
 	}
-	if c.cfg.Now().Sub(c.minted) < MinMintInterval {
+	floor := MinMintInterval
+	if c.refused >= 2 {
+		floor = RefusedMintInterval
+	}
+	if c.cfg.Now().Sub(c.minted) < floor {
 		return false
 	}
 	c.token = ""
 	return true
+}
+
+// answered notes what Apple answered a send carrying tok: a token refused
+// as expired counts once toward refused, and any answer but a 403 says
+// Apple accepted the token, which sets the count back.
+func (c *Client) answered(tok string, resp Response) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case resp.Status != http.StatusForbidden:
+		c.refused, c.lastRefused = 0, ""
+	case resp.Reason == ReasonExpiredProviderToken && tok != c.lastRefused:
+		c.refused++
+		c.lastRefused = tok
+	}
 }
 
 // mint signs a provider token: header {"alg":"ES256","kid":<key id>}, claims
@@ -294,7 +325,7 @@ type Response struct {
 
 // Send posts n. When Apple answers 403 ExpiredProviderToken to the token the
 // send carried, that token is replaced and n is sent once more, unless the
-// token is younger than MinMintInterval, when the 403 is the answer. An
+// token is younger than the floor (expire), when the 403 is the answer. An
 // error is a send that got no answer, a *NoAnswerError, whose text never
 // holds the device token.
 func (c *Client) Send(ctx context.Context, n Notification) (Response, error) {
@@ -303,16 +334,20 @@ func (c *Client) Send(ctx context.Context, n Notification) (Response, error) {
 		return Response{}, err
 	}
 	resp, err := c.send(ctx, tok, n)
-	if err != nil || resp.Status != http.StatusForbidden || resp.Reason != ReasonExpiredProviderToken {
+	if err != nil {
 		return resp, err
 	}
-	if !c.expire(tok) {
+	c.answered(tok, resp)
+	if resp.Status != http.StatusForbidden || resp.Reason != ReasonExpiredProviderToken || !c.expire(tok) {
 		return resp, nil
 	}
 	if tok, err = c.Token(); err != nil {
 		return Response{}, err
 	}
-	return c.send(ctx, tok, n)
+	if resp, err = c.send(ctx, tok, n); err == nil {
+		c.answered(tok, resp)
+	}
+	return resp, err
 }
 
 // errRequest is a request that could not be built. Its text is fixed, since
