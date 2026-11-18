@@ -161,13 +161,20 @@ public struct NotificationAction: Bridged, Equatable {
     public var destructive: Bool
     /// Asks for a line of text first (a reply), which the response carries.
     public var input: NotificationTextInput?
+    /// Asks for the device to be unlocked first: a decision is never made
+    /// from a locked screen.
+    public var requiresUnlock: Bool
 
-    public init(id: String, title: String, opensApp: Bool = false, destructive: Bool = false, input: NotificationTextInput? = nil) {
+    public init(
+        id: String, title: String, opensApp: Bool = false, destructive: Bool = false, input: NotificationTextInput? = nil,
+        requiresUnlock: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.opensApp = opensApp
         self.destructive = destructive
         self.input = input
+        self.requiresUnlock = requiresUnlock
     }
 }
 

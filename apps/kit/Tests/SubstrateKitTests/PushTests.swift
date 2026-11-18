@@ -133,6 +133,34 @@ struct PushRelayTests {
         #expect(try await PushRelay.published(clientID: "http://127.0.0.1/substrate-chat", transport: StubTransport()) == nil)
     }
 
+    @Test func everyEventTheServerResolvesDecodes() async throws {
+        let transport = StubTransport()
+        for name in ["event-reply", "event-failed", "event-request-card-1", "event-request-card-2", "event-read"] {
+            let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Resources/pushserver"))
+            transport.replace("GET", "/api/v1/push/events/\(name)", json: try String(contentsOf: url, encoding: .utf8))
+        }
+        let client = SubstrateClient(server: URL(string: "https://s.example.com")!, token: "secret", transport: transport)
+        let reply = try #require(try await client.pushEvent("event-reply"))
+        #expect(reply.event == "reply" && reply.item?.kind == "substrate.reamde.dev/llm/message" && reply.item?.version == 1)
+        #expect(try await client.pushEvent("event-request-card-1")?.actions == true)
+        #expect(try await client.pushEvent("event-request-card-2")?.actions == false)
+        #expect(try await client.pushEvent("event-failed")?.item?.kind == "substrate.reamde.dev/llm/thread")
+        let read = try #require(try await client.pushEvent("event-read"))
+        #expect(read.item == nil && read.covers?.alerts == ["CetD8NWemKv7dBg-jASmqA"])
+        // Another token's, past its day, or no longer read: nothing.
+        transport.replace("GET", "/api/v1/push/events/gone", status: 404, json: #"{"error":{"code":"not_found","message":"no"}}"#)
+        #expect(try await client.pushEvent("gone") == nil)
+        #expect(transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer secret" })
+    }
+
+    @Test func anAlertIsNamedByTheFingerprintOfItsEventID() throws {
+        let vectors = try #require(try JSONSerialization.jsonObject(with: PushWire.data("fingerprints")) as? [[String: String]])
+        #expect(vectors.count >= 2)
+        for vector in vectors {
+            #expect(PushFingerprint.of(eventID: try #require(vector["eventId"])) == vector["fingerprint"])
+        }
+    }
+
     @Test func aRefusalNamesItsReason() throws {
         let body = Data(#"{"error":{"code":"forbidden","reason":"no_relay","message":"this token's app names no push relay"}}"#.utf8)
         let error = try #require(ServerError(status: 403, envelope: body))

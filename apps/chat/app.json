@@ -8,7 +8,9 @@
   "apple": {
     "bundleID": "dev.reamde.substrate.chat",
     "scheme": "SubstrateChat",
-    "extensions": [],
+    "extensions": [
+      "dev.reamde.substrate.chat.notifications"
+    ],
     "clientIDKey": "SubstrateChatClientID",
     "redirectKey": "SubstrateChatRedirect"
   },

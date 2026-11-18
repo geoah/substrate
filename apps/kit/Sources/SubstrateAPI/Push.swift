@@ -219,6 +219,49 @@ public struct PushBadge: Codable, Equatable, Sendable {
     public var badge: Int
 }
 
+/// The record a push is about, at the version it was sent for.
+public struct PushItem: Codable, Equatable, Sendable {
+    public var kind: String
+    public var id: String
+    public var version: Int
+
+    public init(kind: String, id: String, version: Int) {
+        self.kind = kind
+        self.id = id
+        self.version = version
+    }
+}
+
+/// What a `read` takes back: the fingerprints of the event ids of the
+/// alerts it covers (`PushFingerprint`).
+public struct PushCovers: Codable, Equatable, Sendable {
+    public var alerts: [String]
+
+    public init(alerts: [String]) {
+        self.alerts = alerts
+    }
+}
+
+/// `GET /api/v1/push/events/{eventId}`: what an event id a push carried
+/// names, for the token it was sealed for. A reply, a failure and a request
+/// carry their item; a request says whether it is still pending now
+/// (`actions`); a read says what it covers.
+public struct PushEventInfo: Codable, Equatable, Sendable {
+    public var event: String
+    public var thread: String
+    public var item: PushItem?
+    public var actions: Bool?
+    public var covers: PushCovers?
+
+    public init(event: String, thread: String, item: PushItem? = nil, actions: Bool? = nil, covers: PushCovers? = nil) {
+        self.event = event
+        self.thread = thread
+        self.item = item
+        self.actions = actions
+        self.covers = covers
+    }
+}
+
 /// Why the server pushes nothing to this token.
 public enum PushRefused: String, Error, Sendable, Equatable {
     /// The token is no verified app's, its app is local, or its publisher's
@@ -252,6 +295,20 @@ public extension SubstrateClient {
         do {
             let badge = try await send("GET", "api/v1/push/badge", timeout: Timeout.quick).decode(PushBadge.self).badge
             return min(max(badge, 0), 999)
+        } catch let error as ServerError where error.status == 403 && error.reason == PushRefused.off.rawValue {
+            return nil
+        }
+    }
+
+    /// What an event id names, for this token; nil where it names nothing
+    /// this token reads (another token's, past 24 hours, an item the token
+    /// no longer reads: `404`), or the operator turned push off. Asked once,
+    /// within `timeout`: a notification has only the time its extension is
+    /// given.
+    func pushEvent(_ eventID: String, timeout: TimeInterval = Timeout.quick) async throws -> PushEventInfo? {
+        do {
+            let response = try await send("GET", "api/v1/push/events/\(segment(eventID))", accept: [404], timeout: timeout, retries: 0)
+            return response.status == 404 ? nil : try response.decode(PushEventInfo.self)
         } catch let error as ServerError where error.status == 403 && error.reason == PushRefused.off.rawValue {
             return nil
         }

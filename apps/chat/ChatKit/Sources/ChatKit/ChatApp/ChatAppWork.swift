@@ -643,17 +643,20 @@ extension ChatApp {
                     for await response in notifications.responses() {
                         // An action is answered in the background, under
                         // ids minted for it as it arrives.
+                        // A push opens its chat, and acts in it, only for
+                        // this install's registration: one for another
+                        // sign-in names no chat, so its action is refused
+                        // before anything is written.
+                        let generation = response.userInfo[PushPayload.Key.generation]
+                        let accepted = if let generation, let push { await push.accepts(generation) } else { false }
+                        let opened = Self.opened(response, accepted: accepted)
                         guard case .named = response.action else {
-                            // A push opens its chat only for this install's
-                            // registration.
-                            let generation = response.userInfo[PushPayload.Key.generation]
-                            let accepted = if let generation, let push { await push.accepts(generation) } else { false }
-                            yield(.notificationOpened(Self.opened(response, accepted: accepted)))
+                            yield(.notificationOpened(opened))
                             continue
                         }
                         yield(
                             .notificationActed(
-                                response, key: ChildKey(ids.next().uuidString.lowercased()), message: ids.next().uuidString.lowercased(),
+                                opened, key: ChildKey(ids.next().uuidString.lowercased()), message: ids.next().uuidString.lowercased(),
                                 at: clock.now))
                     }
                 }

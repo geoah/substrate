@@ -1266,6 +1266,12 @@ is the publisher's, given to a release in one variable,
   `development`; an export for TestFlight or the App Store signs with a
   distribution profile, which sets `production`. The app reads which one
   its build is from its own signature at run time.
+- A push app has a notification service extension, listed in
+  `apple.extensions` (Chat's `SubstrateChatNotifications`), which shows
+  what a push is about, and the `remote-notification` background mode,
+  which lets a `read` take notifications back. The app and the extension
+  share the Keychain group that is the app's own identifier
+  (`keychain-access-groups`), as Sync and its share extension do.
 
 What a push build needs of the Apple developer account, all of it additive:
 Push Notifications on the app's App ID (the release turns it on, or the
@@ -1303,7 +1309,7 @@ app folder without one, or one missing a field below.
 | `icon` | its 1024-pixel icon, relative to the app's folder |
 | `accent` | its accent and the accent's text tone, `{"light": "#RRGGBB", "dark": "#RRGGBB", "text": {"light": "#RRGGBB", "dark": "#RRGGBB"}}`. The accent is the app's colour as its icon has it, which its own fills and graphics are drawn in; the text tone is what the system draws its text, links and controls in, so it reads at 4.5:1 on every background they sit on: the accent itself where it does, else the accent's hue a tone darker in light mode and lighter in dark (`lint:apps` holds Apple's backgrounds and names the tone, `KitSchemeTest` Android's surfaces). Every `AccentColor` in its asset catalogs holds the text tone and every `BrandAccent` the accent, which an app whose two differ has beside each `AccentColor` (SubstrateUI's `Color.brandAccent`); the light text tone is also what a prominent button is filled with in both modes (`Color.accentFill`), since white on it is the same 4.5:1 it holds on white and white on the dark text tone is under 3:1; the Android build writes them as `substrate_accent_text`, Material's primary, and `substrate_accent` (kit-ui's `KitTheme`, `MaterialTheme.brandAccent`). Required on Android; an app with no `AccentColor` and no Android has none and is drawn in the system's blue |
 | `feed` | the folder `.mise/apps.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are, and no two apps share one |
-| `push` | optional, `true` for an app that takes pushes from its publisher's relay ([Pushes](#pushes)); `lint:apps` holds it to `aps-environment` in the app's iOS release entitlements, both ways |
+| `push` | optional, `true` for an app that takes pushes from its publisher's relay ([Pushes](#pushes)); `lint:apps` holds it to `aps-environment` in the app's iOS release entitlements, both ways, to a notification service extension in `apple.extensions`, and to the `remote-notification` background mode |
 
 An app publishes a package and asks for one apart: Workouts asks for
 `substrate.reamde.dev/health`, which it does not publish, and for its own

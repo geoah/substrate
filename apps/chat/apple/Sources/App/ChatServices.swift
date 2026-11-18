@@ -33,6 +33,15 @@ enum ChatServices {
             clientID: ChatManifest.manifest.clientID)
     }
 
+    /// A `read` push: what it covers taken back, for this install's
+    /// registration alone.
+    static func takeBack(_ userInfo: [String: String]) async -> Bool {
+        guard let push, let payload = PushPayload(userInfo) else { return false }
+        let accepted = await push.accepts(payload.generation)
+        let client = await SessionStore.chat.load().map { SubstrateClient($0) }
+        return await ChatPush.takeBack(userInfo, accepted: accepted, client: client, notifications: notifications)
+    }
+
     static func start() {
         SystemNotifications.installDelegate()
         _ = background

@@ -102,7 +102,11 @@ public enum ChatNotifications {
             actions: [NotificationAction(id: Action.reply.id, title: "Reply", input: NotificationTextInput(button: "Send", placeholder: "Message"))]),
         NotificationCategory(
             id: approvalCategory,
-            actions: [NotificationAction(id: Action.approve.id, title: "Approve"), NotificationAction(id: Action.decline.id, title: "Decline")]),
+            // A decision is never made from a locked screen, pushed or local.
+            actions: [
+                NotificationAction(id: Action.approve.id, title: "Approve", requiresUnlock: true),
+                NotificationAction(id: Action.decline.id, title: "Decline", requiresUnlock: true),
+            ]),
         NotificationCategory(id: openCategory, actions: [NotificationAction(id: Action.open.id, title: "Open Chat", opensApp: true)]),
     ]
 

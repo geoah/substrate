@@ -1071,7 +1071,8 @@
         {"name": "title", "type": "String"},
         {"name": "opensApp", "type": "Bool"},
         {"name": "destructive", "type": "Bool"},
-        {"name": "input", "type": "NotificationTextInput?"}
+        {"name": "input", "type": "NotificationTextInput?"},
+        {"name": "requiresUnlock", "type": "Bool"}
       ]
     },
     {

@@ -24,6 +24,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
         MainActor.assumeIsolated { RemoteNotifications.shared?.failed(error) }
     }
+
+    /// A push iOS runs the app for (`content-available`): a `read`, which
+    /// takes back the notifications it covers. The system is answered on
+    /// the main thread, once.
+    func application(
+        _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let flattened = PushPayload.flatten(userInfo)
+        let answer = FetchAnswer(completionHandler)
+        Task { @MainActor in
+            let read = await ChatServices.takeBack(flattened)
+            answer.call(read ? .newData : .noData)
+        }
+    }
+}
+
+/// The system's handler, carried to the main thread to be called there.
+private final class FetchAnswer: @unchecked Sendable {
+    private let handler: (UIBackgroundFetchResult) -> Void
+
+    init(_ handler: @escaping (UIBackgroundFetchResult) -> Void) {
+        self.handler = handler
+    }
+
+    func call(_ result: UIBackgroundFetchResult) { handler(result) }
 }
 #endif
 
