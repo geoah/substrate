@@ -39,6 +39,15 @@ public final class StubTransport: HTTPTransport, @unchecked Sendable {
         return self
     }
 
+    /// The route answers this from now on, whatever it was given before.
+    @discardableResult
+    public func replace(_ method: String, _ path: String, status: Int = 200, headers: [String: String] = [:], json: String = "")
+        -> StubTransport
+    {
+        lock.withLock { routes["\(method) \(path)"] = [] }
+        return on(method, path, status: status, headers: headers, json: json)
+    }
+
     public func fail(_ method: String, _ path: String, with error: Error) {
         lock.lock()
         defer { lock.unlock() }

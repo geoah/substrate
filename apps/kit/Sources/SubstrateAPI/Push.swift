@@ -20,24 +20,45 @@ public enum PushRelay {
     /// How long a push key the relay seals may be.
     public static let maxPushKey = 1024
 
-    /// The address of `path` under `relay`: an `https` URL with a host, an
-    /// optional path, and no user info, query or fragment, at most 2,048
-    /// characters, with one trailing `/` removed from its path before
-    /// `path` is appended. Nil for anything else.
-    public static func endpoint(_ relay: String, path: String) -> URL? {
-        guard relay.count <= maxRelay, let parts = URLComponents(string: relay), parts.scheme?.lowercased() == "https",
-            let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil
+    /// The address of `path` under `relay`, the `push.relay` an authority
+    /// document names: the value as written, less one trailing `/` of its
+    /// path, then `path`. Nothing else is normalised, so the server, the
+    /// app and the publisher's tooling compare the same strings
+    /// (`pushwire.Endpoint`, whose vectors the kit's tests read). `relay` is
+    /// an `https` URL with a host and a port, if any, from 1 to 65535, an
+    /// optional path, no user info, query or fragment, and only printable
+    /// ASCII, at most 2,048 characters. Nil for anything else.
+    public static func endpoint(_ relay: String, path: String) -> String? {
+        let scheme = "https://"
+        guard path.hasPrefix("/"), relay.utf8.count <= maxRelay, relay.hasPrefix(scheme),
+            relay.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F && $0 != UInt8(ascii: "?") && $0 != UInt8(ascii: "#") && $0 != UInt8(ascii: "\\") })
         else { return nil }
-        var base = parts
-        base.scheme = "https"
-        base.host = host.lowercased()
-        var trimmed = parts.percentEncodedPath
-        if trimmed.hasSuffix("/") { trimmed.removeLast() }
-        base.percentEncodedPath = trimmed + path
-        return base.url
+        let authority = relay.dropFirst(scheme.count).prefix { $0 != "/" }
+        guard !authority.isEmpty, !authority.contains("@") else { return nil }
+        var host = Substring(authority)
+        var port: Substring?
+        if authority.hasPrefix("[") {
+            guard let close = authority.firstIndex(of: "]") else { return nil }
+            host = authority[authority.index(after: authority.startIndex) ..< close]
+            let after = authority[authority.index(after: close)...]
+            if !after.isEmpty {
+                guard after.hasPrefix(":") else { return nil }
+                port = after.dropFirst()
+            }
+        } else if let colon = authority.firstIndex(of: ":") {
+            host = authority[..<colon]
+            port = authority[authority.index(after: colon)...]
+        }
+        guard !host.isEmpty else { return nil }
+        if let port {
+            guard !port.isEmpty, port.allSatisfy(\.isASCII), port.allSatisfy(\.isNumber), let number = Int(port), (1 ... 65535).contains(number)
+            else { return nil }
+        }
+        return (relay.hasSuffix("/") ? String(relay.dropLast()) : relay) + path
     }
 
-    /// Whether two relays are the same one: the same address for a push.
+    /// Whether two relays are the same one: both valid, and the same
+    /// address for a push.
     public static func same(_ a: String, _ b: String) -> Bool {
         guard let first = endpoint(a, path: pushPath), let second = endpoint(b, path: pushPath) else { return false }
         return first == second
@@ -97,7 +118,7 @@ public enum PushRelay {
     /// sealed. The request carries no token and a redirect is refused, so it
     /// reaches the relay the build names and nothing else.
     public static func register(_ request: RegisterRequest, relay: String, transport: any HTTPTransport) async throws -> String {
-        guard let url = endpoint(relay, path: registerPath) else { throw URLError(.badURL) }
+        guard let address = endpoint(relay, path: registerPath), let url = URL(string: address) else { throw URLError(.badURL) }
         var http = URLRequest(url: url)
         http.httpMethod = "POST"
         http.timeoutInterval = 15

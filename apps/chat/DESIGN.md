@@ -43,8 +43,9 @@ changed is listed at the end.
   instructions, switched on or off, reworded or deleted in Settings.
 - Deleting threads. The console offers none; a thread is a run and its cost
   counts after deletion. A thread deleted elsewhere says so when opened.
-- Push through APNs. The server has no push channel; the app notifies from
-  what it observes (below), and says so in Settings.
+- Push on the Mac. iPhone and iPad take pushes from the publisher's relay
+  ([Pushes](#pushes)); the Mac follows once a development push has reached
+  a development-signed Mac, and until then notifies from what it observes.
 - Reply from a notification on a server below `agents` 3. A notification
   is answered where it stands ([Notifications](#notifications)): a reply
   with a line of text, an approval with Approve or Decline, a single
@@ -619,9 +620,59 @@ be read again.
   conversation re-attaches, and running chats in the list are attached to
   (at most 4, the server's own limit).
 
+### Pushes
+
+Where the server lists the `push` feature, Substrate Chat on iPhone and iPad
+registers with its publisher's push relay
+(`docs/plans/push.md`), and the server pushes a reply, a
+failure and a request to it while the app is closed. A push carries no
+words: iOS shows the app's own (`SUBSTRATE_PUSH_REPLY`,
+`SUBSTRATE_PUSH_FAILED`, `SUBSTRATE_PUSH_REQUEST` in `Localizable.strings`)
+and the badge the server counted.
+
+- **Registering** runs at launch, whenever the app comes to the front, at
+  each background refresh and when a switch or the permission changes
+  (`PushRegistrar.sync`, from the kit). Nothing runs while both switches
+  (Replies, Questions and suggestions) are off, and turning both off, or
+  the permission being taken away, deletes the install's device record. It
+  registers only where three name the same relay: the build
+  (`SubstratePushRelay`, stamped by `apps:release` from
+  `SUBSTRATE_APPLE_PUSH_RELAY`), the publisher's authority document at the
+  origin of the app's client id, and the server (`GET /api/v1/push/key`).
+  The relay is told Apple's token with no substrate token and no redirect
+  followed; the server gets the device record, a `PUT` at the token's own
+  id. A password sign-in has no relay (Settings says so); neither has a
+  local build.
+- **The generation.** Each registration picks 16 random bytes, which every
+  push of it carries back. It becomes current only once the server answered
+  the device's put; until then a push carrying either is accepted. A tap on
+  a push opens its chat only for the current or the pending generation;
+  signing out deletes the device and forgets both.
+- **The environment** is the exported build's own: `development` in a
+  simulator, else the embedded profile's `aps-environment`, and
+  `production` where there is no profile (TestFlight, the App Store).
+- **No doubles.** While a registration is held the app posts no reply,
+  failure or request notification of its own, in the background refresh or
+  anywhere else; in front, a notification of a chat on screen, pushed or
+  local, stays quiet.
+- **The badge** is the server's count (`GET /api/v1/push/badge`) wherever it
+  lists `push`, read whenever the app would count again; elsewhere the app
+  counts for itself by the server's rule: unread chats, `chat` mode alone,
+  whatever Show automated runs says.
+- **What waits** is read over all six conversation modes, so a request a
+  push names in a scheduled run or a call opens from the list.
+- **Reconciling.** Whenever the server answers the lists (coming to the
+  front, a background refresh) the app removes the pushed notifications the
+  reads say are seen: a reply's or a failure's whose chat reads as read,
+  and a request's whose chat has nothing waiting.
+- **Diagnostics** say whether the install is registered, with which Apple
+  environment and since when; a development build also shows Apple's token
+  on the sheet, never in what is shared, for a test push from the relay.
+
 ### Notifications
 
-The server has no push channel, so the app promises what it can observe:
+Where the install holds no push registration, the app promises what it can
+observe:
 
 - **A reply settles** while its chat is not on screen (no key window shows
   it, or the app is in the background): a notification with the agent's

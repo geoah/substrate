@@ -49,6 +49,22 @@ struct DiagnosticsPage: View {
                 if let note = report?.note {
                     Text(note).font(ChatType.detail).ink(.quiet, on: .page)
                 }
+                if let push = report?.push {
+                    Text(push).font(ChatType.detail).ink(.quiet, on: .page)
+                }
+                // A development build's push token, for the relay's operator:
+                // shown here alone, never in what is shared.
+                if let token = report?.pushToken {
+                    VStack(alignment: .leading, spacing: ChatSpace.pair) {
+                        if let note = report?.pushTokenNote {
+                            Text(note).font(ChatType.detail).ink(.quiet, on: .page)
+                        }
+                        Text(verbatim: token)
+                            .font(ChatType.verbatim)
+                            .textSelection(.enabled)
+                            .accessibilityLabel("Push token")
+                    }
+                }
                 if let empty = report?.empty {
                     Text(empty).ink(.quiet, on: .page)
                 }

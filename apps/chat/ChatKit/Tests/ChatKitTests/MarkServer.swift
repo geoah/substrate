@@ -51,6 +51,9 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
 
     private let lock = NSLock()
     private var features: (agents: Int, records: Int)
+    /// What the server answers for `GET /api/v1/push/badge`; nil for a
+    /// server that does not list `push`.
+    private var pushBadge: Int?
     private var chats: [String: Chat] = [:]
     private var marks: [String: Mark] = [:]
     private var seq = 10
@@ -79,6 +82,9 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
 
     /// Another server takes its place: an upgrade, or a rollback.
     func become(records: Int) { lock.withLock { features.records = records } }
+
+    /// The server lists `push` and counts this badge for the token.
+    func push(badge: Int) { lock.withLock { pushBadge = badge } }
 
     /// A chat with a question and its settled reply: `m<n>` are its
     /// messages, in order.
@@ -387,8 +393,12 @@ final class MarkServer: HTTPTransport, @unchecked Sendable {
                         "features": [
                             ["name": "agents", "stability": "experimental", "revision": features.agents],
                             ["name": "records", "stability": "stable", "revision": features.records],
-                        ],
+                        ] + (pushBadge == nil ? [] : [["name": "push", "stability": "experimental", "revision": 1]]),
                     ])
+            }
+            if method == "GET", path.hasSuffix("/api/v1/push/badge") {
+                guard let pushBadge else { return .json(404, ["error": ["code": "not_found", "message": "no such route"]]) }
+                return .json(200, ["badge": pushBadge])
             }
             if method == "GET", path.hasSuffix("/api/v1/records") {
                 let text = query.first { $0.name == "filter" }?.value ?? "{}"

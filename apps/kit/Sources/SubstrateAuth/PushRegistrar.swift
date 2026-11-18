@@ -70,16 +70,16 @@ public struct PushFacts: Codable, Equatable, Sendable {
         /// Registered: the server pushes to this install.
         case registered
         /// The server does not list the `push` feature.
-        case notListed
+        case notListed = "not_listed"
         /// The person turned both notification switches off.
-        case switchedOff
+        case switchedOff = "switched_off"
         /// The person has not allowed notifications.
-        case notPermitted
+        case notPermitted = "not_permitted"
         /// The build is not entitled to pushes (a local build, or the Mac).
-        case notEntitled
+        case notEntitled = "not_entitled"
         /// No relay: the build names none, the sign-in is no verified app's
         /// (a password sign-in), or the publisher's document names none.
-        case noRelay
+        case noRelay = "no_relay"
         /// The operator turned push off.
         case off
         /// The build, the publisher's document and the server name
@@ -261,8 +261,10 @@ public struct PushRegistrar: Sendable {
             return unavailable(state)
         }
         let notifies = ask.notifies.sorted()
-        if let current = state?.current, !Self.due(current, relay: build, publicKey: key.publicKey, deviceToken: deviceToken,
-            environment: environment, notifies: notifies, now: now())
+        if let current = state?.current,
+            !Self.due(
+                current, relay: build, publicKey: key.publicKey, deviceToken: deviceToken,
+                environment: environment, notifies: notifies, now: now())
         {
             // The record may be gone (deleted by the server after the relay
             // refused a push, or by hand): it is put again.

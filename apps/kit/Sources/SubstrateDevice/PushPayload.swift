@@ -38,15 +38,17 @@ public struct PushPayload: Equatable, Sendable {
         eventID = userInfo[Key.eventID] ?? ""
     }
 
-    /// The thread a tapped notification opens: a local one names it at the
-    /// top of its `userInfo` (`key`), a push at `substrate.thread`. A push
+    /// The thread a tapped notification opens: the top of its `userInfo`
+    /// (`key`), where a local one names it and where the notification
+    /// service extension puts a push's, then `substrate.thread`. A push
     /// opens it only while its generation is the install's current or
     /// pending one (`accepted`); one meant for an earlier registration
-    /// (another server, another sign-in, one signed out) opens nothing.
+    /// (another server, another sign-in, one signed out) opens nothing,
+    /// whatever the extension wrote while it was current.
     public static func thread(of userInfo: [String: String], key: String, accepted: (String) -> Bool) -> String? {
+        if let generation = userInfo[Key.generation], !accepted(generation) { return nil }
         if let thread = userInfo[key], !thread.isEmpty { return thread }
-        guard let thread = userInfo[Key.thread], !thread.isEmpty, let generation = userInfo[Key.generation], accepted(generation)
-        else { return nil }
+        guard let thread = userInfo[Key.thread], !thread.isEmpty, userInfo[Key.generation] != nil else { return nil }
         return thread
     }
 

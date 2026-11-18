@@ -17,7 +17,10 @@
 // bundle id, its bundle id and the profile's UUID. An active profile of that
 // name and certificate is reused, and one the bundle id's capabilities have
 // since invalidated is replaced. The key may not use the cloud-managed
-// distribution certificate, so an export signs with these, by hand.
+// distribution certificate, so an export signs with these, by hand. A bundle
+// id named in SUBSTRATE_APPLE_PUSH_BUNDLES (space separated: the apps whose
+// app.json says "push": true) has Push Notifications turned on first, which
+// is only ever added, never taken away.
 //
 //   swift scripts/appstoreconnect.swift quiet <build number|all> <bundle-id>…
 //
@@ -114,7 +117,24 @@ func records(_ bundles: [String]) async throws {
     }
 }
 
+/// Turns Push Notifications on for a bundle id that lacks it. A profile made
+/// before is invalidated by the change, and `profiles` replaces it.
+func enablePush(_ bundleID: String, _ bundle: String) async throws {
+    let held = rows(try await call("GET", "/v1/bundleIds/\(bundleID)/bundleIdCapabilities", query: ["limit": "200"]))
+    if held.contains(where: { attributes($0)["capabilityType"] as? String == "PUSH_NOTIFICATIONS" }) { return }
+    let body: [String: Any] = [
+        "data": [
+            "type": "bundleIdCapabilities",
+            "attributes": ["capabilityType": "PUSH_NOTIFICATIONS"],
+            "relationships": ["bundleId": ["data": ["type": "bundleIds", "id": bundleID]]],
+        ]
+    ]
+    try await call("POST", "/v1/bundleIdCapabilities", body: body, expect: 201)
+    FileHandle.standardError.write(Data("appstoreconnect: turned Push Notifications on for \(bundle)\n".utf8))
+}
+
 func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async throws {
+    let push = Set((ProcessInfo.processInfo.environment["SUBSTRATE_APPLE_PUSH_BUNDLES"] ?? "").split(separator: " ").map(String.init))
     // The team's distribution certificate whose key this machine holds.
     let certificates = rows(
         try await call(
@@ -150,6 +170,7 @@ func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async t
             FileHandle.standardError.write(Data("appstoreconnect: registered \(bundle)\n".utf8))
         }
         guard let bundleID else { fail("\(bundle) could not be registered with the team") }
+        if push.contains(bundle) { try await enablePush(bundleID, bundle) }
         let name = "\(bundle) App Store \(certificateID)"
         let existing = rows(
             try await call(

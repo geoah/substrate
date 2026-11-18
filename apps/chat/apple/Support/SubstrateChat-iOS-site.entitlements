@@ -5,6 +5,13 @@
 	<!-- The site host the release publishes its association file on: the
 	     system hands the sign-in's https callback there to this app alone
 	     (ASWebAuthenticationSession's https callback), under both services. -->
+	<!-- Pushes from the publisher's relay. `development` here: an export
+	     for TestFlight or the App Store signs with a distribution profile,
+	     which sets `production`. Only this variant carries it: a local
+	     build's client id is a loopback one, which no publisher verifies,
+	     so it has no relay to register with. -->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>webcredentials:$(SUBSTRATE_SITE_HOST)</string>

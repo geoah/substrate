@@ -1,0 +1,496 @@
+import Foundation
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
+import SubstrateTesting
+import Testing
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+/// The push wire's fixtures, as `internal/pushwire` writes them: the kit's
+/// copies, held byte for byte to the originals by `lint:apps`.
+enum PushWire {
+    static func data(_ name: String) throws -> Data {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Resources/pushwire"))
+        return try Data(contentsOf: url)
+    }
+
+    static func object(_ name: String, in folder: String = "pushwire") throws -> [String: Any] {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Resources/\(folder)"))
+        return try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    }
+
+    static func array(_ name: String) throws -> [[String: Any]] {
+        try #require(try JSONSerialization.jsonObject(with: data(name)) as? [[String: Any]])
+    }
+
+    /// What a push fixture's Apple payload hands the app, as the system
+    /// flattens it into a notification's `userInfo`.
+    static func userInfo(_ name: String) throws -> [String: String] {
+        let apple = try #require(try object(name)["apple"] as? [String: Any])
+        let payload = try #require(apple["payload"] as? [String: Any])
+        return PushPayload.flatten(payload)
+    }
+}
+
+@Suite("The push relay's addresses and wire")
+struct PushRelayTests {
+    @Test func everyRelayBuildsTheAddressesTheWireDoes() throws {
+        for row in try PushWire.array("endpoints") {
+            let relay = try #require(row["relay"] as? String)
+            if row["refused"] as? Bool == true {
+                #expect(PushRelay.endpoint(relay, path: PushRelay.pushPath) == nil, "\(relay) is refused")
+            } else {
+                #expect(PushRelay.endpoint(relay, path: PushRelay.registerPath) == row["register"] as? String, "\(relay)")
+                #expect(PushRelay.endpoint(relay, path: PushRelay.pushPath) == row["push"] as? String, "\(relay)")
+            }
+        }
+    }
+
+    @Test func twoRelaysAreOneWhereTheyPushToOneAddress() {
+        #expect(PushRelay.same("https://push.example.com", "https://push.example.com/"))
+        #expect(PushRelay.same("https://example.com/push/", "https://example.com/push"))
+        #expect(!PushRelay.same("https://push.example.com", "https://example.com/push"))
+        #expect(!PushRelay.same("https://push.example.com", "https://Push.example.com"))
+        #expect(!PushRelay.same("http://push.example.com", "http://push.example.com"))
+        #expect(!PushRelay.same("", ""))
+    }
+
+    @Test func theRegisterRequestIsTheWiresAndCarriesNoToken() async throws {
+        let fixture = try PushWire.object("register")
+        let request = try #require(fixture["request"] as? [String: String])
+        let response = try #require(fixture["response"] as? [String: Any])
+        let body = try #require(response["body"] as? [String: String])
+        let transport = StubTransport().on(
+            "POST", "/v1/register", json: String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self))
+        let sent = PushRelay.RegisterRequest(
+            platform: try #require(request["platform"]), token: try #require(request["token"]), topic: try #require(request["topic"]),
+            environment: try #require(request["environment"]), publicKey: try #require(request["publicKey"]),
+            generation: try #require(request["generation"]))
+        let key = try await PushRelay.register(sent, relay: "https://push.example.com/", transport: transport)
+        #expect(key == body["pushKey"])
+        let made = try #require(transport.requests.first)
+        #expect(made.url?.absoluteString == "https://push.example.com/v1/register")
+        #expect(made.value(forHTTPHeaderField: "Authorization") == nil)
+        let wrote = try #require(try JSONSerialization.jsonObject(with: made.httpBody ?? Data()) as? [String: String])
+        #expect(wrote == request)
+    }
+
+    @Test func aRedirectFromTheRelayIsRefused() async throws {
+        let transport = StubTransport().on("POST", "/v1/register", status: 307, headers: ["Location": "https://elsewhere.example.com/v1/register"])
+        let request = PushRelay.RegisterRequest(platform: "apns", token: "ab", topic: "t", environment: "development", publicKey: "k", generation: "g")
+        await #expect(throws: Redirected.self) {
+            _ = try await PushRelay.register(request, relay: "https://push.example.com", transport: transport)
+        }
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test func everyRefusalOfTheRelayReadsByItsCode() async throws {
+        let request = PushRelay.RegisterRequest(platform: "apns", token: "ab", topic: "t", environment: "development", publicKey: "k", generation: "g")
+        for row in try PushWire.array("errors") {
+            let status = try #require(row["status"] as? Int)
+            let body = try JSONSerialization.data(withJSONObject: try #require(row["body"]))
+            let code = try #require(((row["body"] as? [String: Any])?["error"] as? [String: Any])?["code"] as? String)
+            let transport = StubTransport().on("POST", "/v1/register", status: status, json: String(decoding: body, as: UTF8.self))
+            do {
+                _ = try await PushRelay.register(request, relay: "https://push.example.com", transport: transport)
+                Issue.record("\(status) \(code) was taken for a key")
+            } catch let refusal as PushRelay.Refusal {
+                #expect(refusal.status == status && refusal.code == code)
+                #expect(refusal.stops == (code == "topic_refused" || code == "environment_refused"))
+            }
+        }
+    }
+
+    @Test func thePublishersDocumentIsReadLeniently() async throws {
+        let client = "https://apps.example.com/apps/chat/client.json"
+        func document(_ push: String) -> String {
+            #"{"authority":"example.com","name":"Example","apps":[{"client_id":"https://apps.example.com/apps/sync/client.json","name":"Sync","push":{"relay":"https://other.example.com"}},{"client_id":"\#(client)","name":"Chat"\#(push)}]}"#
+        }
+        func read(_ json: String, status: Int = 200) async throws -> String? {
+            let transport = StubTransport().on("GET", "/.well-known/substrate/authority.json", status: status, json: json)
+            let relay = try await PushRelay.published(clientID: client, transport: transport)
+            #expect(transport.requests.first?.url?.host == "apps.example.com")
+            #expect(transport.requests.first?.value(forHTTPHeaderField: "Authorization") == nil)
+            return relay
+        }
+        #expect(try await read(document(#","push":{"relay":"https://push.example.com"}"#)) == "https://push.example.com")
+        #expect(try await read(document("")) == nil)
+        for wrong in [
+            #","push":"x""#, #","push":null"#, #","push":{"relay":1}"#, #","push":{"relay":"http://push.example.com"}"#,
+            #","push":{"relay":"https://push.example.com?x=1"}"#,
+        ] {
+            #expect(try await read(document(wrong)) == nil, "\(wrong) names no relay")
+        }
+        #expect(try await read("", status: 404) == nil)
+        await #expect(throws: (any Error).self) { _ = try await read("", status: 500) }
+        await #expect(throws: (any Error).self) { _ = try await read("<html>a portal</html>") }
+        // A loopback client id, a local build's, has no publisher.
+        #expect(try await PushRelay.published(clientID: "http://127.0.0.1/substrate-chat", transport: StubTransport()) == nil)
+    }
+
+    @Test func aRefusalNamesItsReason() throws {
+        let body = Data(#"{"error":{"code":"forbidden","reason":"no_relay","message":"this token's app names no push relay"}}"#.utf8)
+        let error = try #require(ServerError(status: 403, envelope: body))
+        #expect(error.reason == "no_relay" && error.code == "forbidden")
+        #expect(ServerError(status: 403, envelope: Data(#"{"error":{"code":"forbidden","message":"no"}}"#.utf8))?.reason == nil)
+    }
+}
+
+@Suite("Which Apple environment a build is")
+struct PushEnvironmentTests {
+    static func profile(_ entitlements: String) -> Data {
+        // A profile is a signed CMS envelope with the property list in clear.
+        var data = Data([0x30, 0x82, 0x1F, 0x00, 0x06, 0x09])
+        data.append(
+            Data(
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                <plist version="1.0"><dict><key>Name</key><string>a profile</string>
+                <key>Entitlements</key><dict>\(entitlements)</dict></dict></plist>
+                """.utf8))
+        data.append(Data([0xA0, 0x82, 0x0E, 0x00, 0x31]))
+        return data
+    }
+
+    @Test func aSimulatorIsAlwaysDevelopment() {
+        #expect(PushEnvironment.of(profile: nil, simulator: true) == .development)
+        #expect(PushEnvironment.of(profile: Self.profile("<key>aps-environment</key><string>production</string>"), simulator: true) == .development)
+    }
+
+    @Test func aBuildWithNoProfileIsProduction() {
+        #expect(PushEnvironment.of(profile: nil, simulator: false) == .production)
+    }
+
+    @Test func aProfileSaysItsEnvironment() {
+        #expect(PushEnvironment.of(profile: Self.profile("<key>aps-environment</key><string>development</string>"), simulator: false) == .development)
+        #expect(PushEnvironment.of(profile: Self.profile("<key>aps-environment</key><string>production</string>"), simulator: false) == .production)
+        #expect(PushEnvironment.of(profile: Self.profile("<key>get-task-allow</key><true/>"), simulator: false) == nil)
+        #expect(PushEnvironment.of(profile: Data("not a profile".utf8), simulator: false) == nil)
+    }
+}
+
+@Suite("What a push says, read from a notification")
+struct PushPayloadTests {
+    @Test func aPushsValuesArriveUnderSubstrate() throws {
+        let info = try PushWire.userInfo("push-reply")
+        let push = try #require(PushPayload(info))
+        #expect(push.event == .reply && push.thread == "8f2c41d07a" && push.generation == "jPFx1d3VWfLE3W0iVXra0A")
+        #expect(push.eventID.count > 32)
+        #expect(info[PushPayload.Key.version] == "1")
+        #expect(info["aps"] == nil)
+        for name in ["push-failed", "push-request-card-1", "push-request-card-2", "push-read", "push-reply-largest"] {
+            #expect(PushPayload(try PushWire.userInfo(name)) != nil, "\(name)")
+        }
+        #expect(PushPayload(["thread": "t1"]) == nil)
+    }
+
+    @Test func aTapOpensAPushsChatOnlyForThisInstallsRegistration() throws {
+        let info = try PushWire.userInfo("push-reply")
+        let current = "jPFx1d3VWfLE3W0iVXra0A"
+        #expect(PushPayload.thread(of: info, key: "thread") { $0 == current } == "8f2c41d07a")
+        #expect(PushPayload.thread(of: info, key: "thread") { $0 == "pending" || $0 == current } == "8f2c41d07a")
+        #expect(PushPayload.thread(of: info, key: "thread") { $0 == "another" } == nil)
+        // A local notification names its thread at the top.
+        #expect(PushPayload.thread(of: ["thread": "t1"], key: "thread") { _ in false } == "t1")
+        // So does a push the extension filled in, and its generation still
+        // decides.
+        var filled = info
+        filled["thread"] = "8f2c41d07a"
+        #expect(PushPayload.thread(of: filled, key: "thread") { $0 == current } == "8f2c41d07a")
+        #expect(PushPayload.thread(of: filled, key: "thread") { _ in false } == nil)
+    }
+}
+
+/// A substrate, a publisher and a relay that agree, for the registrar.
+final class PushWorld: @unchecked Sendable {
+    static let client = "https://apps.example.com/apps/chat/client.json"
+    static let tokenID = "71ac09be44"
+    static let devicePath = "/api/v1/substrate.reamde.dev/core/device/71ac09be44"
+    static let record =
+        #"{"id":"71ac09be44","kind":"substrate.reamde.dev/core/device","version":1,"createdAt":"2026-11-18T10:00:00Z","updatedAt":"2026-11-18T10:00:00Z","properties":{"name":"iPhone","platform":"ios","pushKey":"v1.k","notifies":["replies","requests"]}}"#
+
+    let transport = StubTransport()
+    let storage = MemoryStorage()
+    let sessions: SessionStore
+    let device = ScriptedPush()
+    private let lock = NSLock()
+    private var instant = Date(timeIntervalSince1970: 1_763_459_000)
+    private var minted = 0
+
+    init(app: Bool = true, build: String? = "https://push.example.com") {
+        sessions = SessionStore(storage: storage)
+        self.build = build
+        let session = Session(
+            server: URL(string: "https://s.example.com")!, repository: "r.example.com", secret: "secret", tokenID: Self.tokenID,
+            clientID: app ? Self.client : nil, scopes: app ? ["full"] : nil)
+        try? storage.write(try! JSONEncoder().encode(session), account: sessions.account)
+        publish(#","push":{"relay":"https://push.example.com"}"#)
+        serve(relay: "https://push.example.com")
+        transport.on("POST", "/v1/register", json: #"{"pushKey":"v1.k"}"#)
+        transport.on("PUT", Self.devicePath, status: 201, json: Self.record)
+        transport.on("GET", Self.devicePath, json: Self.record)
+        transport.on("DELETE", Self.devicePath, status: 204)
+    }
+
+    let build: String?
+
+    var registrar: PushRegistrar {
+        PushRegistrar(
+            sessions: sessions, device: device, transport: transport, buildRelay: build, clientID: Self.client,
+            now: { [self] in lock.withLock { instant } },
+            generation: { [self] in
+                lock.withLock {
+                    minted += 1
+                    return "g\(minted)"
+                }
+            })
+    }
+
+    func pass(_ seconds: TimeInterval) { lock.withLock { instant += seconds } }
+
+    func publish(_ push: String) {
+        transport.replace(
+            "GET", "/.well-known/substrate/authority.json",
+            json: #"{"authority":"example.com","apps":[{"client_id":"\#(Self.client)","name":"Chat"\#(push)}]}"#)
+    }
+
+    func serve(relay: String) {
+        transport.replace("GET", "/api/v1/push/key", json: #"{"publicKey":"q1x3LkpublicKeyOfThisToken0000000000000000","relay":"\#(relay)"}"#)
+    }
+
+    func sent(_ method: String, _ path: String) -> [URLRequest] { transport.sent(method, path) }
+
+    static let ask = PushAsk(listed: true, notifies: ["replies", "requests"], permitted: true)
+}
+
+@Suite("Registering with the publisher's relay")
+struct PushRegistrarTests {
+    @Test func anInstallRegistersWhereBuildDocumentAndServerAgree() async throws {
+        let world = PushWorld()
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .registered && facts.held && facts.environment == .development)
+        #expect(facts.deviceToken == String(repeating: "ab", count: 32))
+        let register = try #require(world.sent("POST", "/v1/register").first)
+        #expect(register.value(forHTTPHeaderField: "Authorization") == nil)
+        let body = try #require(try JSONSerialization.jsonObject(with: register.httpBody ?? Data()) as? [String: String])
+        #expect(body["generation"] == "g1" && body["environment"] == "development" && body["topic"] == "dev.reamde.substrate.chat")
+        #expect(body["publicKey"] == "q1x3LkpublicKeyOfThisToken0000000000000000" && body["platform"] == "apns")
+        let put = try #require(world.sent("PUT", PushWorld.devicePath).first)
+        #expect(put.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+        let properties = try #require((try JSONSerialization.jsonObject(with: put.httpBody ?? Data()) as? [String: Any])?["properties"] as? [String: Any])
+        #expect(properties["pushKey"] as? String == "v1.k" && properties["platform"] as? String == "ios" && properties["name"] as? String == "iPhone")
+        #expect(properties["notifies"] as? [String] == ["replies", "requests"])
+        #expect(properties["token"] == nil && properties["person"] == nil)
+        // The server's own fixture of that put: the same body but the key.
+        let fixture = try #require(try PushWire.object("device-put", in: "pushserver")["create"] as? [String: Any])
+        var expected = try #require((fixture["body"] as? [String: Any])?["properties"] as? [String: Any])
+        expected["pushKey"] = "v1.k"
+        #expect(NSDictionary(dictionary: properties).isEqual(to: expected))
+        let state = try #require(await world.registrar.state())
+        #expect(state.current?.generation == "g1" && state.pending == nil && state.tokenID == PushWorld.tokenID)
+        #expect(await world.registrar.accepts("g1"))
+        #expect(!(await world.registrar.accepts("g0")))
+    }
+
+    @Test func aRelayWithATrailingSlashIsTheSameRelay() async {
+        let world = PushWorld(build: "https://push.example.com/")
+        world.serve(relay: "https://push.example.com")
+        world.publish(#","push":{"relay":"https://push.example.com/"}"#)
+        #expect(await world.registrar.sync(PushWorld.ask).standing == .registered)
+    }
+
+    @Test func nothingRegistersWhereOneOfTheThreeNamesAnotherRelay() async {
+        for differing in ["build", "document", "server"] {
+            let world = PushWorld(build: differing == "build" ? "https://other.example.com" : "https://push.example.com")
+            if differing == "document" { world.publish(#","push":{"relay":"https://other.example.com"}"#) }
+            if differing == "server" { world.serve(relay: "https://other.example.com") }
+            let facts = await world.registrar.sync(PushWorld.ask)
+            #expect(facts.standing == .unmatched && !facts.held, "\(differing)")
+            #expect(world.sent("POST", "/v1/register").isEmpty && world.sent("PUT", PushWorld.devicePath).isEmpty, "\(differing)")
+        }
+    }
+
+    @Test func aRegistrationHeldIsGivenUpWhenTheRelaysNoLongerAgree() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.publish(#","push":{"relay":"https://moved.example.com"}"#)
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unmatched && !facts.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        #expect(await world.registrar.state() == nil)
+        #expect(!(await world.registrar.accepts("g1")))
+    }
+
+    @Test func aDocumentOrAServerThatCannotBeReadNowChangesNothing() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.transport.replace("GET", "/.well-known/substrate/authority.json", status: 502)
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unavailable && facts.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).isEmpty)
+
+        let fresh = PushWorld()
+        fresh.transport.replace("GET", "/api/v1/push/key", status: 503, headers: ["Retry-After": "60"])
+        let unread = await fresh.registrar.sync(PushWorld.ask)
+        #expect(unread.standing == .unavailable && !unread.held)
+        #expect(fresh.sent("POST", "/v1/register").isEmpty)
+    }
+
+    @Test func aDocumentThatNamesNoRelayOrAServerThatHasNoneGivesUp() async throws {
+        for (case_, refusal) in [("document", ""), ("no_relay", "no_relay"), ("push_off", "push_off")] {
+            let world = PushWorld()
+            #expect(await world.registrar.sync(PushWorld.ask).held)
+            if case_ == "document" {
+                world.transport.replace("GET", "/.well-known/substrate/authority.json", status: 404)
+            } else {
+                world.transport.replace(
+                    "GET", "/api/v1/push/key", status: 403, json: #"{"error":{"code":"forbidden","reason":"\#(refusal)","message":"no"}}"#)
+            }
+            let facts = await world.registrar.sync(PushWorld.ask)
+            #expect(facts.standing == (case_ == "push_off" ? .off : .noRelay) && !facts.held, "\(case_)")
+            #expect(world.sent("DELETE", PushWorld.devicePath).count == 1, "\(case_)")
+        }
+    }
+
+    @Test func nothingIsRegisteredWithBothSwitchesOffOrNoPermission() async {
+        let off = PushWorld()
+        let facts = await off.registrar.sync(PushAsk(listed: true, notifies: [], permitted: true))
+        #expect(facts.standing == .switchedOff && !facts.held)
+        #expect(off.transport.requests.isEmpty && off.device.asks == 0)
+
+        let held = PushWorld()
+        #expect(await held.registrar.sync(PushWorld.ask).held)
+        #expect(await held.registrar.sync(PushAsk(listed: true, notifies: [], permitted: true)).standing == .switchedOff)
+        #expect(held.sent("DELETE", PushWorld.devicePath).count == 1)
+
+        let refused = PushWorld()
+        #expect(await refused.registrar.sync(PushWorld.ask).held)
+        #expect(await refused.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: false)).standing == .notPermitted)
+        #expect(refused.sent("DELETE", PushWorld.devicePath).count == 1)
+    }
+
+    @Test func aServerWithoutPushAPasswordSignInAndALocalBuildRegisterNowhere() async {
+        let unlisted = PushWorld()
+        #expect(await unlisted.registrar.sync(PushAsk(listed: false, notifies: ["replies"], permitted: true)).standing == .notListed)
+        let password = PushWorld(app: false)
+        #expect(await password.registrar.sync(PushWorld.ask).standing == .noRelay)
+        for build in [nil, "none", ""] as [String?] {
+            #expect(await PushWorld(build: build).registrar.sync(PushWorld.ask).standing == .noRelay)
+        }
+        for world in [unlisted, password] { #expect(world.sent("POST", "/v1/register").isEmpty) }
+    }
+
+    @Test func aRegistrationIsMadeAgainWhenSomethingItWasMadeFromChanged() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        // Nothing changed: the record is read, and nothing is made.
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        #expect(world.sent("POST", "/v1/register").count == 1)
+        #expect(world.sent("GET", PushWorld.devicePath).count == 1)
+
+        world.device.set(token: String(repeating: "cd", count: 32))
+        _ = await world.registrar.sync(PushWorld.ask)
+        #expect(world.sent("POST", "/v1/register").count == 2)
+        #expect(await world.registrar.state()?.current?.generation == "g2")
+
+        _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
+        #expect(world.sent("POST", "/v1/register").count == 3)
+
+        world.pass(PushRegistrar.renewal - 60)
+        _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
+        #expect(world.sent("POST", "/v1/register").count == 3)
+        world.pass(120)
+        _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
+        #expect(world.sent("POST", "/v1/register").count == 4)
+
+        // The record is gone: it is put again.
+        world.transport.replace("GET", PushWorld.devicePath, status: 404, json: #"{"error":{"code":"not_found","message":"no"}}"#)
+        _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
+        #expect(world.sent("POST", "/v1/register").count == 5)
+    }
+
+    @Test func dueReadsEveryInput() {
+        let made = PushState.Registration(
+            generation: "g", relay: "https://push.example.com", publicKey: "k", deviceToken: "t", environment: .development,
+            notifies: ["replies", "requests"], registeredAt: Date(timeIntervalSince1970: 0))
+        let at = Date(timeIntervalSince1970: 3600)
+        func due(
+            relay: String = "https://push.example.com/", key: String = "k", token: String = "t", environment: PushEnvironment = .development,
+            notifies: [String] = ["requests", "replies"], now: Date = at
+        ) -> Bool {
+            PushRegistrar.due(made, relay: relay, publicKey: key, deviceToken: token, environment: environment, notifies: notifies, now: now)
+        }
+        #expect(!due())
+        #expect(due(relay: "https://other.example.com"))
+        #expect(due(key: "k2"))
+        #expect(due(token: "t2"))
+        #expect(due(environment: .production))
+        #expect(due(notifies: ["replies"]))
+        #expect(due(now: Date(timeIntervalSince1970: PushRegistrar.renewal)))
+    }
+
+    @Test func aNewGenerationIsCurrentOnlyOnceTheServerTookTheDevice() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.device.set(token: String(repeating: "ef", count: 32))
+        world.transport.replace("PUT", PushWorld.devicePath, status: 500, json: #"{"error":{"code":"internal","message":"no"}}"#)
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unavailable && facts.held)
+        let state = try #require(await world.registrar.state())
+        #expect(state.current?.generation == "g1" && state.pending?.generation == "g2")
+        // Either is accepted while the new one waits: its put may have landed.
+        #expect(await world.registrar.accepts("g1"))
+        #expect(await world.registrar.accepts("g2"))
+
+        world.transport.replace("PUT", PushWorld.devicePath, status: 200, json: PushWorld.record)
+        #expect(await world.registrar.sync(PushWorld.ask).standing == .registered)
+        let after = try #require(await world.registrar.state())
+        #expect(after.current?.generation == "g3" && after.pending == nil)
+        let (first, second) = (await world.registrar.accepts("g1"), await world.registrar.accepts("g2"))
+        #expect(!first && !second)
+    }
+
+    @Test func aRelayThatRefusesTheAppStopsAndOneThatFailsKeepsWhatWasHeld() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.device.set(token: String(repeating: "ef", count: 32))
+        world.transport.replace("POST", "/v1/register", status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
+        let failed = await world.registrar.sync(PushWorld.ask)
+        #expect(failed.standing == .unavailable && failed.held)
+        #expect(await world.registrar.state()?.pending == nil)
+
+        world.transport.replace("POST", "/v1/register", status: 403, json: #"{"error":{"code":"environment_refused","message":"no"}}"#)
+        let refused = await world.registrar.sync(PushWorld.ask)
+        #expect(refused.standing == .refused && !refused.held)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+    }
+
+    @Test func signingOutDeletesTheDeviceAndForgetsBothGenerations() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.device.set(token: String(repeating: "ef", count: 32))
+        world.transport.replace("PUT", PushWorld.devicePath, status: 500, json: #"{"error":{"code":"internal","message":"no"}}"#)
+        _ = await world.registrar.sync(PushWorld.ask)
+        let session = try #require(await world.sessions.load())
+        await world.registrar.signOut(session)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        #expect(await world.registrar.state() == nil)
+        let (current, pending) = (await world.registrar.accepts("g1"), await world.registrar.accepts("g2"))
+        #expect(!current && !pending)
+    }
+
+    @Test func anotherSignInsRegistrationIsForgotten() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        var other = try #require(await world.sessions.load())
+        other.tokenID = "0b5e1a7c33"
+        try await world.sessions.save(other)
+        #expect(!(await world.registrar.accepts("g1")))
+        #expect(await world.registrar.facts().standing == .unknown)
+    }
+}

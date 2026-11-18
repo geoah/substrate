@@ -15,6 +15,9 @@ targets:
     sources:
       - Sources
       - Assets.xcassets
+      # The words a push's `loc-key` names, which iOS shows when no code
+      # of the app runs.
+      - Strings
       - ../../xcode/Shared/Updater.swift
     dependencies:
       - package: Sparkle

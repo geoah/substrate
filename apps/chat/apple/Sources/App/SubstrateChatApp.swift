@@ -15,6 +15,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         MainActor.assumeIsolated { ChatServices.start() }
         return true
     }
+
+    /// Apple's answer to the registration for pushes, handed to the kit.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        MainActor.assumeIsolated { RemoteNotifications.shared?.registered(deviceToken) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
+        MainActor.assumeIsolated { RemoteNotifications.shared?.failed(error) }
+    }
 }
 #endif
 

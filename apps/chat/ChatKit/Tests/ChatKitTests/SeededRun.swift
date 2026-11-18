@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
@@ -1975,7 +1976,7 @@ struct SeededRun {
         "timing", "run", "send", "send again", "send out", "send repeat", "message taken back", "message stands", "message looked for",
         "message look", "continue", "continue sent", "stream opened", "stream done", "stream idle", "stream ended", "stream retry",
         "stream wait", "attach read", "handover", "handover read", "stop", "stop sent", "delivery check", "delivery checked", "front again",
-        "report",
+        "report", "push",
     ]
 
     /// The names a fact of a line goes by.
@@ -1984,7 +1985,7 @@ struct SeededRun {
         "retry_after", "unconfirmed", "compacted", "unserved", "fresh", "kinds", "then", "messages", "failed", "refresh", "phase", "reads",
         "unread", "pinned", "archived", "held", "of", "answers", "seconds", "all", "done", "said", "beside", "first", "count", "mean_ms",
         "longest_ms", "joins", "probe", "attempt", "id", "typed", "placed", "found", "standing", "rows", "gone", "settles", "stopping",
-        "copy", "try", "lines",
+        "copy", "try", "lines", "push", "push_held",
     ]
 
     /// The words a fact may hold: the cases of the app's own enums, the
@@ -1994,7 +1995,7 @@ struct SeededRun {
         Failure.Attempt.allCases.map(\.rawValue) + AppPhase.allCases.map(\.rawValue) + ChatPlatform.allCases.map(\.rawValue)
             + MarkRefusal.allCases.map(\.rawValue) + TranscriptFollow.Release.allCases.map(\.rawValue)
             + ConversationState.Phase.allCases.map(\.rawValue) + Diagnostic.Known.statuses + Diagnostic.Known.causes + Diagnostic.Known.reasons
-            + Diagnostic.Known.cuts + Diagnostic.Known.codes
+            + Diagnostic.Known.cuts + Diagnostic.Known.codes + PushFacts.Standing.allCases.map(\.rawValue)
             + [
                 "yes", "no", "other", "run", "cut", "unanswered", "http", "offline", "unreachable", "timeout", "stream_ended", "session_ended",
                 "needs_approval", "not_the_api", "ended", "closed", "interrupted", "disk", "reply", "card", "failed", "continue", "send",

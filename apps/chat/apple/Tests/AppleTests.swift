@@ -190,3 +190,15 @@ private struct LegacySession: Codable {
     }
 }
 #endif
+
+/// A push from the publisher's relay carries no words: its `loc-key` names
+/// a string in the app's own bundle, which iOS shows whether or not any
+/// code of the app runs. A key the bundle lacks would show as the key.
+@Suite struct PushWords {
+    @Test func everyKeyARelayNamesIsInTheAppsStrings() {
+        for key in ["SUBSTRATE_PUSH_REPLY", "SUBSTRATE_PUSH_FAILED", "SUBSTRATE_PUSH_REQUEST"] {
+            let words = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+            #expect(words != key && !words.isEmpty, "\(key) is not in Localizable.strings")
+        }
+    }
+}

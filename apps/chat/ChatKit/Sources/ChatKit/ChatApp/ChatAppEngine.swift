@@ -342,6 +342,7 @@ extension ChatApp {
             switch route {
             case let .thread(thread): show(&next, thread, in: scene, key: key)
             case let .newChat(agent, listen): newChat(&next, agent: agent, listen: listen, in: scene, key: key)
+            case .list: next.scenes[scene, default: State.Scene()].current = nil
             }
             release(&next)
 
@@ -479,8 +480,15 @@ extension ChatApp {
         case let .conversation(key, report): reported(&next, key, report, before: state)
         case let .notificationOpened(response):
             // A tap opens its chat, in the window that takes the route.
-            if next.session != nil, response.action == .open, let thread = response.userInfo[ChatNotifications.threadKey] {
-                next.route = .thread(thread)
+            if next.session != nil, response.action == .open {
+                // A push names its thread only for this install's
+                // registration (`ChatApp.opened`); one for another opens the
+                // list.
+                if let thread = response.userInfo[ChatNotifications.threadKey] {
+                    next.route = .thread(thread)
+                } else if PushPayload(response.userInfo) != nil {
+                    next.route = .list
+                }
             }
         case let .notificationActed(response, key, message, at):
             acted(&next, response, key: key, message: message, at: at)

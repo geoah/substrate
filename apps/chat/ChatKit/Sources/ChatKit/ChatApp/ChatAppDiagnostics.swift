@@ -22,7 +22,8 @@ extension ChatApp {
                 || previous.pushRevision != push
             {
                 lines.append(
-                    Diagnostic("features").with("agents", agents).with("records", records).with("flags", state.flags).with("push", push))
+                    Diagnostic("features").with("agents", agents).with("records", records).with("flags", state.flags)
+                        .with("push", push > 0 ? push : nil))
             }
         case let .pushSynced(facts):
             // Said when it moves: where the registration stands, never its

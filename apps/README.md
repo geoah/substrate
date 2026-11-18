@@ -1233,6 +1233,42 @@ and kit-ui's `KitTokens.kt` are compared byte for byte with what their
 generators write (`android:generate:check`, `DesignTokensKotlinTests`), and
 Workouts' `BodyMapShapes.swift` is `scripts/body-map.py`'s.
 
+## Pushes
+
+An app whose `app.json` says `"push": true` (Substrate Chat, on iPhone and
+iPad) registers with its publisher's push relay, and the server pushes to it
+through that relay (`docs/plans/push.md`). The relay's address
+is the publisher's, given to a release in one variable,
+`SUBSTRATE_APPLE_PUSH_RELAY`: an `https` origin with an optional path, or
+`none`.
+
+- `apps:release` and `apps:testflight` refuse a push app while it is unset,
+  so no release leaves its builds without a relay while the authority
+  document still names one. They stamp it into the build setting
+  `SUBSTRATE_PUSH_RELAY`, which the app reads from its Info.plist as
+  `SubstratePushRelay`, and `apple_check` holds the exported iPhone build to
+  it. `none`, or a local build, registers nowhere.
+- `apps:site` (and the site step of `apps:release`) writes it into each push
+  app's entry of the authority document as `push.relay`. Unset, it carries
+  forward what the live document says for that app, as the publisher's name
+  is carried forward; `none` removes it. The app registers only where its
+  build, this document and its server name the same relay.
+- An App Store export turns Push Notifications on for a push app's App ID
+  through the API (`appstoreconnect.swift profiles`) before it makes the
+  App Store profile, so a release never depends on a development build
+  having turned it on first. The capability is only ever added.
+- The app's iOS release entitlements (`-site`) carry `aps-environment`
+  `development`; an export for TestFlight or the App Store signs with a
+  distribution profile, which sets `production`. The app reads which one
+  its build is from its own signature at run time.
+
+What a push build needs of the Apple developer account, all of it additive:
+Push Notifications on the app's App ID (the release turns it on, or the
+Certificates, Identifiers & Profiles page once), development and App Store
+profiles made after that (a development build's automatic signing makes its
+own again), and the publisher's APNs token-auth key, which the relay holds
+and nothing in this tree names.
+
 ## An app's app.json
 
 Each app's folder holds an `app.json` that names the app once, as JSON so
@@ -1262,6 +1298,7 @@ app folder without one, or one missing a field below.
 | `icon` | its 1024-pixel icon, relative to the app's folder |
 | `accent` | its accent and the accent's text tone, `{"light": "#RRGGBB", "dark": "#RRGGBB", "text": {"light": "#RRGGBB", "dark": "#RRGGBB"}}`. The accent is the app's colour as its icon has it, which its own fills and graphics are drawn in; the text tone is what the system draws its text, links and controls in, so it reads at 4.5:1 on every background they sit on: the accent itself where it does, else the accent's hue a tone darker in light mode and lighter in dark (`lint:apps` holds Apple's backgrounds and names the tone, `KitSchemeTest` Android's surfaces). Every `AccentColor` in its asset catalogs holds the text tone and every `BrandAccent` the accent, which an app whose two differ has beside each `AccentColor` (SubstrateUI's `Color.brandAccent`); the light text tone is also what a prominent button is filled with in both modes (`Color.accentFill`), since white on it is the same 4.5:1 it holds on white and white on the dark text tone is under 3:1; the Android build writes them as `substrate_accent_text`, Material's primary, and `substrate_accent` (kit-ui's `KitTheme`, `MaterialTheme.brandAccent`). Required on Android; an app with no `AccentColor` and no Android has none and is drawn in the system's blue |
 | `feed` | the folder `.mise/apps.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are, and no two apps share one |
+| `push` | optional, `true` for an app that takes pushes from its publisher's relay ([Pushes](#pushes)); `lint:apps` holds it to `aps-environment` in the app's iOS release entitlements, both ways |
 
 An app publishes a package and asks for one apart: Workouts asks for
 `substrate.reamde.dev/health`, which it does not publish, and for its own

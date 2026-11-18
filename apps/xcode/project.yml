@@ -86,6 +86,12 @@ settings:
     SUBSTRATE_SYNC_REDIRECT: ""
     SUBSTRATE_WORKOUTS_REDIRECT: ""
     SUBSTRATE_TASKS_REDIRECT: ""
+    # The push relay a release builds into every app whose app.json says
+    # `"push": true` (SUBSTRATE_APPLE_PUSH_RELAY, read from the Info.plist
+    # as `SubstratePushRelay`): the app registers only where this, its
+    # publisher's authority document and its server name the same relay.
+    # Empty, or `none`, registers nowhere, as a local build does.
+    SUBSTRATE_PUSH_RELAY: ""
     # The host of the site `apple.sh site` publishes, whose association file
     # names every app. With SUBSTRATE_ASSOCIATED_DOMAINS=YES, which the
     # release sets beside it, each app signs with the `-site` entitlements:

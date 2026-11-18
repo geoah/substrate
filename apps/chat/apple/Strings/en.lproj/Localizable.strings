@@ -1,0 +1,13 @@
+/* The words a push from the publisher's relay shows, named by its
+   `loc-key`: the relay sends no text, so these are what the alert says
+   when the notification service extension cannot ask the server for more
+   (no network to the server, a push for another sign-in). */
+
+/* A reply settled in a chat. */
+"SUBSTRATE_PUSH_REPLY" = "A chat has a new reply.";
+
+/* A reply could not finish. */
+"SUBSTRATE_PUSH_FAILED" = "A reply in a chat couldn't finish.";
+
+/* A question, a suggestion or an approval waits on the person. */
+"SUBSTRATE_PUSH_REQUEST" = "Something in a chat is waiting for you.";
