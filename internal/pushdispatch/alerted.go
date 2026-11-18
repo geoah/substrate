@@ -22,27 +22,31 @@ type alert struct {
 // first. It lives in memory: after a restart no `read` is sent for what was
 // alerted before it, and the app reconciles when it comes to the front.
 type alertedMap struct {
-	mu   sync.Mutex
-	max  int
-	seq  uint64
+	mu  sync.Mutex
+	max int
+	seq uint64
+	// low is at or below the oldest alert still remembered: seq only
+	// grows, so the eviction walks forward from it and visits each seq
+	// once.
+	low  uint64
 	byID map[uint64]alert
 }
 
 func newAlertedMap(max int) *alertedMap {
-	return &alertedMap{max: max, byID: map[uint64]alert{}}
+	return &alertedMap{max: max, low: 1, byID: map[uint64]alert{}}
 }
 
 func (m *alertedMap) add(a alert) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for len(m.byID) >= m.max {
-		oldest := uint64(0)
-		for id := range m.byID {
-			if oldest == 0 || id < oldest {
-				oldest = id
+		for ; m.low <= m.seq; m.low++ {
+			if _, ok := m.byID[m.low]; ok {
+				delete(m.byID, m.low)
+				m.low++
+				break
 			}
 		}
-		delete(m.byID, oldest)
 	}
 	m.seq++
 	a.seq = m.seq

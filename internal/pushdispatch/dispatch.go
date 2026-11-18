@@ -9,6 +9,7 @@
 package pushdispatch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -191,12 +192,16 @@ func (d *Dispatcher) PushSignal(s substrate.PushSignal) {
 		}
 		switch {
 		case s.Message != "":
-			d.hold(holdKey{repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventReply,
-				item: substrate.PushItem{Kind: vocabulary.KindLLMMessage, ID: s.Message}},
+			d.hold(holdKey{
+				repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventReply,
+				item: substrate.PushItem{Kind: vocabulary.KindLLMMessage, ID: s.Message},
+			},
 				now.Add(Hold), substrate.PushCheck{Event: substrate.PushEventReply, Person: s.Person, Thread: s.Thread, Message: s.Message}, "")
 		case (s.Status == "error" || s.Status == "overbudget") && s.At.Sub(s.TurnStarted) > FailedAfter:
-			d.hold(holdKey{repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventFailed,
-				item: substrate.PushItem{Kind: vocabulary.KindLLMThread, ID: s.Thread, Version: s.ThreadVersion}},
+			d.hold(holdKey{
+				repository: s.Repository, person: s.Person, thread: s.Thread, event: substrate.PushEventFailed,
+				item: substrate.PushItem{Kind: vocabulary.KindLLMThread, ID: s.Thread, Version: s.ThreadVersion},
+			},
 				now.Add(Hold), substrate.PushCheck{Event: substrate.PushEventFailed, Person: s.Person, Thread: s.Thread, TurnStarted: s.TurnStarted}, "")
 		}
 	case substrate.PushRaised:
@@ -242,17 +247,13 @@ func (d *Dispatcher) loop() {
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
 	for {
+		// An hour when nothing waits; a hold already due fires at once.
 		d.mu.Lock()
-		next := time.Duration(-1)
+		next, now := time.Hour, d.now()
 		for _, h := range d.holds {
-			if w := h.due.Sub(d.now()); next < 0 || w < next {
-				next = w
-			}
+			next = min(next, h.due.Sub(now))
 		}
 		d.mu.Unlock()
-		if next < 0 {
-			next = time.Hour
-		}
 		timer.Reset(max(next, 0))
 		select {
 		case <-d.done:
@@ -299,7 +300,7 @@ func (d *Dispatcher) fire(now time.Time, async bool) {
 	if datasets == nil {
 		return
 	}
-	slices.SortFunc(due, func(a, b *hold) int { return int(a.seq - b.seq) })
+	slices.SortFunc(due, func(a, b *hold) int { return cmp.Compare(a.seq, b.seq) })
 	for _, h := range due {
 		d.inflight.Add(1)
 		run := func() {
@@ -391,8 +392,10 @@ func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) er
 		}
 		for _, dv := range devices {
 			d.sendTo(ctx, ds, store, dv, thread, h.key.event, item, func(eventID string) alert {
-				return alert{device: dv.ID, repository: h.key.repository, person: person, thread: h.key.thread,
-					event: h.key.event, item: item, check: check, fingerprint: pushwire.EventFingerprint(eventID)}
+				return alert{
+					device: dv.ID, repository: h.key.repository, person: person, thread: h.key.thread,
+					event: h.key.event, item: item, check: check, fingerprint: pushwire.EventFingerprint(eventID),
+				}
 			})
 		}
 	}

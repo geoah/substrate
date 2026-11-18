@@ -566,9 +566,15 @@ func TestTheEngineHandsOutWhatAPushIsAbout(t *testing.T) {
 		t.Fatalf("an answered question rechecks %q", got)
 	}
 
-	waitFor(t, "the resume after the answer", func() bool {
-		_, props := threadStatusOf(t, r.ds, asked)
-		return props[propThreadLastReply] == "noted."
+	// The resumed turn's settle is handed out once its commit is over,
+	// which is after a read sees it.
+	waitFor(t, "the resume's settle handed out", func() bool {
+		for _, sig := range sink.take() {
+			if sig.Kind == substrate.PushSettled && sig.Thread == asked && sig.Status == threadOK {
+				return true
+			}
+		}
+		return false
 	})
 
 	// The admins: ada is one, bo, an editor, is not.
