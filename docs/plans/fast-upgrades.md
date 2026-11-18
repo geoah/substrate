@@ -1,6 +1,6 @@
 # Fast upgrades: an upgrade costs what changed, not how long the history is
 
-Status: proposal, 2026-11-16. Part of the follow-up to the upgrade of a
+Status: proposal, 2026-11-17. Part of the follow-up to the upgrade of a
 production repository of 11.7M lines, whose
 [postmortem](fast-upgrades/postmortem.md) says what happened. The numbers
 here are from that upgrade and from the [measurements](fast-upgrades/measurements.md)
@@ -22,6 +22,13 @@ repository's own kinds are spelled, and the fold already held every record.
 The cost came from how the change was applied: by rewriting every line in
 place and rebuilding the fold from scratch.
 
+Two hours after the cutover, the same repository showed what an upgrade
+costs when nothing walks the history. It rolled forward to a later build of
+`main`, whose only stored change was one SQL migration. The migration took 34 ms, the server
+listened after about a minute, and the nine provider upgrades it offered
+took 25 seconds. That is the cost this plan sets for every upgrade: a
+restart, and the work proportional to what changed.
+
 ## The rule
 
 **An upgrade costs what it changes, never how long the history is.** No
@@ -37,14 +44,25 @@ Until then, no release raises the changelog dialect with a step that
 rewrites lines.
 
 **The history is kept whole, and it keeps growing.** Every kind but the
-substrate's own bookkeeping keeps every line of its history: a kind a person
-or an app declares does already, and a separate change restores the same
-for the kinds a provider mirrors, in place of decision 0282's 30-day
-default. So this plan assumes a history that grows without bound, to tens
-and hundreds of GB, and nothing in it relies on keeping less. Compaction
-into state entries (decision 0296) folds only what a kind's retention lets
-go, which is bookkeeping kept for seven days, and an erasure takes out only
-what a person asked to erase. Neither is a lever for making upgrades fast.
+substrate's own bookkeeping keeps every line of its history:
+
+- a kind a person or an app declares keeps everything;
+- a mirror of an outside service does too (decision 0333, which amends
+  0282's 30-day default for mirrors);
+- every deletion is kept unless a deployment sets
+  `SUBSTRATE_DELETIONS_KEPT` (decision 0334).
+
+Bookkeeping keeps seven days: core's `triggerrun`, `trigger` and `alert`, and
+each provider's sync-progress kind. So this plan assumes a history that grows
+without bound, to tens and hundreds of GB, and nothing in it relies on
+keeping less. Compaction into state entries (decision 0296) folds only what
+a kind's retention lets go, which is that bookkeeping, and an erasure takes
+out only what a person asked to erase. Neither is a lever for making upgrades
+fast. What the plan does do is take the substrate's own per-delivery
+bookkeeping out of the replayed history altogether
+([section 9](#9-bookkeeping-is-state-kept-beside-the-history)). That keeps
+the owner's history whole and stops two thirds of today's lines from being
+history at all.
 
 ### An example: this upgrade's step 6, done the new way
 
@@ -115,7 +133,9 @@ things change:
 - the fold gets migrations of its own, so a shape change does not need a
   replay;
 - a repeated property gets a delta form, so a list that grows by one entry
-  costs one entry of history, not the whole list.
+  costs one entry of history, not the whole list;
+- the substrate's per-delivery bookkeeping, two thirds of today's lines,
+  becomes state kept beside the history rather than lines in it.
 
 **Do we need protobuf, or another binary encoding that takes less space?**
 Not now, and not for this problem. An encoding cannot remove the work an
@@ -449,6 +469,11 @@ that inventory:
 | Queued behind the swap | the observed index, as a rebuild does today |
 | Kept as they stand | `sealed`, `embeddings` but the vectors of records the build left no row of, `idempotency_keys` and the rest `rebuild.go` lists |
 
+Once bookkeeping is state ([section 9](#9-bookkeeping-is-state-kept-beside-the-history)),
+the four ledger tables and the run records move to that last row, taken from
+the archive's state object, and only a history from before the change folds
+them.
+
 **How it is fast.** Lines are read in bulk and lifted and decoded on every
 core. A record's effects are folded in memory, spilled by hash partition
 when they do not fit, and each final row is written once with `COPY` into
@@ -559,7 +584,164 @@ throughput it measured on that copy, never from a number in a doc. It runs
 before a release is cut, on a copy of the largest repository, and again
 before each deployment.
 
-### 9. Runbook rules
+### 9. Bookkeeping is state kept beside the history
+
+Two thirds of the production repository's history is not the owner's data.
+It is the substrate's record of running triggers. Of 11,892,975 lines:
+
+| Kind | Lines | Payload |
+| --- | --- | --- |
+| `core/triggerrun`, a run record each delivery writes | 5,488,566 | 1.98 GB |
+| `core/trigger`, the `delivery` lines that move a trigger's cursor, schedule, parked failures and paged drains | 2,440,726 | 10 GB |
+| Five providers' sync-progress kinds | about 63,700 | about 39 MB |
+| `core/alert` | 214 | 97 kB |
+
+Run records and `delivery` lines together are about 67% of the lines and
+about half of the 24.7 GB of payload; a `delivery` line averages about 4 KB.
+Nearly every slow path the refold met was on them: the `trigger_failures`
+delete, the cursor, schedule and page upserts, and the run records.
+Compaction will trim them to seven days, over many passes, days to weeks at
+the default interval. But the owner's rule is that speed never relies on
+retention, and these lines keep arriving at this rate.
+
+**What reads them.** No trigger delivers them: every trigger skips run
+records and `delivery` lines when it matches changes (`matchChanges`,
+`functions.go`), because a delivery would otherwise feed itself. They are
+read in three other ways:
+
+- **As state.** Where a trigger resumes, which failures a retry can name, and
+  which runs a trigger's health counts from (`health.go`, decision 0152).
+- **As records.** The console's lists of runs.
+- **As change rows.** The change feed, a watch, and the console's history
+  feed, which writes "ran …" from a run record's changes
+  (`web/console/src/lib/history.ts`).
+
+None of those needs them to be lines of the history.
+
+**Why they are lines today.** Decision 0064 put the delivery ledger in the
+changelog because the backup unit was then the repository directory, which
+only the changelog file reached inside the commit's frame. A side file
+mirrored after the commit was rejected for its lag and its consistency.
+Since decision 0262 the backup is the archive, copied after the commit from
+one database snapshot. It already copies rows outside the history that way,
+the sealed values, consistent with the head it publishes.
+
+**The proposal.** Two kinds of bookkeeping stop being lines.
+
+- **The delivery ledger.** A trigger's cursor, schedule, parked failures and
+  paged drains are written to their four tables in the transaction whose
+  effects they acknowledge, as today, but with no `delivery` line beside
+  them. The tables are the truth, not a fold. Three more things join them:
+  - **The scan position.** It is Postgres-only today because one line per
+    pass would have grown the history. With it kept as state, the pin a
+    trigger edit writes today (`pinTriggerCursor`) has nothing left to
+    protect.
+  - **The counter a parked failure takes its id from.** Today a failure's id
+    is the seq of its `delivery` line (`reserveSeq`), and a retry names the
+    failure by it. At the switch the counter starts above every id the table
+    holds and above the head's seq, so no new id can equal an id a retry or a
+    restored archive already names. It moves in the transaction that parks,
+    and it travels in the archive with the tables.
+- **Run records.** `core/triggerrun` rows stay rows of `records`, so every
+  record read, filter, search, page and row-security rule treats them as it
+  does today, beside every other kind. What changes is how they are written
+  and kept. They are written in the delivery's transaction with no changelog
+  line. They are pruned by today's rule (`pruneRuns`, decisions 0152 and
+  0178): the newest twenty per trigger, the newest successful run, and the
+  parked runs a trigger's health or an unretried failure still needs. The
+  rule deletes a row where it writes a tombstone line today. They leave the
+  change feed and a watch. The console's history feed reads them from
+  `records` beside the change rows, and health reads them as it does now.
+
+**What stays history.** Every write a delivery causes, with `causedBy`
+naming what set it off; every edit to a trigger record; and `core/alert`.
+An alert is 214 lines. An open alert must outlive any retention until it
+resolves, and a write to an alert wakes the record triggers that watch alerts
+(`alerts.go`), so it stays a record of the history like any other. The
+providers' sync-progress kinds are their packages' own records and stay as
+they are; they are half a percent of the lines.
+
+**The archive.** Each pass writes this state as one object. The webhook
+spool is still read before the database snapshot, as today: a request the
+drain admits after the snapshot is in the spool's copy, and one it admitted
+before is in the snapshot's failures. The state object is then read in the
+same repeatable-read snapshot as the pieces, the ledger tables, the counter,
+the scan positions and the run record rows together. The format-4 manifest
+of section 1 selects it with its checksum. A restore loads it after the
+lines. A rebuild keeps the ledger tables, keeps the run record rows, and
+derives their `refs` and `fts` as it derives any row's, since health finds a
+trigger's runs through `refs`. `repository verify` holds the selected object
+to its checksum, as it holds a sealed value, and checks that no failure id
+in it reaches the counter.
+
+**The contracts the run records change.** A run record row written with no
+line is the one place a record leaves the rule that `fold.go` is the only
+path into `records`, so the exception is named and kept narrow:
+
+- **One write path, guarded.** One function writes a run record row and one
+  prunes it. `TestFoldPathWritesOnlyFromListedFunctions` lists them with the
+  reason, and a new guard refuses either for any kind but `core/triggerrun`,
+  so no other record can bypass the changelog. Both derive the row's `refs`
+  and `fts` through the same projection a folded row goes through
+  (`projectRow`), live and in a rebuild alike.
+- **`FoldSnapshot` names them.** The snapshot gives run record rows a section
+  of their own, on both sides of every comparison. A rebuild keeps them, so a
+  rebuilt repository compares equal, and tests hold that before and after a
+  rebuild and a restore.
+- **No observed points.** `core/triggerrun` binds no `observed` trait, so its
+  rows project nothing into the observed index. The guard above also refuses
+  a state-only kind that binds it.
+- **Compaction leaves the rows alone.** After the switch, the compaction pass
+  removes old run record lines once their seven days pass, writes no state
+  entry for them, and never touches a run record row: the state holds it. A
+  test holds one run that is kept and one that is pruned across a compaction
+  and a restore.
+
+**Old history.** The bookkeeping lines already written stay where they are
+until their seven days pass. A replay of a history whose archive has a state
+object takes the ledger and the runs from the object, and skips those lines'
+ledger effects and run records. A history from before the change, with no
+object, replays them as today.
+
+**What it costs.**
+
+- **Rebuild no longer reproduces everything from the history.** A rebuild
+  reproduces the fold from the history and keeps this state beside it. The
+  containment test of `rebuild.go` names it, as it names the sealed values
+  and `oauth_flows`.
+- **The history stops recording each delivery.** Which runs happened is read
+  from the run records, under the same pruning as today.
+- **Several decisions change.** 0064's ledger in the changelog, 0283's
+  "positions stay in the log", and 0320's trigger history kept as lines are
+  superseded in part, by a decision of their own when this is built.
+- **Two readers move.** The console's history feed reads runs from `records`,
+  and a client that watched runs reads them as records.
+- **New code where 0064 needed none.** A fold effect inherited the
+  transaction frame, the checksum, the import and the rebuild for free. A
+  state object needs its own format in the manifest, its own import, and its
+  own tests.
+
+**What holds it.** Restore tests cover each moment a delivery passes
+through:
+
+- a webhook request spooled and not yet admitted;
+- admitted and parked;
+- partway through a paged drain;
+- settled.
+
+In each, an archive pass stops between writing the state object and
+publishing the manifest, and the test restores from the manifest it leaves.
+A restored repository retries a failure parked before the switch by its old
+id, then parks a new one, and the two ids differ. A query that mixes run
+records with other kinds pages, filters and searches as it does today.
+
+**What it gains.** From the switch on, about two thirds of the lines and
+about half the bytes this repository writes never enter the history. A
+replay never folds a delivery or a run record, and a conversion or a
+preflight never walks one. The slow paths the refold met on the ledger
+tables leave the replay.
+
+### 10. Runbook rules
 
 These go into [`skills/substrate-runbook-upgrade`](../../skills/substrate-runbook-upgrade/SKILL.md)
 and [upgrading the binary](../operations.md#upgrading-the-binary):
@@ -587,6 +769,28 @@ and [upgrading the binary](../operations.md#upgrading-the-binary):
    or a migration that touches rows is rehearsed on a copy of the largest
    repository known, with the preflight and then the upgrade, before it is
    cut. Its pull request records the measured times.
+8. **Review and dry-check every emergency fix.** A fix written during an
+   upgrade runs at production scale only after a review, an offline check of
+   its pure functions over the real history, and a green CI run of the image
+   that carries it. This upgrade ran #1473's conversion fix before any of
+   the three. A review afterwards found four faults, and CI found guard
+   entries missing on #1484. Production happened to be unaffected.
+9. **List what the first boot will remove or rewrite, and ask.** Before the
+   boot, the runbook lists every behaviour the new release's first boot
+   switches on that removes or rewrites data: a compaction and what it
+   forgets, a purge, a conversion. It names the setting that governs each.
+   The owner says yes to each by name. This upgrade found by chance, after
+   the cutover, that compaction would have forgotten the whole history of
+   every record deleted more than 30 days before, on its first pass.
+10. **Clients are part of the upgrade.** Before the roll, the runbook checks
+    the published app builds against the new server, and rebuilds and checks
+    those that are behind. It also plans how they reach their users: iOS
+    refuses an install from a website over a TestFlight install with the same
+    bundle id, so a user who has one deletes it first.
+11. **The upgrade ends when the archive has caught up.** Any rewrite of the
+    history makes the archive copy it again: about an hour per 27 GB at the
+    default 8 MiB/s, longer while functions run. The runbook waits for that,
+    then runs `repository verify`, before it calls the upgrade done.
 
 ## The options
 
@@ -598,7 +802,8 @@ best case.
 
 | Option | What it does | 11.7M lines | 100M lines | Verdict |
 | --- | --- | --- | --- | --- |
-| Today: rewrite in place, then refold | One walk per step, then one replay through the write path, in the boot | About 5 h of walks, 10.5 h of replay, and a first open of 29 min | About 40 h, then about 90 h | Replace |
+| Today: rewrite in place, then refold | One walk per step, then one replay through the write path, in the boot | About 5 h of walks, 10.5 h of replay and a first open of 29 min, then about an hour of the archive copying it all again | About 40 h, then about 90 h, then about 8 h of archive copying | Replace |
+| An upgrade that walks no history (exists) | A restart: SQL migrations that change only the schema, and the open | About a minute, measured on the roll forward | The same | What every upgrade should be |
 | Batched, resumable replay of today's path | The same replay, committed every few thousand lines into shadow tables while the repository stays closed, the tables vacuumed and analyzed between batches | About 8 h, with no growth and no restart lost | About 70 h | Phase 0, for whatever still replays; not an upgrade path |
 | Bulk replay | Section 5 | A floor of about 5 min; under 30 min with what the floor leaves out | A floor of about 25 min; under an hour | Phase 3, for restores, imports and rebuilds |
 | Lift on read and fold migration | Sections 1 and 3 | No line written, and a fold migration of about 3 min | The same: it depends on the fold, not the history | **Phases 1–2, the upgrade path** |
@@ -607,6 +812,7 @@ best case.
 | A binary line encoding | Protobuf, or another form, for the line | The protobuf `Struct` form measured larger and no faster; decoding is 2% of a replay | The same share | Not now ([the questions](#the-owners-questions)); a form that makes a checksum cheap to check is worth measuring end to end |
 | A delta form for repeated properties | `add` and `remove` for a repeated property instead of its whole value | Cuts an append-heavy record's history about 50× from the next write on | The same | Phase 4, as a dialect raised the new way |
 | Keeping less history (shorter retention, compaction of the owner's data) | Fewer lines to walk or replay | Would shrink every history cost | The same | No: every line is kept, and compaction folds only bookkeeping. The plan assumes a history that grows without bound |
+| Bookkeeping as state beside the history | Section 9: the delivery ledger and the run records kept as state the archive snapshots, not as lines | About 67% fewer lines and half the bytes written to the history from the switch on | The same share | **Phase 1**, with the format-4 manifest it shares |
 | Preflight | Section 8 | Minutes for the declarations, tens of minutes for the whole history | About eight times the whole-history part | Phase 0 |
 | Scale test in CI | Section 7 | Minutes a run | n/a | Phase 0 |
 
@@ -625,7 +831,8 @@ shape in the history" for whoever wants it, without anyone waiting for it.
 
 | After | An upgrade that | Costs the repository being upgraded |
 | --- | --- | --- |
-| Today | Rewrites lines | Hours: a walk per step and a replay that slows as it goes |
+| Today | Rewrites lines | Hours: a walk per step, a replay that slows as it goes, and the archive copying everything again |
+| Today | Changes only the schema, with nothing that walks the history | About a minute: the roll forward two hours after this upgrade's cutover |
 | Phase 0 | Still rewrites lines: any history below dialect 8, such as a server still on v0.123.1 | Still hours. The replay no longer slows down, a restart resumes, a preflight has found the refusals first, and other repositories serve meanwhile |
 | Phase 1 | Raises the dialect with a lift, and changes nothing the fold holds | No history read or written at the boot |
 | Phase 2 | Also changes the fold | A fold migration: minutes for the fold the scale test models, or a derivation behind the open |
@@ -651,9 +858,13 @@ it supersedes:
 
 It amends 0099 (a repository migration that reads the history runs behind the
 open) and leaves 0296, 0300 and 0277 as they are, but for the line format
-and the manifest gaining what section 1 adds. It rests on the separate
-change that supersedes 0282's 30-day default for mirrored kinds: every kind
-but bookkeeping keeps every line.
+and the manifest gaining what section 1 adds. It rests on decisions 0333
+and 0334: every kind but bookkeeping keeps every line, and every deletion is
+kept.
+
+Section 9, bookkeeping as state, needs a decision of its own when it is
+built. That decision supersedes 0064's ledger in the changelog in part,
+0283's "positions stay in the log", and 0320's trigger history kept as lines.
 
 ## Phases
 
@@ -662,7 +873,7 @@ holding what it built.
 
 **Phase 0: the next upgrade cannot go like this one.**
 
-1. Land #1473, #1482, #1483 and #1484.
+1. Done: #1473 and #1482–#1484 have landed, and production runs them.
 2. `TestReplayCostStaysFlat`, with the shapes and the budgets above. On the
    stack's tip it fails today, on the hot record's row, its marks and the
    unpark ([measurements](fast-upgrades/measurements.md#the-replay-against-its-position)).
@@ -680,12 +891,15 @@ holding what it built.
 6. The preflight's declarations part, for the conversion steps that exist.
 7. The runbook rules, in the skill and in the operations guide.
 
-**Phase 1: lines keep their dialect.** Line format 2 with `dialect` and its
-column, manifest format 4 with the base dialect and the context timeline,
-their vectors and the stored format's page, the raw and lifted readers, the
+**Phase 1: lines keep their dialect, and bookkeeping leaves the history.**
+Line format 2 with `dialect` and its column, manifest format 4 with the base
+dialect, the context timeline and the bookkeeping state object, their
+vectors and the stored format's page, the raw and lifted readers, the
 compaction, erasure and re-encode rules that keep a lift's context, the list
 of SQL statements that read inside a payload and its guard, and the archive
-no longer writing pieces again for a conversion.
+no longer writing pieces again for a conversion. Bookkeeping as state
+(section 9) lands in the same phase, because it changes the manifest once
+with the rest.
 Steps 2–8 stay as they are for a history below dialect 8. The first step
 written after this phase is written the new way, and the scale test's
 upgrade check holds it.
@@ -731,6 +945,11 @@ from the next write on.
 - **How large a fold migration may be before it must run online** is a
   budget this page sets at five minutes on the modelled fold. It should be
   revisited with the first real one.
+- **Bookkeeping as state rests on the archive's snapshot.** A restore takes
+  the ledger and the run records from the state object, and the pieces from
+  the same snapshot, so the two agree at the head. That is how the sealed
+  values work today. A test stops a pass between the state object and the
+  manifest, and restores from each manifest it leaves.
 - **A binary form is not ruled out for good.** If measuring a stored form
   whose checksum can be checked without encoding the line again shows a
   real gain end to end, it can arrive as a line format raised the phase 1
