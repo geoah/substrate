@@ -402,6 +402,23 @@ struct PushContentTests {
         #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
     }
 
+    /// The extension's event read answers after the deadline: the record it
+    /// names is never asked for, since every read checks the race first.
+    @Test func aRecordReadThatWouldStartAfterTheDeadlineIsNeverSent() async throws {
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply"))),
+            .init(method: "GET", path: "/llm/thread/\(threadID)", answer: .json(200, threadRow())),
+        ])
+        // Held until the read is cancelled at the deadline, then answered in
+        // full: a result that comes after the fallback.
+        server.hold("/api/v1/push/events/e-reply")
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.accepted, client), until: .now + .seconds(2))
+        #expect(content == .fallback(dropsBadge: false))
+        try await Task.sleep(for: .seconds(1))
+        #expect(server.count("/api/v1/push/events/e-reply") == 1)
+        #expect(server.count("/llm/message/5b90e3c1f2") == 0)
+    }
+
     /// A cancelled read has no time left to ask in, whatever the clock says.
     @Test func noTimeIsLeftForACancelledRead() async {
         #expect(ChatPush.left(.now + .seconds(30)) != nil)

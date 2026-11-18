@@ -54,8 +54,6 @@ public enum ChatPush {
         guard let push = PushPayload(userInfo), push.event != .read else { return .fallback(dropsBadge: false) }
         return await Deadline.race(until: deadline, or: .fallback(dropsBadge: false)) { race in
             let acceptance = await accepting(push.generation)
-            // Answered already: nothing is asked of the server.
-            guard race.live else { return .fallback(dropsBadge: false) }
             switch acceptance.verdict {
             case .refused: return .fallback(dropsBadge: true)
             case .unknown: return .fallback(dropsBadge: false)
@@ -64,8 +62,15 @@ public enum ChatPush {
             guard var client = acceptance.client, !push.eventID.isEmpty else { return .fallback(dropsBadge: false) }
             // A busy server is not waited out: there is no time for it.
             client.pause = { _ in throw CancellationError() }
-            return await resolve(push, client: client, until: deadline)
+            return await resolve(push, client: client, race: race)
         }
+    }
+
+    /// The seconds a request may take, asked immediately before it is sent:
+    /// nil where the race is decided already, or too little is left.
+    static func left(_ race: Deadline.Race) -> TimeInterval? {
+        guard race.live else { return nil }
+        return left(race.deadline)
     }
 
     /// The seconds left until `deadline`, for a request's own timeout; nil
@@ -76,13 +81,15 @@ public enum ChatPush {
         return seconds > 0.5 ? seconds : nil
     }
 
-    private static func resolve(_ push: PushPayload, client: SubstrateClient, until deadline: ContinuousClock.Instant) async -> PushContent {
+    /// What the push is about, read with `client`, each request sent only
+    /// while `race` is undecided.
+    private static func resolve(_ push: PushPayload, client: SubstrateClient, race: Deadline.Race) async -> PushContent {
         do {
-            guard let time = left(deadline), let info = try await client.pushEvent(push.eventID, timeout: time), info.thread == push.thread,
+            guard let time = left(race), let info = try await client.pushEvent(push.eventID, timeout: time), info.thread == push.thread,
                 let item = info.item
             else { return .fallback(dropsBadge: false) }
             func read(_ kind: String, _ id: String) async throws -> Record? {
-                guard let time = left(deadline) else { throw CancellationError() }
+                guard let time = left(race) else { throw CancellationError() }
                 return try await client.record(kind, id, timeout: time)
             }
             switch info.event {
@@ -186,28 +193,27 @@ public enum ChatPush {
         guard let push = PushPayload(userInfo), push.event == .read, !push.eventID.isEmpty else { return false }
         return await Deadline.race(until: deadline, or: false) { race in
             let acceptance = await accepting(push.generation)
-            guard race.live, acceptance.verdict == .accepted, var client = acceptance.client else { return false }
+            guard acceptance.verdict == .accepted, var client = acceptance.client else { return false }
             client.pause = { _ in throw CancellationError() }
-            guard let time = left(deadline), let info = try? await client.pushEvent(push.eventID, timeout: time), info.event == "read",
+            // Each request and each call to the device below is made only
+            // while the race is undecided, checked immediately before it: a
+            // result that comes late acts on nothing.
+            guard let time = left(race), let info = try? await client.pushEvent(push.eventID, timeout: time), info.event == "read",
                 info.thread == push.thread, let covers = info.covers
             else { return false }
-            // Each step past here acts on the device: once the answer is
-            // given, a result that comes late does none of them.
-            guard race.live else { return false }
             let alerts = Set(covers.alerts)
+            guard race.live else { return false }
             let delivered = await notifications.delivered()
             for shown in delivered {
                 guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
                 guard race.live else { return false }
                 await notifications.cancel(shown.id)
             }
-            if let time = left(deadline),
-                let badge = try? await client.send("GET", "api/v1/push/badge", timeout: time, retries: 0)
-                    .decode(PushBadge.self).badge,
-                race.live
-            {
-                await notifications.setBadge(min(max(badge, 0), 999))
-            }
+            guard let time = left(race),
+                let badge = try? await client.send("GET", "api/v1/push/badge", timeout: time, retries: 0).decode(PushBadge.self).badge
+            else { return true }
+            guard race.live else { return false }
+            await notifications.setBadge(min(max(badge, 0), 999))
             return true
         }
     }
