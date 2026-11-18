@@ -151,10 +151,35 @@ export function threadStartedAt(thread: SubstrateRecord): string {
   return typeof declared === "string" && declared ? declared : thread.createdAt
 }
 
-/** When a thread was last active: the row's last write, which every settle
- * makes, else when it started. The chat list orders and groups by it. */
+/** When a chat last happened, which the chat list orders, groups and dates
+ * it by: while a turn runs, the row's last write; else when its last turn
+ * settled. Not `updatedAt` once settled: a write that is no turn (a
+ * migration stamping `lastMessage`, a recount of what waits) moves it, and
+ * one such write dates every chat it touched to that instant. A settled row
+ * without `finishedAt` falls back to its last write, then its start. */
 export function threadActiveAt(thread: SubstrateRecord): string {
+  const settled = thread.properties.finishedAt
+  if (
+    thread.properties.status !== "running" &&
+    typeof settled === "string" &&
+    settled
+  ) {
+    return settled
+  }
   return thread.updatedAt || threadStartedAt(thread)
+}
+
+/** The threads, the chat that last happened first (`threadActiveAt`); two
+ * at the same instant keep the order they came in. */
+export function byActivity(threads: SubstrateRecord[]): SubstrateRecord[] {
+  const at = new Map(
+    threads.map((t) => [t.id, Date.parse(threadActiveAt(t))] as const)
+  )
+  const key = (t: SubstrateRecord) => {
+    const ms = at.get(t.id)
+    return ms !== undefined && Number.isFinite(ms) ? ms : -Infinity
+  }
+  return [...threads].sort((a, b) => key(b) - key(a))
 }
 
 /** How long ago something in a chat happened. A stamp ahead of the reader's

@@ -9,6 +9,7 @@ import {
   agentName,
   agentOfferedTools,
   agentPurpose,
+  byActivity,
   callableOf,
   canChange,
   canSee,
@@ -31,6 +32,7 @@ import {
   resolveTool,
   sinceWords,
   tallyWords,
+  threadActiveAt,
   threadAgentId,
   threadTally,
   threadTitle,
@@ -298,6 +300,81 @@ describe("day headings", () => {
     const groups = groupByDay(items, (i) => i, now)
     expect(groups.map((g) => g.day)).toEqual(["Today", "Earlier"])
     expect(groups[0].items).toEqual([items[0], items[2]])
+  })
+})
+
+describe("when a chat last happened", () => {
+  // One write that is no turn (a migration stamping `lastMessage` on every
+  // thread) moved every row's `updatedAt` to the same instant.
+  const migratedAt = "2026-11-17T21:00:00.123456Z"
+  const chat = (id: string, finishedAt?: string, status = "ok") =>
+    record({
+      id,
+      kind: "substrate.reamde.dev/llm/thread",
+      createdAt: "2026-09-19T17:45:00Z",
+      updatedAt: migratedAt,
+      properties: {
+        mode: "chat",
+        status,
+        startedAt: "2026-09-19T17:45:00Z",
+        ...(finishedAt && { finishedAt }),
+      },
+    })
+
+  it("is when its last turn settled, not the row's last write", () => {
+    expect(threadActiveAt(chat("a", "2026-11-17T04:05:31.5Z"))).toBe(
+      "2026-11-17T04:05:31.5Z"
+    )
+  })
+
+  it("is the row's last write while a turn runs", () => {
+    // A continued chat still carries its previous settle.
+    const running = chat("a", "2026-11-10T08:00:00Z", "running")
+    expect(threadActiveAt(running)).toBe(migratedAt)
+  })
+
+  it("falls back to the last write, then the start, without a settle", () => {
+    expect(threadActiveAt(chat("a"))).toBe(migratedAt)
+    expect(
+      threadActiveAt(
+        record({
+          updatedAt: "",
+          properties: { startedAt: "2026-09-19T17:45:00Z" },
+        })
+      )
+    ).toBe("2026-09-19T17:45:00Z")
+  })
+
+  it("orders the chats by it, whatever their ids say", () => {
+    // Ids from two eras: the newer ones sort below the old in id order.
+    const threads = [
+      chat("zoldchatone1", "2026-10-11T22:30:00Z"),
+      chat("01m7aaaaaaaaaaaaaaaaaaaaab", "2026-11-17T04:05:31.5Z"),
+      chat("aoldchattwo2", "2026-09-19T17:50:00Z"),
+      chat("01m7aaaaaaaaaaaaaaaaaaaaac", "2026-11-17T22:30:00Z", "running"),
+      chat("01m7aaaaaaaaaaaaaaaaaaaaaa", "2026-11-08T21:20:00Z"),
+    ]
+    threads[3] = { ...threads[3], updatedAt: "2026-11-18T09:00:00Z" }
+    expect(byActivity(threads).map((t) => t.id)).toEqual([
+      "01m7aaaaaaaaaaaaaaaaaaaaac",
+      "01m7aaaaaaaaaaaaaaaaaaaaab",
+      "01m7aaaaaaaaaaaaaaaaaaaaaa",
+      "zoldchatone1",
+      "aoldchattwo2",
+    ])
+  })
+
+  it("dates each chat by its own day, not the day of the migration", () => {
+    const now = new Date(2026, 10, 18, 15, 0)
+    const threads = byActivity([
+      chat("old", new Date(2026, 9, 11, 22, 30).toISOString()),
+      chat("recent", new Date(2026, 10, 18, 9, 0).toISOString()),
+    ])
+    const groups = groupByDay(threads, threadActiveAt, now)
+    expect(groups.map((g) => [g.day, g.items.map((t) => t.id)])).toEqual([
+      ["Today", ["recent"]],
+      ["Earlier", ["old"]],
+    ])
   })
 })
 

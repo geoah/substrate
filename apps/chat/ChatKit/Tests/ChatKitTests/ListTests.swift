@@ -165,6 +165,69 @@ struct ListWindow {
     }
 }
 
+@Suite("When a chat happened", .timeLimit(.minutes(10)))
+struct WhenAChatHappened {
+    /// What one write that is no turn (a migration stamping `lastMessage`
+    /// on every thread) left on each row: the same last write.
+    static let migrated = "2026-11-17T21:00:00.123456Z"
+
+    static func thread(_ id: String, settled: String?, status: String = "ok", written: String = migrated) -> Record {
+        var properties: [String: JSONValue] = ["mode": "chat", "status": .string(status), "subject": .string("Chat \(id)")]
+        if let settled { properties["finishedAt"] = .string(settled) }
+        return Record(id: id, kind: Kinds.thread, properties: properties, version: 1, createdAt: "2026-09-19T17:45:00Z", updatedAt: written)
+    }
+
+    /// Ids of two eras, so the id order, the old ones first, is not the
+    /// order of the chats.
+    static let chats = [
+        thread("zoldchatone1", settled: "2026-10-11T22:30:00Z"),
+        thread("01m7aaaaaaaaaaaaaaaaaaaaab", settled: "2026-11-17T04:05:31.5Z"),
+        thread("aoldchattwo2", settled: "2026-09-19T17:50:00Z"),
+        thread("01m7aaaaaaaaaaaaaaaaaaaaaa", settled: "2026-11-14T21:20:00Z"),
+        // Continued: a turn runs, and the row still holds its last settle.
+        thread("01m7aaaaaaaaaaaaaaaaaaaaac", settled: "2026-11-08T10:00:00Z", status: "running", written: "2026-11-18T17:59:30Z"),
+    ]
+
+    @Test(arguments: [false, true]) func aChatIsListedAndDatedByWhenItsLastTurnSettledNotByItsRowsLastWrite(flagged: Bool) {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: false)
+        var state = ChatAppState()
+        state.loaded = true
+        if flagged {
+            state.recordsRevision = 9
+            state.marks = [:]
+            state.window.read = true
+        }
+        state.chats = Self.chats
+        #expect(state.flags == flagged)
+        let order = ["01m7aaaaaaaaaaaaaaaaaaaaac", "01m7aaaaaaaaaaaaaaaaaaaaab", "01m7aaaaaaaaaaaaaaaaaaaaaa", "zoldchatone1", "aoldchattwo2"]
+        #expect(state.threads.map(\.id) == order)
+        let now = Timestamp.parse("2026-11-18T18:00:00Z")!
+        let list = app.present(PresenterInput(state: state, now: now, locale: Locale(identifier: "en_GB"))).list
+        #expect(list.sections.map(\.title) == ["Today", "Yesterday", "Previous 7 Days", "Earlier"])
+        #expect(list.sections.map { $0.rows.map(\.id) } == [[order[0]], [order[1]], [order[2]], [order[3], order[4]]])
+        let stamps = list.sections.flatMap(\.rows).map(\.stamp)
+        #expect(Array(stamps.prefix(4)) == ["now", "Yesterday", "Sat", "11 Oct"])
+    }
+
+    @Test func whereTheWindowReadSoFarEndsIsTheRowsLastWriteTheOrderTheServerListsBy() {
+        var state = ChatAppState()
+        state.recordsRevision = 9
+        state.window.read = true
+        state.window.end = Timestamp.parse("2026-11-17T20:00:00Z")
+        state.chats = [Self.thread("kept", settled: "2026-11-18T09:00:00Z", written: "2026-11-18T09:00:00Z")]
+        // Two chats the Archived list brought, both unarchived since: one
+        // the server lists inside the window read, by its last write,
+        // though it last happened long ago; one it lists past it.
+        state.archive.rows = [
+            Self.thread("inside", settled: "2026-10-01T08:00:00Z"),
+            Self.thread("past", settled: "2026-10-02T08:00:00Z", written: "2026-11-17T19:00:00Z"),
+        ]
+        state.marks = ["inside": ThreadMark(version: 1, archived: false), "past": ThreadMark(version: 1, archived: false), "kept": .none]
+        #expect(state.flags)
+        #expect(state.threads.map(\.id) == ["kept", "inside"])
+    }
+}
+
 @Suite("A transcript's older rows", .timeLimit(.minutes(10)))
 struct OlderRowsOfAChat {
     @Test func theRowsBeforeTheOnesHeldAreReadAboveThemAndStayThroughTheNextRead() async throws {
