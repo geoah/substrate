@@ -72,7 +72,7 @@ func threadPushInfo(row *erow) (mode, person string) {
 // the thread's patch: wasLast is the `lastMessage` the row held before it.
 // Only a `chat` thread with a person pushes a reply or a failure, and a
 // turn that raised a request pushes that request alone.
-func (t *txn) signalSettle(thread string, status string, wasLast eref, started time.Time) error {
+func (t *txn) signalSettle(thread, status string, wasLast eref, started time.Time) error {
 	if t.ds.svc.pushSink == nil {
 		return nil
 	}

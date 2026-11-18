@@ -555,8 +555,10 @@ data:
 		t.Fatalf("the two cards resolve to one item: %+v %+v", card1.Item, card2.Item)
 	}
 	// A read-only app's token reads the second card and may not decide it.
-	reader, readerBearer := pushToken(t, env, substrate.MintTokenInput{Label: "Reader", ClientID: "https://apps.example.com/apps/reader/client.json", ClientName: "Reader",
-		Scopes: []string{"read:" + vocabulary.KindLLMThread, "read:" + vocabulary.KindLLMInteraction, "read:" + vocabulary.KindLLMMessage}})
+	reader, readerBearer := pushToken(t, env, substrate.MintTokenInput{
+		Label: "Reader", ClientID: "https://apps.example.com/apps/reader/client.json", ClientName: "Reader",
+		Scopes: []string{"read:" + vocabulary.KindLLMThread, "read:" + vocabulary.KindLLMInteraction, "read:" + vocabulary.KindLLMMessage},
+	})
 	readerSigner, err := env.ds.(substrate.PushStore).PushSigner(ctx, reader.ID)
 	if err != nil {
 		t.Fatal(err)
