@@ -719,8 +719,9 @@ and the badge the server counted.
   session that accepted it, the only client its requests go with
   (`PushRegistrar.acceptance(of:)`): one for another registration fetches nothing,
   offers nothing and drops its badge; one the Keychain could not be read
-  for (before the first unlock after a restart) fetches nothing and keeps
-  its badge. Then it resolves the event id
+  for (before the first unlock after a restart) fetches nothing, and sets
+  its badge only where the last check before it shows can read the
+  Keychain and accepts it. Then it resolves the event id
   (`GET /api/v1/push/events/{eventId}`), reads that item at its version, and
   shows it as the local notification of the same item would
   (`ChatPush.content`, built with `ChatNotifications`): a reply's start, at
@@ -736,11 +737,13 @@ and the badge the server counted.
   raced against the whole operation: at the deadline the push is delivered
   as it came, and what is still out is cancelled and never waited for. It
   is delivered once, with what was made or as it came, whether the work or
-  `serviceExtensionTimeWillExpire` comes first; at the system's expiry, only
-  what the last check before showing confirmed, or else the plain fallback
-  with no badge. Just before it shows what
-  it read, it asks again whether the push is accepted: a sign-out while it
-  read leaves the plain fallback, with no chat text and no badge. On any
+  `serviceExtensionTimeWillExpire` comes first; at the system's expiry, the
+  delivery is claimed before the work is stopped, with only what the last
+  check before showing confirmed, or else the plain fallback with no badge.
+  Just before it shows what it read, it asks again whether the push is
+  accepted, and only that answer lets anything read show or a badge be
+  set: a sign-out while it read, a check unanswered, or the work cancelled
+  leaves the plain fallback, with no chat text and no badge. On any
   failure the alert keeps the app's fallback words. It links
   ChatKit and the kit's API and never a view. A server reachable only at
   home or over a VPN cannot be asked from elsewhere; there the fallback is
@@ -775,7 +778,7 @@ and the badge the server counted.
   until the person opens the chat, a decision and the card reads after it.
   The extension's and the background `read`'s client asks whether the
   push is still accepted before every request it sends. Before anything
-  it led to is shown (a preview, a fallback that keeps its badge, a badge,
+  it led to is shown (a preview, a fallback with its badge, a badge,
   a notification taken back, an action's notice, a chat opened) the push
   is asked about again: one no longer accepted shows nothing of its chat
   and no badge, and an action's notice says only whether it may have gone

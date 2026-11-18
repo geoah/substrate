@@ -719,6 +719,27 @@ struct PushContentTests {
         #expect(confirmed.atExpiry == shown)
     }
 
+    /// The work stopped while the first Keychain read is out, as the
+    /// system's expiry stops it: the answer is the plain fallback with no
+    /// badge, never one that keeps it, and nothing is asked of the server.
+    @Test func aCancelledReadWithTheKeychainOutSetsNoBadge() async throws {
+        let (server, client) = server([])
+        let asked = Ran()
+        let held: ChatPush.Accepting = { _ in
+            asked.mark()
+            await uncancellable(seconds: 2)
+            return PushAcceptance(.accepted, client: client)
+        }
+        let expiry = PushExpiry()
+        let working = Task { await ChatPush.content(push("reply", eventID: "e-reply"), accepting: held, until: later, expiry: expiry) }
+        #expect(await eventually { asked.value })
+        working.cancel()
+        #expect(await working.value == .fallback(dropsBadge: true))
+        #expect(expiry.atExpiry == .fallback(dropsBadge: true))
+        try await Task.sleep(for: .seconds(2))
+        #expect(server.requests.isEmpty)
+    }
+
     /// The deadline starts before the Keychain is read: one slower than it
     /// is the fallback at the deadline, and nothing is asked of the server
     /// when it answers late.
@@ -729,10 +750,11 @@ struct PushContentTests {
             return PushAcceptance(.accepted, client: client)
         }
         // Each answers by its deadline, the content once its last check is
-        // given up on (`lastCheck` past it), well before the Keychain would.
+        // given up on (`lastCheck` past it), well before the Keychain would;
+        // with nothing confirmed, it sets no badge.
         var started = ContinuousClock.now
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stuck, until: .now + .seconds(1))
-        #expect(content == .fallback(dropsBadge: false))
+        #expect(content == .fallback(dropsBadge: true))
         #expect(ContinuousClock.now - started < .seconds(6))
         started = ContinuousClock.now
         let read = await ChatPush.takeBack(
@@ -837,9 +859,19 @@ struct PushContentTests {
         #expect(left == nil)
     }
 
-    @Test func aKeychainThatCannotBeReadIsNoOtherSignIn() async {
+    /// A Keychain that cannot be read (locked since a restart) fetches
+    /// nothing, and sets no badge: nothing confirms the push is this
+    /// sign-in's. One read again in time, at the last check, keeps it.
+    @Test func aKeychainThatCannotBeReadFetchesNothingAndSetsNoBadge() async {
         let (server, client) = server([])
-        #expect(await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.unknown, client), until: later) == .fallback(dropsBadge: false))
+        #expect(await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.unknown, client), until: later) == .fallback(dropsBadge: true))
+        #expect(server.requests.isEmpty)
+        let checks = Ran()
+        let unlocked: ChatPush.Accepting = { _ in
+            defer { checks.mark() }
+            return checks.value ? PushAcceptance(.accepted, client: client) : PushAcceptance(.unknown)
+        }
+        #expect(await ChatPush.content(push("reply", eventID: "e-reply"), accepting: unlocked, until: later) == .fallback(dropsBadge: false))
         #expect(server.requests.isEmpty)
     }
 

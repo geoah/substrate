@@ -63,3 +63,37 @@ final class DeliverOnce: @unchecked Sendable {
     @discardableResult
     func expire(_ expiry: PushExpiry?) -> Bool { deliver(expiry?.atExpiry ?? .fallback(dropsBadge: true)) }
 }
+
+/// One push's delivery in the extension: the work, and the system's expiry,
+/// which claims the delivery before it stops the work. A work stopped first
+/// could answer from its cancellation and win; claimed first, whatever the
+/// work answers after is delivered nowhere.
+final class PushRun: @unchecked Sendable {
+    private let lock = NSLock()
+    private let once: DeliverOnce
+    private let expiry = PushExpiry()
+    private var work: Task<Void, Never>?
+
+    init(_ best: UNMutableNotificationContent, handler: @escaping (UNNotificationContent) -> Void) {
+        once = DeliverOnce(best, handler: handler)
+    }
+
+    func start(_ userInfo: [String: String], accepting: @escaping ChatPush.Accepting, until deadline: ContinuousClock.Instant) {
+        let (once, expiry) = (once, expiry)
+        let task = Task {
+            let content = await ChatPush.content(userInfo, accepting: accepting, until: deadline, expiry: expiry)
+            once.deliver(content)
+        }
+        lock.withLock { work = task }
+    }
+
+    /// The system's time is up: what the last check confirmed, or the plain
+    /// fallback with no chat text and no badge, is delivered first; then the
+    /// work is stopped.
+    @discardableResult
+    func expire() -> Bool {
+        let delivered = once.expire(expiry)
+        lock.withLock { work }?.cancel()
+        return delivered
+    }
+}

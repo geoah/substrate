@@ -72,9 +72,13 @@ public extension LinkedRecordsApp {
         return linked.perform(records, in: environment).map(Event.records)
     }
 
+    /// The records' effects leave nothing waiting: a read and a watch start
+    /// again on a new token (`newAccess`) and stop on a sign-out, and what a
+    /// reread would have marked to read again is the newer session's to
+    /// mark, never an older effect's.
     func ended(bySessionChange effect: Effect) -> Event? {
-        guard let records = effect.recordsEffect else { return ownEnded(bySessionChange: effect) }
-        return linked.ended(bySessionChange: records).map(Event.records)
+        guard effect.recordsEffect == nil else { return nil }
+        return ownEnded(bySessionChange: effect)
     }
 }
 

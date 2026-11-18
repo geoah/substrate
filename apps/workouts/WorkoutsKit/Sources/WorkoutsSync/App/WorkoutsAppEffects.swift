@@ -120,7 +120,9 @@ extension WorkoutsApp {
     /// What a change of sign-in under an effect that asked the server ends:
     /// the sync's mark, the sample's, and a sheet waiting on an import's
     /// receipt, which is told why. What the effect answered was dropped by
-    /// the runtime, or never came.
+    /// the runtime, or never came. A mark another effect may own since is
+    /// ended only by an effect under its key: a newer one replaces it, and
+    /// the replaced one's ending is never applied.
     public func ended(bySessionChange effect: Effect) -> Event? {
         switch effect {
         case let .sync(ref), let .exchange(ref, _, _, _), let .seedLibrary(ref): .syncEnded(ref, problem: nil)
@@ -134,11 +136,13 @@ extension WorkoutsApp {
     /// through: another sign-in, or a sign-out, came first.
     static let signInChanged = "the sign-in changed before this finished, so it may not have been made."
 
-    /// One sync at a time, stopped when the account changes; one outbox
+    /// One sync at a time, stopped when the account changes; one sample's
+    /// add, replaced by the next, which owns the adding mark; one outbox
     /// followed; the rest run to their end.
     public func key(of effect: Effect) -> String? {
         switch effect {
         case .sync, .exchange, .seedLibrary, .stopSync: "sync"
+        case .addSample: "sample"
         case .followOutbox: "outbox"
         case .openAccount: "account"
         default: nil

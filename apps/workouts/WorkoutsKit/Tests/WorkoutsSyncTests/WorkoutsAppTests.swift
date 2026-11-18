@@ -129,6 +129,54 @@ struct WorkoutsAppTests {
         #expect(stub.requests.isEmpty)
     }
 
+    @Test("an add in another account replaces the one the switch left running, whose end then leaves the new add's mark alone")
+    func addSampleAcrossAnAccountSwitch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("workouts-app-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Every client is handed over when the test lets that one through,
+        // in the order they were asked for.
+        let keychain = Turnstile()
+        let stub = StubTransport()
+        var environment = AppEnvironment.testing()
+        environment.folders = WorkoutsFolders(base: directory)
+        environment.client = ClientSource {
+            await keychain.pass()
+            return SubstrateClient(server: Self.server, token: "a", transport: stub)
+        }
+        let app = WorkoutsApp(directory: directory, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        let harness = ControllerHarness(app, environment: environment, performsEffects: true)
+        var ada = Self.snapshot("ada")
+        ada.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(ada)
+        // The sign-in's sync asks first, then the add.
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 1 }
+        await harness.settle()
+        let before = await harness.runtime.activity.running
+        await harness.send(.addSampleRoutine)
+        #expect(await harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 2 }
+        // The work the first add started, by the runtime's numbers.
+        let adding = await harness.runtime.activity.running.subtracting(before)
+        #expect(!adding.isEmpty)
+        // Another account: Add is free again, and an add starts there.
+        var bob = Self.snapshot("bob")
+        bob.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(bob)
+        #expect(await !harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.canWrite }
+        await harness.send(.addSampleRoutine)
+        #expect(await harness.presentation.addingSample)
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 4 }
+        // The first account's add ends now, under the switch.
+        await keychain.release(1)
+        try await harness.until(timeout: .seconds(60)) { await $0.runtime.activity.running.isDisjoint(with: adding) }
+        await harness.settle()
+        #expect(await harness.presentation.addingSample)
+        #expect(await harness.runtime.counters.endedBySession == 0)
+        await keychain.releaseAll()
+    }
+
     @Test("a session change ends the sync's mark and the sample's; work that waits on nothing ends as nothing")
     func sessionChangeEndings() {
         let app = WorkoutsApp(directory: nil, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
@@ -265,5 +313,37 @@ actor Latch {
         opened = true
         for waiter in waiters { waiter.resume() }
         waiters = []
+    }
+}
+
+/// Where each wait holds until the test lets that one through, by the order
+/// the waits came in.
+actor Turnstile {
+    private var arrived: [CheckedContinuation<Void, Never>?] = []
+    private var released: Set<Int> = []
+    private var all = false
+
+    var waiting: Int { arrived.count }
+
+    func pass() async {
+        if all { return }
+        let index = arrived.count
+        if released.contains(index) {
+            arrived.append(nil)
+            return
+        }
+        await withCheckedContinuation { arrived.append($0) }
+    }
+
+    func release(_ index: Int) {
+        released.insert(index)
+        guard index < arrived.count, let waiter = arrived[index] else { return }
+        arrived[index] = nil
+        waiter.resume()
+    }
+
+    func releaseAll() {
+        all = true
+        for index in arrived.indices { release(index) }
     }
 }

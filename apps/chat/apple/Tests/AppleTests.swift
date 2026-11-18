@@ -255,6 +255,45 @@ private struct LegacySession: Codable {
         #expect(count.delivered.count == 1 && count.delivered.first?.badge == 3)
     }
 
+    /// iOS ends the extension while the first Keychain read is still out:
+    /// the delivery is claimed first, as the plain fallback with no chat
+    /// text and no badge, and the work, stopped after, delivers nothing,
+    /// though the Keychain then accepts the push.
+    @Test func anExpiryWhileTheKeychainIsReadClaimsTheDeliveryFirst() async throws {
+        final class Delivered: @unchecked Sendable {
+            private let lock = NSLock()
+            private var kept: [UNNotificationContent] = []
+            func append(_ content: UNNotificationContent) { lock.withLock { kept.append(content) } }
+            var all: [UNNotificationContent] { lock.withLock { kept } }
+        }
+        actor Keychain {
+            private var waiters: [CheckedContinuation<Void, Never>] = []
+            private var opened = false
+            var waiting: Int { waiters.count }
+            func read() async -> PushAcceptance {
+                if !opened { await withCheckedContinuation { waiters.append($0) } }
+                return PushAcceptance(.accepted)
+            }
+            func open() {
+                opened = true
+                for waiter in waiters { waiter.resume() }
+                waiters = []
+            }
+        }
+        let delivered = Delivered()
+        let keychain = Keychain()
+        let run = PushRun(Self.pushed()) { delivered.append($0) }
+        run.start(PushPayload.flatten(Self.pushed().userInfo), accepting: { _ in await keychain.read() }, until: .now + .seconds(60))
+        while await keychain.waiting == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(run.expire())
+        #expect(delivered.all.count == 1)
+        #expect(delivered.all.first?.badge == nil && delivered.all.first?.body == "A chat has a new reply.")
+        await keychain.open()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(delivered.all.count == 1)
+        #expect(!run.expire())
+    }
+
     /// iOS ends the extension before the last check answered: nothing says
     /// the push is still this sign-in's, so it goes as the plain fallback,
     /// with no chat text and no badge.

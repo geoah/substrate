@@ -132,7 +132,8 @@ public enum ChatPush {
     ///     the client of the session that accepted it. One meant for an
     ///     earlier registration fetches nothing, offers nothing and drops its
     ///     badge; one the Keychain could not be read for (before the first
-    ///     unlock) fetches nothing and keeps its badge.
+    ///     unlock) fetches nothing. Only the last check before showing
+    ///     (`checkedLast`) lets anything read show, or a badge be set.
     ///   - deadline: the whole operation's, on the monotonic clock, the
     ///     Keychain's reads included: the fallback is answered then, and what
     ///     is still out is cancelled and never waited for.
@@ -143,8 +144,10 @@ public enum ChatPush {
         expiry: PushExpiry? = nil
     ) async -> PushContent {
         guard let push = PushPayload(userInfo), push.event != .read else {
-            expiry?.settle(.fallback(dropsBadge: false))
-            return .fallback(dropsBadge: false)
+            // No generation to check: nothing confirms the push is this
+            // sign-in's, so it sets no badge.
+            expiry?.settle(.fallback(dropsBadge: true))
+            return .fallback(dropsBadge: true)
         }
         let first = Kept<PushAcceptance>()
         let content: PushContent = await Deadline.race(until: deadline, or: PushContent.fallback(dropsBadge: false)) { (race: Deadline.Race) -> PushContent in
@@ -173,30 +176,24 @@ public enum ChatPush {
     /// some ten seconds more than the deadline.
     static let lastCheck: Duration = .seconds(2)
 
-    /// What a push shows, asked about last, just before it is shown: one
-    /// accepted once and accepted no more (a sign-out, another sign-in)
-    /// shows nothing it read and no badge, a fallback that would keep its
-    /// badge included. One never accepted (an unreadable Keychain) keeps the
-    /// badge it came with while nothing says it is another sign-in's. The
-    /// check is answered within `lastCheck` past the deadline or not at all:
-    /// unanswered, a push accepted once may since have been signed out of,
-    /// and shows nothing it read and no badge.
+    /// What a push shows, asked about last, just before it is shown. What
+    /// was read shows, and a fallback keeps the badge it came with, only
+    /// where this check confirms the push is accepted, for the repository
+    /// that accepted it first. Refused, unreadable (a Keychain locked since
+    /// a restart), another repository's, unanswered within `lastCheck` past
+    /// the deadline, or the work cancelled: nothing read shows, and no badge
+    /// is set.
     static func checkedLast(
         _ content: PushContent, _ push: PushPayload, _ first: PushAcceptance?, _ accepting: @escaping Accepting,
         until deadline: ContinuousClock.Instant
     ) async -> PushContent {
         guard content != .fallback(dropsBadge: true) else { return content }
         let unanswered: PushAcceptance? = nil
-        guard let now = await Deadline.race(until: deadline + lastCheck, or: unanswered, { await accepting(push.generation) }) else {
-            return first?.verdict == .accepted ? .fallback(dropsBadge: true) : content
-        }
-        switch now.verdict {
-        case .refused: return .fallback(dropsBadge: true)
-        case .unknown: return first?.verdict == .accepted ? .fallback(dropsBadge: true) : content
-        case .accepted:
-            if let first, first.verdict == .accepted, first.identity != now.identity { return .fallback(dropsBadge: true) }
-            return content
-        }
+        guard let now = await Deadline.race(until: deadline + lastCheck, or: unanswered, { await accepting(push.generation) }),
+            now.verdict == .accepted
+        else { return .fallback(dropsBadge: true) }
+        if let first, first.verdict == .accepted, first.identity != now.identity { return .fallback(dropsBadge: true) }
+        return content
     }
 
     /// Whether the push is still accepted as it was, for the same
