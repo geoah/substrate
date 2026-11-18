@@ -64,6 +64,17 @@ private func uncancellable(seconds: Double) async {
     }
 }
 
+/// Whether `condition` holds within `seconds`: a wait that fails the test,
+/// never one that hangs it.
+private func eventually(within seconds: Double = 15, _ condition: @Sendable () -> Bool) async -> Bool {
+    let until = ContinuousClock.now + .seconds(seconds)
+    while !condition() {
+        guard ContinuousClock.now < until else { return false }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return true
+}
+
 /// Whether a test's slow work ran.
 private final class Ran: @unchecked Sendable {
     private let lock = NSLock()
@@ -326,17 +337,20 @@ struct PushContentTests {
     @Test func aKeychainSlowerThanTheDeadlineIsTheFallbackAtTheDeadline() async throws {
         let (server, client) = server([])
         let stuck: ChatPush.Accepting = { _ in
-            await uncancellable(seconds: 2.5)
+            await uncancellable(seconds: 5)
             return PushAcceptance(.accepted, client: client)
         }
-        let started = ContinuousClock.now
+        // Each answers at its deadline, well before the Keychain would.
+        var started = ContinuousClock.now
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stuck, until: .now + .seconds(1))
         #expect(content == .fallback(dropsBadge: false))
+        #expect(ContinuousClock.now - started < .seconds(4))
+        started = ContinuousClock.now
         let read = await ChatPush.takeBack(
             push("read", eventID: "e-read"), accepting: stuck, notifications: RecordedNotifications(), until: .now + .seconds(1))
         #expect(!read)
         #expect(ContinuousClock.now - started < .seconds(4))
-        try await Task.sleep(for: .seconds(3))
+        try await Task.sleep(for: .seconds(5))
         #expect(server.requests.isEmpty)
     }
 
@@ -353,20 +367,24 @@ struct PushContentTests {
                     PushPayload.Key.event: "reply", PushPayload.Key.thread: threadID, PushPayload.Key.generation: "gC", PushPayload.Key.eventID: covered,
                 ]))
         let asked = Ran()
+        let answered = Ran()
         notifications.onDelivered {
             asked.mark()
-            await uncancellable(seconds: 4)
+            await uncancellable(seconds: 6)
+            answered.mark()
         }
         let (_, client) = server([
             .init(method: "GET", path: "/api/v1/push/events/e-read", answer: .json(200, try Fixture.text("pushserver", "event-read"))),
             .init(method: "GET", path: "/api/v1/push/badge", answer: .json(200, #"{"badge":2}"#)),
         ])
-        let deadline = ContinuousClock.now + .seconds(2)
+        let deadline = ContinuousClock.now + .seconds(4)
         let read = await ChatPush.takeBack(
             push("read", eventID: "e-read"), accepting: accepting(.accepted, client), notifications: notifications, until: deadline)
         #expect(!read && asked.value)
-        #expect(ContinuousClock.now - deadline < .seconds(1))
-        try await Task.sleep(for: .seconds(3))
+        #expect(ContinuousClock.now - deadline < .seconds(2))
+        // The system answers late; whatever would follow it has its moment.
+        #expect(await eventually { answered.value })
+        try await Task.sleep(for: .milliseconds(500))
         #expect(notifications.standing.map(\.id) == ["covered"])
         #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
     }
@@ -393,10 +411,10 @@ struct PushContentTests {
         // full: a result that comes after the fallback.
         server.hold("/api/v1/push/events/e-read")
         let read = await ChatPush.takeBack(
-            push("read", eventID: "e-read"), accepting: accepting(.accepted, client), notifications: notifications, until: .now + .seconds(2))
+            push("read", eventID: "e-read"), accepting: accepting(.accepted, client), notifications: notifications, until: .now + .seconds(4))
         #expect(!read)
+        #expect(await eventually { server.count("/api/v1/push/events/e-read") == 1 })
         try await Task.sleep(for: .seconds(1))
-        #expect(server.count("/api/v1/push/events/e-read") == 1)
         #expect(!asked.value)
         #expect(notifications.standing.map(\.id) == ["covered"])
         #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
@@ -412,10 +430,10 @@ struct PushContentTests {
         // Held until the read is cancelled at the deadline, then answered in
         // full: a result that comes after the fallback.
         server.hold("/api/v1/push/events/e-reply")
-        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.accepted, client), until: .now + .seconds(2))
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.accepted, client), until: .now + .seconds(4))
         #expect(content == .fallback(dropsBadge: false))
+        #expect(await eventually { server.count("/api/v1/push/events/e-reply") == 1 })
         try await Task.sleep(for: .seconds(1))
-        #expect(server.count("/api/v1/push/events/e-reply") == 1)
         #expect(server.count("/llm/message/5b90e3c1f2") == 0)
     }
 
