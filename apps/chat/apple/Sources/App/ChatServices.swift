@@ -37,9 +37,12 @@ enum ChatServices {
     /// registration alone.
     static func takeBack(_ userInfo: [String: String]) async -> Bool {
         guard let push, let payload = PushPayload(userInfo) else { return false }
+        // iOS gives the app about 30 seconds: one deadline for all of it,
+        // the extension's own.
+        let deadline = ContinuousClock.now + ChatPush.budget
         let accepted = await push.accepts(payload.generation)
         let client = await SessionStore.chat.load().map { SubstrateClient($0) }
-        return await ChatPush.takeBack(userInfo, accepted: accepted, client: client, notifications: notifications)
+        return await ChatPush.takeBack(userInfo, accepted: accepted, client: client, notifications: notifications, until: deadline)
     }
 
     static func start() {

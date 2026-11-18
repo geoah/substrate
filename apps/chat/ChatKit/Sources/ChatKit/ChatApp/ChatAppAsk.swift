@@ -88,7 +88,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// Which of a thread's resolved cards are the person's own (`me` in
     /// the filter): `cards` are the ones asked about.
     case readOwn(thread: String, cards: [String])
-    case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
+    /// `generation`: a decision from a push's notification, sent only with
+    /// the client of the session that push belongs to.
+    case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int, generation: String? = nil)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 
     case readGuidance

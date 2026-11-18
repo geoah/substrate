@@ -713,34 +713,49 @@ and the badge the server counted.
   `dev.reamde.substrate.chat.notifications`) runs before a `reply`, a
   `failed` or a `request` alert shows. It reads the session from the
   Keychain group the app and it share (the app's own identifier, so every
-  earlier build's item is already there), checks the push's generation
-  first (one for another registration fetches nothing, offers nothing and
-  drops its badge), resolves the event id
+  earlier build's item is already there), through the one definition of
+  the store both compile (`Shared/ChatSessions.swift`), and checks the
+  push's generation first: one for another registration fetches nothing,
+  offers nothing and drops its badge; one the Keychain could not be read
+  for (before the first unlock after a restart) fetches nothing and keeps
+  its badge. Then it resolves the event id
   (`GET /api/v1/push/events/{eventId}`), reads that item at its version, and
   shows it as the local notification of the same item would
-  (`ChatPush.content`, built with `ChatNotifications`): a reply's start, a
-  failure's sentence, a card with its own `card` and `version` in its
-  `userInfo`. An approval offers Approve and Decline only while the
-  resolution says it is pending; a question only opens its chat, since its
-  options are a category registered at run time. One 20-second deadline
-  covers every read, `serviceExtensionTimeWillExpire` delivers what it has,
-  and on any failure the alert keeps the app's fallback words. It links
+  (`ChatPush.content`, built with `ChatNotifications`): a reply's start, at
+  most 240 characters of its text cut before its Markdown is read (and the
+  agent's "replied" where it holds nothing to show, never the thread's later
+  words); a failure's sentence, an error's and a run over its budget's
+  alike; a card with its own `card` and `version` in its `userInfo`. An
+  approval offers Approve and Decline only while the resolution says it is
+  pending now; a question only opens its chat, and only then, since its
+  options are a category registered at run time. One deadline on the
+  monotonic clock, 20 seconds, is raced against the whole operation: what
+  is still out then is cancelled, and the push is delivered once, with what
+  was made or as it came, whether the work or
+  `serviceExtensionTimeWillExpire` comes first. On any failure the alert
+  keeps the app's fallback words. It links
   ChatKit and the kit's API and never a view. A server reachable only at
   home or over a VPN cannot be asked from elsewhere; there the fallback is
   the normal case, and Settings says so.
 - **Deciding from the lock screen.** Approve and Decline require the device
-  to be unlocked, pushed or local. An action from a push for another
-  registration is refused before anything is written; otherwise it writes
-  over the version the notification showed, so a card that changed since
-  is refused by the server.
+  to be unlocked, pushed or local. A decision from a push is bound to the
+  session that accepted it: the response carries that session's identity,
+  the action is dispatched only while the app still holds it, and the write
+  is sent with that session's own client, read once with the generation
+  checked again, so a sign-in changed since sends nothing with the new
+  token. An action from a push for another registration, or one refused
+  that way, decides nothing, and a notification says to open the chat to
+  decide. Otherwise it writes over the version the notification showed, so
+  a card that changed since is refused by the server.
 - **Taking notifications back.** The app has the `remote-notification`
   background mode. When iOS runs it for a `read` push whose generation
   matches, it resolves the event id and removes exactly the delivered
   notifications whose event-id fingerprints (`PushFingerprint`, the wire's
   `EventFingerprint`) the resolution lists, a fallback alert among them,
-  then sets the server's badge; a `read` for another registration removes
-  nothing. Where iOS does not run it, the push's badge still applies, and
-  coming to the front reconciles the rest.
+  then sets the server's badge, all within one deadline and with no
+  request repeated; a `read` for another registration, or whose resolution
+  names another thread, removes nothing. Where iOS does not run it, the
+  push's badge still applies, and coming to the front reconciles the rest.
 
 ### Notifications
 

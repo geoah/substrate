@@ -489,9 +489,22 @@ extension ChatApp {
                     return Task.isCancelled ? nil : Event(.cardFailed(reference.id, failed(.card, error, client)))
                 }
             }
-        case let .writeCard(id, kind, properties, ifVersion):
+        case let .writeCard(id, kind, properties, ifVersion, generation):
             return .once {
-                guard let client = await source.current() else { return nil }
+                // A decision from a push goes with the client of the session
+                // that push belongs to, read once, or nowhere: never with
+                // another sign-in's token.
+                let bound: SubstrateClient?
+                if let generation {
+                    bound = await push?.client(accepting: generation)
+                    if bound == nil {
+                        return Event(
+                            .cardWriteFailed(id, Failure(kind == Kinds.interaction ? .answer : .decide, .http(status: 403, code: "forbidden", reason: nil))))
+                    }
+                } else {
+                    bound = await source.current()
+                }
+                guard let client = bound else { return nil }
                 do {
                     return Event(.cardWritten(id, try await client.patch(kind, id, properties: properties, ifVersion: ifVersion)))
                 } catch {
@@ -646,10 +659,15 @@ extension ChatApp {
                         // A push opens its chat, and acts in it, only for
                         // this install's registration: one for another
                         // sign-in names no chat, so its action is refused
-                        // before anything is written.
+                        // before anything is written. One accepted carries
+                        // the session it was accepted for, which its action
+                        // is held to when it is dispatched.
                         let generation = response.userInfo[PushPayload.Key.generation]
                         let accepted = if let generation, let push { await push.accepts(generation) } else { false }
-                        let opened = Self.opened(response, accepted: accepted)
+                        var opened = Self.opened(response, accepted: accepted)
+                        if accepted, let generation, let push {
+                            opened.userInfo[ChatPush.sessionKey] = await push.identity(accepting: generation)
+                        }
                         guard case .named = response.action else {
                             yield(.notificationOpened(opened))
                             continue

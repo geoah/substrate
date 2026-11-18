@@ -420,7 +420,7 @@ public struct ChatApp: LinkedApp {
         case let .rename(thread, _, _): "rename:\(thread)"
         case .setKey: "key"
         case let .readCard(reference, _): "card:\(reference.id)"
-        case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
+        case let .writeCard(id, _, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
         case .categories: "categories"
         case let .actionWait(id, _): "actWait:\(id)"
         case let .cardHold(id, _): "cardHold:\(id)"

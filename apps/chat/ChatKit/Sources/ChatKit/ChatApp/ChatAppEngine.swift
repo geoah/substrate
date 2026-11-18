@@ -1265,14 +1265,14 @@ extension ChatApp {
     /// A card's answer or decision, written over the version read: the
     /// card says it is out, and keeps what it set, so a write that fails
     /// can be asked again.
-    func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String) {
+    func write(_ state: inout State, _ id: String, _ record: Record, _ properties: [String: JSONValue], as busy: String, generation: String? = nil) {
         var card = state.cards[id] ?? State.Card()
         card.busy = busy
         card.problem = nil
         card.tried = State.Card.Tried(properties: properties, busy: busy)
         state.cards[id] = card
         let kind = record.kind.isEmpty ? Kinds.interaction : record.kind
-        state.asks.append(.writeCard(id, kind: kind, properties: properties, ifVersion: record.version))
+        state.asks.append(.writeCard(id, kind: kind, properties: properties, ifVersion: record.version, generation: generation))
     }
 
     /// Try Again on a card's failure. A write that failed is asked again as

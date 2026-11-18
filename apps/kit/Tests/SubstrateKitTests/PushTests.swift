@@ -1477,6 +1477,38 @@ struct PushRegistrarTests {
         }
     }
 
+    /// Before the first unlock the Keychain answers nothing: a push then is
+    /// no other sign-in's, and nothing is decided for it either way.
+    @Test func aKeychainThatCannotBeReadSaysNothingOfAPush() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        #expect(await world.registrar.verdict("g1") == .accepted)
+        #expect(await world.registrar.verdict("g0") == .refused)
+        world.storage.failReads(of: world.registrar.account, with: MemoryStorage.locked)
+        #expect(await world.registrar.verdict("g1") == .unknown)
+        world.storage.failReads(of: world.registrar.account, with: nil)
+        world.storage.failReads(of: world.sessions.account, with: MemoryStorage.locked)
+        #expect(await world.registrar.verdict("g1") == .unknown)
+        #expect(await world.registrar.client(accepting: "g1") == nil)
+    }
+
+    /// A decision a push asked for is sent with the client of the session it
+    /// belongs to, read once; after a change of session, with none.
+    @Test func aPushsClientIsItsOwnSessionsAndNoOther() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        let client = try #require(await world.registrar.client(accepting: "g1"))
+        #expect(client.token == "secret" && client.server.host == "s.example.com")
+        #expect(await world.registrar.client(accepting: "g0") == nil)
+        #expect(await world.registrar.identity(accepting: "g1") == "https://s.example.com|r.example.com")
+        var other = try #require(await world.sessions.load())
+        other.tokenID = "0b5e1a7c33"
+        other.secret = "another"
+        try await world.sessions.save(other)
+        #expect(await world.registrar.client(accepting: "g1") == nil)
+        #expect(await world.registrar.identity(accepting: "g1") == nil)
+    }
+
     @Test func anotherSignInsRegistrationIsForgotten() async throws {
         let world = PushWorld()
         #expect(await world.registrar.sync(PushWorld.ask).held)

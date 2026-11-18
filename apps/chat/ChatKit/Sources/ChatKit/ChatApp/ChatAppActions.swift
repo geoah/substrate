@@ -33,11 +33,21 @@ extension ChatApp {
         // Heard again while it is under way: the one under way answers for
         // both, and the device is told once it is over.
         if !waited, state.acting[stamp] != nil { return }
-        guard state.session != nil, !state.accessEnded, let thread = response.userInfo[ChatNotifications.threadKey],
+        // A push's action is this sign-in's only where its generation was
+        // accepted for the session the app holds now: one accepted for
+        // another (signed out, switched since), or not accepted at all,
+        // decides nothing, and the person is told to open the chat.
+        let pushed = PushPayload(response.userInfo) != nil
+        let foreign = pushed && (response.userInfo[ChatPush.sessionKey] == nil || response.userInfo[ChatPush.sessionKey] != state.session?.identity)
+        guard state.session != nil, !state.accessEnded, !foreign, let thread = response.userInfo[ChatNotifications.threadKey],
             case let .named(name) = response.action, let action = ChatNotifications.Action(name), !state.acted.contains(stamp)
         else {
             // Nothing to do, or done already: the device is told at once.
-            state.asks.append(.finishAction(response, cancel: nil, notify: nil))
+            let decides =
+                if case let .named(name) = response.action, let action = ChatNotifications.Action(name) { action != .open && action != .reply } else { false }
+            let notice = foreign && decides && !state.acted.contains(stamp) ? ChatNotifications.refused() : nil
+            if foreign { state.acted.insert(stamp) }
+            state.asks.append(.finishAction(response, cancel: nil, notify: notice))
             return
         }
         if !waited {
@@ -116,7 +126,9 @@ extension ChatApp {
             // Over the version the notification showed, and no other: one
             // that changed since is refused by the server.
             let kind = reference.isQuestion ? Kinds.interaction : Kinds.approval
-            write(&state, id, Record(id: id, kind: kind, properties: [:], version: version), properties, as: busy)
+            write(
+                &state, id, Record(id: id, kind: kind, properties: [:], version: version), properties, as: busy,
+                generation: pushed ? response.userInfo[PushPayload.Key.generation] : nil)
         }
         state.acting[stamp] = act
     }

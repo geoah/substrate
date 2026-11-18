@@ -14,6 +14,8 @@ targets:
         - SubstrateChatTests
     sources:
       - Sources
+      # The session store, one definition the extension compiles too.
+      - Shared
       - Assets.xcassets
       # The words a push's `loc-key` names, which iOS shows when no code
       # of the app runs.
@@ -57,6 +59,7 @@ targets:
     platform: iOS
     sources:
       - Notifications
+      - Shared
     dependencies:
       - package: ChatKit
       - package: SubstrateKit
@@ -94,6 +97,8 @@ targets:
     # in the sandboxed app can read nothing outside its bundle.
     sources:
       - Tests
+      # The extension has no test target: what it delivers is tested here.
+      - Notifications/PushDelivery.swift
       - path: Sources/App
         type: folder
         buildPhase: resources

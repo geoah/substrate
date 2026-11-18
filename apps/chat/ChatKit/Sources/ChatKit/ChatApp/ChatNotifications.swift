@@ -227,6 +227,13 @@ public enum ChatNotifications {
             userInfo: [threadKey: thread], subtitle: title)
     }
 
+    /// An action from a push this install can no longer act on (another
+    /// sign-in's, or one it no longer accepts): nothing was decided, and the
+    /// person decides in the chat.
+    static func refused() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Nothing was decided", body: "Open the chat to decide.", timeSensitive: true)
+    }
+
     /// What tells one response from every other: its notification, what
     /// that notification was about when it was shown, the action and the
     /// text. The same response heard twice acts once.

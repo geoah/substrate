@@ -1,0 +1,59 @@
+import ChatKit
+import Foundation
+import UserNotifications
+
+/// What the extension does with what `ChatPush.content` answered: the
+/// delivered content, made once. Its own file so the app's tests compile it
+/// too: an extension has no test target of its own.
+enum PushDelivery {
+    static func apply(_ content: PushContent, to best: UNMutableNotificationContent) {
+        switch content {
+        case let .fallback(dropsBadge):
+            // Nil leaves the icon as it is: another sign-in's count is not
+            // this one's.
+            if dropsBadge { best.badge = nil }
+        case let .shown(request):
+            best.title = request.title
+            if let subtitle = request.subtitle { best.subtitle = subtitle }
+            if let body = request.body { best.body = body }
+            if let thread = request.thread { best.threadIdentifier = thread }
+            // An empty category offers no action.
+            best.categoryIdentifier = request.category ?? ""
+            #if os(iOS)
+            if request.timeSensitive { best.interruptionLevel = .timeSensitive }
+            #endif
+            // The relay's `substrate` object stays: a tap, an action and a
+            // take-back read the generation and the event id from it.
+            var userInfo = best.userInfo
+            for (key, value) in request.userInfo { userInfo[key] = value }
+            best.userInfo = userInfo
+        }
+    }
+}
+
+/// The system's handler, called once: by the work when it ends, or by
+/// `serviceExtensionTimeWillExpire` with what is there, whichever is first.
+final class DeliverOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: ((UNNotificationContent) -> Void)?
+    private let best: UNMutableNotificationContent
+
+    init(_ best: UNMutableNotificationContent, handler: @escaping (UNNotificationContent) -> Void) {
+        self.best = best
+        self.handler = handler
+    }
+
+    /// Delivers `content` applied, or the push as it came where it is nil;
+    /// false where it was delivered already.
+    @discardableResult
+    func deliver(_ content: PushContent?) -> Bool {
+        let handler = lock.withLock {
+            defer { self.handler = nil }
+            return self.handler
+        }
+        guard let handler else { return false }
+        if let content { PushDelivery.apply(content, to: best) }
+        handler(best)
+        return true
+    }
+}

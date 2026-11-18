@@ -21,12 +21,14 @@ struct HeldPush {
     let transport = StubTransport()
     let registrar: PushRegistrar
 
-    init(current: String = "gC", pending: String? = nil) {
+    /// - Parameter named: the repository of the session the registrar
+    ///   holds, where a test needs it to be another than the rig's.
+    init(current: String = "gC", pending: String? = nil, named: String = repository) {
         let sessions = SessionStore(storage: storage)
         registrar = PushRegistrar(
             sessions: sessions, device: ScriptedPush(), transport: transport, buildRelay: "https://push.example.com", clientID: Self.client)
         let session = Session(
-            server: origin, repository: repository, secret: "secret", tokenID: Self.tokenID, clientID: Self.client, scopes: ["full"])
+            server: origin, repository: named, secret: "secret", tokenID: Self.tokenID, clientID: Self.client, scopes: ["full"])
         func made(_ generation: String) -> PushState.Registration {
             .init(
                 generation: generation, relay: "https://push.example.com", publicKey: "key", deviceToken: String(repeating: "ab", count: 32),

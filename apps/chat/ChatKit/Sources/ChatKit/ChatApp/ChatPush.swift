@@ -24,36 +24,71 @@ public enum PushContent: Equatable, Sendable {
 public enum ChatPush {
     /// How long the extension spends on all its reads together: iOS gives
     /// it about 30 seconds, and what is left goes to delivering.
-    public static let budget: TimeInterval = 20
+    public static let budget: Duration = .seconds(20)
+    /// How much of a reply a notification shows: the server's preview
+    /// length, cut before any Markdown is read.
+    public static let previewLimit = 240
+    /// The `userInfo` key a push's response carries the session it was
+    /// accepted for under (`Session.identity`): its action is held to it.
+    static let sessionKey = "push.session"
 
     /// The content a push shows.
     ///
     /// - Parameters:
-    ///   - accepted: the push's generation is the install's current or
-    ///     pending one (`PushRegistrar.accepts`). One meant for an earlier
-    ///     registration fetches nothing, offers nothing and drops its badge.
+    ///   - verdict: whether the push's generation is the install's
+    ///   (`PushRegistrar.verdict`). One meant for an earlier registration
+    ///   fetches nothing, offers nothing and drops its badge; one the
+    ///   Keychain could not be read for (before the first unlock) fetches
+    ///   nothing and keeps its badge.
     ///   - client: the app's own client; nil where the install holds no
     ///     session.
-    ///   - deadline: every read gets what is left until then.
+    ///   - deadline: the whole operation's, on the monotonic clock: what is
+    ///     still out then is cancelled and the fallback delivered.
     public static func content(
-        _ userInfo: [String: String], accepted: Bool, client: SubstrateClient?, until deadline: Date,
-        now: @escaping @Sendable () -> Date = { Date() }
+        _ userInfo: [String: String], verdict: PushVerdict, client: SubstrateClient?, until deadline: ContinuousClock.Instant
     ) async -> PushContent {
         guard let push = PushPayload(userInfo), push.event != .read else { return .fallback(dropsBadge: false) }
-        guard accepted else { return .fallback(dropsBadge: true) }
+        switch verdict {
+        case .refused: return .fallback(dropsBadge: true)
+        case .unknown: return .fallback(dropsBadge: false)
+        case .accepted: break
+        }
         guard var client, !push.eventID.isEmpty else { return .fallback(dropsBadge: false) }
         // A busy server is not waited out: there is no time for it.
         client.pause = { _ in throw CancellationError() }
-        func left() -> TimeInterval? {
-            let seconds = deadline.timeIntervalSince(now())
-            return seconds > 0.5 ? seconds : nil
+        let bounded = client
+        return await within(deadline, or: .fallback(dropsBadge: false)) { await resolve(push, client: bounded, until: deadline) }
+    }
+
+    /// `work`, raced against `deadline`: what is still out then is cancelled,
+    /// and `fallback` answered.
+    static func within<T: Sendable>(_ deadline: ContinuousClock.Instant, or fallback: T, _ work: @escaping @Sendable () async -> T) async -> T {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(until: deadline, clock: .continuous)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? fallback
         }
+    }
+
+    /// The seconds left until `deadline`, for a request's own timeout; nil
+    /// where too little is left to ask.
+    static func left(_ deadline: ContinuousClock.Instant) -> TimeInterval? {
+        let seconds = Double((deadline - .now).components.seconds) + Double((deadline - .now).components.attoseconds) / 1e18
+        return seconds > 0.5 ? seconds : nil
+    }
+
+    private static func resolve(_ push: PushPayload, client: SubstrateClient, until deadline: ContinuousClock.Instant) async -> PushContent {
         do {
-            guard let time = left(), let info = try await client.pushEvent(push.eventID, timeout: time), info.thread == push.thread,
+            guard let time = left(deadline), let info = try await client.pushEvent(push.eventID, timeout: time), info.thread == push.thread,
                 let item = info.item
             else { return .fallback(dropsBadge: false) }
             func read(_ kind: String, _ id: String) async throws -> Record? {
-                guard let time = left() else { throw CancellationError() }
+                guard let time = left(deadline) else { throw CancellationError() }
                 return try await client.record(kind, id, timeout: time)
             }
             switch info.event {
@@ -62,12 +97,11 @@ public enum ChatPush {
                     let row = try await read(Kinds.thread, info.thread)
                 else { return .fallback(dropsBadge: false) }
                 let thread = ChatThread(record: row)
-                var request = ChatNotifications.reply(
-                    thread: thread, agent: agentName(thread.agentID ?? ""), title: thread.title(opening: nil), replies: true)
-                // The reply this push is about, not whatever the thread
-                // says last.
-                let said = plainText(markdown: message["content"]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !said.isEmpty { request.body = said }
+                let agent = agentName(thread.agentID ?? "")
+                var request = ChatNotifications.reply(thread: thread, agent: agent, title: thread.title(opening: nil), replies: true)
+                // The reply this push is about, cut to a preview before any
+                // Markdown is read; never whatever the thread says last.
+                request.body = preview(message["content"]?.text ?? "") ?? "\(agent) replied."
                 return .shown(request)
             case "failed":
                 guard item.kind == Kinds.thread, let row = try await read(Kinds.thread, info.thread) else { return .fallback(dropsBadge: false) }
@@ -76,10 +110,9 @@ public enum ChatPush {
                 // while its status does.
                 guard ["error", "overbudget"].contains(thread.status) else { return .fallback(dropsBadge: false) }
                 let agent = agentName(thread.agentID ?? "")
-                return .shown(
-                    ChatNotifications.reply(
-                        thread: thread, agent: agent, title: thread.title(opening: nil),
-                        failed: failureWords(thread, agent: agent, host: client.server), replies: true))
+                var request = ChatNotifications.reply(thread: thread, agent: agent, title: thread.title(opening: nil), replies: true)
+                request.body = failureWords(thread, agent: agent, host: client.server) ?? "\(agent) couldn't finish this reply."
+                return .shown(request)
             case "request":
                 guard [Kinds.interaction, Kinds.approval, Kinds.request].contains(item.kind), let record = try await read(item.kind, item.id),
                     record.version == item.version
@@ -92,6 +125,15 @@ public enum ChatPush {
         } catch {
             return .fallback(dropsBadge: false)
         }
+    }
+
+    /// The start of a reply as a notification shows it: at most
+    /// `previewLimit` characters of the stored text, cut before its Markdown
+    /// is read; nil where nothing in it reads as text.
+    static func preview(_ markdown: String) -> String? {
+        let cut = String(String.UnicodeScalarView(markdown.unicodeScalars.prefix(previewLimit)))
+        let said = plainText(markdown: cut).trimmingCharacters(in: .whitespacesAndNewlines)
+        return said.isEmpty ? nil : said
     }
 
     /// A card's notification, as the app posts one: the same words and
@@ -120,9 +162,9 @@ public enum ChatPush {
     }
 
     /// What a failed run's card says, in one sentence, from what the thread
-    /// row holds alone.
+    /// row holds alone: an error's, and a run over its budget's.
     static func failureWords(_ thread: ChatThread, agent: String, host: URL) -> String? {
-        guard thread.status == "error", let failure = thread.runFailure else { return nil }
+        guard ["error", "overbudget"].contains(thread.status), let failure = thread.runFailure else { return nil }
         var context = FailurePresenter.Context()
         context.agent = agent
         context.agentID = thread.agentID
@@ -137,20 +179,33 @@ public enum ChatPush {
     /// server, and exactly the delivered notifications whose event ids it
     /// names (by fingerprint, `PushFingerprint`) are taken back, a fallback
     /// one among them; then the badge is the server's. One meant for an
-    /// earlier registration removes nothing. Answers whether anything was
-    /// read.
+    /// earlier registration, or for another thread than its resolution
+    /// says, removes nothing. Everything happens before `deadline` or not
+    /// at all, with no request repeated: iOS gives the app seconds for it.
+    /// Answers whether anything was read.
     public static func takeBack(
-        _ userInfo: [String: String], accepted: Bool, client: SubstrateClient?, notifications: any Notifications
+        _ userInfo: [String: String], accepted: Bool, client: SubstrateClient?, notifications: any Notifications,
+        until deadline: ContinuousClock.Instant
     ) async -> Bool {
-        guard let push = PushPayload(userInfo), push.event == .read, accepted, let client, !push.eventID.isEmpty,
-            let info = try? await client.pushEvent(push.eventID), info.event == "read", let covers = info.covers
-        else { return false }
-        let alerts = Set(covers.alerts)
-        for shown in await notifications.delivered() {
-            guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
-            await notifications.cancel(shown.id)
+        guard let push = PushPayload(userInfo), push.event == .read, accepted, var client, !push.eventID.isEmpty else { return false }
+        client.pause = { _ in throw CancellationError() }
+        let bounded = client
+        return await within(deadline, or: false) {
+            guard let time = left(deadline), let info = try? await bounded.pushEvent(push.eventID, timeout: time), info.event == "read",
+                info.thread == push.thread, let covers = info.covers
+            else { return false }
+            let alerts = Set(covers.alerts)
+            for shown in await notifications.delivered() {
+                guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
+                await notifications.cancel(shown.id)
+            }
+            if let time = left(deadline),
+                let badge = try? await bounded.send("GET", "api/v1/push/badge", timeout: time, retries: 0)
+                    .decode(PushBadge.self).badge
+            {
+                await notifications.setBadge(min(max(badge, 0), 999))
+            }
+            return true
         }
-        if let badge = try? await client.pushBadge() { await notifications.setBadge(badge) }
-        return true
     }
 }
