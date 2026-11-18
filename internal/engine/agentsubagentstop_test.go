@@ -56,7 +56,7 @@ func TestASubagentWhoseIndexWorkTheDeadlineCutSaysWhereItStood(t *testing.T) {
 	}{
 		{
 			indexCutPreparing,
-			"substrate/engine: create index for ~/trips/flight: the call ended before the index was ready, so the declaration was not applied",
+			"substrate/engine: create index for ~/trips/flight: the call ended before index preparation finished, so the declaration was not applied",
 			"architect's vocabulary call was still preparing the index for ~/trips/flight when its time ran out, so nothing it was declaring was applied.",
 		},
 		{

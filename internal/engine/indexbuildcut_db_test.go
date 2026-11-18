@@ -126,8 +126,9 @@ func TestAPanicInAnIndexBuildsProgressLetsTheArchivePassesPauseAgain(t *testing.
 }
 
 // An apply queued behind another session's index build, whose context ends
-// while it waits for the build lock, says it was waiting for another build;
-// one whose own build the end met says the index was not ready. Neither
+// while it waits for the build lock that session refused it, says it was
+// waiting for another build; one whose own build the end met says index
+// preparation had not finished. Neither
 // text carries the driver's error, which the cut still wraps, and neither
 // declaration lands. The second apply, with nothing in the way, builds over
 // what the cut build left.
@@ -187,7 +188,7 @@ func TestAnApplyWhoseIndexWorkItsContextEndedSaysWhereItStood(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyCut(indexCutPreparing, "substrate/engine: create index for "+note+
-		": the call ended before the index was ready, so the declaration was not applied")
+		": the call ended before index preparation finished, so the declaration was not applied")
 	if err := writer.Rollback(); err != nil {
 		t.Fatal(err)
 	}
