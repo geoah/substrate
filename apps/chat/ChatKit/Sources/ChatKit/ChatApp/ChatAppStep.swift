@@ -173,6 +173,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case approveAsked(String, approve: Bool)
     case cardWritten(String, Record)
     case cardWriteFailed(String, Failure)
+    /// A decision from a push was not sent: the session that accepted the
+    /// push is not the one held now, and nothing was written.
+    case cardWriteUnbound(String)
     case cardRetried(CardReference)
     case setting(row: String, toggle: Bool?, choice: String?)
     case settingsOpened

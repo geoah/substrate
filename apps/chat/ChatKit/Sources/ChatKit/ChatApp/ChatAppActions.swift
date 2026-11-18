@@ -225,6 +225,16 @@ extension ChatApp {
         finish(&state, stamp, failure: failure)
     }
 
+    /// A pushed decision that went nowhere: the session that accepted its
+    /// push is no longer the one held. Nothing was decided, and the person
+    /// is told so in the words a push for another sign-in gets.
+    func unbound(_ state: inout State, card id: String) {
+        guard let stamp = state.acting.first(where: { $0.value.card?.id == id })?.key, let act = state.acting.removeValue(forKey: stamp) else {
+            return
+        }
+        state.asks += [.cancel("actWait:\(stamp)"), .finishAction(act.response, cancel: nil, notify: ChatNotifications.refused())]
+    }
+
     static func failedID(_ thread: String) -> String { ChatNotifications.prefix(thread) + "failed" }
 
     /// The action is over. Done, its notification is taken back; not done,

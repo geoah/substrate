@@ -34,15 +34,14 @@ enum ChatServices {
     }
 
     /// A `read` push: what it covers taken back, for this install's
-    /// registration alone.
+    /// registration alone, with the client of the session that accepted it.
     static func takeBack(_ userInfo: [String: String]) async -> Bool {
-        guard let push, let payload = PushPayload(userInfo) else { return false }
         // iOS gives the app about 30 seconds: one deadline for all of it,
-        // the extension's own.
+        // the Keychain's reads included, the extension's own.
         let deadline = ContinuousClock.now + ChatPush.budget
-        let accepted = await push.accepts(payload.generation)
-        let client = await SessionStore.chat.load().map { SubstrateClient($0) }
-        return await ChatPush.takeBack(userInfo, accepted: accepted, client: client, notifications: notifications, until: deadline)
+        guard let registrar = push else { return false }
+        return await ChatPush.takeBack(
+            userInfo, accepting: { await registrar.acceptance(of: $0) }, notifications: notifications, until: deadline)
     }
 
     static func start() {

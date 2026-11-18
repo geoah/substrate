@@ -1488,25 +1488,53 @@ struct PushRegistrarTests {
         #expect(await world.registrar.verdict("g1") == .unknown)
         world.storage.failReads(of: world.registrar.account, with: nil)
         world.storage.failReads(of: world.sessions.account, with: MemoryStorage.locked)
-        #expect(await world.registrar.verdict("g1") == .unknown)
-        #expect(await world.registrar.client(accepting: "g1") == nil)
+        let unread = await world.registrar.acceptance(of: "g1")
+        #expect(unread.verdict == .unknown && unread.client == nil && unread.identity == nil)
     }
 
-    /// A decision a push asked for is sent with the client of the session it
-    /// belongs to, read once; after a change of session, with none.
-    @Test func aPushsClientIsItsOwnSessionsAndNoOther() async throws {
+    /// A push's verdict, its client and its repository come from one read of
+    /// the session: a switch after the check leaves the client the one that
+    /// accepted it, and a check after the switch accepts nothing.
+    @Test func aPushsClientIsTheSessionsThatAcceptedItAndNoOther() async throws {
         let world = PushWorld()
         #expect(await world.registrar.sync(PushWorld.ask).held)
-        let client = try #require(await world.registrar.client(accepting: "g1"))
-        #expect(client.token == "secret" && client.server.host == "s.example.com")
-        #expect(await world.registrar.client(accepting: "g0") == nil)
-        #expect(await world.registrar.identity(accepting: "g1") == "https://s.example.com|r.example.com")
+        let accepted = await world.registrar.acceptance(of: "g1")
+        let client = try #require(accepted.client)
+        #expect(accepted.verdict == .accepted && client.token == "secret" && client.server.host == "s.example.com")
+        #expect(accepted.identity == "https://s.example.com|r.example.com")
+        let refused = await world.registrar.acceptance(of: "g0")
+        #expect(refused.verdict == .refused && refused.client == nil && refused.identity == nil)
         var other = try #require(await world.sessions.load())
         other.tokenID = "0b5e1a7c33"
         other.secret = "another"
         try await world.sessions.save(other)
-        #expect(await world.registrar.client(accepting: "g1") == nil)
-        #expect(await world.registrar.identity(accepting: "g1") == nil)
+        #expect(client.token == "secret")
+        let after = await world.registrar.acceptance(of: "g1")
+        #expect(after.verdict == .refused && after.client == nil && after.identity == nil)
+    }
+
+    /// The deadline answers when it comes, and a cancelled caller at once,
+    /// whatever the work does.
+    @Test func aDeadlineAnswersAtItsTimeAndACancelledCallerAtOnce() async throws {
+        let started = ContinuousClock.now
+        let late = await Deadline.race(until: .now + .milliseconds(200), or: "fallback") {
+            await Self.uncancellable(seconds: 3)
+            return "late"
+        }
+        #expect(late == "fallback" && ContinuousClock.now - started < .seconds(2))
+        let done = await Deadline.race(until: .now + .seconds(30), or: "fallback") { "done" }
+        #expect(done == "done")
+        let caller = Task {
+            await Deadline.race(until: .now + .seconds(30), or: "fallback") {
+                await Self.uncancellable(seconds: 3)
+                return "late"
+            }
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        let cancelled = ContinuousClock.now
+        caller.cancel()
+        let answered = await caller.value
+        #expect(answered == "fallback" && ContinuousClock.now - cancelled < .seconds(2))
     }
 
     @Test func anotherSignInsRegistrationIsForgotten() async throws {

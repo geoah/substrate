@@ -481,6 +481,12 @@ extension ChatApp {
                 next.asks.append(.readCard(reference, target: false))
             }
             decided(&next, card: id, failure: failure)
+        case let .cardWriteUnbound(id):
+            // Nothing was written, and the card is the session's that
+            // accepted the push, not this one's: it is not read here, and
+            // the person is sent to the chat to decide.
+            next.cards[id]?.busy = nil
+            unbound(&next, card: id)
         case let .setting(row, toggle, choice): setting(&next, row, toggle, choice)
         case .settingsOpened:
             next.asks.append(.readPermission)

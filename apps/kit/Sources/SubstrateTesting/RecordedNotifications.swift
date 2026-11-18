@@ -27,6 +27,7 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     private var shown: [DeliveredNotification] = []
     private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
     private var whenFinished: (@Sendable (NotificationResponse) -> Void)?
+    private var beforeDelivered: (@Sendable () async -> Void)?
 
     /// - Parameter granting: what the owner answers when asked.
     public init(_ permission: NotificationPermission = .on, granting: NotificationPermission = .on) {
@@ -114,7 +115,17 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
     /// The notifications shown and not taken back.
     public var standing: [DeliveredNotification] { lock.withLock { shown } }
 
-    public func delivered() async -> [DeliveredNotification] { standing }
+    public func delivered() async -> [DeliveredNotification] {
+        let reading = lock.withLock { beforeDelivered }
+        await reading?()
+        return standing
+    }
+
+    /// Run before `delivered()` answers, for a test of a system that is slow
+    /// to: the answer is what is shown once it has run.
+    public func onDelivered(_ reading: @escaping @Sendable () async -> Void) {
+        lock.withLock { beforeDelivered = reading }
+    }
 
     public func showing(threads: Set<String>) async {
         lock.withLock { kept.append(.showing(threads.sorted())) }

@@ -492,15 +492,12 @@ extension ChatApp {
         case let .writeCard(id, kind, properties, ifVersion, generation):
             return .once {
                 // A decision from a push goes with the client of the session
-                // that push belongs to, read once, or nowhere: never with
+                // that accepted that push, read once, or nowhere: never with
                 // another sign-in's token.
                 let bound: SubstrateClient?
                 if let generation {
-                    bound = await push?.client(accepting: generation)
-                    if bound == nil {
-                        return Event(
-                            .cardWriteFailed(id, Failure(kind == Kinds.interaction ? .answer : .decide, .http(status: 403, code: "forbidden", reason: nil))))
-                    }
+                    bound = await push?.acceptance(of: generation).client
+                    if bound == nil { return Event(.cardWriteUnbound(id)) }
                 } else {
                     bound = await source.current()
                 }
@@ -662,12 +659,14 @@ extension ChatApp {
                         // before anything is written. One accepted carries
                         // the session it was accepted for, which its action
                         // is held to when it is dispatched.
-                        let generation = response.userInfo[PushPayload.Key.generation]
-                        let accepted = if let generation, let push { await push.accepts(generation) } else { false }
-                        var opened = Self.opened(response, accepted: accepted)
-                        if accepted, let generation, let push {
-                            opened.userInfo[ChatPush.sessionKey] = await push.identity(accepting: generation)
-                        }
+                        let acceptance =
+                            if let generation = response.userInfo[PushPayload.Key.generation], let push {
+                                await push.acceptance(of: generation)
+                            } else { PushAcceptance(.refused) }
+                        var opened = Self.opened(response, accepted: acceptance.verdict == .accepted)
+                        // Only an accepted response names its session: a key
+                        // of that name that came with any other is dropped.
+                        opened.userInfo[ChatPush.sessionKey] = acceptance.identity
                         guard case .named = response.action else {
                             yield(.notificationOpened(opened))
                             continue

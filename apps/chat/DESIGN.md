@@ -715,23 +715,27 @@ and the badge the server counted.
   Keychain group the app and it share (the app's own identifier, so every
   earlier build's item is already there), through the one definition of
   the store both compile (`Shared/ChatSessions.swift`), and checks the
-  push's generation first: one for another registration fetches nothing,
+  push's generation first, in one read that also gives the client of the
+  session that accepted it, the only client its requests go with
+  (`PushRegistrar.acceptance(of:)`): one for another registration fetches nothing,
   offers nothing and drops its badge; one the Keychain could not be read
   for (before the first unlock after a restart) fetches nothing and keeps
   its badge. Then it resolves the event id
   (`GET /api/v1/push/events/{eventId}`), reads that item at its version, and
   shows it as the local notification of the same item would
   (`ChatPush.content`, built with `ChatNotifications`): a reply's start, at
-  most 240 characters of its text cut before its Markdown is read (and the
+  most 240 characters of its text, cut between characters as read and
+  before its Markdown is read, with an ellipsis where it was cut (and the
   agent's "replied" where it holds nothing to show, never the thread's later
   words); a failure's sentence, an error's and a run over its budget's
   alike; a card with its own `card` and `version` in its `userInfo`. An
   approval offers Approve and Decline only while the resolution says it is
   pending now; a question only opens its chat, and only then, since its
   options are a category registered at run time. One deadline on the
-  monotonic clock, 20 seconds, is raced against the whole operation: what
-  is still out then is cancelled, and the push is delivered once, with what
-  was made or as it came, whether the work or
+  monotonic clock, 20 seconds, started before the Keychain is read, is
+  raced against the whole operation: at the deadline the push is delivered
+  as it came, and what is still out is cancelled and never waited for. It
+  is delivered once, with what was made or as it came, whether the work or
   `serviceExtensionTimeWillExpire` comes first. On any failure the alert
   keeps the app's fallback words. It links
   ChatKit and the kit's API and never a view. A server reachable only at
@@ -743,17 +747,19 @@ and the badge the server counted.
   the action is dispatched only while the app still holds it, and the write
   is sent with that session's own client, read once with the generation
   checked again, so a sign-in changed since sends nothing with the new
-  token. An action from a push for another registration, or one refused
-  that way, decides nothing, and a notification says to open the chat to
-  decide. Otherwise it writes over the version the notification showed, so
+  token. A response names a session only where its push was accepted. An
+  action from a push for another registration, or one whose session is
+  gone by the time it is sent, decides nothing and reads nothing with the
+  session held now, and a notification says to open the chat to decide. Otherwise it writes over the version the notification showed, so
   a card that changed since is refused by the server.
 - **Taking notifications back.** The app has the `remote-notification`
   background mode. When iOS runs it for a `read` push whose generation
   matches, it resolves the event id and removes exactly the delivered
   notifications whose event-id fingerprints (`PushFingerprint`, the wire's
   `EventFingerprint`) the resolution lists, a fallback alert among them,
-  then sets the server's badge, all within one deadline and with no
-  request repeated; a `read` for another registration, or whose resolution
+  then sets the server's badge, all within one deadline that starts before
+  the Keychain is read and with no request repeated: past it nothing more
+  is taken back and no badge set, whatever answers late; a `read` for another registration, or whose resolution
   names another thread, removes nothing. Where iOS does not run it, the
   push's badge still applies, and coming to the front reconciles the rest.
 

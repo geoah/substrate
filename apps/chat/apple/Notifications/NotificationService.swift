@@ -1,6 +1,5 @@
 import ChatKit
 import Foundation
-import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
 import UserNotifications
@@ -10,9 +9,12 @@ import UserNotifications
 /// app's own token from the Keychain group the app and this extension
 /// share, and shows it as the app's local notification of the same item
 /// would (`ChatPush.content`). One monotonic deadline covers the whole
-/// operation; what is still out then is cancelled, and the push is
-/// delivered once, with what was made or as it came (`DeliverOnce`). On any
-/// failure the alert keeps the app's own fallback words. It links the
+/// operation, from before the Keychain is read: the push is delivered then,
+/// once, with what was made or as it came (`DeliverOnce`), and what is still
+/// out is cancelled and never waited for. The generation's check and the
+/// client its requests go with come from one read of the session
+/// (`PushRegistrar.acceptance(of:)`). On any failure the alert keeps the
+/// app's own fallback words. It links the
 /// chat's core and the kit's API, never a view: iOS holds an extension to a
 /// small memory limit.
 final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
@@ -25,11 +27,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         let once = DeliverOnce(best, handler: contentHandler)
         let userInfo = PushPayload.flatten(request.content.userInfo)
         let deadline = ContinuousClock.now + ChatPush.budget
+        let registrar = PushRegistrar(sessions: .chat, device: nil, buildRelay: nil, clientID: "")
         let task = Task {
-            let registrar = PushRegistrar(sessions: .chat, device: nil, buildRelay: nil, clientID: "")
-            let verdict = if let push = PushPayload(userInfo) { await registrar.verdict(push.generation) } else { PushVerdict.refused }
-            let client = verdict == .accepted ? await SessionStore.chat.load().map { SubstrateClient($0) } : nil
-            once.deliver(await ChatPush.content(userInfo, verdict: verdict, client: client, until: deadline))
+            let content = await ChatPush.content(userInfo, accepting: { await registrar.acceptance(of: $0) }, until: deadline)
+            once.deliver(content)
         }
         lock.withLock {
             self.once = once
