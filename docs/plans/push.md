@@ -1,7 +1,7 @@
 # Plan: push to a closed device through the publisher's relay
 
-Status: proposed 2026-11-18, revised twice the same day after two rounds of
-review, not built. Part of
+Status: proposed 2026-11-18, revised the same day after three rounds of
+review, being built. Part of
 [#1400](https://github.com/geoah/substrate/issues/1400). This is change 7 of
 [the chat experience plan](chat-experience.md#7-push-to-a-closed-device-l),
 which points here and keeps nothing of its own about push. A plan, not a
@@ -216,7 +216,7 @@ Substrate-Push-Signature: t=1763459123,s=3nq0Yw...
 | `event` | what happened | `reply`, `failed`, `request` or `read` |
 | `thread` | the thread it happened on | a record id (`vocabulary.ValidID`) |
 | `badge` | the person's unread count after it | 0 to 999 |
-| `eventId` | an id only the owner's server can resolve, to the exact item and version (section 4) | base64url, no padding, 32 to 512 characters |
+| `eventId` | an id only the owner's server can resolve, to the exact item and version (section 4) | base64url, no padding, 32 to 1,024 characters |
 
 ```http
 200 OK
@@ -347,13 +347,19 @@ publisher's key.
 }
 ```
 
-| Header | `reply`, `failed`, `request` | `read` |
-| --- | --- | --- |
-| `apns-push-type` | `alert` | `alert` (it sets a badge) |
-| `apns-priority` | `10` | `5` |
-| `apns-expiration` | now + 6 hours | now + 1 hour |
-| `apns-collapse-id` | the thread id, when it is 64 bytes or fewer | none |
-| `apns-topic` | the sealed topic | the sealed topic |
+| Header | `reply`, `failed` | `request` | `read` |
+| --- | --- | --- | --- |
+| `apns-push-type` | `alert` | `alert` | `alert` (it sets a badge) |
+| `apns-priority` | `10` | `10` | `5` |
+| `apns-expiration` | now + 6 hours | now + 6 hours | now + 1 hour |
+| `apns-collapse-id` | the thread id, when it is 64 bytes or fewer | none | none |
+| `apns-topic` | the sealed topic | the sealed topic | the sealed topic |
+
+A `request` carries no collapse id: two cards waiting on one thread would
+otherwise collapse into one at Apple before the extension saw either event
+id. `aps.thread-id` still groups them under their thread. A newer reply or
+failure on a thread may replace the older one, so those two keep the thread
+as their collapse id.
 
 `loc-key` names a string in the app's own bundle, so the words are the
 app's, in the person's language, even when no extension runs. `aps.badge` is
@@ -735,16 +741,19 @@ record route answers it, with its id at the top (`"id": "71ac09be44"`).
 | `201` with the record | there was none, or only a deleted one that the sweep had already purged: a fresh record |
 | `200` with the record | it existed, or a deleted one not yet purged, which the put restores, and the write merged into it |
 | `400 bad_request` | a key the body may not carry, such as `data` or a misspelled `ifVersion` |
-| `422 validation` | a property out of bounds, an unknown value, `notifies` missing or empty, a name over 100 characters |
+| `422 validation` | a property out of bounds, an unknown value, `notifies` as `[]`, `notifies` missing from a create, a name over 100 characters |
 | `403 forbidden` | an agent, a function or a package wrote; a token whose person's roles do not reach `core/device`; an id that is not the request's own token's, or a `token` or `person` that is not the request's |
 
 The app treats `200` and `201` alike. It sends no `ifVersion`: the record is
-the install's alone, and a put that repeats lands the same record. Every put
-names `notifies`: it is `required`, and a required repeated property with no
-values is no value (`emptyValue` in `internal/engine/write.go`, which
-`required` reads), so an empty list is refused. A person who wants neither
-turns both switches off, and the app deletes its device (section 5).
-`token` and `person` are left out of the body; the engine fills them.
+the install's alone, and a put that repeats lands the same record.
+`notifies` is `required`, and `required` is checked on the row the write
+leaves: a create without it is refused, while an update merges, so one that
+leaves it out keeps the stored list. `[]` is refused either way, since a
+required repeated property with no values is no value (`emptyValue` in
+`internal/engine/write.go`). The app names `notifies` on every put all the
+same. A person who wants neither turns both switches off, and the app
+deletes its device (section 5). `token` and `person` are left out of the
+body; the engine fills them.
 
 The app reads its record with `GET` and deletes it with `DELETE` at the same
 address. PR 2's tests run these fixtures through the real handler.
@@ -818,9 +827,9 @@ view reads the thread.
 | Event | When | Its item | To whom |
 | --- | --- | --- | --- |
 | `reply` | a `chat` thread with a person settles `ok`, `error` or `overbudget`, its `lastMessage` moved, and the message it names is an `assistant` message | that message, at its version | the thread's person, on devices whose `notifies` has `replies` |
-| `failed` | a `chat` thread with a person settles `error` or `overbudget` after its turn ran longer than 5 seconds, and no `reply` was sent for that settle | the thread, at that settle's version | the thread's person, on devices whose `notifies` has `replies` |
+| `failed` | a `chat` thread with a person settles `error` or `overbudget` after its turn ran longer than 5 seconds, and no `reply` was sent for that settle | the thread, while its `status` is still `error` or `overbudget` | the thread's person, on devices whose `notifies` has `replies` |
 | `request` | an interaction, an approval or a change request of a thread in the conversation modes becomes pending (`waitingOnPerson` rises) | that record, at that version | the thread's person, or the `admin` people whose view reads it; devices whose `notifies` has `requests` |
-| `read` | the person's mark moves forward, clears `markedUnread`, or sets `archived`; or a pending record the server alerted for is decided, wherever (`waitingOnPerson` falls) | what it covers (below) | that person's devices holding an alert it covers, but the one whose token wrote the mark |
+| `read` | the person's mark moves forward, clears `markedUnread`, or sets `archived`; or a pending record the server alerted for is decided, wherever (`waitingOnPerson` falls) | the alerts it takes back, by fingerprint (below) | that person's devices holding one of those alerts, but the one whose token wrote the mark |
 
 A reply needs an `assistant` message because `newestMessage` names the
 person's own message when a new chat's first call fails
@@ -850,18 +859,19 @@ thread is its own wait. A second event with the same key restarts its wait.
 - **`reply`**: 5 seconds. Then it is dropped if the person's mark reads
   through that message (the mark's `readThrough` is it or a later message,
   by 0313's order) or the mark says `archived`.
-- **`failed`**: 5 seconds. Then it is dropped if the person is reading the
-  thread: their mark took a position since the turn began, or a client
-  acting for them was attached to the thread's event stream when it settled.
-  The mark alone cannot say it, since a failure often writes no message and
-  a mark write that moves nothing stamps nothing (`prepareThreadMark`), so
-  the turn's hub records which person each attached reader acts for.
+- **`failed`**: 5 seconds. Then it is dropped if the person's mark took a
+  position since the turn began. That is the only signal the server reads:
+  a failure often writes no message, and a mark write that moves nothing
+  stamps nothing (`prepareThreadMark`), so a person watching a failure on the
+  Mac may still get the push on the phone. That is accepted; the device
+  showing the chat keeps the push quiet itself (section 5).
 - **`request`**: 5 seconds. Then it is dropped if the record is no longer
   pending at that version, or, when a settle raised it, if the mark reads
   through the message that settle wrote. A newer version of the same record
   is a new item.
 - **`read`**: 2 seconds, keyed by the recipient and the thread alone, so
-  every source in that time folds into one `read` that covers all of them.
+  every source in that time folds into one `read` that takes back all the
+  alerts they cover.
 
 In front, the app also stays quiet for any push about the chat on its
 screen (section 5).
@@ -871,11 +881,18 @@ screen (section 5).
 Every push names its item by an `eventId`: the item's reference and version,
 the event, the thread and when it was issued, sealed with XChaCha20-Poly1305
 under a key derived inside the engine from the repository's DEK and the
-token's record id (info `events v1 `), under a random nonce. Only the owner's
-server opens it, and only for the token it was sealed for. It carries the
-exact item, so what the extension shows and the actions it offers are about
-that item and no other, even when two cards wait on one thread; and its
-random nonce makes every signed body unique (section 1).
+token's record id (info `events v1 `), under a random nonce, with
+`substrate-push-event-v1` as its own additional data, as the push key has
+its own. Only the owner's server opens it, and only for the token it was
+sealed for. It carries the exact item, so what the extension shows and the
+actions it offers are about that item and no other, even when two cards wait
+on one thread; and its random nonce makes every signed body unique
+(section 1).
+
+An event id is at most 1,024 characters. One item alone can need more than
+half of that: a record id may run to 128 characters, and a message id is the
+client's own choice. 1,024 still fits the relay's 4 KiB body and Apple's
+4 KiB payload.
 
 ```http
 GET /api/v1/push/events/dGhpcyBpcyBzZWFsZWQ...
@@ -892,33 +909,44 @@ Authorization: Bearer <the app's token>
 
 | Event | `item` | Also |
 | --- | --- | --- |
-| `reply` | the `llm/message` | |
-| `failed` | the `llm/thread`, at the version that settled | |
-| `request` | the `llm/interaction`, `llm/approval` or `core/recordpatchrequest` | `actions` |
-| `read` | none | `covers` |
+| `reply` | the `llm/message`, at its version | |
+| `failed` | the `llm/thread` | |
+| `request` | the `llm/interaction`, `llm/approval` or `core/recordpatchrequest`, at its version | `actions` |
+| `read` | none | `alerts` |
 
 `actions` is decided now, when the id is resolved, through the asking
 token's view: true only if it can read the record, the record is still
-pending at that version, and it could write its decision. A `read` answers
-what it covers:
+pending at that version, and it could write its decision. A `failed` event
+resolves while the thread's `status` is still `error` or `overbudget`, not
+only at the version that settled, since later writes to the thread move its
+version.
+
+A `read` answers the alerts it takes back, each by its fingerprint:
 
 ```json
 {
   "event": "read",
   "thread": "8f2c41d07a",
-  "covers": {
-    "readThrough": {"ref": "substrate.reamde.dev/llm/message/5b90e3c1f2"},
-    "archived": false,
-    "decided": [{"kind": "substrate.reamde.dev/llm/approval", "id": "01h2xcejqtf2nbrexx3vqjhp42"}]
-  }
+  "alerts": ["Zk1wN2xYc3RyaW5nMQ", "cTlrM2xhdGVyMDAwMg"]
 }
 ```
 
-A `reply` or `failed` alert of the thread is covered when the mark reads
-through its message (for `failed`, when the mark took a position after it,
-or the thread ran again), or when `archived` is true; a `request` alert is
-covered when its record is in `decided`. A `read` holds at most 16 decided
-records; more start another.
+An alert's fingerprint is a function of its event id alone, pinned in
+`internal/pushwire` with a test vector:
+
+```text
+Fingerprint(eventId) = base64url, no padding, of the first 16 bytes of
+                       SHA-256("substrate-push-alert-v1\n" + eventId)
+```
+
+The server records the fingerprint of every alert it sends (below), and the
+app computes the same one from the `eventId` in each delivered
+notification's payload. So a `read` removes exactly the notifications it
+names, including a fallback notification whose extension never ran, and
+never a newer alert for the same card, whose event id, and so fingerprint,
+is another. The fingerprints a `read` names are sealed in its event id; when
+they do not fit in 1,024 characters, the server splits them into as many
+`read` events as it takes, by encoded size.
 
 The id is answered `404 not_found` when it was sealed for another token, is
 older than 24 hours, does not open, or names an item the asking token's view
@@ -981,15 +1009,27 @@ app counts for itself as it does today.
 
 ### Taking notifications back
 
-The dispatcher remembers, for each device, the alerts it sent: their thread,
-event, item and position. A `read` goes to a device only when what it covers
-covers at least one of them, and those entries are then dropped. A partial
-read, one that stops before the newest alerted message, covers only the
-older alerts, so a newer notification is not taken back. An approval decided
-on the Mac covers its alert on the phone. The map holds at most 10,000
-entries, oldest dropped, and lives in memory: after a server restart no
-`read` is sent for what was alerted before it, and the app reconciles when
-it next comes to the front.
+The dispatcher remembers, for each device, the alerts it sent: their
+fingerprint, thread, event, item and position. When a `read` source fires,
+it works out which of those alerts are now covered and names exactly those
+fingerprints:
+
+- a `reply` alert, when the mark reads through its message, or `archived`
+  is set;
+- a `failed` alert, when the mark takes a position after it, the thread
+  runs again, or `archived` is set;
+- a `request` alert, when its record is decided, at the version the alert
+  named or later.
+
+A `read` goes to a device only when it names at least one of its alerts, and
+those entries are then dropped. A partial read, one that stops before the
+newest alerted message, names only the older alerts, so a newer notification
+is not taken back; a `read` delayed past a newer alert for the same card
+leaves the newer one, since it names only the fingerprints it was built
+with. An approval decided on the Mac takes its alert back off the phone. The
+map holds at most 10,000 entries, oldest dropped, and lives in memory: after
+a server restart no `read` is sent for what was alerted before it, and the
+app reconciles when it next comes to the front.
 
 ### Where it hooks in
 
@@ -999,8 +1039,8 @@ The engine finds events in the transactions that make them, through the
 
 - the thread write that settles a thread, where `stampLastMessage` runs
   (`internal/engine/threadmarks.go`), for every path that settles one, with
-  how long the turn ran and whether a reader acting for the person was
-  attached; the boot's recovery marks its settles and they are skipped;
+  how long the turn ran; the boot's recovery marks its settles and they are
+  skipped;
 - `countWaitingOnPerson`, when it writes a higher count, with the record
   that raised it, and when it writes a lower one, with the record that was
   decided;
@@ -1193,9 +1233,9 @@ installs to a new seal key.
 
 **Signing out** deletes the device first, then revokes the token; if the
 delete fails, the cascade deletes the device with the token. It also clears
-the current generation, so every push already delivered or still queued
-for that sign-in no longer matches: it opens nothing, fetches nothing and
-offers no action.
+both the current generation and any pending one, so every push already
+delivered or still queued for that sign-in no longer matches: it opens
+nothing, fetches nothing and offers no action.
 
 ### The environment
 
@@ -1324,8 +1364,10 @@ unseen. Reply with text and a question's options stay as they are.
 
 **Taking notifications back.** The app gains the `remote-notification`
 background mode beside `fetch`. When iOS runs it for a `read` push whose
-generation matches, it resolves the push's event id and removes exactly the
-delivered notifications it covers, then sets the badge; a `read` whose
+generation matches, it resolves the push's event id to the fingerprints it
+names, computes `pushwire`'s fingerprint of the `eventId` in each delivered
+notification's payload, and removes exactly the ones that match, whether the
+extension rewrote them or not; then it sets the badge. A `read` whose
 generation does not match removes nothing. When iOS does not run it, the
 badge in the push still applies, and the next time the app comes to the
 front reconciles the rest.
@@ -1410,12 +1452,14 @@ the signature, the generation, unlocking to decide) are commits.
 The first three rows are executable before any of the four is written.
 Pull request 1 lands `internal/pushwire` with `testdata/`: a fixture of
 every request, response and error envelope above; the exact Apple payload of
-each event; two `request` pushes on one thread, for two cards, with their
-event ids; and signature vectors (an Ed25519 seed, `t`, a body and the
+each event, with its headers; two `request` pushes on one thread, for two
+cards, with their event ids and no collapse id; a push whose event id is
+1,024 characters; signature vectors (an Ed25519 seed, `t`, a body and the
 header it signs to, and refusals: stale either way, another key, a changed
-body, a repeat). Pull request 2 imports them and adds the resolutions of
-those event ids, one answering `actions: true` and the other `false`, and
-the device put and its answers. Pull requests 3a and 3b copy the ones they
+body, a repeat); and fingerprint vectors (an event id and its
+fingerprint). Pull request 2 imports them and adds the resolutions of those
+event ids, one answering `actions: true` and the other `false`, a `read`
+naming fingerprints, and the device put and its answers. Pull requests 3a and 3b copy the ones they
 read into the kit's test resources, and a Go test in `internal/pushwire`
 holds each copy byte-equal to its original.
 
@@ -1430,7 +1474,7 @@ const (
 	KeyLifetime     = 90 * 24 * time.Hour
 	MaxBody         = 4 << 10
 	MaxPushKey      = 1024
-	MaxEventID      = 512
+	MaxEventID      = 1024
 	MaxBadge        = 999
 )
 
@@ -1473,6 +1517,10 @@ func Verify(header string, pub ed25519.PublicKey, now time.Time, body []byte) er
 // Endpoint builds the address of path under relay (section 2); two relays
 // are the same when Endpoint gives the same address for both.
 func Endpoint(relay, path string) (string, error)
+
+// Fingerprint names an alert by its event id (section 4): base64url of the
+// first 16 bytes of SHA-256("substrate-push-alert-v1\n" + eventID).
+func Fingerprint(eventID string) string
 ```
 
 ### Pull request 1: the relay (M)
@@ -1488,7 +1536,8 @@ Tests:
 
 - `internal/pushwire`: the vectors sign and verify; every fixture
   round-trips through the types; `Endpoint` for each row of section 2's
-  table and a refusal of a query, user info and `http`.
+  table and a refusal of a query, user info and `http`; `Fingerprint`
+  against its vectors.
 - `internal/apns`: the JWT's header, claims and signature, verified with the
   public half of a key the test generates; reuse under 50 minutes and a new
   one past it, on a fake clock; one mint for many concurrent
@@ -1501,7 +1550,9 @@ Tests:
   key; the signature valid, stale before and after, from another key, over
   another body, and repeated; a signature dated 300 s ahead still refused as
   a repeat 590 s later; two pushes alike but for their event ids both sent;
-  the exact Apple payload of each event against the fixtures; each limit on a
+  the exact Apple payload and headers of each event against the fixtures,
+  two cards on one thread sent with no collapse id, and a 1,024-character
+  event id accepted and one longer refused; each limit on a
   fake clock, the install's bucket untouched by unsigned requests and kept
   across a new registration of the same install; the 4 KiB bound; unknown
   routes and methods; `/healthz` and `/readyz`; and that no log line at any
@@ -1522,7 +1573,7 @@ Stacked on 1: it imports `internal/pushwire` and its fixtures, and touches
 `internal/api` only after 1's move of the client address code.
 `kinds/substrate.reamde.dev/core/device.yaml` and `core` at 65; the device's
 admission and its sweep in `RunGC`; `viewer`'s rule; the engine's events,
-sink and `PushSigner`; the turn hub's record of whom each reader acts for;
+sink and `PushSigner`;
 `internal/pushdispatch`; `internal/push`; the exported token view in
 `internal/api`; the lenient `push` key in `internal/authority`; the three
 routes, the feature, the two reasons, `errors` 8 and the wire structs;
@@ -1536,9 +1587,10 @@ Tests, run with `-run`, never the whole suite:
 - the device's put, through the real handler with the fixtures: `201`, then
   `200`, at the token's own id; another token's id `403`; `POST
   /api/v1/records` with an id `422`; a body with `data` `400`; `notifies`
-  missing or `[]` `422`; an agent `403`; a viewer writes their own; a
-  person's other token and an admin delete it; `token` and `person` filled
-  and fixed; a put after the purge `201`;
+  missing from a create `422`, left out of an update kept as stored, `[]`
+  `422` on either; an agent `403`; a viewer writes their own; a person's
+  other token and an admin delete it; `token` and `person` filled and
+  fixed; a put after the purge `201`;
 - the sweeps: deleting a token deletes its device at the next sweep, and
   nothing is sent to it in between; an expired token's device is deleted by
   `RunGC` with no event in flight;
@@ -1549,11 +1601,16 @@ Tests, run with `-run`, never the whole suite:
   answer different `actions` for tokens with different reach; a pending
   record answered within 5 s sends nothing, and a newer version of it is its
   own item; two people on one thread, one reading, the other still alerted;
-  a partial read covers only older alerts; an approval decided on another
-  device sends a `read` covering its alert, never to the writer's device; a
-  new chat whose first call failed sends no `reply`, and a `failed` only if
-  its turn ran past 5 s; a `failed` dropped when a reader of the person was
-  attached; `stopped`, recovery and `subagent` send nothing; a `call` and a
+  a partial read names only older alerts; an approval decided on another
+  device sends a `read` naming its alert, never to the writer's device; a
+  `read` delayed past a newer alert for the same card leaves the newer one;
+  a `read` whose fingerprints do not fit one event id is split by encoded
+  size, tested with the largest batch; event ids sealed for records with
+  128-character ids stay within 1,024 characters; a new chat whose first
+  call failed sends no `reply`, and a `failed` only if its turn ran past
+  5 s; a `failed` dropped when the person's mark took a position during the
+  turn, and sent when it did not; `stopped`, recovery and `subagent` send
+  nothing; a `call` and a
   `manual` thread send no reply but do send their requests; a thread acting
   for nobody sends its requests to admins whose view reads it;
 - recipients through the view: a scoped token whose `agents:` scope does not
@@ -1565,7 +1622,10 @@ Tests, run with `-run`, never the whole suite:
   most, the same for the route as for a push;
 - the event route: an id resolves for its own token only, `404` for another
   token's, for one past 24 hours and for one whose item the view no longer
-  reads; `actions` false once the record is decided;
+  reads; `actions` false once the record is decided; a `failed` event
+  resolving while the thread is still `error` or `overbudget` after a later
+  write, and not once it is not; an event id whose additional data is not
+  `substrate-push-event-v1` does not open;
 - inert: no relay, an unverified app, a local app, a password sign-in and
   `SUBSTRATE_PUSH=false` send nothing;
 - after the relay: `gone` and each refusal delete the device; a device that
@@ -1641,9 +1701,10 @@ Tests:
   fixture shows each card with the actions its own resolution allows; a
   question's push uses the open-only category; a mismatched generation
   fetches nothing and drops the badge; an old delivered approval's action
-  after switching accounts is refused; a `read` removes exactly what its
-  resolution covers, and one with a mismatched generation removes nothing, on
-  a fake `Notifications`;
+  after switching accounts is refused; a `read` removes exactly the
+  delivered notifications whose fingerprints it names, a fallback one among
+  them, and one with a mismatched generation removes nothing, on a fake
+  `Notifications`;
 - `lint:apps`: `"push": true` without the extension or the background mode
   fails;
 - on a simulator, `xcrun simctl push` with each fixture payload, against a
