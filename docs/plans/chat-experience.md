@@ -525,69 +525,11 @@ link, and a client says only how they ended.
 
 ### 7. Push to a closed device (L)
 
-A self-hosted server cannot send to a published app directly: the key
-that signs an Apple push belongs to the app's publisher. Matrix,
-Mattermost, ntfy and Home Assistant all meet this the same way, with a
-small relay the publisher runs. The same shape fits here.
-
-Each install of an app registers itself as a record.
-
-```yaml
-kind: substrate.reamde.dev/core/device
-metadata:
-  id: 3d7e0a91c5                # chosen by the app, kept in its Keychain
-data:
-  properties:
-    name: George's iPhone
-    platform: ios
-    token:
-      ref: substrate.reamde.dev/core/token/71ac09be44
-    pushKey: "<what Apple's push service calls this install>"
-    notifies:
-      - replies
-      - requests
-    seenAt: "2026-11-14T09:41:07Z"
-```
-
-| Property | Holds | Points at |
-| --- | --- | --- |
-| `name` | what the owner calls the device | text |
-| `platform` | `ios`, `macos`, `android` or `web` | an enum |
-| `token` | the sign-in this install holds; revoking it ends its pushes | one `core/token` |
-| `pushKey` | the address the platform's push service gave the install | text, of no use without the publisher's key |
-| `notifies` | which events the owner wants on this device | a set of `replies`, `requests` |
-| `seenAt` | when the install last registered | a time |
-
-The rules:
-
-- **The relay is named by the app's publisher.** The server posts only to
-  the relay that the authority document of the token's verified app names
-  ([0209](../decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
-  No address is in this tree, an unverified or local app gets no push, and
-  a fork of the app names its own relay.
-- **The relay never sees content.** A post carries the push key, the
-  platform, the event (`reply`, `request` or `read`), the thread's id and
-  the unread count. No title and no text. The app fetches what to show
-  from the owner's own server with its own token, in the small process
-  Apple gives an app to rewrite a push before it is shown, and falls back
-  to "Moss replied" when it cannot.
-- **A reply the owner is already reading is not pushed.** When a chat
-  thread settles, the server waits five seconds. If the mark from change 1
-  reads through the thread's `lastMessage` by then, nothing is sent.
-- **A read is pushed too.** When a mark catches up, the server sends
-  `read` so other devices take back the notification and lower the badge.
-  Apple does not promise to deliver such a push, so the app also
-  reconciles from the marks whenever it opens.
-- **Best effort.** A relay that does not answer is not retried. The
-  records are the truth and the app reads them on open.
-- **The operator can turn it off.**
-
-What it costs: the relay learns when the owner's assistant finished
-something and which device to tell, never what was said. And it is the
-first time the server calls an outside service on its own initiative,
-which the Moss plan already marked as needing a decision. The console can
-use Web Push with no relay, since a browser's push service needs no
-publisher key; that is a follow-up.
+A reply or a question reaches a phone in a pocket through a small relay
+the app's publisher runs, which never sees what was said. The design, the
+relay's API, the device record and the three pull requests that build it
+are [their own plan](push.md); this section keeps nothing of its own about
+push.
 
 ### What a client checks before it uses any of this
 
@@ -992,9 +934,8 @@ it works against a server that has none of it, and a server that has all
 of it serves an app from before. No build of the app with this work has
 been sent to TestFlight yet.
 
-Not built: change 7, push. It waits on where the relay runs and on the key
-that signs an Apple push, neither of which is in this tree. With it wait a
-Live Activity and Web Push for the console.
+Not built: change 7, push, planned in [its own plan](push.md). With it
+wait a Live Activity and Web Push for the console.
 
 What nobody has seen yet, because the machine that built this had a locked
 screen and no device attached: the app on a real iPhone or iPad, and the
@@ -1021,7 +962,9 @@ One record each, in the pull request that carries it:
   hand that resolved a card.
 
 Still to make, with change 7: the device kind, the relay named by the
-authority document, and the server calling out on its own initiative.
+authority document, and the server calling out on its own initiative. [The
+push plan](push.md#7-decision-records) says which pull request carries
+each.
 
 ## Positions this questions
 
