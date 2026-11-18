@@ -461,6 +461,146 @@ struct PushContentTests {
         #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
     }
 
+    /// The read of a chat a delivered alert names, started under one
+    /// session, sends nothing once another session is held: the session
+    /// changes while the read's list is out, and the chat is never asked
+    /// for by name.
+    @Test func aDeliveredAlertsReadStartedUnderOneSessionAsksNothingUnderTheNext() async throws {
+        let server = MarkServer(records: 9)
+        server.push(badge: 0)
+        server.chat("t1", readThrough: "t1-m2")
+        server.chat("t9", readThrough: "t9-m2")
+        server.write("t9", archived: true)
+        let held = HeldPush()
+        let rig = ChatRig(marks: server, platform: .ios, push: held.registrar)
+        try await rig.signIn(following: server)
+        try await rig.harness.until { await $0.state.push?.held == true }
+        rig.notifications.deliver(
+            DeliveredNotification(
+                id: "r9", thread: "t9",
+                userInfo: [
+                    PushPayload.Key.event: "reply", PushPayload.Key.thread: "t9", PushPayload.Key.generation: "gC", PushPayload.Key.eventID: "e-t9",
+                ]))
+        // The lists the read asks first are held.
+        server.hold("/api/v1/records")
+        await rig.harness.send(.phase(.background))
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until { await $0.state.pushDelivered == ["t9"] }
+        try await Task.sleep(for: .milliseconds(200))
+        // Another sign-in before the chat would be read by name.
+        await rig.runtime.linkChanged(
+            LinkSnapshot(phase: .signedIn, server: origin, repository: "o.example.com", tokenID: "0b5e1a7c33", online: true))
+        server.letGo("/api/v1/records")
+        await rig.harness.settle()
+        try await Task.sleep(for: .milliseconds(300))
+        await rig.harness.settle()
+        #expect(server.count("llm/thread/t9") == 0)
+    }
+
+    /// The read of whose hand ended a card asks with the client of the
+    /// session it started under, or not at all: its first try is answered
+    /// with an error, another sign-in then takes the Keychain before the
+    /// app is told, and the next try is never sent, with that sign-in's
+    /// token or any.
+    @Test func anOwnershipReadStartedUnderOneSessionAsksNothingUnderTheNext() async throws {
+        let held = HeldPush()
+        let server = ChatServer(baseRoutes())
+        server.route("GET", "/.well-known/substrate/server.json", featuresRoute(agents: 7).answer)
+        for link in ["resolvedBy", "decidedBy"] {
+            server.route("GET", "/api/v1/records", query: link, .json(500, #"{"error":{"code":"internal","message":"no"}}"#))
+        }
+        let sessions = held.registrar.sessions
+        let rig = ChatRig(
+            transport: server,
+            source: .sessions {
+                await sessions.load().map {
+                    ClientSource.Vended(client: SubstrateClient(server: $0.server, token: $0.secret, transport: server), tokenID: $0.tokenID)
+                }
+            })
+        try await rig.signIn()
+        try await rig.harness.until { await $0.state.agentsRevision == 7 }
+        let card = Record(
+            id: "mine", kind: Kinds.interaction,
+            properties: [
+                "state": "answered", "thread": ["ref": .string("\(Kinds.thread)/tz")], "resolvedBy": ["ref": "substrate.reamde.dev/core/actor/a1"],
+            ], version: 2)
+        await rig.harness.deliver(ChatApp.Event(.cardRead("mine", card, target: nil)))
+        // Only this card's chat, `tz`, which no list holds: Chat's own reads
+        // of other chats ask about theirs.
+        let own: @Sendable (String) -> Int = { link in server.requests.count { $0.contains(link) && $0.contains(#""thread":{"eq":"tz"}"#) } }
+        // The first try reads each kind a hand can resolve, and none answers.
+        try await rig.harness.until { _ in own("decidedBy") == 2 }
+        try await switchSession(held)
+        await rig.harness.advance(by: 5)
+        await rig.harness.settle()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(own("resolvedBy") == 1)
+        #expect(own("decidedBy") == 2)
+    }
+
+    /// A sign-out while the extension reads the event: nothing more is asked
+    /// of the server, neither the message nor the thread, and what shows is
+    /// the plain fallback with no badge.
+    @Test func aSignOutDuringTheEventReadAsksNothingMoreAndShowsNoBadge() async throws {
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply"))),
+            .init(
+                method: "GET", path: "/llm/message/5b90e3c1f2",
+                answer: .json(200, #"{"id":"5b90e3c1f2","kind":"\#(Kinds.message)","version":1,"properties":{"content":"Hi"}}"#)),
+            .init(method: "GET", path: "/llm/thread/\(threadID)", answer: .json(200, threadRow())),
+        ])
+        let signedOut = Ran()
+        server.onRequest { request in
+            if request.contains("/api/v1/push/events/") { signedOut.mark() }
+        }
+        let checking: ChatPush.Accepting = { _ in
+            signedOut.value ? PushAcceptance(.refused) : PushAcceptance(.accepted, client: client, identity: "https://s.example.com|r.example.com")
+        }
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: checking, until: later)
+        #expect(content == .fallback(dropsBadge: true))
+        #expect(server.count("/llm/message/") == 0 && server.count("/llm/thread/") == 0)
+    }
+
+    /// A `read` whose resolution covers no alert shown: a sign-out after the
+    /// alerts were read, and the badge is never asked for.
+    @Test func aSignOutAfterTheAlertsAreReadAsksNoBadge() async throws {
+        let notifications = RecordedNotifications()
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-read", answer: .json(200, try Fixture.text("pushserver", "event-read"))),
+            .init(method: "GET", path: "/api/v1/push/badge", answer: .json(200, #"{"badge":2}"#)),
+        ])
+        let signedOut = Ran()
+        notifications.onDelivered { signedOut.mark() }
+        let checking: ChatPush.Accepting = { _ in
+            signedOut.value ? PushAcceptance(.refused) : PushAcceptance(.accepted, client: client, identity: "https://s.example.com|r.example.com")
+        }
+        _ = await ChatPush.takeBack(push("read", eventID: "e-read"), accepting: checking, notifications: notifications, until: later)
+        #expect(signedOut.value)
+        #expect(server.count("/api/v1/push/badge") == 0)
+        #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
+    }
+
+    /// A gateway's 502, then a refusal, then the push no longer accepted: the
+    /// first copy may have landed, so the notice never says nothing was sent.
+    @Test func aCopyThatMayHaveLandedKeepsTheUncertainWordsThroughALaterRefusal() async throws {
+        let (rig, server, held) = try await boundRig()
+        server.route("POST", "/chat", .json(422, #"{"error":{"code":"validation","message":"no"}}"#))
+        server.route("POST", "/chat", once: true, .json(502, #"{"error":{"code":"bad_gateway","message":"upstream"}}"#))
+        rig.notifications.respond(pushedReply())
+        try await rig.harness.until { _ in server.count("/chat") == 1 }
+        // The second copy is out when the push stops being accepted, and its
+        // refusal is the last answer: no clock moves after it, so no third
+        // copy is asked for.
+        server.hold("/chat")
+        try await rig.harness.until(advancing: 1) { _ in server.count("/chat") == 2 }
+        try await switchSession(held)
+        server.letGo("/chat")
+        try await rig.harness.until { _ in finished(rig) }
+        await rig.harness.settle()
+        #expect(server.count("/chat") == 2)
+        #expect(notices(rig).map(\.title) == ["Your reply may have been sent"])
+    }
+
     @Test func aReadThatStartsInTimeAndRunsPastIsCutAtTheDeadline() async throws {
         let (server, client) = server([
             .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply")))
@@ -477,10 +617,11 @@ struct PushContentTests {
         #expect(ContinuousClock.now - deadline < .seconds(5))
     }
 
-    /// The check and the requests are one session's: another sign-in that
-    /// lands between them never has the push read with its token, and a
+    /// The check and the requests are one session's, asked again before
+    /// every request: another sign-in that lands between them has the push
+    /// read by no one, never with its token, and shows nothing of it; a
     /// check after it accepts nothing.
-    @Test func aPushIsReadWithTheSessionThatAcceptedItThoughAnotherSignsInBetween() async throws {
+    @Test func anotherSignInBetweenTheCheckAndTheReadHasThePushReadByNoOne() async throws {
         let held = HeldPush()
         held.transport.on("GET", "/api/v1/push/events/e-reply", json: try Fixture.text("pushserver", "event-reply"))
         let registrar = held.registrar
@@ -492,13 +633,49 @@ struct PushContentTests {
             try? await registrar.sessions.save(other)
             return acceptance
         }
-        _ = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: switching, until: later)
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: switching, until: later)
+        #expect(content == .fallback(dropsBadge: true))
         let sent = held.transport.requests
-        #expect(held.transport.sent("GET", "/api/v1/push/events/e-reply").count == 1)
+        #expect(held.transport.sent("GET", "/api/v1/push/events/e-reply").isEmpty)
         #expect(sent.allSatisfy { $0.url?.host == origin.host && $0.value(forHTTPHeaderField: "Authorization") == "Bearer secret" })
         let after = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: { await registrar.acceptance(of: $0) }, until: later)
         #expect(after == .fallback(dropsBadge: true))
         #expect(held.transport.requests.count == sent.count)
+    }
+
+    /// The last check before a push shows is answered within a bound past
+    /// the deadline, or not at all: one that never answers leaves nothing
+    /// the extension read and no badge, soon after the deadline.
+    @Test func aLastCheckThatDoesNotAnswerShowsNothingItRead() async throws {
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply"))),
+            .init(
+                method: "GET", path: "/llm/message/5b90e3c1f2",
+                answer: .json(
+                    200,
+                    #"{"id":"5b90e3c1f2","kind":"\#(Kinds.message)","version":1,"properties":{"role":"assistant","content":"**Here** is the summary you asked for.","thread":{"ref":"\#(Kinds.thread)/\#(threadID)"}}}"#
+                )),
+            .init(method: "GET", path: "/llm/thread/\(threadID)", answer: .json(200, threadRow())),
+        ])
+        let identity = "https://s.example.com|r.example.com"
+        let answering: ChatPush.Accepting = { _ in PushAcceptance(.accepted, client: client, identity: identity) }
+        guard case .shown = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: answering, until: later) else {
+            Issue.record("a check that answers shows the reply")
+            return
+        }
+        // The same push, where the Keychain stops answering once the thread
+        // was read.
+        let read = Ran()
+        server.onRequest { if $0.contains("/llm/thread/") { read.mark() } }
+        let stops: ChatPush.Accepting = { _ in
+            if read.value { await uncancellable(seconds: 5) }
+            return PushAcceptance(.accepted, client: client, identity: identity)
+        }
+        let started = ContinuousClock.now
+        let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stops, until: .now + .seconds(1))
+        #expect(read.value)
+        #expect(content == .fallback(dropsBadge: true))
+        #expect(ContinuousClock.now - started < .seconds(4))
     }
 
     /// The deadline starts before the Keychain is read: one slower than it
@@ -510,7 +687,8 @@ struct PushContentTests {
             await uncancellable(seconds: 5)
             return PushAcceptance(.accepted, client: client)
         }
-        // Each answers at its deadline, well before the Keychain would.
+        // Each answers by its deadline, the content once its last check is
+        // given up on, well before the Keychain would.
         var started = ContinuousClock.now
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stuck, until: .now + .seconds(1))
         #expect(content == .fallback(dropsBadge: false))

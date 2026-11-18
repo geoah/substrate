@@ -126,8 +126,13 @@ struct LinkedRecordsTests {
         _ = reading.step(.loaded([], cursor: nil, queue: []))
         _ = reading.step(.linked(online))
         #expect(reading.step(.linked(approved)) == [.read(over: [noteKind])])
+        // Another token alone, its scopes and its end the same: the watch
+        // holds the old one, which no request of it may carry now.
+        var renewed = approved
+        renewed.tokenID = "0b5e1a7c33"
+        #expect(stepper.step(.linked(renewed)) == [.follow(cursor, over: [noteKind])])
         // The same token moving nothing else starts nothing.
-        var moved = approved
+        var moved = renewed
         moved.waiting = 3
         #expect(stepper.step(.linked(moved)).isEmpty)
     }

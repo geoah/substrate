@@ -216,8 +216,8 @@ extension ChatApp {
         // The next reply into this chat, where one waited for this one.
         defer { if !state.deferred.isEmpty { resume(&state) } }
         if let stamp = state.acting.first(where: { $0.value.reply == key })?.key {
-            if outcome.failure?.why == .sessionChanged { return unboundReply(&state, stamp) }
-            finish(&state, stamp, failure: outcome.failure)
+            if outcome.failure?.why == .sessionChanged, !outcome.mayHaveLanded { return unboundReply(&state, stamp) }
+            finish(&state, stamp, failure: outcome.failure, mayHaveLanded: outcome.mayHaveLanded)
         } else if outcome.failure == nil, let thread = state.conversations[key]?.thread {
             // It arrived after the app said it had not: that is taken back.
             state.asks.append(.cancelNotification(Self.failedID(thread)))
@@ -265,7 +265,9 @@ extension ChatApp {
     ///
     /// - Parameter unsaved: a reply's text that is in no folder, which the
     ///   notification then says whole.
-    private func finish(_ state: inout State, _ stamp: String, failure: Failure?, keepsReply: Bool = false, unsaved: String? = nil) {
+    private func finish(
+        _ state: inout State, _ stamp: String, failure: Failure?, keepsReply: Bool = false, unsaved: String? = nil, mayHaveLanded: Bool = false
+    ) {
         guard let act = state.acting.removeValue(forKey: stamp) else { return }
         state.asks.append(.cancel("actWait:\(stamp)"))
         if let key = act.reply, !keepsReply { state.conversations[key]?.reply = nil }
@@ -288,16 +290,16 @@ extension ChatApp {
         state.asks.append(
             .finishAction(
                 act.response, cancel: failure == nil ? act.response.id : nil, notify: said, keep: keep,
-                unbound: said == nil ? nil : Self.unboundWords(act, failure: failure)))
+                unbound: said == nil ? nil : Self.unboundWords(act, failure: failure, mayHaveLanded: mayHaveLanded)))
     }
 
     /// What a push's action says of how it ended where the push is no longer
     /// accepted when it is said: nothing of the chat. Never acted on, or
     /// refused before anything was written, nothing was sent or decided;
     /// else it may have been, and that is what is said.
-    static func unboundWords(_ act: State.Act, failure: Failure?) -> NotificationRequest? {
+    static func unboundWords(_ act: State.Act, failure: Failure?, mayHaveLanded: Bool = false) -> NotificationRequest? {
         guard PushBinding(act.response.userInfo) != nil, let failure else { return nil }
-        let definite = (act.reply == nil && act.card == nil) || failure.refusal() != nil || failure.neverSent
+        let definite = !mayHaveLanded && ((act.reply == nil && act.card == nil) || failure.refusal() != nil || failure.neverSent)
         if act.card != nil { return definite ? ChatNotifications.refused() : ChatNotifications.decisionUncertain() }
         return definite ? ChatNotifications.replyRefused() : ChatNotifications.replyUncertain()
     }

@@ -24,6 +24,10 @@ extension WorkoutsApp {
                 // it syncs once its package is known to be writable.
                 return [.stopSync] + (account.map { [.openAccount($0), .followOutbox($0)] } ?? [])
             }
+            // Another token for the same account while a sync runs: the
+            // runtime sends nothing more of it and drops how it ends, so it
+            // starts again with the new token, and its end is heard.
+            if state.flushing, state.canWrite, state.link?.tokenID != previous.link?.tokenID, let account { return [.sync(account)] }
             return state.canWrite && !previous.canWrite ? account.map { [.sync($0)] } ?? [] : []
         case let .accountOpened(opened, _, _, _, _, _):
             return opened == account && state.canWrite ? [.sync(opened)] : []

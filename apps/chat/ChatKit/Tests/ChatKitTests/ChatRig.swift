@@ -127,11 +127,14 @@ struct ChatRig {
     ///   after a kill goes on in: it mints no id a launch before it did.
     /// - Parameter watch: told at every wait the app makes on the clock, as
     ///   it begins and as it ends (`WatchedClock`).
+    /// - Parameter source: the clients, where a test reads them from a
+    ///   Keychain as the app does (`ClientSource.sessions`); else one fixed
+    ///   client.
     init(
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
         base: URL = temporaryFolder("chat"), transport: (any HTTPTransport)? = nil, clock: TestClock = TestClock(),
         ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil, page: Int = 100,
-        push: PushRegistrar? = nil
+        push: PushRegistrar? = nil, source: ClientSource? = nil
     ) {
         server = ChatServer(routes)
         self.clock = clock
@@ -147,7 +150,7 @@ struct ChatRig {
         client.pause = { seconds in try await waits.sleep(until: waits.now.addingTimeInterval(seconds)) }
         var environment = AppEnvironment(
             clock: waits, ids: ids, locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
+            timeZone: TimeZone(identifier: "UTC")!, client: source ?? .fixed(client),
             devices: DeviceServices(transport: transport, notifications: notifications, background: background))
         environment[PushRegistrarKey.self] = push
         harness = ControllerHarness(

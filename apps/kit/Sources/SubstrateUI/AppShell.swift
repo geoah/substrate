@@ -198,7 +198,9 @@ public final class AppShell<App: LinkedApp> {
         notifications: SystemNotifications?
     ) -> (PresentationModel<Link>, String?) {
         var environment = AppEnvironment.apple()
-        environment.client = ClientSource { await sessions.load().map { SubstrateClient($0) } }
+        // Each client says its session's token: an effect gets only the
+        // session it started under.
+        environment.client = .sessions { await sessions.load().map { .init(client: SubstrateClient($0), tokenID: $0.tokenID) } }
         environment.devices.notifications = notifications
         let parts = parts(configuration, session: session, device: DeviceWords.current, build: .bundle())
         environment.folder = parts.folder

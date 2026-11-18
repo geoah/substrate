@@ -125,6 +125,8 @@ extension Conversation {
             run.named = true
             run.started = true
             next.run = .send(run)
+            // The server took the message.
+            next.mayHaveLanded = true
             if run.resumes { next.turnFailure = nil }
             if next.thread == nil { next.thread = thread }
             // The server took the message: the optimistic turn is confirmed.
@@ -515,7 +517,7 @@ extension Conversation {
     private func replySettled(_ state: inout State, _ failure: Failure?) {
         guard let id = state.replying else { return }
         state.replying = nil
-        state.replyOutcome = ReplyOutcome(id: id, failure: failure)
+        state.replyOutcome = ReplyOutcome(id: id, failure: failure, mayHaveLanded: state.mayHaveLanded)
     }
 
     /// The server holds the message `id` (nil for one sent under no id).
@@ -641,7 +643,7 @@ extension Conversation {
         // A copy the push's sign-in can no longer send, after one that may
         // have reached the server: what became of the message is not known,
         // and is said so, never that nothing was sent. Nothing more can go.
-        if failure?.why == .sessionChanged, state.copies > 1 {
+        if failure?.why == .sessionChanged, state.mayHaveLanded {
             let unknown = state.lastFailure ?? Failure(.message, .unanswered, at: failure?.at)
             state.failure = unknown
             return stand(&state, run, unknown)
@@ -672,6 +674,8 @@ extension Conversation {
             return
         }
         if refused { return stand(&state, run, failure) }
+        // No answer, a 5xx, a timeout: this copy may have landed.
+        state.mayHaveLanded = true
         guard state.tries <= Self.repeatDelays.count else { return stand(&state, run, failure) }
         // Shown as reconnecting, never as a failure, while it waits.
         state.lastFailure = failure.attempting(.message)
@@ -743,6 +747,7 @@ extension Conversation {
         // A turn that was being read is still being written.
         if !joining { state.connected = false }
         state.stopping = false
+        state.mayHaveLanded = false
         guard let id else {
             state.run = .send(run)
             state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil, bound: bound))
@@ -756,6 +761,7 @@ extension Conversation {
             id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil, bound: bound)
         state.copies = 0
         state.tries = 0
+        state.mayHaveLanded = false
         state.unsentFailure = nil
     }
 
@@ -974,6 +980,7 @@ extension Conversation {
                 unsent(&state, run.message, typed: run.typed, failure: failure, unconfirmed: false)
                 return
             }
+            state.mayHaveLanded = true
             end(&state, run, unknown: failure, outcome: outcome)
         case let .attach(run)?:
             guard let failure else {

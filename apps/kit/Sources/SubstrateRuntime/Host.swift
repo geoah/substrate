@@ -242,6 +242,10 @@ final class Host<C: Controller>: @unchecked Sendable {
         var generation: Int
         /// The runtime's number for the effect, in the order work started.
         var serial: Int
+        /// The session epoch it started under, and whether it asked for a
+        /// client of that session.
+        var session: Int
+        var use: EffectUse
     }
 
     /// Starts an effect's work. Under a key, the one running there is
@@ -253,7 +257,14 @@ final class Host<C: Controller>: @unchecked Sendable {
             if let id = runningKeys.removeValue(forKey: key) { running.removeValue(forKey: id)?.cancel() }
             epochs[key, default: 0] += 1
         }
-        let work = controller.perform(effect, in: loop.environment)
+        // Stamped with the session epoch it starts under: every client it
+        // gets is that session's, and nothing it asks of a server leaves
+        // once another session is held.
+        let session = loop.sessions.stamp
+        let use = EffectUse()
+        var environment = loop.environment
+        environment.client = environment.client.pinned(to: session, of: loop.sessions, use: use)
+        let work = controller.perform(effect, in: environment)
         switch work {
         case .none, .cancel: return
         case .once, .sequence: break
@@ -261,7 +272,7 @@ final class Host<C: Controller>: @unchecked Sendable {
         nextTicket += 1
         let ticket = Ticket(
             id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
-            serial: loop.effectStarted())
+            serial: loop.effectStarted(), session: session.number, use: use)
         let hop = loop.hop
         // Held until the work ends, so a result for a controller closed
         // meanwhile still reaches it, to be counted and dropped.
@@ -304,6 +315,14 @@ final class Host<C: Controller>: @unchecked Sendable {
         if let key = ticket.key, epochs[key] != ticket.epoch {
             loop.count(delivered: false, drop: .epoch)
             loop.trace(.dropped(path: path, .epoch))
+            return
+        }
+        // What an effect read or wrote with a session no longer held ends
+        // quietly; one that asked for no client (a device's, a timer's) is
+        // the app's whatever the session.
+        if ticket.use.marked, !loop.sessions.holds(ticket.session) {
+            loop.count(delivered: false, drop: .session)
+            loop.trace(.dropped(path: path, .session))
             return
         }
         loop.count(delivered: true, drop: nil)

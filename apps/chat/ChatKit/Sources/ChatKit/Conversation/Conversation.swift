@@ -150,6 +150,9 @@ public struct Conversation: Controller, Equatable {
     struct ReplyOutcome: Codable, Equatable, Sendable {
         var id: String
         var failure: Failure?
+        /// A copy may have reached the server: a failure is never told as
+        /// nothing sent.
+        var mayHaveLanded = false
     }
 
     /// A send of unknown delivery the check found: its thread, and what it

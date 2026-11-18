@@ -191,8 +191,12 @@ struct SevenRules {
         await rig.harness.send(.refresh)
         try await rig.harness.until { await $0.state.refreshing }
         await rig.signOut()
+        let sent = rig.server.requests.count
         rig.server.letGo("/api/v1/records")
-        try await rig.harness.until { await $0.runtime.counters.droppedByGeneration >= 1 }
+        // The refresh on its way ends there: nothing more is asked of the
+        // server, and nothing it read lands.
+        try await rig.harness.untilIdle()
+        #expect(rig.server.requests.count == sent)
         let state = await rig.harness.state
         #expect(state.session == nil)
         #expect(state.agents.isEmpty)

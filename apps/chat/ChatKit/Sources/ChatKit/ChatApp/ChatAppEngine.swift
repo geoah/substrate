@@ -548,15 +548,18 @@ extension ChatApp {
 
     // MARK: The session
 
-    /// Rule 6: a sign-out, or a sign-in to another repository, starts the
-    /// chats over: the runtime drops every result still on its way and
-    /// closes every conversation, and nothing of one session publishes into
-    /// the next. The folder is closed, and deleted on a Sign Out.
+    /// Rule 6: a sign-out, a sign-in to another repository, or another token
+    /// for the same one, starts the chats over: the runtime drops every
+    /// result still on its way and closes every conversation, and nothing of
+    /// one session publishes into the next. The folder is closed, and deleted
+    /// on a Sign Out; a new token for the same repository keeps it.
     private func linked(_ state: inout State, _ link: LinkSnapshot) {
         let session = ChatSession(link)
         let online = link.online ?? true
-        if session?.identity != state.session?.identity {
-            let forget = state.forgetOnSignOut
+        let switched = session?.identity != state.session?.identity
+        let renewed = !switched && session != nil && session?.tokenID != state.session?.tokenID
+        if switched || renewed {
+            let forget = switched && state.forgetOnSignOut
             let old = state.session
             state = initialState
             state.restarted = true

@@ -54,6 +54,39 @@ struct PushBinding: Codable, Hashable, Sendable {
     func holds(_ push: PushRegistrar?) async -> Bool { await client(push) != nil }
 }
 
+/// A transport that asks before every request whether it may still be sent.
+struct AcceptedTransport: HTTPTransport {
+    let inner: any HTTPTransport
+    let holds: @Sendable () async -> Bool
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        guard await holds() else { throw CancellationError() }
+        return try await inner.data(for: request)
+    }
+
+    func lines(for request: URLRequest) async throws -> LineStream {
+        guard await holds() else { throw CancellationError() }
+        return try await inner.lines(for: request)
+    }
+}
+
+/// A value one task keeps for another to read after it.
+final class Kept<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kept: T?
+
+    func keep(_ value: T) { lock.withLock { kept = value } }
+    var value: T? { lock.withLock { kept } }
+}
+
+extension Optional where Wrapped: Sendable {
+    /// `transform` of the value, awaited; nil for none.
+    func asyncFlatMap<T>(_ transform: (Wrapped) async -> T?) async -> T? {
+        guard let self else { return nil }
+        return await transform(self)
+    }
+}
+
 /// The extension's work and the app's handling of a `read` push, below any
 /// UI framework so they are tested like the rest of the chat.
 public enum ChatPush {
@@ -87,26 +120,72 @@ public enum ChatPush {
         _ userInfo: [String: String], accepting: @escaping Accepting, until deadline: ContinuousClock.Instant
     ) async -> PushContent {
         guard let push = PushPayload(userInfo), push.event != .read else { return .fallback(dropsBadge: false) }
-        return await Deadline.race(until: deadline, or: .fallback(dropsBadge: false)) { race in
+        let first = Kept<PushAcceptance>()
+        let content: PushContent = await Deadline.race(until: deadline, or: PushContent.fallback(dropsBadge: false)) { (race: Deadline.Race) -> PushContent in
             let acceptance = await accepting(push.generation)
+            first.keep(acceptance)
             switch acceptance.verdict {
             case .refused: return .fallback(dropsBadge: true)
             case .unknown: return .fallback(dropsBadge: false)
             case .accepted: break
             }
-            guard var client = acceptance.client, !push.eventID.isEmpty else { return .fallback(dropsBadge: false) }
-            // A busy server is not waited out: there is no time for it.
-            client.pause = { _ in throw CancellationError() }
-            let content = await resolve(push, client: client, race: race)
-            guard case .shown = content else { return content }
-            // Asked again just before it is shown: a sign-out while it was
-            // read accepts the push no more, and then nothing read for it
-            // is shown, and no badge either.
-            guard race.live else { return .fallback(dropsBadge: true) }
-            let now = await accepting(push.generation)
-            guard race.live, now.verdict == .accepted, now.identity == acceptance.identity else { return .fallback(dropsBadge: true) }
+            guard let accepted = acceptance.client, !push.eventID.isEmpty else { return .fallback(dropsBadge: false) }
+            let client = checked(accepted) {
+                guard race.live else { return false }
+                return await ChatPush.holds(acceptance, push, accepting)
+            }
+            return await resolve(push, client: client, race: race)
+        }
+        return await checkedLast(content, push, first.value, accepting, until: deadline)
+    }
+
+    /// How long past the deadline the last check before a push shows may
+    /// take. It is a Keychain read, answered at once unless the device has
+    /// not been unlocked since it restarted, and iOS gives the extension
+    /// some ten seconds more than the deadline.
+    static let lastCheck: Duration = .seconds(2)
+
+    /// What a push shows, asked about last, just before it is shown: one
+    /// accepted once and accepted no more (a sign-out, another sign-in)
+    /// shows nothing it read and no badge, a fallback that would keep its
+    /// badge included. One never accepted (an unreadable Keychain) keeps the
+    /// badge it came with while nothing says it is another sign-in's. The
+    /// check is answered within `lastCheck` past the deadline or not at all:
+    /// unanswered, a push accepted once may since have been signed out of,
+    /// and shows nothing it read and no badge.
+    static func checkedLast(
+        _ content: PushContent, _ push: PushPayload, _ first: PushAcceptance?, _ accepting: @escaping Accepting,
+        until deadline: ContinuousClock.Instant
+    ) async -> PushContent {
+        guard content != .fallback(dropsBadge: true) else { return content }
+        let unanswered: PushAcceptance? = nil
+        guard let now = await Deadline.race(until: deadline + lastCheck, or: unanswered, { await accepting(push.generation) }) else {
+            return first?.verdict == .accepted ? .fallback(dropsBadge: true) : content
+        }
+        switch now.verdict {
+        case .refused: return .fallback(dropsBadge: true)
+        case .unknown: return first?.verdict == .accepted ? .fallback(dropsBadge: true) : content
+        case .accepted:
+            if let first, first.verdict == .accepted, first.identity != now.identity { return .fallback(dropsBadge: true) }
             return content
         }
+    }
+
+    /// Whether the push is still accepted as it was, for the same
+    /// repository.
+    static func holds(_ first: PushAcceptance, _ push: PushPayload, _ accepting: Accepting) async -> Bool {
+        let now = await accepting(push.generation)
+        return now.verdict == .accepted && now.identity == first.identity
+    }
+
+    /// The accepting session's client, asking `holds` before every request it
+    /// sends: once the push is no longer accepted, nothing more is asked of
+    /// the server. A busy server is not waited out: there is no time for it.
+    static func checked(_ client: SubstrateClient, holds: @escaping @Sendable () async -> Bool) -> SubstrateClient {
+        var checked = client
+        checked.transport = AcceptedTransport(inner: client.transport, holds: holds)
+        checked.pause = { _ in throw CancellationError() }
+        return checked
     }
 
     /// The seconds a request may take, asked immediately before it is sent:
@@ -236,26 +315,25 @@ public enum ChatPush {
         guard let push = PushPayload(userInfo), push.event == .read, !push.eventID.isEmpty else { return false }
         return await Deadline.race(until: deadline, or: false) { race in
             let acceptance = await accepting(push.generation)
-            guard acceptance.verdict == .accepted, var client = acceptance.client else { return false }
-            client.pause = { _ in throw CancellationError() }
-            // Each request is made only while the race is undecided; each
-            // call to the device, only while the push is still accepted for
-            // the same repository too, asked immediately before it: a sign-out
-            // or a result that comes late acts on nothing.
-            @Sendable func holds() async -> Bool {
+            guard acceptance.verdict == .accepted, let accepted = acceptance.client else { return false }
+            // Every request, and every call to the device, only while the race
+            // is undecided and the push is still accepted for the same
+            // repository, asked immediately before it: a sign-out or a result
+            // that comes late acts on nothing.
+            @Sendable func stillHolds() async -> Bool {
                 guard race.live else { return false }
-                let now = await accepting(push.generation)
-                return race.live && now.verdict == .accepted && now.identity == acceptance.identity
+                return await ChatPush.holds(acceptance, push, accepting) && race.live
             }
+            let client = checked(accepted, holds: stillHolds)
             guard let time = left(race), let info = try? await client.pushEvent(push.eventID, timeout: time), info.event == "read",
                 info.thread == push.thread, let covers = info.covers
             else { return false }
             let alerts = Set(covers.alerts)
-            guard await holds() else { return false }
+            guard await stillHolds() else { return false }
             let delivered = await notifications.delivered()
             for shown in delivered {
                 guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
-                guard await holds() else { return false }
+                guard await stillHolds() else { return false }
                 await notifications.cancel(shown.id)
             }
             guard let time = left(race),
@@ -263,7 +341,7 @@ public enum ChatPush {
             else { return true }
             // The count is the accepting session's: a sign-out during its
             // read sets no badge.
-            guard await holds() else { return false }
+            guard await stillHolds() else { return false }
             await notifications.setBadge(min(max(badge, 0), 999))
             return true
         }

@@ -16,7 +16,8 @@ extension Conversation {
         // held now.
         let held = bound
         let current: @Sendable () async -> SubstrateClient? = {
-            if let held { return await held.client(push) }
+            // Held to the session the effect started under too.
+            if let held { return await held.client(push).asyncFlatMap { await source.held($0) } }
             return await source.current()
         }
         let clock = environment.clock
@@ -35,7 +36,7 @@ extension Conversation {
                     // server or any.
                     let chosen: SubstrateClient?
                     if let bound {
-                        chosen = await bound.client(push)
+                        chosen = await bound.client(push).asyncFlatMap { await source.held($0) }
                         if chosen == nil {
                             yield(.streamEnded(Failure(.send, .sessionChanged, at: clock.now), outcome: ids.next()))
                             return

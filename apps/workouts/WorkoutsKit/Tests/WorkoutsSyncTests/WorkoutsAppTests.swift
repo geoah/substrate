@@ -73,6 +73,26 @@ struct WorkoutsAppTests {
         #expect(await harness.presentation.flushing)
     }
 
+    @Test("another token while a sync runs starts the sync again, so its end is heard; with none running it starts nothing")
+    func newTokenMidSync() async throws {
+        let harness = Self.harness(directory: nil)
+        var link = Self.snapshot()
+        link.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(link)
+        await harness.send(.sync)
+        #expect(await harness.presentation.flushing)
+        harness.clearTrace()
+        link.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(link)
+        #expect(Self.names(harness.effects) == ["sync"])
+        await harness.deliver(.syncEnded(Self.account, problem: nil))
+        #expect(await !harness.presentation.flushing)
+        harness.clearTrace()
+        link.tokenID = "5c2e7d9a10"
+        await harness.runtime.linkChanged(link)
+        #expect(harness.effects.isEmpty)
+    }
+
     @Test("an outbox read reads again the routines of the conflicts it did not hold before, and only those")
     func newConflicts() async throws {
         let harness = Self.harness(directory: nil)

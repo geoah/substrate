@@ -246,8 +246,14 @@ public struct LinkedRecords: Equatable, Sendable {
 
     /// Whether `link` carries a token `before` did not: a sign-in, or a new
     /// approval, which moves its scopes or when its access ends.
+    /// A token other than the one before: a sign-in, an approval, or any
+    /// other token id. The runtime holds an effect's client to the token it
+    /// started under and sends nothing of it under another, so whatever
+    /// holds one starts again.
     static func newAccess(from before: LinkSnapshot?, to link: LinkSnapshot) -> Bool {
-        link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+        link.signedIn
+            && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds
+                || before?.tokenID != link.tokenID)
     }
 
     private func keyed(_ records: [Record], in state: State) -> [String: Record] {

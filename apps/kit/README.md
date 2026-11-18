@@ -130,7 +130,15 @@ the change reaches its engine and its effects (the thread a conversation
 shows moved: it attaches). An event for which `resetting(of:on:)` answers
 true starts its controller over: its controller generation moves, its
 effects are cancelled, every result still on its way is dropped, and its
-children are made again from the state the event left (Chat's sign-out). A command reaches any controller by its path of keys
+children are made again from the state the event left (Chat's sign-out).
+Every effect is stamped with the session epoch it starts under, which moves
+on every sign-in, sign-out and switch of server, repository or token the
+link tells, and on nothing else: the client it gets is that session's
+(from a source that names its token, `ClientSource.sessions`, only the
+client of that token), each request it sends is checked again as it
+leaves, and once the epoch has moved nothing more is sent and what it
+answers is dropped. One place enforces it for every controller, the runtime
+that starts the effect, so no effect has to remember. A command reaches any controller by its path of keys
 (`send(_:to:)`). The link is every app's root: `LinkController<App>` keeps
 the app's root as its child, its snapshot reaches every controller under
 it as `event(forLink:)` inside the step that changed it, and the app tells

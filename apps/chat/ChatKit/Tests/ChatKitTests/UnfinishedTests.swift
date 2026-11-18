@@ -117,7 +117,8 @@ struct UnfinishedTurns {
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
-        await rig.runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, online: false))
+        await rig.runtime.linkChanged(
+            LinkSnapshot(phase: .signedIn, server: origin, repository: repository, tokenID: HeldPush.tokenID, online: false))
         try await rig.harness.until { _ in await rig.card(key)?.button?.blocked == "Offline" }
         #expect(await rig.card(key)?.sentence == "Helper was stopped before it finished.")
         #expect(await rig.card(key)?.button?.enabled(at: Date()) == false)

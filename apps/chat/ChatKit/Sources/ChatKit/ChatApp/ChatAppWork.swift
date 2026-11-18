@@ -35,7 +35,8 @@ extension ChatApp {
         // request leaves, or not at all; anything else with the session held
         // now.
         @Sendable func clientFor(_ bound: PushBinding?) async -> SubstrateClient? {
-            if let bound { return await bound.client(push) }
+            // Held to the session the effect started under too.
+            if let bound { return await bound.client(push).asyncFlatMap { await source.held($0) } }
             return await source.current()
         }
         @Sendable func failed(_ attempt: Failure.Attempt, _ error: any Error, _ client: SubstrateClient) -> Failure {

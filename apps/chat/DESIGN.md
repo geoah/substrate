@@ -758,6 +758,12 @@ and the badge the server counted.
   goes with the client of the session that accepts the push, read as it
   leaves, so one whose session changed goes to no server, its text stays
   in the chat, and a notification says to open the chat to reply.
+- **Every effect is held to its session.** The runtime stamps every
+  effect, a push's or not, with the session epoch it starts under (the
+  kit's rule): its client is that session's, every request is checked
+  again as it leaves, and once a sign-in, a sign-out or a switch has moved
+  the epoch nothing more is sent and its result is dropped. A push's
+  binding is an extra check on top of it.
 - **Everything a push starts is held to it.** A push's binding is its
   generation and the repository of the session that accepted it. Every
   request a push leads to goes with the client of the session that
@@ -765,10 +771,15 @@ and the badge the server counted.
   the background `read`'s, a reply's copies and its compatibility retry,
   the read of a chat a reply waits for, the reads its conversation makes
   until the person opens the chat, a decision and the card reads after it.
-  Before anything it led to is shown (a preview, a badge, a notification
-  taken back, an action's notice, a chat opened) the push is asked about
-  again: one no longer accepted shows nothing of its chat, and an action's
-  notice says only whether it may have gone through.
+  The extension's and the background `read`'s client asks whether the
+  push is still accepted before every request it sends. Before anything
+  it led to is shown (a preview, a fallback that keeps its badge, a badge,
+  a notification taken back, an action's notice, a chat opened) the push
+  is asked about again: one no longer accepted shows nothing of its chat
+  and no badge, and an action's notice says only whether it may have gone
+  through. A reply's notice says nothing was sent only where no copy of it
+  may have landed: once one copy went unanswered or met a 5xx or a
+  timeout, a later refusal still says it may have been sent.
 - **Taking notifications back.** The app has the `remote-notification`
   background mode. When iOS runs it for a `read` push whose generation
   matches, it resolves the event id and removes exactly the delivered

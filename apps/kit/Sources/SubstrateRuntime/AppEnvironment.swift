@@ -52,17 +52,49 @@ public protocol AppEnvironmentKey {
 /// The client for the session in use, read when an effect runs, never kept:
 /// a sign-out between two effects leaves the second without one.
 public struct ClientSource: Sendable {
-    private let read: @Sendable () async -> SubstrateClient?
+    /// A client, and the id of its session's token where the source knows it.
+    public struct Vended: Sendable {
+        public var client: SubstrateClient
+        public var tokenID: String?
+
+        public init(client: SubstrateClient, tokenID: String?) {
+            self.client = client
+            self.tokenID = tokenID
+        }
+    }
+
+    private let read: @Sendable () async -> Vended?
+    private let holding: @Sendable (SubstrateClient) async -> SubstrateClient?
 
     public init(_ read: @escaping @Sendable () async -> SubstrateClient?) {
+        self.read = { await read().map { Vended(client: $0, tokenID: nil) } }
+        holding = { $0 }
+    }
+
+    /// A source that names the token each client carries: an effect's source,
+    /// held to the session it started under, then vends only that session's.
+    public static func sessions(_ read: @escaping @Sendable () async -> Vended?) -> ClientSource {
+        ClientSource(sessions: read, holding: { $0 })
+    }
+
+    init(sessions read: @escaping @Sendable () async -> Vended?, holding: @escaping @Sendable (SubstrateClient) async -> SubstrateClient?) {
         self.read = read
+        self.holding = holding
     }
 
     public static var none: ClientSource { ClientSource { nil } }
 
     public static func fixed(_ client: SubstrateClient) -> ClientSource { ClientSource { client } }
 
-    public func current() async -> SubstrateClient? { await read() }
+    public func current() async -> SubstrateClient? { await read()?.client }
+
+    func vended() async -> Vended? { await read() }
+
+    /// `client`, made elsewhere (a push's accepting session's), held as this
+    /// source's own are: in an effect, nil once the session it started under
+    /// is no longer held, and each request it sends checked again as it
+    /// leaves.
+    public func held(_ client: SubstrateClient) async -> SubstrateClient? { await holding(client) }
 }
 
 /// The device services a controller's effects use (§5.4): a protocol each,
