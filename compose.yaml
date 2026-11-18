@@ -136,6 +136,10 @@ services:
       # setting this to false later restores the factor. On a reachable
       # deployment a leaked password would then be the account.
       SUBSTRATE_INSECURE_DISABLE_TOTP: ${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}
+      # No pushes: a laptop that restores a copy of a real repository holds
+      # its devices and, under the same credential key, signs for them, so
+      # its pushes would reach real phones. Set true to test push.
+      SUBSTRATE_PUSH: ${SUBSTRATE_PUSH:-false}
       # The origin people and apps reach this server at. A short name typed at
       # registration is completed under its host (`ada` -> `ada.localhost`),
       # and a name under localhost or an IP address is admitted only while

@@ -74,6 +74,14 @@ invite_words() { [ -n "$INVITE" ] && echo "invite code ${INVITE}" || echo "no in
 # factor enforced — which is how a change to the door gets tested.
 # Not readonly: `dev:totp` is this same substrate with the factor put back.
 DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
+# PUSH IS OFF HERE BY DEFAULT. A dev substrate restored from a copy of a real
+# one holds its device records and, under the same credential key, derives the
+# same signing keys, so its pushes would reach real phones. A developer
+# testing push turns it on with SUBSTRATE_DEV_PUSH=true; SUBSTRATE_PUSH in
+# the shell is not read, so a variable left from elsewhere cannot.
+PUSH=false
+[ "${SUBSTRATE_DEV_PUSH:-false}" = "true" ] && PUSH=true
+readonly PUSH
 # The credential key wraps each repository's DEK and a host without one refuses
 # to boot, so the dev substrate mints a key once and keeps it beside the state
 # it belongs to: `dev:wipe` removes both together. An operator command that
@@ -436,6 +444,7 @@ server_start() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_PUSH=${PUSH}" \
 		"SUBSTRATE_PUBLIC_URL=${SUBSTRATE_PUBLIC_URL:-http://localhost:${PORT}}" \
 		"SUBSTRATE_BIND_ADDRESS=0.0.0.0" \
 		"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true" \
@@ -510,6 +519,7 @@ cmd_run() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_PUSH=${PUSH}" \
 		"SUBSTRATE_PUBLIC_URL=${SUBSTRATE_PUBLIC_URL:-http://localhost:${PORT}}" \
 		"SUBSTRATE_BIND_ADDRESS=0.0.0.0" \
 		"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true" \

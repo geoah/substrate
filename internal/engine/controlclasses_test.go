@@ -17,6 +17,7 @@ var seededNoControl = map[string]string{
 	"substrate.reamde.dev/core/blob":              "the manifest of one stored blob: digest, size, name and media type",
 	"substrate.reamde.dev/core/consolepreference": "the console's navigation and display preferences",
 	"substrate.reamde.dev/core/contact":           "the owner's data: someone they deal with (decision 0231)",
+	"substrate.reamde.dev/core/device":            "one install's push key and which events it takes, each person's own, written by their own token: where a push goes, not what anything may do",
 	"substrate.reamde.dev/core/conversion":        "how a value in one unit converts to another, the owner's data reads convert through (decision 0186)",
 	"substrate.reamde.dev/core/unit":              "a unit a quantity may be written in (decision 0186)",
 	"substrate.reamde.dev/core/recordmerge":       "the record of one merge of two records, written as the merge is performed",

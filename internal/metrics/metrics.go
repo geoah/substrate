@@ -84,6 +84,22 @@ var (
 		Name: "substrate_webhook_spool_refusals_total",
 		Help: "Webhook requests refused because the repository's spool was full, by repository.",
 	}, []string{"repository"})
+
+	// PushTotal counts each push the dispatcher decided, by event and what
+	// became of it (internal/pushdispatch): sent, or why not. It carries no
+	// repository, so SUBSTRATE_METRICS_ANONYMIZE has nothing to hash.
+	PushTotal = promauto.With(Registry).NewCounterVec(prometheus.CounterOpts{
+		Name: "substrate_push_total",
+		Help: "Pushes the server decided, by event and outcome.",
+	}, []string{"event", "outcome"})
+
+	// PushRelaySeconds is one observation per request to a push relay, its
+	// answer read.
+	PushRelaySeconds = promauto.With(Registry).NewHistogram(prometheus.HistogramOpts{
+		Name:    "substrate_push_relay_seconds",
+		Help:    "Duration of one request to a push relay.",
+		Buckets: []float64{.025, .05, .1, .25, .5, 1, 2.5, 5},
+	})
 )
 
 // SpoolStats is one reading of a repository's webhook spool: the requests it

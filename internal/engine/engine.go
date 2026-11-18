@@ -113,6 +113,8 @@ type options struct {
 	// laneWorkers is how many schedule fires one pass runs at once
 	// (WithTriggerLaneWorkers); scheduleLaneWorkers when zero.
 	laneWorkers int
+	// pushSink receives the push signals (WithPushSink); nil hands out none.
+	pushSink substrate.PushSink
 	// chatTurnsPerPerson is how many detached chat turns one person runs at
 	// once (WithChatTurnsPerPerson).
 	chatTurnsPerPerson int
@@ -451,6 +453,12 @@ func WithOrphanCollection(grace time.Duration) Option {
 // no pass could ever run more than the process does.
 func WithTriggerLaneWorkers(n int) Option { return func(o *options) { o.laneWorkers = n } }
 
+// WithPushSink hands the engine the sink its push signals go to
+// (pushsignals.go): what happened, once each transaction that made it
+// committed. Nil, or not given, hands out nothing, which is the operator's
+// SUBSTRATE_PUSH=false.
+func WithPushSink(s substrate.PushSink) Option { return func(o *options) { o.pushSink = s } }
+
 // WithChatTurnsPerPerson sets how many detached chat turns one person runs at
 // once (SUBSTRATE_CHAT_TURNS_PER_PERSON, agents.go ChatAgent). Zero, or not
 // given, is maxRunningChatTurns.
@@ -698,6 +706,8 @@ type service struct {
 	laneWorkers int
 	// chatTurnsPerPerson is the chat turns one person runs at once.
 	chatTurnsPerPerson int
+	// pushSink receives the push signals; nil hands out none.
+	pushSink substrate.PushSink
 	// deliverySlots is the process-wide semaphore every dispatcher pass
 	// takes a slot of for each delivery it runs, record trigger walks and
 	// schedule fires alike (functions.go takeDeliverySlot), so the
@@ -1252,6 +1262,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		withoutSecrets:     lostSecretsList(o.withoutSecrets),
 		laneWorkers:        o.laneWorkers,
 		chatTurnsPerPerson: o.chatTurnsPerPerson,
+		pushSink:           o.pushSink,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
 		operatorDefaults:   o.operatorDefaults,

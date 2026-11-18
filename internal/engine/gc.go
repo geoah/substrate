@@ -32,6 +32,11 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	if _, err := ds.collectOrphans(ctx); err != nil {
 		return 0, err
 	}
+	// The devices of tokens past their expiry, which no cascade reaches,
+	// before the fixpoint, so their tombstones are purged below.
+	if _, err := ds.sweepExpiredDevices(ctx, nowUTC()); err != nil {
+		return 0, err
+	}
 	collected := 0
 	for {
 		n, full, err := ds.gcPass(ctx)

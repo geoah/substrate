@@ -44,20 +44,49 @@ func (s *scopedDataset) holdQuery(ctx context.Context, q substrate.Query) (subst
 	if err := s.checkReferenceFilters(ctx, kinds, q.Filter.Properties); err != nil {
 		return q, false, err
 	}
-	if ref := q.Filter.Referencing; ref != nil {
-		for _, target := range append([]string{ref.Ref}, ref.Refs...) {
-			if target == "" {
-				continue
-			}
-			if err := s.requireRead(ctx, kindOfPath(target)); err != nil {
-				return q, false, err
-			}
-		}
+	if err := s.holdReferencing(ctx, q.Filter.Referencing); err != nil {
+		return q, false, err
 	}
 	if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
 		return q, false, err
 	}
 	return q, true, nil
+}
+
+// holdReferencing holds a referencing filter's targets to the view: each of
+// a kind it reads, and a device the person's own, as a person reads no
+// other's (devicesHeld). The record page's "Connected to" asks it of every
+// record, a person's own device among them.
+func (s *scopedDataset) holdReferencing(ctx context.Context, ref *substrate.Referencing) error {
+	if ref == nil {
+		return nil
+	}
+	for _, target := range append([]string{ref.Ref}, ref.Refs...) {
+		if target == "" {
+			continue
+		}
+		kind := kindOfPath(target)
+		if err := s.requireRead(ctx, kind); err != nil {
+			return err
+		}
+		if !s.devicesHeld(s.local(kind)) {
+			continue
+		}
+		_, id, _ := vocabulary.SplitRecordPath(target)
+		rec, err := s.rowOf(ctx, kindDevice, id)
+		if err != nil {
+			return err
+		}
+		if rec != nil {
+			if ok, err := s.rowVisible(ctx, rec); err != nil {
+				return err
+			} else if ok {
+				continue
+			}
+		}
+		return fmt.Errorf("%w: %s", substrate.ErrNotFound, target)
+	}
+	return nil
 }
 
 // holdReferencedBy holds a `referencedBy` arm to the grant (decision 0322).
@@ -74,6 +103,11 @@ func (s *scopedDataset) holdReferencedBy(ctx context.Context, rb *substrate.Refe
 		return nil
 	}
 	kind := s.local(rb.Kind)
+	// Which records a person's devices point at says who has a device: a
+	// person reads their own alone, so no list is narrowed by them.
+	if s.devicesHeld(kind) {
+		return fmt.Errorf("%w: a person's view names no %s in filter.referencedBy: they read their own alone", substrate.ErrForbidden, kind)
+	}
 	whole, err := s.reads(ctx, kind)
 	if err != nil {
 		return err

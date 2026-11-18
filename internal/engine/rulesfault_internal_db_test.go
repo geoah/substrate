@@ -86,6 +86,19 @@ func (r *runsRepository) staged(t *testing.T, agent string, turns ...fakeTurn) s
 }
 
 var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, string){
+	// A delete of another person's device asks whether the hand is an
+	// admin: with the roles unread, it is refused.
+	"devices.go:guardDeviceOwner": func(t *testing.T, r *runsRepository) (bool, string) {
+		cy := r.mint(t, r.cyID, nil)
+		if _, err := r.putDevice(r.tokenCtx(r.cyID, cy.ID), cy.ID, deviceProps("v1.cy", "replies")); err != nil {
+			return false, err.Error()
+		}
+		ada := r.mint(t, r.adaID, nil)
+		r.fail("roles")
+		defer r.heal()
+		_, err := r.ds.Delete(r.tokenCtx(r.adaID, ada.ID), substrate.ActorPerson, typeDevice, cy.ID, substrate.DeleteInput{})
+		return errRefused(err)
+	},
 	// Reads.
 	"agentloop.go:dispatchQuery": func(t *testing.T, r *runsRepository) (bool, string) {
 		return r.toolRefused(t, "scribe", fakeCall{"query", toolArgs(t, map[string]any{"kind": r.note})})
@@ -253,6 +266,21 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 	"people.go:adminsBut":      personRolesRefused,
 
 	// Continuations.
+	// Whether a push offers a card's decision is the continuation the
+	// decision's write passes: with the holders unread, it is refused.
+	"pushsignals.go:PushMayDecide": func(t *testing.T, r *runsRepository) (bool, string) {
+		thread := r.staged(t, "keeper", fakeTurn{calls: []fakeCall{{"ask", runsAsk}}}, fakeTurn{content: "asked."})
+		page, err := r.ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{Kinds: []string{vocabulary.KindLLMInteraction}}, First: 10})
+		if err != nil || len(page.Records) == 0 {
+			return false, fmt.Sprint("the question of ", thread, ": ", err)
+		}
+		q := page.Records[0]
+		r.fail("holders")
+		defer r.heal()
+		bo := substrate.PersonActor(r.boID)
+		_, err = r.ds.PushMayDecide(r.person(r.boID, bo), bo, substrate.PushItem{Kind: q.Kind, ID: q.ID, Version: q.Version})
+		return errRefused(err)
+	},
 	"agents.go:ChatAgent": func(t *testing.T, r *runsRepository) (bool, string) {
 		thread := r.staged(t, "scribe", fakeTurn{content: "first."})
 		r.fail("holders")

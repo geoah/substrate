@@ -1253,6 +1253,7 @@ them:
 | `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
 | `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
 | `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
+| `push` | `experimental` | `GET /api/v1/push/key`, `GET /api/v1/push/badge` and `GET /api/v1/push/events/{eventId}`, the `core/device` kind, and pushes for `reply`, `failed`, `request` and `read` ([push](#push)). Listed only while the operator leaves push on. |
 | `publishing` | `experimental` | Publishing one of the repository's own packages under an authority it proved: `POST /api/v1/packages/publish`, `POST /api/v1/packages/release` (a package's next release, not a record's `…/release`, which is the marks'), `GET /api/v1/packages/releases`, and the document and closures another server installs from under `/published/` ([publishing](publishing.md)). |
 
 Every entry lists the `rest` surface but two: `mcp` lists `mcp`, and
@@ -2519,6 +2520,117 @@ An operator-paid call past the day's allowance answers `403 guard` with the
 reason `quota`, and its message names the site and when the allowance
 resets.
 
+## Push
+
+An app that takes pushes to a closed device asks its server three things,
+each for the asking token alone, and writes one record
+([push in the agents guide](agents.md#push), [the plan](plans/push.md)).
+They are the `push` feature, listed only while the operator leaves push on
+(`SUBSTRATE_PUSH`, [configuration](operations.md#configuration)), so an app
+reads discovery before it registers and never probes. Every route answers
+`403 forbidden` with the reason `push_off` when push is off. The replies are
+`PushKey`, `PushBadge` and `PushEventInfo` in `internal/substrate/push.go`.
+
+**`GET /api/v1/push/key`** answers the asking token's public key, the one
+its pushes are signed with, and the relay the server sends them to:
+
+```json
+{"publicKey": "q1x3Lk…", "relay": "https://push.example.com"}
+```
+
+The relay is the `push.relay` of the entry for the token's `clientId` in the
+authority document of the token's verified app. The app compares it with its
+build and its publisher's document and registers only when the three agree;
+it never sends to the address it reads here. A token of no app (a password
+sign-in's, the console's), of an app whose publisher was not verified or
+whose access went to a local program, or whose publisher's document names no
+relay for it is answered `403 forbidden` with the reason `no_relay`. A
+document that cannot be read just now is `503 unavailable` with
+`Retry-After: 60`.
+
+**`GET /api/v1/push/badge`** answers `{"badge": 3}`: the number a push to
+this token sets. It counts the live `llm/thread` rows the token's view
+reads whose `mode` is `chat`, that act for the token's person
+(`heldTo.onBehalfOf`) and whose `status` is not `running`, that are unread
+for the person ([read state](agents.md#read-state)), and that the person has
+not archived unless `waitingOnPerson` is above 0, and stops at 999. Another
+person's chats never count, even for an admin who may read them.
+
+**`GET /api/v1/push/events/{eventId}`** answers what an event id a push
+carried names. The id is sealed by this server for one token: it opens only
+for that token, for 24 hours.
+
+```json
+{"event": "request", "thread": "8f2c41d07a",
+ "item": {"kind": "substrate.reamde.dev/llm/approval", "id": "01h2xcejqtf2nbrexx3vqjhp42", "version": 4},
+ "actions": true}
+```
+
+| `event` | `item` | Also |
+| --- | --- | --- |
+| `reply` | the `llm/message`, at its version | |
+| `failed` | the `llm/thread`, at the version that settled | |
+| `request` | the `llm/interaction`, `llm/approval` or `core/recordpatchrequest`, at the version that started to wait | `actions` |
+| `read` | none | `covers` |
+
+`actions` is decided when the id is resolved: `true` only while the record
+still waits on a person at the version the id names (a newer version of the
+record is a new item), the token's view reads it, the person's roles and the
+token write its kind whole (an app's agent scopes may reach the row; a
+person's roles never do by a row), and the token passes the continuation
+check the decision's own write passes. A `read` answers the alerts it takes back, by the
+fingerprint of each one's event id (`pushwire.EventFingerprint`):
+
+```json
+{"event": "read", "thread": "8f2c41d07a", "covers": {"alerts": ["3q2-7wAAAACVYm9vbGVhbg"]}}
+```
+
+The id is `404 not_found` when it was sealed for another token, is older
+than 24 hours, does not open, or names a thread or an item the token's view
+no longer reads. A `failed` resolves only while its thread's `status` is
+still `error` or `overbudget`: later writes move the thread's version, so
+the version is not compared.
+
+**The device record.** Each install that takes pushes is one
+`substrate.reamde.dev/core/device` record whose id is the id of the token it
+signed in with (the token exchange answers it as `token_id`). The app writes
+it with a put at its own address:
+
+```http
+PUT /api/v1/substrate.reamde.dev/core/device/71ac09be44
+Authorization: Bearer <the app's token>
+
+{"properties": {"name": "iPhone", "platform": "ios", "pushKey": "v1.Qm9vbGVhbi…",
+                "notifies": ["replies", "requests"]}}
+```
+
+| Answer | When |
+| --- | --- |
+| `201` with the record | there was none, or only a deleted one the sweep already purged |
+| `200` with the record | it existed, or a deleted one not yet purged, which the put restores, and the write merged into it |
+| `400 bad_request` | a key the body may not carry, such as `data` or a misspelled `ifVersion` |
+| `422 validation` | a property out of bounds, an unknown value, `notifies` empty, `notifies` missing on a create, a name over 100 characters |
+| `403 forbidden` | an agent, a function or a package wrote; the token's person's roles do not write `core/device`; an id that is not the request's own token's, or a `token` or `person` that is not the request's |
+
+A put merges: an update that leaves `notifies` out keeps the stored value,
+and `required` is held on the record it leaves, so `"notifies": []` is
+refused. The server fills `token` and `person` from the request and fixes
+them at the create, and stamps `seenAt`; the body leaves all three out. A
+`POST /api/v1/records` names no id, so it cannot write a device. The record
+is read with `GET` and deleted with `DELETE` at the same address: by its own
+token, by any other token of the same person, or by an admin. A person who
+is not an admin reads their own devices alone, by id, in a list and in the
+change feed. The shipped `viewer` role writes the kind, held to the person's
+own devices. An app with scopes needs `write:substrate.reamde.dev/core/device`,
+the one kind of `core` a scope writes, named exactly. The server deletes a
+device itself when its token is deleted (the token reference cascades), when
+its token expires (the periodic sweep), and when the relay answers one of the
+deleting codes with the status it pairs with (`410 gone`; `401
+signature_refused`; `403` with `key_refused`, `key_expired`, `topic_refused`
+or `environment_refused`).
+
+The `errors` feature's revision 8 adds the two reasons.
+
 ## Actors
 
 Every write is made by an **actor**: one record of
@@ -2902,6 +3014,10 @@ on `validation`, the provider row has no key; `provider_rate_limited`,
 a `Retry-After`; and `context_too_long` and `provider_rejected` on
 `validation`, the provider refused the request as it stands. The last seven
 are the [cause](agents.md#what-ended-a-run) the run's thread settled with.
+Since revision 8 of the `errors` feature the push routes name why they
+refuse ([push](#push)): `no_relay` on `forbidden`, the asking token's app
+names no push relay, and `push_off` on `forbidden`, the operator turned
+push off.
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2912,11 +3028,11 @@ reason acts on the code.
 
 The closed set of reasons: `context_too_long`, `first_attempt_landed`,
 `first_attempt_running`, `in_doubt`, `key_refused`, `message_id_taken`,
-`model_unavailable`, `not_permitted`, `nothing_to_continue`,
+`model_unavailable`, `no_relay`, `not_permitted`, `nothing_to_continue`,
 `observed_rederiving`, `provider_billing`, `provider_key_missing`,
 `provider_overloaded`, `provider_rate_limited`, `provider_rejected`,
-`provider_unavailable`, `quota`, `repository_required`, `set_aside`,
-`spend_cap`, `stale_revision`, `thread_busy`, `turn_cap`.
+`provider_unavailable`, `push_off`, `quota`, `repository_required`,
+`set_aside`, `spend_cap`, `stale_revision`, `thread_busy`, `turn_cap`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

@@ -30,6 +30,7 @@ import (
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/mcp"
 	"github.com/geoah/substrate/internal/metrics"
+	"github.com/geoah/substrate/internal/push"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -103,6 +104,14 @@ type Config struct {
 	// (SUBSTRATE_OPERATOR_DEFAULTS, decision 0235), so discovery lists the
 	// `operatorDefaults` feature and a client knows to ask for the read.
 	OperatorDefaults bool
+	// PushOff is the operator's switch (SUBSTRATE_PUSH=false): the push
+	// routes answer `push_off` and discovery does not list `push`. The zero
+	// value is push on, the server's default.
+	PushOff bool
+	// PushDocuments reads the authority documents the push routes read a
+	// token's app's relay from: the server's one authority reader. Nil reads
+	// none, so every token answers `no_relay`.
+	PushDocuments push.Documents
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -173,7 +182,11 @@ type handler struct {
 	totpDisabled bool
 	// operatorDefaults lists the operator defaults read in discovery.
 	operatorDefaults bool
-	catalog          *catalog.Catalog
+	// pushOff and pushDocs are push's switch and its authority reader
+	// (push.go).
+	pushOff  bool
+	pushDocs push.Documents
+	catalog  *catalog.Catalog
 	// packages and refresher are the approval's two views of the catalog
 	// (appsetup.go): nil where the server ships no catalog, so a plan
 	// offers nothing rather than reading a nil catalog through an
@@ -252,6 +265,7 @@ func New(cfg Config) http.Handler {
 		checkTurns:   newCheckTurns(maxCheckPlans),
 	}
 	h.operatorDefaults = cfg.OperatorDefaults
+	h.pushOff, h.pushDocs = cfg.PushOff, cfg.PushDocuments
 	if h.packages == nil && cfg.Catalog != nil {
 		h.packages = cfg.Catalog
 	}
@@ -503,6 +517,12 @@ func (h *handler) mountResources(r chi.Router) {
 			// grammar (records.go); and the body-addressed create.
 			r.Get(recordsRoute, h.getRecords)
 			r.Post(recordsRoute, h.postRecords)
+			// What an install asks before it takes pushes, the badge a push
+			// sets and what a push's event id names (push.go): each for the
+			// asking token alone.
+			r.Get(pushKeyRoute, h.getPushKey)
+			r.Get(pushBadgeRoute, h.getPushBadge)
+			r.Get(pushEventsRoute, h.getPushEvent)
 			// The repository's unit graph, and one conversion through it
 			// (units.go).
 			r.Get(unitsRoute, h.getUnits)

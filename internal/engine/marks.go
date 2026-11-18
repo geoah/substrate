@@ -288,6 +288,9 @@ func (t *txn) markAction(action markAction, typ, id string, in substrate.MarkInp
 	if err := t.guardThreadMarkOwner(ty.Identity, row, string(action)); err != nil {
 		return nil, err
 	}
+	if err := t.guardDeviceOwner(ty.Identity, row, string(action)); err != nil {
+		return nil, err
+	}
 	if err := checkCAS(row, in.IfVersion); err != nil {
 		return nil, err
 	}

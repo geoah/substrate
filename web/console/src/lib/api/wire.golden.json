@@ -975,6 +975,28 @@
     "release": false,
     "texts": true
   },
+  "PushBadge": {
+    "badge": true
+  },
+  "PushCovers": {
+    "alerts": true
+  },
+  "PushEventInfo": {
+    "actions": false,
+    "covers": false,
+    "event": true,
+    "item": false,
+    "thread": true
+  },
+  "PushItem": {
+    "id": true,
+    "kind": true,
+    "version": true
+  },
+  "PushKey": {
+    "publicKey": true,
+    "relay": true
+  },
   "PutInput": {
     "annotations": false,
     "id": false,

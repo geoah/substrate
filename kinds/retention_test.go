@@ -97,6 +97,7 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 		"substrate.reamde.dev/core/trigger":                     true,
 		"substrate.reamde.dev/core/triggerrun":                  true,
 		"substrate.reamde.dev/core/alert":                       true,
+		"substrate.reamde.dev/core/device":                      true,
 		"providers.substrate.reamde.dev/applehealth/export":     true,
 		"providers.substrate.reamde.dev/beeper/chatsync":        true,
 		"providers.substrate.reamde.dev/google/calendarsync":    true,

@@ -90,6 +90,41 @@ type AuthorityApp struct {
 	Name     string     `json:"name,omitempty"`
 	Packages []string   `json:"packages,omitempty"`
 	Apple    *AppleApps `json:"apple,omitempty"`
+	// Push names the relay the app's installs register with and its
+	// servers send to. It is the one key read leniently (knownJSON's
+	// `lenient` tag): a value of the wrong shape is dropped and the app
+	// reads as naming no relay, so a typo in it cannot unverify the
+	// publisher's every app.
+	Push *AppPush `json:"push,omitempty" authority:"lenient"`
+}
+
+// AppPush is an app's push relay: an https origin with an optional path,
+// which the address of each relay route is built under.
+type AppPush struct {
+	Relay string `json:"relay"`
+}
+
+// maxRelayLen bounds `push.relay`.
+const maxRelayLen = 2048
+
+// ValidRelay reports whether relay is a push relay this server reads: an
+// https URL with a host, an optional path, and no user info, query or
+// fragment, at most 2,048 characters.
+func ValidRelay(relay string) bool {
+	if relay == "" || len(relay) > maxRelayLen || strings.ContainsAny(relay, "\\ \t\r\n") {
+		return false
+	}
+	u, err := url.Parse(relay)
+	return err == nil && validHTTPS(u) && u.RawQuery == "" && !u.ForceQuery
+}
+
+// PushRelay is the relay the app's entry names, "" when it names none or
+// one this server does not read.
+func (a AuthorityApp) PushRelay() string {
+	if a.Push == nil || !ValidRelay(a.Push.Relay) {
+		return ""
+	}
+	return a.Push.Relay
 }
 
 // AppleApps names the signed Apple apps (team id and bundle id) the
@@ -126,6 +161,9 @@ func ParseAuthorityDocument(body []byte, authority string) (AuthorityDocument, e
 			return AuthorityDocument{}, refuse("the authority document of %s lists an app whose client_id this server refuses: %v", authority, err)
 		}
 		doc.Apps[i].Name = truncate(strings.TrimSpace(a.Name), maxNameLen)
+		if a.Push != nil && !ValidRelay(a.Push.Relay) {
+			doc.Apps[i].Push = nil
+		}
 	}
 	seen := map[string]bool{}
 	for _, p := range doc.Packages {

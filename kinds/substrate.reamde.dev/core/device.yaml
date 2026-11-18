@@ -1,0 +1,76 @@
+# one install of an app that takes pushes (decision record 0336): its id is
+# the id of the token it signed in with, the engine refuses any other, and it
+# is deleted with that token.
+#
+# The engine holds every write of one (engine/devices.go): only a person, or
+# an app acting for them, writes one, and only at the id of the token the
+# request carries; `token` and `person` are filled in and fixed when the
+# record is created; `seenAt` is stamped. A delete is the token's own, its
+# person's other tokens' or an admin's. The bundle id, Apple's environment
+# and the registration's generation are not properties: they live inside the
+# push key, where the relay reads them, so the record cannot say one thing
+# and the key another.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/device
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One install of an app that takes pushes, as signed in with one token:
+    the push key its publisher's relay sealed for it and which events its
+    person wants pushed there. It is deleted with its token.
+  purpose: internal
+  ids:
+    type: named
+  # Bookkeeping, as a trigger run is: the latest state is always kept, and
+  # its history of registrations a week (decision record 0283).
+  retention: P7D
+  names:
+    singular: device
+  displayTemplate: "{name}"
+  properties:
+    token:
+      type: reference
+      kind: substrate.reamde.dev/core/token
+      required: true
+      onDelete: cascade
+      description: the token this install signed in with; filled in with the
+        token the write arrives with, and fixed when the record is created
+    person:
+      type: reference
+      kind: substrate.reamde.dev/core/actor
+      required: true
+      description: the person that token acts for; filled in, and fixed when
+        the record is created
+    name:
+      type: string
+      required: true
+      max: 100
+      description: what the device calls itself, as the app read it
+    platform:
+      type: enum
+      required: true
+      values:
+        - ios
+      description: the system the app runs on
+    pushKey:
+      type: string
+      required: true
+      max: 1024
+      description: what the publisher's push relay sealed for this install;
+        opaque here
+    notifies:
+      type: enum
+      repeated: true
+      required: true
+      values:
+        - replies
+        - requests
+      description: which events the person wants pushed to this install, at
+        least one
+    seenAt:
+      type: datetime
+      managed: true
+      description: when the install last wrote this record, stamped by the
+        engine

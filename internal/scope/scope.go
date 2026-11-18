@@ -352,10 +352,18 @@ func patternProblem(s Scope) string {
 			return "names the repository's own auth material, which no scope reaches"
 		}
 	}
-	if s.Verb == Write && writesUnwritable(p) {
+	if s.Verb == Write && writesUnwritable(p) && !scopeWritable[p] {
 		return "writes the core, llm or applets package, which no scope writes"
 	}
 	return ""
+}
+
+// scopeWritable are the kinds of an unwritable package a write scope may
+// name, each exactly and never by a glob: an install's own device record
+// (decision 0336), which the engine holds to the id of the token that
+// writes it, so a scope to write it reaches nothing but the app's own.
+var scopeWritable = map[string]bool{
+	vocabulary.KindDevice: true,
 }
 
 // traitProblem holds a trait scope's trait to the grammar: one trait named in
@@ -693,7 +701,9 @@ func globPrefix(glob string) string { return strings.TrimSuffix(glob, "*") }
 // (decision 0225).
 func (g Grant) Writes(kind Kind) bool {
 	if inUnwritable(kind.Ref) {
-		return false
+		return scopeWritable[kind.Ref] && slices.ContainsFunc(g.scopes, func(s Scope) bool {
+			return s.Verb == Write && s.Pattern == kind.Ref
+		})
 	}
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
 		if s.Verb != Write {

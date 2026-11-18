@@ -64,6 +64,10 @@ type scopedDataset struct {
 	// agentCovered is talksTo's answer per agent: whether the grant's reads
 	// cover everything the agent reads (decision 0214).
 	agentCovered map[string]bool
+	// me is the actor record of the person the request acts for, read once
+	// (personActor) when meRead.
+	me     string
+	meRead bool
 }
 
 var _ substrate.Dataset = (*scopedDataset)(nil)
@@ -428,9 +432,12 @@ func (s *scopedDataset) requireRead(ctx context.Context, kind string) error {
 // requireWrite answers the refusal for a kind the grant cannot write: as
 // unknown when it cannot read it either, else forbidden.
 func (s *scopedDataset) requireWrite(ctx context.Context, kind string) error {
+	// A device is read row by row in a person's view and written by the
+	// rules of their roles, which the engine holds to their own token's
+	// record (devices.go).
 	if gated, err := s.rowGated(ctx, kind); err != nil {
 		return err
-	} else if gated {
+	} else if gated && !s.devicesHeld(kind) {
 		return fmt.Errorf("%w: an app's token does not write %s", substrate.ErrForbidden, kind)
 	}
 	if err := s.requireRead(ctx, kind); err != nil {
@@ -463,6 +470,9 @@ func (s *scopedDataset) narrow(ctx context.Context, kinds []string) ([]string, b
 		if err != nil {
 			return nil, false, err
 		}
+		// A kind read row by row is never part of "every kind": its rows
+		// would be ranked and paged before any row rule could hold them.
+		all = slices.DeleteFunc(all, s.devicesHeld)
 		return all, len(all) > 0, nil
 	}
 	out := make([]string, 0, len(kinds))
@@ -617,6 +627,9 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		// by the engine from records of another kind: it is held here as on
 		// every other list.
 		if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
+			return nil, err
+		}
+		if err := s.holdReferencing(ctx, q.Filter.Referencing); err != nil {
 			return nil, err
 		}
 		return s.listDeclarations(ctx, q)
@@ -1045,7 +1058,7 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 		if h.Record == nil {
 			continue
 		}
-		if ok, err := s.reads(ctx, h.Record.Kind); err != nil {
+		if ok, err := s.visible(ctx, h.Record); err != nil {
 			return substrate.SearchResult{}, err
 		} else if !ok {
 			continue

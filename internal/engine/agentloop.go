@@ -760,6 +760,11 @@ type agentLoop struct {
 	// resolution row landing AFTER it was not in the replayed history, so the
 	// settle-time re-check knows what this run could not have consumed.
 	openedAt time.Time
+	// raised are the records this turn raised that wait on a person, noted
+	// as each raise commits (pushsignals.go signalWaiting): its settle
+	// pushes them and no reply, and names the message they are read at.
+	raisedMu sync.Mutex
+	raised   []substrate.PushItem
 
 	// emit is the EFFECTIVE emit set: the agent's own, intersected with the
 	// inherited ceiling on sub-agent invocations. Every write gate in the
@@ -2312,10 +2317,19 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		// refuses the patch, a collected row is absent, and what `then`
 		// settles still has to run.
 		if row != nil && row.DeletedAt == nil {
+			// Read before the patch, which may write into the row it loads.
+			wasLast := referenceTargetOf(row, propThreadLastMessage)
 			if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
 				return err
 			}
 			patched, lifetime = true, baseCost+cost
+			// What a push says of the settle (pushsignals.go), read from
+			// the row the patch left.
+			if held {
+				if err := t.signalSettle(l.threadID, status, wasLast, l.openedAt, l.raisedItems()); err != nil {
+					return err
+				}
+			}
 		}
 		if then != nil {
 			return then(t, status, reason, cause)
@@ -3900,4 +3914,18 @@ func (r *turnReasoning) stamp(props map[string]any) map[string]any {
 		props["reasoningMillis"] = max(0, r.last.Sub(r.start).Milliseconds())
 	}
 	return props
+}
+
+// noteRaised records a record this turn raised that waits on a person.
+func (l *agentLoop) noteRaised(item substrate.PushItem) {
+	l.raisedMu.Lock()
+	defer l.raisedMu.Unlock()
+	l.raised = append(l.raised, item)
+}
+
+// raisedItems are the records this turn raised so far.
+func (l *agentLoop) raisedItems() []substrate.PushItem {
+	l.raisedMu.Lock()
+	defer l.raisedMu.Unlock()
+	return append([]substrate.PushItem(nil), l.raised...)
 }

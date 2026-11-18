@@ -1604,6 +1604,98 @@ and the two properties (`422 validation`, or `403 forbidden` to an app's
 token), so a client reads the revision first and, below 9, lists every
 thread and offers neither action.
 
+### Push
+
+A person's phone learns that Moss replied, that a run they waited on
+failed, or that a question or an approval waits on them, while the app is
+closed. The server posts one signed request for each of their installs that
+may see it to the push relay their app's publisher names, and the relay
+sends a push with no content: what happened, which thread, the unread count
+and an opaque event id the app resolves against this server with its own
+token ([the plan](plans/push.md), [the routes](api.md#push)). Each install
+that takes pushes is one `substrate.reamde.dev/core/device` record, named by
+the token it signed in with and deleted with it.
+
+| Event | When | To whom | Thread modes |
+| --- | --- | --- | --- |
+| `reply` | a thread settles `ok`, `error` or `overbudget`, its [`lastMessage`](#read-state) moved, and the message it names is an `assistant` message | the thread's person, on devices whose `notifies` has `replies` | `chat`, with a person (`heldTo.onBehalfOf`) |
+| `failed` | a thread settles `error` or `overbudget` after its turn ran longer than 5 seconds, and no `reply` was sent for that settle | the same | the same |
+| `request` | a question, a proposed change or a call needing approval starts to wait (`waitingOnPerson` rises) | the thread's person, or, for a thread that acts for nobody, the people holding `admin` whose view reads it; devices whose `notifies` has `requests` | `chat`, `manual`, `call`, `record`, `schedule` and `webhook` |
+| `read` | the person's mark moves forward, clears `markedUnread` or sets `archived`, or a record a `request` was sent for is decided, wherever | that person's devices holding an alert it covers, but the device of the token that wrote it | any of the above |
+
+A `call` thread returns its answer to its caller and a trigger's run acts for
+nobody, so neither pushes a reply; both push their requests, because an
+approval a scheduled run waits on is when the phone matters most. A
+`subagent` or `judge` thread pushes nothing: what a sub-agent raises names its
+root thread ([approvals](#approvals)). A settle that also raised a request
+sends the `request` alone. Nothing is pushed for a thread that settles
+`stopped`, for a failure in a turn of 5 seconds or less, or for the settle
+the server's recovery writes for a run a restart interrupted.
+
+**Every event waits, then is checked again.** A `reply`, a `failed` and a
+`request` wait 5 seconds, each keyed by its recipient, its thread, its event
+and its item, so one person reading cannot cancel another's alert and two
+cards on one thread are two waits. Then:
+
+- a `reply` is dropped when the person's mark reads through its message, or
+  their mark says `archived`;
+- a `failed` is dropped when the person's mark took a position at or after
+  the settle, or says `archived`, or the thread ran again. A mark taken
+  during the turn (a client marking the message it just sent) saw nothing
+  of how it ended;
+- a `request` is dropped when its record no longer waits at the version that
+  raised it, or when the turn that raised it settled and the person's mark
+  reads through the message that settle left. `archived` does not stop it:
+  what waits on a person is always notified. A turn that raised a request
+  pushes that request and no reply and no `failed`, even when the request
+  was decided before the turn settled.
+
+Who may see an alert is read when it is sent, not when it was held: each
+delivery first takes one of four slots, then reads the person's devices
+(each token live and not expired, the person still in the repository), and
+sends only to a device whose token's view reads both the live thread and the
+item, the message of a reply or the record of a request.
+
+A `read` waits 2 seconds, keyed by its recipient and its thread alone, so
+every source in that time folds into one.
+
+**A `read` takes back what it covers.** The server remembers, for each
+device, the alerts it sent and a fingerprint of each one's event id
+(`pushwire.EventFingerprint`). When a `read` comes due it asks again about
+each alert of that thread: a reply the mark now reads through, a failure the
+person read past, an alert on a thread they archived, a request decided. Those
+are covered, and the `read` names their fingerprints, split over as many
+event ids as they need; the app removes exactly the delivered notifications
+whose event ids have them. An alert is forgotten only once the relay took the
+`read` naming it, and one still being sent when its `read` comes is taken
+back as soon as the relay took it. A `read` names only fingerprints the
+device already holds, so it asks no view of the thread. A partial read covers only the older alerts, so a
+newer notification stays. The memory holds 10,000 alerts and lives in the
+process: after a restart no `read` is sent for what was alerted before it.
+
+**The badge** is counted by the server, one rule for every push and for
+`GET /api/v1/push/badge`: the live `chat` threads that act for the person
+(`heldTo.onBehalfOf`) and that the device's token reads, not running, unread
+for the person as [above](#read-state), and not archived by them unless
+something waits on the thread, at most 999. Another person's chats never
+count, even for an admin who may read them.
+
+**What a push says, its device's token could read.** The devices are the
+recipient's whose `notifies` names the event's class, whose token is live and
+not expired, and whose token's view, the one an API request with it gets,
+reads the thread: the person's roles as they are now and, for an app's
+token, its grant. The relay is the one the token's verified app's publisher
+names; a token of no app, an unverified one or a local one has none, and its
+devices are not sent to.
+
+**Best effort.** A relay that fails, refuses or limits a push drops it, and
+nothing is retried or queued past a restart: the records are the truth, and
+the app reads them when it opens. A relay that says the install is gone, or
+refuses its key, its signature, its topic or its environment, gets the device
+deleted, if the record still holds the key that send carried. The operator
+turns push off with `SUBSTRATE_PUSH=false`
+([configuration](operations.md#configuration)).
+
 ### The daily spend cap
 
 Two optional caps stop agent runs once they have spent a set amount in a

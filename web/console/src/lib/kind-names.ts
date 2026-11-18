@@ -77,6 +77,7 @@ const WORDS = new Set([
   "cycle",
   "data",
   "database",
+  "device",
   "digest",
   "dispense",
   "document",

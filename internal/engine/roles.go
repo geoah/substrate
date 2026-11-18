@@ -149,6 +149,11 @@ func (t *txn) handWrites(hand substrate.Actor, k scope.Kind) error {
 		if k.Ref == typeThreadMark {
 			return refuse("only a person, or an app acting for them, keeps their place in a thread")
 		}
+		// An install registers itself with its own token: no declaration
+		// hands a device to code.
+		if k.Ref == typeDevice {
+			return refuse("only a person, or an app acting for them, registers their own install")
+		}
 		if !k.Control {
 			return nil
 		}
@@ -166,6 +171,9 @@ func (t *txn) handWrites(hand substrate.Actor, k scope.Kind) error {
 		}
 		if k.Ref == typeThreadMark {
 			return refuse("only a person, or an app acting for them, keeps their place in a thread")
+		}
+		if k.Ref == typeDevice {
+			return refuse("only a person, or an app acting for them, registers their own install")
 		}
 		return nil
 	}

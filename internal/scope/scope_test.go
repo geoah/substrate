@@ -3,6 +3,8 @@ package scope
 import (
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func TestTheGrammarAdmitsThePatternsAndRefusesTheRest(t *testing.T) {
@@ -566,5 +568,37 @@ func TestAnAgentScopeNamesItsPackage(t *testing.T) {
 		if got := g.NamesPackage(pkg); got != want {
 			t.Errorf("NamesPackage(%q) = %v, want %v", pkg, got, want)
 		}
+	}
+}
+
+// An install's own device is the one core kind a write scope names, exactly:
+// a glob over core still writes nothing of it, and every other core kind
+// stays refused.
+func TestTheDeviceIsTheOneCoreKindAScopeWrites(t *testing.T) {
+	if _, err := Parse("write:" + vocabulary.KindDevice); err != nil {
+		t.Fatalf("the device scope refused: %v", err)
+	}
+	for _, raw := range []string{"write:substrate.reamde.dev/core/*", "write:substrate.reamde.dev/core/token", "write:substrate.reamde.dev/core/setting"} {
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) admitted beside the device scope", raw)
+		}
+	}
+	device := Kind{Ref: vocabulary.KindDevice, Internal: true}
+	exact, err := NewGrant([]string{"write:" + vocabulary.KindDevice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exact.Writes(device) {
+		t.Fatal("the exact device scope does not write the device")
+	}
+	if exact.Writes(Kind{Ref: vocabulary.CoreKind("setting"), Internal: true}) {
+		t.Fatal("the device scope writes another core kind")
+	}
+	wide, err := NewGrant([]string{"write:*", "write:substrate.reamde.dev/*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wide.Writes(device) {
+		t.Fatal("a glob writes the device")
 	}
 }

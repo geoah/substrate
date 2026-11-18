@@ -26,6 +26,9 @@ import (
 
 var oneCheckSkips = map[string]string{
 	"actors.go:disableActor":                        "internal: an app's actor record disabled when its last token goes",
+	"devices.go:DeletePushDevice":                   "internal: a device the push relay refused, deleted only while it holds the key that send carried",
+	"pushsignals.go:pushRead":                       "internal: push's rechecks, a read-only snapshot that writes nothing",
+	"devices.go:sweepDevices":                       "internal: the devices of tokens past their expiry, deleted by the sweep",
 	"actors.go:ensureActor":                         "internal: the actor record of a hand that writes, the system's bookkeeping",
 	"agentcompaction.go:extendLease":                "exempt (conversation): a thread's lease, extended while its compaction runs",
 	"agentdecision.go:putThreadSystemRowID":         "exempt (conversation): a decision's resolution row in its thread",
