@@ -1,0 +1,75 @@
+[
+  {
+    "relay": "https://push.example.com",
+    "register": "https://push.example.com/v1/register",
+    "push": "https://push.example.com/v1/push"
+  },
+  {
+    "relay": "https://push.example.com/",
+    "register": "https://push.example.com/v1/register",
+    "push": "https://push.example.com/v1/push"
+  },
+  {
+    "relay": "https://example.com/push",
+    "register": "https://example.com/push/v1/register",
+    "push": "https://example.com/push/v1/push"
+  },
+  {
+    "relay": "https://example.com/push/",
+    "register": "https://example.com/push/v1/register",
+    "push": "https://example.com/push/v1/push"
+  },
+  {
+    "relay": "https://push.example.com:8443",
+    "register": "https://push.example.com:8443/v1/register",
+    "push": "https://push.example.com:8443/v1/push"
+  },
+  {
+    "relay": "http://push.example.com",
+    "refused": true
+  },
+  {
+    "relay": "HTTPS://push.example.com",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com?x=1",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com?",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com#top",
+    "refused": true
+  },
+  {
+    "relay": "https://user@push.example.com",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com:0",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com:",
+    "refused": true
+  },
+  {
+    "relay": "https:push.example.com",
+    "refused": true
+  },
+  {
+    "relay": "https:///push",
+    "refused": true
+  },
+  {
+    "relay": "https://push.example.com/a b",
+    "refused": true
+  },
+  {
+    "relay": "",
+    "refused": true
+  }
+]

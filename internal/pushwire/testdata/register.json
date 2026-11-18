@@ -1,0 +1,16 @@
+{
+  "request": {
+    "platform": "apns",
+    "token": "02b225b12e51a72516b67f93651e4c74eee8a952ed57f455251e9a96718e89be",
+    "topic": "dev.reamde.substrate.chat",
+    "environment": "production",
+    "publicKey": "fpKPeHwGs0EU2wFFpoJFzuXFD4tfjRdjNnXv2VVtI5o",
+    "generation": "jPFx1d3VWfLE3W0iVXra0A"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "pushKey": "v1.1bmlfSlnr20IvXOCOnruKL-IsewrD6533hA8RI9RdSCIdq6Z8gclO6Vtn8lCPBWM6ZS2QUXfrRwz5IAYvTZPUggT4uotooVCUftNbujOdivZs7xiBnkH207h_IlEDktcG0nWNgPJ67RZTVtR7T-1OIuLwY4n5kr_2m7b6e_OZEuB_mn2ikX0KaIZDiI5YoSIBbVP-vQZIMOTWoimIqZNut1abtTmmu65PAGgdeiTiIl7fTcvXGnkoMpU7d3giprihw_QS6LbMUeVcVs4MCzfuoOXdvz4ibflzvvf7mHcsboM2b_rmMbRtz7FZGREn4Y3OgSg5tVcXJkM0RksOuKxxVsF9Gf4YlzCWSI"
+    }
+  }
+}

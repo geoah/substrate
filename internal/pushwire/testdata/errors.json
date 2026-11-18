@@ -1,0 +1,119 @@
+[
+  {
+    "status": 400,
+    "body": {
+      "error": {
+        "code": "bad_request",
+        "message": "eventId is missing"
+      }
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "error": {
+        "code": "stale_signature",
+        "message": "the signature's time is more than 300 s from the relay's clock"
+      }
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "error": {
+        "code": "signature_refused",
+        "message": "no signature, or one the push key's public key does not verify"
+      }
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "error": {
+        "code": "key_refused",
+        "message": "the push key does not open under this relay's seal keys"
+      }
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "error": {
+        "code": "key_expired",
+        "message": "the push key was issued more than 90 days ago"
+      }
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "error": {
+        "code": "topic_refused",
+        "message": "this relay does not push to that topic"
+      }
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "error": {
+        "code": "environment_refused",
+        "message": "this relay holds no Apple key for that environment"
+      }
+    }
+  },
+  {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "replayed",
+        "message": "this signed request was accepted before"
+      }
+    }
+  },
+  {
+    "status": 410,
+    "body": {
+      "error": {
+        "code": "gone",
+        "message": "Apple says this install is no longer registered"
+      }
+    }
+  },
+  {
+    "status": 413,
+    "body": {
+      "error": {
+        "code": "bad_request",
+        "message": "the body is over 4096 bytes"
+      }
+    }
+  },
+  {
+    "status": 429,
+    "body": {
+      "error": {
+        "code": "rate_limited",
+        "message": "a limit was reached: retry after Retry-After seconds"
+      }
+    }
+  },
+  {
+    "status": 502,
+    "body": {
+      "error": {
+        "code": "upstream",
+        "message": "Apple could not take the push"
+      }
+    }
+  },
+  {
+    "status": 500,
+    "body": {
+      "error": {
+        "code": "internal",
+        "message": "the relay failed"
+      }
+    }
+  }
+]
