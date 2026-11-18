@@ -5,8 +5,10 @@ package pushwiretest
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,8 +20,16 @@ import (
 
 // Dir is the fixtures' directory, wherever the test runs from.
 func Dir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "testdata")
+	return filepath.Join(filepath.Dir(here()), "..", "testdata")
+}
+
+// here is this file's path, which the fixtures sit beside.
+func here() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("pushwiretest: no caller to find the fixtures by")
+	}
+	return file
 }
 
 // Keys is keys.json: the keys and values every other fixture was made with.
@@ -195,4 +205,36 @@ func seed(t testing.TB, s string) ed25519.PrivateKey {
 		t.Fatalf("seed %q: %v", s, err)
 	}
 	return ed25519.NewKeyFromSeed(b)
+}
+
+// Stream is n bytes derived from label alone: every key, token and nonce in
+// the fixtures is one, so they are the same on every machine and nobody's.
+func Stream(label string, n int) []byte {
+	var out []byte
+	for i := 0; len(out) < n; i++ {
+		sum := sha256.Sum256(fmt.Appendf(nil, "%s %d", label, i))
+		out = append(out, sum[:]...)
+	}
+	return out[:n]
+}
+
+// Reader hands out Stream(label)'s bytes in order. Nonces() is the one the
+// fixtures' push keys were sealed with: a relay given it, sealing the same
+// keys in the same order, seals the same bytes.
+type Reader struct {
+	label string
+	off   int
+}
+
+// NewReader reads Stream(label) from its start.
+func NewReader(label string) *Reader { return &Reader{label: label} }
+
+// Nonces is the fixtures' nonce source, from its start.
+func Nonces() *Reader { return NewReader("nonces") }
+
+func (r *Reader) Read(p []byte) (int, error) {
+	b := Stream(r.label, r.off+len(p))
+	copy(p, b[r.off:])
+	r.off += len(p)
+	return len(p), nil
 }

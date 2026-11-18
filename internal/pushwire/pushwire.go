@@ -172,8 +172,12 @@ func DecodeRegister(body []byte) (RegisterRequest, error) {
 		name string
 		into *string
 	}{
-		{"platform", &r.Platform}, {"token", &r.Token}, {"topic", &r.Topic},
-		{"environment", &r.Environment}, {"publicKey", &r.PublicKey}, {"generation", &r.Generation},
+		{"platform", &r.Platform},
+		{"token", &r.Token},
+		{"topic", &r.Topic},
+		{"environment", &r.Environment},
+		{"publicKey", &r.PublicKey},
+		{"generation", &r.Generation},
 	} {
 		if err := field(fields, f.name, f.into); err != nil {
 			return RegisterRequest{}, err
@@ -212,8 +216,11 @@ func DecodePush(body []byte) (PushRequest, error) {
 		name string
 		into any
 	}{
-		{"pushKey", &p.PushKey}, {"event", &p.Event}, {"thread", &p.Thread},
-		{"badge", &p.Badge}, {"eventId", &p.EventID},
+		{"pushKey", &p.PushKey},
+		{"event", &p.Event},
+		{"thread", &p.Thread},
+		{"badge", &p.Badge},
+		{"eventId", &p.EventID},
 	} {
 		if err := field(fields, f.name, f.into); err != nil {
 			return PushRequest{}, err
@@ -233,7 +240,7 @@ func (p PushRequest) Check() error {
 	case !recordid.Valid(p.Thread):
 		return refuse("thread is not a record id")
 	case p.Badge < 0 || p.Badge > MaxBadge:
-		return refuse("badge %d is not 0 to %d", p.Badge, MaxBadge)
+		return refuse("badge is not 0 to %d", MaxBadge)
 	case len(p.EventID) < MinEventID || len(p.EventID) > MaxEventID || decodedLen(p.EventID) < 0:
 		return refuse("eventId is not %d to %d characters of unpadded base64url", MinEventID, MaxEventID)
 	}
@@ -278,7 +285,7 @@ func oneOf(s string, set []string) bool {
 }
 
 func isHex(s string) bool {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
@@ -293,7 +300,7 @@ func validTopic(s string) bool {
 	if s == "" || len(s) > MaxTopic {
 		return false
 	}
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '.' && c != '-' {
 			return false

@@ -35,7 +35,7 @@ func Endpoint(relay, path string) (string, error) {
 			return "", ErrRelay
 		}
 	}
-	for i := 0; i < len(relay); i++ {
+	for i := range len(relay) {
 		if relay[i] <= ' ' || relay[i] >= 0x7f {
 			return "", ErrRelay
 		}

@@ -3,7 +3,6 @@ package pushwire_test
 import (
 	"bytes"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -32,28 +31,7 @@ var (
 	fixtureThread     = "8f2c41d07a"
 )
 
-// stream is n bytes derived from label alone.
-func stream(label string, n int) []byte {
-	var out []byte
-	for i := 0; len(out) < n; i++ {
-		sum := sha256.Sum256(fmt.Appendf(nil, "%s %d", label, i))
-		out = append(out, sum[:]...)
-	}
-	return out[:n]
-}
-
-// reader hands out stream(label)'s bytes in order, as a nonce source.
-type reader struct {
-	label string
-	off   int
-}
-
-func (r *reader) Read(p []byte) (int, error) {
-	b := stream(r.label, r.off+len(p))
-	copy(p, b[r.off:])
-	r.off += len(p)
-	return len(p), nil
-}
+var stream = pushwiretest.Stream
 
 type world struct {
 	keys   pushwiretest.Keys
@@ -66,7 +44,7 @@ func newWorld(t *testing.T) world {
 	sealKey := stream("seal key", pushrelay.SealKeySize)
 	signer := ed25519.NewKeyFromSeed(stream("signing seed", ed25519.SeedSize))
 	other := ed25519.NewKeyFromSeed(stream("other seed", ed25519.SeedSize))
-	sealer, err := pushrelay.NewSealer(sealKey, nil, &reader{label: "nonces"})
+	sealer, err := pushrelay.NewSealer(sealKey, nil, pushwiretest.Nonces())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -195,9 +195,8 @@ func TestTheLargestPushFits(t *testing.T) {
 	if len(f.Body) > pushwire.MaxBody {
 		t.Errorf("the body is %d bytes, over %d", len(f.Body), pushwire.MaxBody)
 	}
-	payload, _ := json.Marshal(json.RawMessage(f.Apple.Payload))
-	if len(payload) > 4096 {
-		t.Errorf("the Apple payload is %d bytes, over Apple's 4096", len(payload))
+	if len(f.Apple.Payload) > 4096 {
+		t.Errorf("the Apple payload is %d bytes, over Apple's 4096", len(f.Apple.Payload))
 	}
 }
 

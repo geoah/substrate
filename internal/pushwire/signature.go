@@ -57,7 +57,7 @@ func ParseSignature(header string) (Signature, error) {
 	if ts == "" || len(ts) > 19 || (len(ts) > 1 && ts[0] == '0') {
 		return Signature{}, ErrRefused
 	}
-	for i := 0; i < len(ts); i++ {
+	for i := range len(ts) {
 		if ts[i] < '0' || ts[i] > '9' {
 			return Signature{}, ErrRefused
 		}
