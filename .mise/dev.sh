@@ -79,7 +79,9 @@ DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
 # same signing keys, so its pushes would reach real phones. A developer
 # testing push turns it on with SUBSTRATE_DEV_PUSH=true; SUBSTRATE_PUSH in
 # the shell is not read, so a variable left from elsewhere cannot.
-readonly PUSH="$([ "${SUBSTRATE_DEV_PUSH:-false}" = "true" ] && echo true || echo false)"
+PUSH=false
+[ "${SUBSTRATE_DEV_PUSH:-false}" = "true" ] && PUSH=true
+readonly PUSH
 # The credential key wraps each repository's DEK and a host without one refuses
 # to boot, so the dev substrate mints a key once and keeps it beside the state
 # it belongs to: `dev:wipe` removes both together. An operator command that
