@@ -371,6 +371,48 @@ struct PushContentTests {
         #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
     }
 
+    /// A `read` whose event answers after the deadline asks nothing of the
+    /// device: the answer was given, and the late result acts on nothing.
+    @Test func aReadWhoseEventAnswersAfterTheDeadlineAsksNothingOfTheDevice() async throws {
+        let vectors = try #require(try JSONSerialization.jsonObject(with: Data(Fixture.text("pushwire", "fingerprints").utf8)) as? [[String: String]])
+        let covered = try #require(vectors.first?["eventId"])
+        let notifications = RecordedNotifications()
+        notifications.deliver(
+            DeliveredNotification(
+                id: "covered", thread: threadID,
+                userInfo: [
+                    PushPayload.Key.event: "reply", PushPayload.Key.thread: threadID, PushPayload.Key.generation: "gC", PushPayload.Key.eventID: covered,
+                ]))
+        let asked = Ran()
+        notifications.onDelivered { asked.mark() }
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-read", answer: .json(200, try Fixture.text("pushserver", "event-read"))),
+            .init(method: "GET", path: "/api/v1/push/badge", answer: .json(200, #"{"badge":2}"#)),
+        ])
+        // Held until the read is cancelled at the deadline, then answered in
+        // full: a result that comes after the fallback.
+        server.hold("/api/v1/push/events/e-read")
+        let read = await ChatPush.takeBack(
+            push("read", eventID: "e-read"), accepting: accepting(.accepted, client), notifications: notifications, until: .now + .seconds(2))
+        #expect(!read)
+        try await Task.sleep(for: .seconds(1))
+        #expect(server.count("/api/v1/push/events/e-read") == 1)
+        #expect(!asked.value)
+        #expect(notifications.standing.map(\.id) == ["covered"])
+        #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
+    }
+
+    /// A cancelled read has no time left to ask in, whatever the clock says.
+    @Test func noTimeIsLeftForACancelledRead() async {
+        #expect(ChatPush.left(.now + .seconds(30)) != nil)
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return ChatPush.left(.now + .seconds(30))
+        }
+        let left = await cancelled.value
+        #expect(left == nil)
+    }
+
     @Test func aKeychainThatCannotBeReadIsNoOtherSignIn() async {
         let (server, client) = server([])
         #expect(await ChatPush.content(push("reply", eventID: "e-reply"), accepting: accepting(.unknown, client), until: later) == .fallback(dropsBadge: false))

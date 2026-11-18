@@ -52,8 +52,10 @@ public enum ChatPush {
         _ userInfo: [String: String], accepting: @escaping Accepting, until deadline: ContinuousClock.Instant
     ) async -> PushContent {
         guard let push = PushPayload(userInfo), push.event != .read else { return .fallback(dropsBadge: false) }
-        return await Deadline.race(until: deadline, or: .fallback(dropsBadge: false)) {
+        return await Deadline.race(until: deadline, or: .fallback(dropsBadge: false)) { race in
             let acceptance = await accepting(push.generation)
+            // Answered already: nothing is asked of the server.
+            guard race.live else { return .fallback(dropsBadge: false) }
             switch acceptance.verdict {
             case .refused: return .fallback(dropsBadge: true)
             case .unknown: return .fallback(dropsBadge: false)
@@ -66,15 +68,10 @@ public enum ChatPush {
         }
     }
 
-    /// Whether there is still time to act: before `deadline`, and not
-    /// cancelled. What is answered after it does nothing.
-    static func inTime(_ deadline: ContinuousClock.Instant) -> Bool {
-        !Task.isCancelled && ContinuousClock.now < deadline
-    }
-
     /// The seconds left until `deadline`, for a request's own timeout; nil
-    /// where too little is left to ask.
+    /// where too little is left to ask, or the work is cancelled.
     static func left(_ deadline: ContinuousClock.Instant) -> TimeInterval? {
+        guard !Task.isCancelled else { return nil }
         let seconds = Double((deadline - .now).components.seconds) + Double((deadline - .now).components.attoseconds) / 1e18
         return seconds > 0.5 ? seconds : nil
     }
@@ -187,26 +184,27 @@ public enum ChatPush {
         _ userInfo: [String: String], accepting: @escaping Accepting, notifications: any Notifications, until deadline: ContinuousClock.Instant
     ) async -> Bool {
         guard let push = PushPayload(userInfo), push.event == .read, !push.eventID.isEmpty else { return false }
-        return await Deadline.race(until: deadline, or: false) {
+        return await Deadline.race(until: deadline, or: false) { race in
             let acceptance = await accepting(push.generation)
-            guard acceptance.verdict == .accepted, var client = acceptance.client else { return false }
+            guard race.live, acceptance.verdict == .accepted, var client = acceptance.client else { return false }
             client.pause = { _ in throw CancellationError() }
             guard let time = left(deadline), let info = try? await client.pushEvent(push.eventID, timeout: time), info.event == "read",
                 info.thread == push.thread, let covers = info.covers
             else { return false }
+            // Each step past here acts on the device: once the answer is
+            // given, a result that comes late does none of them.
+            guard race.live else { return false }
             let alerts = Set(covers.alerts)
             let delivered = await notifications.delivered()
             for shown in delivered {
                 guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
-                // Past the deadline the answer is given already: nothing
-                // more is taken back.
-                guard inTime(deadline) else { return false }
+                guard race.live else { return false }
                 await notifications.cancel(shown.id)
             }
             if let time = left(deadline),
                 let badge = try? await client.send("GET", "api/v1/push/badge", timeout: time, retries: 0)
                     .decode(PushBadge.self).badge,
-                inTime(deadline)
+                race.live
             {
                 await notifications.setBadge(min(max(badge, 0), 999))
             }
