@@ -26,7 +26,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
+	"github.com/geoah/substrate/internal/pushwire"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -39,6 +41,9 @@ const (
 	propDevicePushKey  = "pushKey"
 	propDeviceNotifies = "notifies"
 	propDeviceSeenAt   = "seenAt"
+
+	// maxDeviceName bounds what a device calls itself.
+	maxDeviceName = 100
 )
 
 // deviceWriter is the person a write of a device is made as: a person's own
@@ -75,6 +80,13 @@ func (t *txn) prepareDevice(sp *applySpec) (bool, error) {
 	if sp.id != t.principal {
 		return false, fmt.Errorf("%w: %w: a %s's id is the id of the token the request carries, here %s",
 			substrate.ErrForbidden, substrate.ErrNotPermitted, typeDevice, t.principal)
+	}
+	// The kind's `max` documents the bounds; a string's is held here, where
+	// the engine stores it without reading it.
+	for name, limit := range map[string]int{"name": maxDeviceName, propDevicePushKey: pushwire.MaxPushKey} {
+		if v, ok := sp.props[name].(string); ok && utf8.RuneCountInString(v) > limit {
+			return false, fmt.Errorf("%w: %s.%s is at most %d characters", substrate.ErrValidation, typeDevice, name, limit)
+		}
 	}
 	want := map[string]eref{
 		propDeviceToken:  {Kind: kindToken, ID: t.principal},
