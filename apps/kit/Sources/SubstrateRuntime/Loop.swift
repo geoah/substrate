@@ -79,6 +79,8 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         }
     }
 
+    func countEndedBySession() { counters.endedBySession += 1 }
+
     func effectStarted() -> Int {
         effectsStarted += 1
         effectsRunning.insert(effectsStarted)

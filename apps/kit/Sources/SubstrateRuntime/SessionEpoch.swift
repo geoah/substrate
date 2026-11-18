@@ -2,6 +2,10 @@ import Foundation
 import SubstrateAPI
 import SubstrateDevice
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Which session the app holds, as its link says, and how many times that
 /// changed: every sign-in, sign-out and switch of server, repository or
 /// token moves it, and nothing else does. The runtime stamps each effect

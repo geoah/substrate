@@ -32,7 +32,7 @@ enum PushDelivery {
 }
 
 /// The system's handler, called once: by the work when it ends, or by
-/// `serviceExtensionTimeWillExpire` with what is there, whichever is first.
+/// `serviceExtensionTimeWillExpire` (`expire(_:)`), whichever is first.
 final class DeliverOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var handler: ((UNNotificationContent) -> Void)?
@@ -56,4 +56,10 @@ final class DeliverOnce: @unchecked Sendable {
         handler(best)
         return true
     }
+
+    /// The system ends the extension before the work answered: what the last
+    /// check before showing confirmed, or else the plain fallback with no
+    /// chat text and no badge.
+    @discardableResult
+    func expire(_ expiry: PushExpiry?) -> Bool { deliver(expiry?.atExpiry ?? .fallback(dropsBadge: true)) }
 }

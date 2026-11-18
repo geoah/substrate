@@ -36,6 +36,8 @@ public struct RuntimeCounters: Equatable, Sendable {
     public var droppedByEpoch = 0
     public var droppedByGeneration = 0
     public var droppedBySession = 0
+    /// Effects the session changed under, ended by their controller's word.
+    public var endedBySession = 0
 
     public init() {}
 

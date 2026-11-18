@@ -668,14 +668,55 @@ struct PushContentTests {
         let read = Ran()
         server.onRequest { if $0.contains("/llm/thread/") { read.mark() } }
         let stops: ChatPush.Accepting = { _ in
-            if read.value { await uncancellable(seconds: 5) }
+            if read.value { await uncancellable(seconds: 8) }
             return PushAcceptance(.accepted, client: client, identity: identity)
         }
         let started = ContinuousClock.now
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stops, until: .now + .seconds(1))
         #expect(read.value)
         #expect(content == .fallback(dropsBadge: true))
-        #expect(ContinuousClock.now - started < .seconds(4))
+        #expect(ContinuousClock.now - started < .seconds(6))
+    }
+
+    /// What the extension delivers should iOS end it first: the plain
+    /// fallback with no badge until the last check answers, the reply read
+    /// and shown included, then what that check confirmed.
+    @Test func anExpiryBeforeTheLastCheckAnswersShowsNoBadge() async throws {
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-reply", answer: .json(200, try Fixture.text("pushserver", "event-reply"))),
+            .init(
+                method: "GET", path: "/llm/message/5b90e3c1f2",
+                answer: .json(
+                    200,
+                    #"{"id":"5b90e3c1f2","kind":"\#(Kinds.message)","version":1,"properties":{"role":"assistant","content":"**Here** is the summary you asked for.","thread":{"ref":"\#(Kinds.thread)/\#(threadID)"}}}"#
+                )),
+            .init(method: "GET", path: "/llm/thread/\(threadID)", answer: .json(200, threadRow())),
+        ])
+        let identity = "https://s.example.com|r.example.com"
+        // The Keychain stops answering once the thread was read: the reply
+        // is made, and the last check before it shows is out.
+        let read = Ran()
+        server.onRequest { if $0.contains("/llm/thread/") { read.mark() } }
+        let stops: ChatPush.Accepting = { _ in
+            if read.value { await uncancellable(seconds: 5) }
+            return PushAcceptance(.accepted, client: client, identity: identity)
+        }
+        let expiry = PushExpiry()
+        #expect(expiry.atExpiry == .fallback(dropsBadge: true))
+        let working = Task { await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stops, until: .now + .seconds(1), expiry: expiry) }
+        #expect(await eventually { read.value })
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(expiry.atExpiry == .fallback(dropsBadge: true))
+        #expect(await working.value == .fallback(dropsBadge: true))
+        // A check that answers: the expiry delivers what it confirmed.
+        let confirmed = PushExpiry()
+        let answering: ChatPush.Accepting = { _ in PushAcceptance(.accepted, client: client, identity: identity) }
+        let shown = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: answering, until: later, expiry: confirmed)
+        guard case .shown = shown else {
+            Issue.record("a check that answers shows the reply")
+            return
+        }
+        #expect(confirmed.atExpiry == shown)
     }
 
     /// The deadline starts before the Keychain is read: one slower than it
@@ -684,21 +725,21 @@ struct PushContentTests {
     @Test func aKeychainSlowerThanTheDeadlineIsTheFallbackAtTheDeadline() async throws {
         let (server, client) = server([])
         let stuck: ChatPush.Accepting = { _ in
-            await uncancellable(seconds: 5)
+            await uncancellable(seconds: 8)
             return PushAcceptance(.accepted, client: client)
         }
         // Each answers by its deadline, the content once its last check is
-        // given up on, well before the Keychain would.
+        // given up on (`lastCheck` past it), well before the Keychain would.
         var started = ContinuousClock.now
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: stuck, until: .now + .seconds(1))
         #expect(content == .fallback(dropsBadge: false))
-        #expect(ContinuousClock.now - started < .seconds(4))
+        #expect(ContinuousClock.now - started < .seconds(6))
         started = ContinuousClock.now
         let read = await ChatPush.takeBack(
             push("read", eventID: "e-read"), accepting: stuck, notifications: RecordedNotifications(), until: .now + .seconds(1))
         #expect(!read)
         #expect(ContinuousClock.now - started < .seconds(4))
-        try await Task.sleep(for: .seconds(5))
+        try await Task.sleep(for: .seconds(8))
         #expect(server.requests.isEmpty)
     }
 

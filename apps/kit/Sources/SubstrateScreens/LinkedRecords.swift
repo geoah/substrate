@@ -408,6 +408,15 @@ public struct LinkedRecords: Equatable, Sendable {
         }
     }
 
+    /// What a change of session under one of its effects ends: a reread's
+    /// records stay marked to be read again, at the next watch's opening. A
+    /// read and a watch need nothing: a new token starts them again
+    /// (`newAccess`), and a sign-out stops them.
+    public func ended(bySessionChange effect: Effect) -> Event? {
+        if case let .reread(keys) = effect { return .rereadFailed(keys) }
+        return nil
+    }
+
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let (cache, outbox, line, words) = (cache, outbox, line, words)
         let source = environment.client

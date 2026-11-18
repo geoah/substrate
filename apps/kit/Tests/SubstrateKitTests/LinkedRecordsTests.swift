@@ -107,6 +107,16 @@ struct LinkedRecordsTests {
         #expect(stepper.step(.relistNeeded(at: refusedAt)) == [.read(over: [noteKind])])
     }
 
+    /// A reread the session changed under leaves its records marked to be
+    /// read again; a read and a watch end as nothing, since a new token
+    /// starts them again and a sign-out stops them.
+    @Test func whatASessionChangeEndsOfTheRecordsEffects() {
+        let records = linked()
+        #expect(records.ended(bySessionChange: .reread(["k1"])) == .rereadFailed(["k1"]))
+        #expect(records.ended(bySessionChange: .read(over: [noteKind])) == nil)
+        #expect(records.ended(bySessionChange: .follow(nil, over: [noteKind])) == nil)
+    }
+
     @Test func aNewTokenReplacesTheRunningWatchAndRead() {
         var stepper = Stepper()
         let cursor = WatchCursor(seq: 3, generation: "g")

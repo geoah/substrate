@@ -137,8 +137,12 @@ link tells, and on nothing else: the client it gets is that session's
 (from a source that names its token, `ClientSource.sessions`, only the
 client of that token), each request it sends is checked again as it
 leaves, and once the epoch has moved nothing more is sent and what it
-answers is dropped. One place enforces it for every controller, the runtime
-that starts the effect, so no effect has to remember. A command reaches any controller by its path of keys
+answers is dropped. What waited on such an effect (a sheet's receipt, a
+spinner) is ended by the controller's own word for it,
+`ended(bySessionChange:)`, applied in place of what was dropped; one
+cancelled, replaced under its key or closed with its controller ends
+unheard. One place enforces it for every controller, the runtime that
+starts the effect, so no effect has to remember. A command reaches any controller by its path of keys
 (`send(_:to:)`). The link is every app's root: `LinkController<App>` keeps
 the app's root as its child, its snapshot reaches every controller under
 it as `event(forLink:)` inside the step that changed it, and the app tells

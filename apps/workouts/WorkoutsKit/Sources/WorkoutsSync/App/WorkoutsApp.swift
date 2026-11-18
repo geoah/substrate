@@ -233,6 +233,8 @@ public struct WorkoutsApp: LinkedApp {
         case let .unreadable(record):
             if !next.syncUnreadable.contains(record) { next.syncUnreadable.append(record) }
         case let .outcome(receipt, problem):
+            // Answered once: the first answer is the one a sheet read.
+            guard state.outcomes[receipt] == nil else { return state }
             next.outcomes[receipt] = .some(problem)
         case let .session(event):
             if case let .finished(finished) = event {

@@ -31,6 +31,9 @@ where Event: LinkedRecordsEvent, Effect: LinkedRecordsEffect, State: LinkedRecor
     func ownKey(of effect: Effect) -> String?
     /// The work of an effect that is not the records'.
     func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event>
+    /// What a change of session ends of an effect that is not the records'
+    /// (`Controller.ended(bySessionChange:)`).
+    func ownEnded(bySessionChange effect: Effect) -> Event?
 }
 
 public extension LinkedRecordsApp {
@@ -38,6 +41,7 @@ public extension LinkedRecordsApp {
     func ownEffects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect] { [] }
     func ownKey(of effect: Effect) -> String? { nil }
     func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> { .none }
+    func ownEnded(bySessionChange effect: Effect) -> Event? { nil }
 
     func event(atOpen replayed: Bool) -> Event? { .records(.opened) }
 
@@ -66,6 +70,11 @@ public extension LinkedRecordsApp {
     func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         guard let records = effect.recordsEffect else { return performOwn(effect, in: environment) }
         return linked.perform(records, in: environment).map(Event.records)
+    }
+
+    func ended(bySessionChange effect: Effect) -> Event? {
+        guard let records = effect.recordsEffect else { return ownEnded(bySessionChange: effect) }
+        return linked.ended(bySessionChange: records).map(Event.records)
     }
 }
 

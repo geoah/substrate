@@ -736,7 +736,9 @@ and the badge the server counted.
   raced against the whole operation: at the deadline the push is delivered
   as it came, and what is still out is cancelled and never waited for. It
   is delivered once, with what was made or as it came, whether the work or
-  `serviceExtensionTimeWillExpire` comes first. Just before it shows what
+  `serviceExtensionTimeWillExpire` comes first; at the system's expiry, only
+  what the last check before showing confirmed, or else the plain fallback
+  with no badge. Just before it shows what
   it read, it asks again whether the push is accepted: a sign-out while it
   read leaves the plain fallback, with no chat text and no badge. On any
   failure the alert keeps the app's fallback words. It links

@@ -96,6 +96,13 @@ public extension TasksApp {
         }
     }
 
+    /// The settings' records end as the records do; a discovery waits on
+    /// nothing, and the next one asks again.
+    func ownEnded(bySessionChange effect: Effect) -> Event? {
+        guard case let .settings(settings) = effect else { return nil }
+        return settingsLinked.ended(bySessionChange: settings).map(Event.settings)
+    }
+
     func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let folder = environment.folder
         let notifications = environment.devices.notifications

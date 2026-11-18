@@ -237,6 +237,7 @@ final class Host<C: Controller>: @unchecked Sendable {
 
     private struct Ticket: Sendable {
         var id: Int
+        var effect: C.Effect
         var key: String?
         var epoch: Int
         var generation: Int
@@ -271,7 +272,7 @@ final class Host<C: Controller>: @unchecked Sendable {
         }
         nextTicket += 1
         let ticket = Ticket(
-            id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
+            id: nextTicket, effect: effect, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
             serial: loop.effectStarted(), session: session.number, use: use)
         let hop = loop.hop
         // Held until the work ends, so a result for a controller closed
@@ -304,6 +305,21 @@ final class Host<C: Controller>: @unchecked Sendable {
         running[ticket.id] = nil
         if let key = ticket.key, runningKeys[key] == ticket.id { runningKeys[key] = nil }
         if let event { receive(event, ticket) }
+        endedBySessionChange(ticket)
+    }
+
+    /// An effect that asked for a client and ended once the session it
+    /// started under was no longer held: what it still answered was dropped,
+    /// or it ended without answering. Whatever waits on it is ended by the
+    /// controller's word for that, so no sheet or spinner waits on a result
+    /// that never comes. One cancelled, replaced under its key or closed
+    /// with its controller ends as before, unheard.
+    private func endedBySessionChange(_ ticket: Ticket) {
+        guard !closed, ticket.generation == generation, ticket.use.marked, !loop.sessions.holds(ticket.session) else { return }
+        if let key = ticket.key, epochs[key] != ticket.epoch { return }
+        guard let event = controller.ended(bySessionChange: ticket.effect) else { return }
+        loop.countEndedBySession()
+        step([event])
     }
 
     private func receive(_ event: C.Event, _ ticket: Ticket) {

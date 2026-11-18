@@ -269,6 +269,15 @@ struct AppTests {
         }
     }
 
+    /// A session change under the records' reread, or the settings', ends
+    /// it as the records do; a discovery waits on nothing.
+    @Test func whatASessionChangeEndsOfTheAppsEffects() throws {
+        let app = try Rig().app
+        #expect(app.ended(bySessionChange: .records(.reread(["k1"]))) == .records(.rereadFailed(["k1"])))
+        #expect(app.ended(bySessionChange: .settings(.reread(["k2"]))) == .settings(.rereadFailed(["k2"])))
+        #expect(app.ended(bySessionChange: .discover) == nil)
+    }
+
     @Test func aDraggedTaskWritesItsOwnPositionAlone() async throws {
         let (_, harness) = try await loaded([
             taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2"),

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateAPI
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
@@ -91,6 +92,51 @@ struct WorkoutsAppTests {
         link.tokenID = "5c2e7d9a10"
         await harness.runtime.linkChanged(link)
         #expect(harness.effects.isEmpty)
+    }
+
+    @Test("an import the sign-in changed under ends its sheet: its receipt says why, though what it answered was dropped")
+    func importAcrossASignInChange() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("workouts-app-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The Keychain answers once the test lets it: the import asks for
+        // its client, and another sign-in lands before it has one.
+        let keychain = Latch()
+        let stub = StubTransport()
+        var environment = AppEnvironment.testing()
+        environment.folders = WorkoutsFolders(base: directory)
+        environment.client = ClientSource {
+            await keychain.wait()
+            return SubstrateClient(server: Self.server, token: "a", transport: stub)
+        }
+        let app = WorkoutsApp(directory: directory, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        let harness = ControllerHarness(app, environment: environment, performsEffects: true)
+        // A package not yet writable: no sync asks for a client beside it.
+        var link = Self.snapshot(training: nil)
+        link.tokenID = "71ac09be44"
+        await harness.runtime.linkChanged(link)
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.signedIn }
+        let receipt = UUID()
+        let measurement = RecordWrite(kind: RecordCodec().kinds.bodyMeasurement, id: "m1", properties: ["weight": 80])
+        await harness.send(.importRecords(routines: [], measurements: [measurement], exercises: [], receipt: receipt))
+        try await harness.until(timeout: .seconds(60)) { _ in await keychain.waiting == 1 }
+        link.tokenID = "0b5e1a7c33"
+        await harness.runtime.linkChanged(link)
+        await keychain.open()
+        try await harness.until(timeout: .seconds(60)) { await $0.presentation.outcomes[receipt] != nil }
+        #expect(await harness.presentation.outcomes[receipt] == .some(WorkoutsApp.signInChanged))
+        #expect(await harness.runtime.counters.endedBySession == 1)
+        #expect(stub.requests.isEmpty)
+    }
+
+    @Test("a session change ends the sync's mark and the sample's; work that waits on nothing ends as nothing")
+    func sessionChangeEndings() {
+        let app = WorkoutsApp(directory: nil, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        for effect: WorkoutsApp.Effect in [.sync(Self.account), .seedLibrary(Self.account), .exchange(Self.account, local: [], hidden: [], exercises: [])] {
+            #expect(app.ended(bySessionChange: effect) == .syncEnded(Self.account, problem: nil))
+        }
+        #expect(app.ended(bySessionChange: .addSample(Self.account)) == .addingSample(false))
+        #expect(app.ended(bySessionChange: .reread(Self.account, [RoutineID("r1")])) == nil)
     }
 
     @Test("an outbox read reads again the routines of the conflicts it did not hold before, and only those")
@@ -200,5 +246,24 @@ struct WorkoutsAppTests {
         #expect(await harness.presentation.history.isEmpty)
         #expect(await harness.presentation.hiddenSessions.contains("s1"))
         #expect(WorkoutsFolders(base: directory).folder(Self.account)?.tombstones.all == ["s1"])
+    }
+}
+
+/// Where a wait holds until the test opens it.
+actor Latch {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var opened = false
+
+    var waiting: Int { waiters.count }
+
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        opened = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
     }
 }

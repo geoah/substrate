@@ -248,11 +248,26 @@ private struct LegacySession: Codable {
         }
         let count = Count()
         let once = DeliverOnce(Self.pushed()) { count.delivered.append($0) }
-        // iOS calls time first: the push goes as it came.
-        #expect(once.deliver(nil))
-        // The work ends after: nothing more is delivered.
-        #expect(!once.deliver(.fallback(dropsBadge: true)))
+        // The work ends first: what it made goes.
+        #expect(once.deliver(.fallback(dropsBadge: false)))
+        // iOS calls time after: nothing more is delivered.
+        #expect(!once.expire(PushExpiry()))
         #expect(count.delivered.count == 1 && count.delivered.first?.badge == 3)
+    }
+
+    /// iOS ends the extension before the last check answered: nothing says
+    /// the push is still this sign-in's, so it goes as the plain fallback,
+    /// with no chat text and no badge.
+    @Test func anExpiryBeforeTheLastCheckShowsTheFallbackWithNoBadge() {
+        final class Count: @unchecked Sendable {
+            var delivered: [UNNotificationContent] = []
+        }
+        let count = Count()
+        let once = DeliverOnce(Self.pushed()) { count.delivered.append($0) }
+        #expect(once.expire(PushExpiry()))
+        #expect(!once.deliver(.fallback(dropsBadge: false)))
+        let delivered = count.delivered.first
+        #expect(count.delivered.count == 1 && delivered?.badge == nil && delivered?.body == "A chat has a new reply.")
     }
 }
 

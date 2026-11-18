@@ -4,6 +4,10 @@ import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// What a push from the relay shows, as the notification service extension
 /// makes it: the relay sends no words, so the extension asks the person's
 /// own server what the push is about, with the app's own token, and shows
@@ -70,6 +74,22 @@ struct AcceptedTransport: HTTPTransport {
     }
 }
 
+/// What a push may show if the system ends the extension before its work
+/// answers: what the last check before showing confirmed, once it has;
+/// until then the plain fallback with no badge, since nothing says the push
+/// is still this sign-in's.
+public final class PushExpiry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var confirmed: PushContent?
+
+    public init() {}
+
+    func settle(_ content: PushContent) { lock.withLock { confirmed = content } }
+
+    /// What the extension delivers at `serviceExtensionTimeWillExpire`.
+    public var atExpiry: PushContent { lock.withLock { confirmed } ?? .fallback(dropsBadge: true) }
+}
+
 /// A value one task keeps for another to read after it.
 final class Kept<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
@@ -116,10 +136,16 @@ public enum ChatPush {
     ///   - deadline: the whole operation's, on the monotonic clock, the
     ///     Keychain's reads included: the fallback is answered then, and what
     ///     is still out is cancelled and never waited for.
+    ///   - expiry: told what the last check confirmed, as it answers, for
+    ///     the system's expiry to deliver should it come first.
     public static func content(
-        _ userInfo: [String: String], accepting: @escaping Accepting, until deadline: ContinuousClock.Instant
+        _ userInfo: [String: String], accepting: @escaping Accepting, until deadline: ContinuousClock.Instant,
+        expiry: PushExpiry? = nil
     ) async -> PushContent {
-        guard let push = PushPayload(userInfo), push.event != .read else { return .fallback(dropsBadge: false) }
+        guard let push = PushPayload(userInfo), push.event != .read else {
+            expiry?.settle(.fallback(dropsBadge: false))
+            return .fallback(dropsBadge: false)
+        }
         let first = Kept<PushAcceptance>()
         let content: PushContent = await Deadline.race(until: deadline, or: PushContent.fallback(dropsBadge: false)) { (race: Deadline.Race) -> PushContent in
             let acceptance = await accepting(push.generation)
@@ -136,7 +162,9 @@ public enum ChatPush {
             }
             return await resolve(push, client: client, race: race)
         }
-        return await checkedLast(content, push, first.value, accepting, until: deadline)
+        let shown = await checkedLast(content, push, first.value, accepting, until: deadline)
+        expiry?.settle(shown)
+        return shown
     }
 
     /// How long past the deadline the last check before a push shows may
