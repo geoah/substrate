@@ -1007,6 +1007,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A device is its own token's, and its `token`, `person` and `seenAt`
+	// are the engine's (devices.go).
+	deviceSeen, err := t.prepareDevice(sp)
+	if err != nil {
+		return nil, err
+	}
 	// A managed property is the engine's to write, on a data kind exactly as
 	// on a declaration row (checkDeclarationWrite).
 	if err := t.checkManagedProps(sp); err != nil {
@@ -1157,6 +1163,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if markRead {
 		row.Props[propMarkReadAt] = t.now.Format(time.RFC3339Nano)
 		accepted = append(accepted, propMarkReadAt)
+	}
+	// A mark that moved, cleared `markedUnread` or set `archived` may take
+	// a notification back (pushsignals.go).
+	if sp.ty.Identity == typeThreadMark && !t.internal {
+		t.signalMark(before, row, markRead)
+	}
+	// A device says when its install last wrote it (devices.go).
+	if deviceSeen {
+		row.Props[propDeviceSeenAt] = t.now.Format(time.RFC3339Nano)
+		accepted = append(accepted, propDeviceSeenAt)
 	}
 
 	// Title is a property with its own column; a displayTemplate overrides
@@ -3233,6 +3249,9 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 		}
 	}
 	if err := t.guardThreadMarkOwner(ty.Identity, row, "delete"); err != nil {
+		return nil, err
+	}
+	if err := t.guardDeviceOwner(ty.Identity, row, "delete"); err != nil {
 		return nil, err
 	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen

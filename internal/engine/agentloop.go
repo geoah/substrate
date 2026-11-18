@@ -2312,10 +2312,19 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		// refuses the patch, a collected row is absent, and what `then`
 		// settles still has to run.
 		if row != nil && row.DeletedAt == nil {
+			// Read before the patch, which may write into the row it loads.
+			wasLast := referenceTargetOf(row, propThreadLastMessage)
 			if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
 				return err
 			}
 			patched, lifetime = true, baseCost+cost
+			// What a push says of the settle (pushsignals.go), read from
+			// the row the patch left.
+			if held {
+				if err := t.signalSettle(l.threadID, status, wasLast, l.openedAt); err != nil {
+					return err
+				}
+			}
 		}
 		if then != nil {
 			return then(t, status, reason, cause)

@@ -432,14 +432,17 @@ func (t *txn) syncWaitingOnPerson(kind string, rows ...*erow) error {
 			continue
 		}
 		seen[id.ID] = true
-		if err := t.countWaitingOnPerson(id); err != nil {
+		if err := t.countWaitingOnPerson(id, rows); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (t *txn) countWaitingOnPerson(thread eref) error {
+// countWaitingOnPerson counts again what waits on a person in thread and
+// writes the count where it moved; rows are the records whose write moved
+// it, which a push names (pushsignals.go signalWaiting).
+func (t *txn) countWaitingOnPerson(thread eref, rows []*erow) error {
 	ty, err := t.resolveType(typeThread)
 	if err != nil || ty.Props[propThreadWaiting] == nil {
 		// A repository whose upgrade has not declared the property keeps
@@ -457,9 +460,11 @@ func (t *txn) countWaitingOnPerson(thread eref) error {
 	if err != nil {
 		return err
 	}
-	if held, _ := anyFloat(row.Props[propThreadWaiting]); int(held) == n {
+	held, _ := anyFloat(row.Props[propThreadWaiting])
+	if int(held) == n {
 		return nil
 	}
+	t.signalWaiting(row, int(held), n, rows)
 	wasScoped, wasInternal, wasExempt := t.scoped, t.internal, t.exempt
 	t.scoped, t.internal, t.exempt = false, true, ""
 	defer func() { t.scoped, t.internal, t.exempt = wasScoped, wasInternal, wasExempt }()
