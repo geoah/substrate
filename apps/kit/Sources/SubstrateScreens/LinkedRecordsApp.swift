@@ -73,9 +73,10 @@ public extension LinkedRecordsApp {
     }
 
     /// The records' effects leave nothing waiting: a read and a watch start
-    /// again on a new token (`newAccess`) and stop on a sign-out, and what a
-    /// reread would have marked to read again is the newer session's to
-    /// mark, never an older effect's.
+    /// again on a new token (`newAccess`) and stop on a sign-out, and a
+    /// reread's records are marked stale before it is asked for and until a
+    /// read answers, so the next read or the watch's opening reads again one
+    /// dropped on its way.
     func ended(bySessionChange effect: Effect) -> Event? {
         guard effect.recordsEffect == nil else { return nil }
         return ownEnded(bySessionChange: effect)

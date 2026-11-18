@@ -156,6 +156,16 @@ struct LinkedRecordsAppTests {
         #expect(shelf().coalescing(of: .records(.changed("k", nil))) == .within(.milliseconds(100)))
     }
 
+    /// A session change ends none of the records' effects: a reread's
+    /// records are marked stale before it is asked for, and that mark, not
+    /// an ending, has them read again.
+    @Test func aSessionChangeEndsNoneOfTheRecordsEffects() {
+        let app = shelf()
+        #expect(app.ended(bySessionChange: .records(.reread(["\(shelfKind)/b1"]))) == nil)
+        #expect(app.ended(bySessionChange: .records(.read(over: [shelfKind]))) == nil)
+        #expect(app.ended(bySessionChange: .count(1)) == nil)
+    }
+
     @Test func aChildsEventMayBeSeveralOfTheParentsEachSeenAsItsOwn() async throws {
         let harness = ControllerHarness(shelf(), performsEffects: false)
         await harness.deliver(.records(.loaded([], cursor: nil, queue: [])))
