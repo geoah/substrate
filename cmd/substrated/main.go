@@ -35,6 +35,8 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/operatordefaults"
+	"github.com/geoah/substrate/internal/push"
+	"github.com/geoah/substrate/internal/pushdispatch"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
@@ -250,6 +252,23 @@ func run() error {
 		engine.WithChatTurnsPerPerson(cfg.ChatTurnsPerPerson),
 		engine.WithHealthFailingAfter(cfg.HealthFailingAfter),
 	}
+	// Push (docs/plans/push.md): the dispatcher is the engine's sink, and is
+	// handed the service once it is open. Off, the engine has no sink and
+	// hands out nothing.
+	var pushes *pushdispatch.Dispatcher
+	if cfg.Push {
+		pushes = pushdispatch.New(pushdispatch.Options{
+			View: func(ctx context.Context, whole substrate.Dataset, tok substrate.TokenInfo) (pushdispatch.View, error) {
+				return api.NewTokenView(ctx, whole, tok)
+			},
+			Documents: reader,
+			Sender:    push.New(push.Options{}),
+			Log:       slog.Default(),
+		})
+		opts = append(opts, engine.WithPushSink(pushes))
+	} else {
+		slog.Info("SUBSTRATE_PUSH is false: this server sends no pushes")
+	}
 	// The archive (decision 0262): a store the server copies each repository
 	// to after its writes commit. Opening it makes no request, so a store
 	// that cannot be reached delays the archive and never the boot.
@@ -329,6 +348,10 @@ func run() error {
 		return err
 	}
 	defer func() { _ = svc.Close() }()
+	if pushes != nil {
+		pushes.Start(svc)
+		defer pushes.Close()
+	}
 
 	// The loops share the service, so shutdown has an ORDER: cancel, then wait
 	// for every pass in flight to return, and only THEN let the deferred
@@ -408,6 +431,8 @@ func run() error {
 		InviteCode:       cfg.InviteCode,
 		TOTPDisabled:     cfg.InsecureDisableTOTP,
 		OperatorDefaults: operatorDefaults != nil,
+		PushOff:          !cfg.Push,
+		PushDocuments:    reader,
 		Publishers:       authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
 		DomainResolver:   resolver,
 		Metrics:          cfg.Metrics,

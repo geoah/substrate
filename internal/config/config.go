@@ -145,6 +145,14 @@ type Config struct {
 	// at once. Each holds a model call and outlives the client that started
 	// it. 0 is the default; a negative value is refused.
 	ChatTurnsPerPerson int `envconfig:"SUBSTRATE_CHAT_TURNS_PER_PERSON" default:"4"`
+	// Push is the operator's switch for pushes to closed devices
+	// (docs/plans/push.md). On, the server posts to the relay a token's
+	// verified app's publisher names, once an install has registered with it.
+	// Off, the engine hands out no events, the push routes answer `push_off`
+	// and discovery does not list `push`. Every restored copy, dry run and
+	// staging server runs with it off: it holds the same device records and
+	// derives the same signing keys, so its pushes would reach real phones.
+	Push bool `envconfig:"SUBSTRATE_PUSH" default:"true"`
 
 	// HealthFailingAfter is how long every delivery of a trigger must have
 	// parked, since its newest ok run, before the dispatcher opens the
