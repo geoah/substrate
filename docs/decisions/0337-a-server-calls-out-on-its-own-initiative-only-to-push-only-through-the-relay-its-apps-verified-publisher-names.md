@@ -62,6 +62,12 @@ app reads when it opens anyway.
   decided through the same view an API request with the device's token gets
   (`internal/api` `TokenView`), so a push says nothing its token could not
   read.
+- **The badge** counts the person's own unread `chat` threads, the ones that
+  act for them (`heldTo.onBehalfOf`), that the token's view reads, not
+  running, and not archived unless something waits, at most 999. It counts
+  no other person's chats, even for an admin whose view reads them: the
+  admin has no mark of those, so they would stay unread for good, and a
+  number the person can never bring down is no badge.
 - **The keys stay in the engine.** Each token's signing and sealing keys are
   derived with HKDF from the repository's DEK and the token's id; what leaves
   the engine is a `PushSigner` for one token, never the DEK.

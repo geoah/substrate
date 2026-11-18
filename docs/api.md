@@ -2550,10 +2550,11 @@ document that cannot be read just now is `503 unavailable` with
 
 **`GET /api/v1/push/badge`** answers `{"badge": 3}`: the number a push to
 this token sets. It counts the live `llm/thread` rows the token's view
-reads whose `mode` is `chat` and whose `status` is not `running`, that are
-unread for the person ([read state](agents.md#read-state)), and that the
-person has not archived unless `waitingOnPerson` is above 0, and stops at
-999.
+reads whose `mode` is `chat`, that act for the token's person
+(`heldTo.onBehalfOf`) and whose `status` is not `running`, that are unread
+for the person ([read state](agents.md#read-state)), and that the person has
+not archived unless `waitingOnPerson` is above 0, and stops at 999. Another
+person's chats never count, even for an admin who may read them.
 
 **`GET /api/v1/push/events/{eventId}`** answers what an event id a push
 carried names. The id is sealed by this server for one token: it opens only

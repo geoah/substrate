@@ -1661,9 +1661,11 @@ newer notification stays. The memory holds 10,000 alerts and lives in the
 process: after a restart no `read` is sent for what was alerted before it.
 
 **The badge** is counted by the server, one rule for every push and for
-`GET /api/v1/push/badge`: the live `chat` threads the device's token reads,
-not running, unread for the person as [above](#read-state), and not archived
-by them unless something waits on the thread, at most 999.
+`GET /api/v1/push/badge`: the live `chat` threads that act for the person
+(`heldTo.onBehalfOf`) and that the device's token reads, not running, unread
+for the person as [above](#read-state), and not archived by them unless
+something waits on the thread, at most 999. Another person's chats never
+count, even for an admin who may read them.
 
 **What a push says, its device's token could read.** The devices are the
 recipient's whose `notifies` names the event's class, whose token is live and

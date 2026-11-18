@@ -591,24 +591,50 @@ func TestTheEngineHandsOutWhatAPushIsAbout(t *testing.T) {
 	}
 }
 
-// A badge counts `chat` threads alone.
+// A badge counts `chat` threads alone, and only those that act for the
+// person: with two people, each counts their own chat and not the other's,
+// though ada, an admin, reads both.
 func TestTheBadgeCountsChatsAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	r := newRunsRepository(t)
-	person := actorID(substrate.ActorPerson)
+	ada, bo := actorID(substrate.ActorPerson), actorID(substrate.PersonActor(r.boID))
 	r.fake.script("lead", fakeTurn{content: "called."})
 	res, err := r.ds.CallAgent(r.person(r.adaID, substrate.ActorPerson), r.pkg+"/lead", "go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	threads, err := r.ds.PushBadgeThreads(ctx, person)
-	if err != nil {
-		t.Fatal(err)
+	adas, _ := r.chat(t, r.person(r.adaID, substrate.ActorPerson), substrate.ActorPerson, "lead", "", fakeTurn{content: "ada's."})
+	bos, _ := r.chat(t, r.person(r.boID, substrate.ActorPerson), substrate.ActorPerson, "lead", "", fakeTurn{content: "bo's."})
+	if _, person := threadPushInfo(storedThread(t, r.ds, bos)); person != bo {
+		t.Fatalf("bo's chat acts for %q, want bo's actor %q", person, bo)
 	}
-	for _, th := range threads {
-		if th.ID == res.Thread {
-			t.Fatal("a call's thread is a badge candidate")
+	badge := func(person string) map[string]bool {
+		t.Helper()
+		threads, err := r.ds.PushBadgeThreads(ctx, person)
+		if err != nil {
+			t.Fatal(err)
 		}
+		out := map[string]bool{}
+		for _, th := range threads {
+			out[th.ID] = true
+		}
+		return out
 	}
+	if got := badge(ada); !got[adas] || got[bos] || got[res.Thread] {
+		t.Fatalf("ada's badge candidates %v: want her chat %s alone, not bo's %s nor the call %s", got, adas, bos, res.Thread)
+	}
+	if got := badge(bo); !got[bos] || got[adas] {
+		t.Fatalf("bo's badge candidates %v: want his chat %s alone, not ada's %s", got, bos, adas)
+	}
+}
+
+// storedThread is a thread's stored row.
+func storedThread(t *testing.T, ds *dataset, id string) *erow {
+	t.Helper()
+	row, err := ds.loadRowDB(context.Background(), eref{Kind: typeThread, ID: id})
+	if err != nil || row == nil {
+		t.Fatalf("thread %s: %v", id, err)
+	}
+	return row
 }

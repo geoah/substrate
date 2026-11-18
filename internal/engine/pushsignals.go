@@ -22,6 +22,7 @@ import (
 
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // conversationModes are the thread modes whose requests push: every mode a
@@ -332,11 +333,14 @@ func (t *txn) pushPending(item substrate.PushItem) (bool, error) {
 const pushBadgeCandidates = 4 * substrate.PushBadgeMax
 
 // PushBadgeThreads are the person's unread candidates for the badge, in one
-// query: the live `chat` threads not running, unread for the person
-// (`markedUnread` set, or a `lastMessage` that is not their `readThrough`;
-// with no mark, any `lastMessage`), and not archived by them unless
-// something waits on the thread. Each carries its kind, id and `agent`,
-// what the caller's view decides a thread by.
+// query: the live `chat` threads that act for the person
+// (`heldTo.onBehalfOf`), not running, unread for them (`markedUnread` set,
+// or a `lastMessage` that is not their `readThrough`; with no mark, any
+// `lastMessage`), and not archived by them unless something waits on the
+// thread. Another person's chats are theirs to read, never this person's
+// to be told of: an admin who reads them has no mark of them, and would
+// count them unread for good. Each carries its kind, id and `agent`, what
+// the caller's view decides a thread by.
 func (ds *dataset) PushBadgeThreads(ctx context.Context, person string) ([]*substrate.Record, error) {
 	if person == "" {
 		return nil, nil
@@ -344,12 +348,14 @@ func (ds *dataset) PushBadgeThreads(ctx context.Context, person string) ([]*subs
 	b := &builder{}
 	last := referencePathSQL("th.props", propThreadLastMessage)
 	read := referencePathSQL("m.props", propMarkReadThrough)
+	actsFor := referencePathSQL("(th.props->'"+propThreadHeldTo+"')", heldToOnBehalfOf)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT th.id, th.props->'agent'
 		FROM records th
 		LEFT JOIN records m ON m.kind = `+b.arg(typeThreadMark)+` AND m.id = th.id || '.' || `+b.arg(person)+` AND m.deleted_at IS NULL
 		WHERE th.kind = `+b.arg(typeThread)+` AND th.deleted_at IS NULL
 		  AND th.props->>'mode' = `+b.arg(agentModeChat)+`
+		  AND `+actsFor+` = `+b.arg(vocabulary.RecordPath(kindActor, person))+`
 		  AND COALESCE(th.props->>'status', '') <> `+b.arg(threadRunning)+`
 		  AND (COALESCE(m.props->>'markedUnread', '') = 'true'
 		       OR (`+last+` IS NOT NULL AND `+last+` IS DISTINCT FROM `+read+`))
