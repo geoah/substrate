@@ -598,20 +598,9 @@ func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store 
 	})
 	settled = true
 	if takeBack, _ := d.alerted.sent(seq, took); takeBack {
-		// Covered while it was in flight: take it back now, with the badge
-		// as a view built now counts it after what covered it. The wire
-		// carries a badge on every push, so where it cannot be counted the
-		// take-back waits for the next `read`, which finds the alert sent.
-		fresh, err := d.view(ctx, ds, dv.Token)
-		if err != nil {
-			return nil
-		}
-		badge, err := push.Badge(ctx, store, fresh.Reads, dv.Person)
-		if err != nil {
-			d.log.Warn("substrate: a take-back's badge could not be counted; the next read takes it back", "error", err)
-			return nil
-		}
-		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, []string{fingerprint}, badge) {
+		// Covered while it was in flight: take it back now, from the
+		// device as it stands after the send.
+		if d.takeBack(ctx, ds, store, person, dv.ID, h.key.thread, []string{fingerprint}, []uint64{seq}) {
 			d.alerted.forget(seq)
 		}
 	}
@@ -693,25 +682,7 @@ func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, stor
 		for i, a := range list {
 			seqs[i], prints[i] = a.seq, a.fingerprint
 		}
-		// The device as it stands at this send, not as an earlier send of
-		// this `read` found it.
-		found, err := store.PushDevices(ctx, persons[device])
-		if err != nil {
-			return err
-		}
-		i := slices.IndexFunc(found, func(dv substrate.PushDevice) bool { return dv.ID == device })
-		if i < 0 {
-			// The device went: nothing of it is left to take back.
-			d.alerted.forget(seqs...)
-			continue
-		}
-		dv := found[i]
-		relay, signer, badge, outcome := d.prepareRead(ctx, ds, store, dv)
-		if outcome != "" {
-			count(substrate.PushEventRead, outcome)
-			continue
-		}
-		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, prints, badge) {
+		if d.takeBack(ctx, ds, store, persons[device], device, h.key.thread, prints, seqs) {
 			d.alerted.forget(seqs...)
 		}
 	}
@@ -765,22 +736,23 @@ func (d *Dispatcher) prepare(ctx context.Context, store substrate.PushStore, dv 
 	return relay, signer, badge, ""
 }
 
-// prepareRead is prepare for a `read`, which names no thread its view must
-// read: the view counts the badge alone.
-func (d *Dispatcher) prepareRead(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice) (string, substrate.PushSigner, int, string) {
-	view, err := d.view(ctx, ds, dv.Token)
-	if err != nil {
-		return "", nil, 0, outcomeUnreadable
-	}
-	return d.prepare(ctx, store, dv, view)
-}
-
-// sendReadIDs sends the `read` events that take prints back from one
-// device, sealed as SealRead splits them, and reports whether the relay
-// took every one.
-func (d *Dispatcher) sendReadIDs(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, relay string,
-	signer substrate.PushSigner, thread string, prints []string, badge int,
+// takeBack sends the `read` events that take prints back from one device,
+// sealed as SealRead splits them, and reports whether the relay took every
+// one. Before each request it reads again what the request is held to: the
+// device (its token live and not expired, its person still a member of the
+// repository), the relay its app names, and the badge as a view built then
+// counts it. A device gone stops it and forgets the alerts seqs, which
+// nothing is left to take back from; anything else that fails leaves them
+// for the next `read`. The wire carries a badge on every push, so a request
+// whose badge cannot be counted is not sent.
+func (d *Dispatcher) takeBack(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, person, device, thread string,
+	prints []string, seqs []uint64,
 ) bool {
+	signer, err := store.PushSigner(ctx, device)
+	if err != nil {
+		count(substrate.PushEventRead, outcomeFailed)
+		return false
+	}
 	ids, err := SealRead(signer, thread, prints, d.now())
 	if err != nil {
 		count(substrate.PushEventRead, outcomeFailed)
@@ -788,6 +760,41 @@ func (d *Dispatcher) sendReadIDs(ctx context.Context, store substrate.PushStore,
 		return false
 	}
 	for _, id := range ids {
+		found, err := store.PushDevices(ctx, person)
+		if err != nil {
+			count(substrate.PushEventRead, outcomeFailed)
+			d.log.Warn("substrate: a take-back's device could not be read; the next read takes it back", "error", err)
+			return false
+		}
+		i := slices.IndexFunc(found, func(dv substrate.PushDevice) bool { return dv.ID == device })
+		if i < 0 {
+			count(substrate.PushEventRead, outcomeNoDevice)
+			d.alerted.forget(seqs...)
+			return false
+		}
+		dv := found[i]
+		relay, err := push.Relay(ctx, d.docs, dv.Token)
+		switch {
+		case errors.Is(err, push.ErrNoRelay):
+			count(substrate.PushEventRead, outcomeNoRelay)
+			return false
+		case err != nil:
+			count(substrate.PushEventRead, outcomeFailed)
+			d.log.Warn("substrate: a take-back's relay could not be read; the next read takes it back", "error", err)
+			return false
+		}
+		view, err := d.view(ctx, ds, dv.Token)
+		if err != nil {
+			count(substrate.PushEventRead, outcomeFailed)
+			d.log.Warn("substrate: a take-back's view could not be built; the next read takes it back", "error", err)
+			return false
+		}
+		badge, err := push.Badge(ctx, store, view.Reads, dv.Person)
+		if err != nil {
+			count(substrate.PushEventRead, outcomeFailed)
+			d.log.Warn("substrate: a take-back's badge could not be counted; the next read takes it back", "error", err)
+			return false
+		}
 		if !d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
 			PushKey: dv.PushKey, Event: substrate.PushEventRead, Thread: thread, Badge: badge, EventID: id,
 		}) {

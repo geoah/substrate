@@ -1629,3 +1629,88 @@ func TestAReadReadsEachDeviceAgainAtItsSend(t *testing.T) {
 		t.Fatalf("%d alerts remembered of a taken-back and a revoked device", n)
 	}
 }
+
+// A take-back reads its device again: an alert covered while in flight,
+// whose token is revoked during that send, is never taken back with a
+// thread and a badge to the revoked device, and its alert is forgotten.
+func TestAnImmediateTakeBackSkipsADeviceRevokedDuringTheSend(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.message("m1", 1)
+	r.reply(0, "m1")
+	read := &hold{
+		key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+		check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+		writers: map[string]bool{},
+	}
+	r.sender.mu.Lock()
+	r.sender.during = func(ctx context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventReply {
+			return
+		}
+		r.store.mu.Lock()
+		r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+		r.store.mu.Unlock()
+		if err := r.d.deliver(ctx, fakeDatasets{ds: r.store}, read); err != nil {
+			t.Error(err)
+		}
+		r.store.mu.Lock()
+		delete(r.store.devices, testPerson)
+		r.store.mu.Unlock()
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	if reads := r.readsTo("tok1"); len(reads) != 0 {
+		t.Fatalf("a take-back went to a device revoked during the alert's send: %v", reads)
+	}
+	if n := r.d.alerted.size(); n != 0 {
+		t.Fatalf("%d alerts remembered of a device that went", n)
+	}
+}
+
+// A `read` that needs several requests reads its device again before
+// each: one revoked during the first request gets no more, and its alerts
+// are forgotten.
+func TestAReadOfSeveralRequestsStopsAtARevokedDevice(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	var prints []string
+	for i := range 80 {
+		seq := r.d.alerted.add(alert{
+			device: "tok1", repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventReply,
+			check: substrate.PushCheck{Event: substrate.PushEventReply, Person: testPerson, Thread: testThread, Message: "m1"},
+		})
+		fingerprint := pushwire.EventFingerprint(fmt.Sprintf("event-%02d-%s", i, strings.Repeat("x", 40)))
+		r.d.alerted.ready(seq, substrate.PushItem{Kind: vocabulary.KindLLMMessage, ID: fmt.Sprintf("m%d", i), Version: 1}, fingerprint)
+		r.d.alerted.sent(seq, true)
+		prints = append(prints, fingerprint)
+	}
+	if ids, err := SealRead(r.store.signer("tok1"), testThread, prints, r.start); err != nil || len(ids) < 2 {
+		t.Fatalf("80 fingerprints seal to %d ids (%v): the test needs several requests", len(ids), err)
+	}
+	r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventRead {
+			return
+		}
+		r.store.mu.Lock()
+		delete(r.store.devices, testPerson)
+		r.store.mu.Unlock()
+	}
+	r.sender.mu.Unlock()
+	read := &hold{
+		key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+		check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+		writers: map[string]bool{},
+	}
+	if err := r.d.deliver(context.Background(), fakeDatasets{ds: r.store}, read); err != nil {
+		t.Fatal(err)
+	}
+	if reads := r.readsTo("tok1"); len(reads) != 1 {
+		t.Fatalf("%d read requests went out, want the first alone: the device was revoked during it", len(reads))
+	}
+	if n := r.d.alerted.size(); n != 0 {
+		t.Fatalf("%d alerts remembered of a device that went", n)
+	}
+}
