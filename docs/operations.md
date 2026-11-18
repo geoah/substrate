@@ -3264,7 +3264,9 @@ At least one environment needs both its key file and its key id, and an
 environment with neither refuses registrations for it. The relay refuses to
 start without a team id, a topic or a seal key, with half an environment,
 with a key that is not a P-256 `.p8`, with a seal key set both ways, with a
-previous seal key that is the current one, or with
+seal key file that holds nothing (read as no key, an emptied previous key
+would refuse every install sealed under it in the middle of a rotation),
+with a previous seal key that is the current one, or with
 `SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL` over 18,181 (the replay window below). An app's builds for TestFlight and the
 App Store register in `production`; development builds, and the builds a
 publisher's own feed exports for debugging, in `development`.

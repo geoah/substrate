@@ -209,7 +209,10 @@ func appleID(s string) bool {
 
 // sealKey reads a seal key from name or from the file name_FILE names, not
 // both: standard base64 of exactly 32 bytes, nil when neither is set. A
-// passphrase is refused rather than stretched.
+// passphrase is refused rather than stretched. A file that is named and
+// holds nothing is refused too, never read as no key: a previous key that
+// went missing that way would refuse every install sealed under it as
+// key_refused, and their servers would delete their devices.
 func sealKey(name, raw, file string) ([]byte, error) {
 	raw, file = strings.TrimSpace(raw), strings.TrimSpace(file)
 	switch {
@@ -221,6 +224,9 @@ func sealKey(name, raw, file string) ([]byte, error) {
 			return nil, fmt.Errorf("%s_FILE: %w", name, err)
 		}
 		raw = strings.TrimSpace(string(b))
+		if raw == "" {
+			return nil, fmt.Errorf("%s_FILE names %s, which holds no key: it holds the base64 of %d bytes (openssl rand -base64 32)", name, file, pushrelay.SealKeySize)
+		}
 		name += "_FILE's file"
 	}
 	if raw == "" {

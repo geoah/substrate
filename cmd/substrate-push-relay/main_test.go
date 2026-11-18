@@ -107,6 +107,31 @@ func TestTheSealKeysMayBeFiles(t *testing.T) {
 	}
 }
 
+// A seal key file that is named and holds nothing is refused, never read as
+// no key: an empty previous key would refuse every install sealed under it
+// mid-rotation, and their servers would delete their devices.
+func TestAnEmptySealKeyFileIsRefused(t *testing.T) {
+	for _, variable := range []string{"SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE", "SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS_FILE"} {
+		for name, contents := range map[string]string{"empty": "", "whitespace": " \n\t\r\n  "} {
+			t.Run(variable+" "+name, func(t *testing.T) {
+				env := baseEnv(t)
+				if variable == "SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE" {
+					env["SUBSTRATE_PUSH_RELAY_SEAL_KEY"] = ""
+				}
+				path := filepath.Join(t.TempDir(), "seal")
+				if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				env[variable] = path
+				setEnv(t, env)
+				if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), variable+" names") || !strings.Contains(err.Error(), "holds no key") {
+					t.Fatalf("loadConfig = %v, want a refusal naming %s", err, variable)
+				}
+			})
+		}
+	}
+}
+
 // A relay that listens beyond loopback with no trusted proxy is warned
 // about at boot.
 func TestABindBeyondLoopbackWithNoProxyIsWarnedAbout(t *testing.T) {
