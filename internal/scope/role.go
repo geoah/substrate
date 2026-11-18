@@ -66,13 +66,14 @@ var ShippedRoles = []ShippedRole{
 	},
 	{
 		// A viewer reads chats, and reading one moves their own mark of it
-		// (decision 0313): the one kind a viewer writes, held by the engine
-		// to the person's own record.
+		// (decision 0313); a viewer's phone takes pushes, which is their
+		// own device record. The two kinds a viewer writes, each held by the
+		// engine to the person's own records.
 		Role: Role{ID: RoleViewer, Rules: []Rule{
 			{Verbs: []Verb{Read}, Kinds: []string{"*"}},
-			{Verbs: []Verb{Write}, Kinds: []string{vocabulary.KindLLMThreadMark}},
+			{Verbs: []Verb{Write}, Kinds: []string{vocabulary.KindLLMThreadMark, vocabulary.KindDevice}},
 		}},
-		Name: "Viewer", Description: "reads every kind that is not a control kind, and keeps their own place in the chats they read",
+		Name: "Viewer", Description: "reads every kind that is not a control kind, keeps their own place in the chats they read, and registers their own devices for pushes",
 	},
 }
 

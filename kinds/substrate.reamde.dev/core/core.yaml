@@ -130,7 +130,9 @@ data:
   # packages live under `~` (decision record 0259).
   # version 64: `release`, one version of a package the repository publishes
   # (decision record 0291).
-  version: 64
+  # version 65: `device`, one install of an app that takes pushes, named
+  # by the token it signed in with and deleted with it.
+  version: 65
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

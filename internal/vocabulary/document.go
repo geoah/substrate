@@ -67,6 +67,10 @@ func SubstrateStatePackage(name string) bool {
 // (decision record 0231).
 const KindContact = PackageCore + "/contact"
 
+// KindDevice is one install of an app that takes pushes, named by the token
+// it signed in with and deleted with it.
+const KindDevice = PackageCore + "/device"
+
 // KindLLMMemory is the facts an owner keeps for their agents (record 0197).
 const KindLLMMemory = PackageLLM + "/memory"
 
