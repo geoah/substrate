@@ -661,11 +661,15 @@ and the badge the server counted.
   what is wanted when it runs (the switches and the server's document as
   the app last said them, the permission read then), so one queued before
   a change does what a fresh one would. It acts for the sign-in in use when
-  it was asked for and no other. A delete sent less than 2 minutes after
-  the last put is not final, since that put may still land: the
-  registration is kept retiring, and the next sync after those 2 minutes
-  deletes again (meanwhile the app posts its own notifications, and a
-  push may come beside one). Signing out marks the sign-in leaving, so no
+  it was asked for and no other. A put may land up to 2 minutes after it
+  was sent. So a delete sent less than 2 minutes after the last put is not
+  final: the registration is kept retiring, and the next sync after those
+  2 minutes deletes again (meanwhile the app posts its own notifications,
+  and a push may come beside one). And a registration whose put was
+  answered is settled only once 2 minutes have passed since an earlier
+  registration's put: until then the next sync after them puts it again,
+  the same key and generation, so an earlier put that lands late does not
+  stay. Signing out marks the sign-in leaving, so no
   attempt saves or puts for it again, queues the device's delete and the
   forgetting of every generation behind the work in flight, for its own
   sign-in alone, waits for them at most 7 seconds, and lets them finish in

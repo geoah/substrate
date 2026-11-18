@@ -84,24 +84,61 @@ public struct PushState: Codable, Equatable, Sendable {
     /// later put or a delete is confirmed.
     public var pending: [Registration]
     public var previous: [Retired]
-    /// When the last put of this sign-in's device record was sent: saved
-    /// before it is sent, so a put whose answer was lost is known.
-    public var putAt: Date?
+    /// One put of this sign-in's device record: whose, and when it was sent.
+    public struct Put: Codable, Equatable, Sendable {
+        public var generation: String
+        public var at: Date
+
+        public init(generation: String, at: Date) {
+            self.generation = generation
+            self.at = at
+        }
+    }
+
+    /// The puts sent less than `putLifetime` ago, any of which may still
+    /// land: each saved before it is sent, so one whose answer was lost is
+    /// known.
+    public var puts: [Put]
     /// A registration given up whose delete may not be final: a put sent
     /// less than `putLifetime` before it may still land and make the record
     /// again. Then it is deleted again on a sync from this time on.
     public var deleteAgainAt: Date?
+    /// The current registration, answered, may not be settled: an earlier
+    /// registration's put, sent less than `putLifetime` before its own, may
+    /// still land after it and leave the record holding the earlier key.
+    /// Then it is put again, the same key and generation, on a sync from
+    /// this time on.
+    public var putAgainAt: Date?
 
     public init(
-        tokenID: String, current: Registration? = nil, pending: [Registration] = [], previous: [Retired] = [], putAt: Date? = nil,
-        deleteAgainAt: Date? = nil
+        tokenID: String, current: Registration? = nil, pending: [Registration] = [], previous: [Retired] = [], puts: [Put] = [],
+        deleteAgainAt: Date? = nil, putAgainAt: Date? = nil
     ) {
         self.tokenID = tokenID
         self.current = current
         self.pending = pending
         self.previous = previous
-        self.putAt = putAt
+        self.puts = puts
         self.deleteAgainAt = deleteAgainAt
+        self.putAgainAt = putAgainAt
+    }
+
+    /// When the last put was sent, of any registration.
+    var lastPutAt: Date? { puts.map(\.at).max() }
+
+    /// A put of `made` about to be sent at `now`, kept with the puts still
+    /// within their lifetime.
+    mutating func sending(_ made: Registration, at now: Date) {
+        puts.removeAll { now.timeIntervalSince($0.at) >= Self.putLifetime }
+        puts.append(Put(generation: made.generation, at: now))
+    }
+
+    /// `made`'s put, sent at `sent`, was answered: settled unless another
+    /// registration's put went out less than `putLifetime` before it, in
+    /// which case it is put again once that one can no longer land.
+    mutating func answered(_ made: Registration, sent: Date) {
+        let earlier = puts.filter { $0.generation != made.generation && $0.at <= sent }.map(\.at).max()
+        putAgainAt = earlier.map { $0.addingTimeInterval(Self.putLifetime) }.flatMap { $0 > sent ? $0 : nil }
     }
 
     /// The server pushes, or may push, to this install. Not while a
@@ -485,9 +522,15 @@ public struct PushRegistrar: Sendable {
             return await put(attempt, &next, device: device, client: client)
         }
         // The confirmed one, still wanted, with nothing newer the server may
-        // hold. Its record may be gone (deleted by the server after the
-        // relay refused a push, or by hand): then it is made again.
+        // hold. Not settled while an earlier registration's put may still
+        // land over it: put again, the same key and generation, once that
+        // one no longer can. Its record may be gone (deleted by the server
+        // after the relay refused a push, or by hand): then it is made again.
         if let current = next.current, !next.pending.contains(where: { $0.pushKey != nil }), wanted(current) {
+            if let again = next.putAgainAt {
+                guard now() >= again else { return facts(.registered, next) }
+                return await put(current, &next, device: device, client: client)
+            }
             do {
                 if try await client.record(SubstrateClient.deviceKind, tokenID) != nil { return facts(.registered, next) }
             } catch {
@@ -526,7 +569,8 @@ public struct PushRegistrar: Sendable {
     /// The device record put with `made`'s key, and `made` current once the
     /// server answers. A put that may have landed leaves it held. When it was
     /// sent is saved before it is sent: a delete is final only once a put can
-    /// no longer land after it.
+    /// no longer land after it, and an answered put is settled only once no
+    /// earlier registration's put can (`PushState.answered`).
     private func put(
         _ made: PushState.Registration, _ next: inout PushState, device: any PushRegistration, client: SubstrateClient
     ) async -> PushFacts {
@@ -535,7 +579,8 @@ public struct PushRegistrar: Sendable {
         // ends before the sign-out's delete starts, which is queued after.
         guard !control.isLeaving(next.tokenID) else { return PushFacts(standing: .unknown) }
         let unsent = next
-        next.putAt = now()
+        let sent = now()
+        next.sending(made, at: sent)
         guard await save(next, for: next.tokenID) else { return facts(.unavailable, unsent) }
         do {
             try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
@@ -546,6 +591,7 @@ public struct PushRegistrar: Sendable {
         }
         let before = next
         next.confirm(made, at: now())
+        next.answered(made, sent: sent)
         // The record is this registration's now: nothing is left to delete.
         next.deleteAgainAt = nil
         guard await save(next, for: next.tokenID) else { return facts(.unavailable, before) }
@@ -631,7 +677,7 @@ public struct PushRegistrar: Sendable {
             let sent = now()
             do {
                 try await client.delete(SubstrateClient.deviceKind, stored.tokenID)
-                if let putAt = stored.putAt, sent.timeIntervalSince(putAt) < PushState.putLifetime {
+                if let putAt = stored.lastPutAt, sent.timeIntervalSince(putAt) < PushState.putLifetime {
                     next.deleteAgainAt = putAt.addingTimeInterval(PushState.putLifetime)
                 } else {
                     next.deleteAgainAt = nil
@@ -644,6 +690,8 @@ public struct PushRegistrar: Sendable {
             }
         }
         next.retireAll(at: now())
+        // Nothing current is left to put again.
+        next.putAgainAt = nil
         guard next != stored else { return facts(standing, stored) }
         guard await save(next, for: next.tokenID) else { return facts(standing, stored) }
         return facts(standing, next)

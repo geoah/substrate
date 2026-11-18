@@ -234,6 +234,59 @@ final class Gate: @unchecked Sendable {
     func close() { lock.withLock { open = false } }
 }
 
+/// The device record as the server holds it: the key the last put that
+/// landed wrote. A put whose answer is lost lands later, when the test says.
+final class DeviceServer: HTTPTransport, @unchecked Sendable {
+    let inner: StubTransport
+    let path: String
+    private let lock = NSLock()
+    private var held: String?
+    private var losing = false
+    private var late: [String] = []
+
+    init(_ inner: StubTransport, path: String) {
+        self.inner = inner
+        self.path = path
+    }
+
+    /// The key the record holds now.
+    var key: String? { lock.withLock { held } }
+
+    /// The next put reaches the server but its answer is lost, and it has
+    /// not landed yet.
+    func loseNextPut() { lock.withLock { losing = true } }
+
+    /// The puts whose answers were lost land now, in the order they were
+    /// sent.
+    func landLate() {
+        lock.withLock {
+            if let last = late.last { held = last }
+            late = []
+        }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.httpMethod == "PUT", request.url.map(StubTransport.path) == path {
+            let body = (request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])
+            let key = (body?["properties"] as? [String: Any])?["pushKey"] as? String ?? ""
+            let lost = lock.withLock { () -> Bool in
+                if losing {
+                    losing = false
+                    late.append(key)
+                    return true
+                }
+                held = key
+                return false
+            }
+            if lost {
+                _ = try await inner.data(for: request)
+                throw URLError(.timedOut)
+            }
+        }
+        return try await inner.data(for: request)
+    }
+}
+
 /// A count a test's concurrent work keeps.
 final class Counter: @unchecked Sendable {
     private let lock = NSLock()
@@ -376,6 +429,17 @@ final class PushWorld: @unchecked Sendable {
     }
 
     func pass(_ seconds: TimeInterval) { lock.withLock { instant += seconds } }
+
+    /// The world's clock and its generations, for a registrar over another
+    /// transport.
+    var clock: Date { lock.withLock { instant } }
+
+    func mint() -> String {
+        lock.withLock {
+            minted += 1
+            return "g\(minted)"
+        }
+    }
 
     func publish(_ push: String) {
         transport.replace(
@@ -1060,6 +1124,47 @@ struct PushRegistrarTests {
         world.pass(600)
         _ = await relaunched.sync(off)
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 2)
+    }
+
+    /// An earlier registration's put lands after a newer one's: the newer
+    /// is not settled until no earlier put can land, and the next sync after
+    /// that puts it again, the same key and generation, so the server holds
+    /// the newer key.
+    @Test func aNewerRegistrationIsPutAgainOnceAnEarlierPutCanNoLongerLand() async throws {
+        let world = PushWorld()
+        let server = DeviceServer(world.transport, path: PushWorld.devicePath)
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: server, buildRelay: "https://push.example.com", clientID: PushWorld.client,
+            now: { world.clock }, generation: { world.mint() })
+        // The first registration's put reaches the server, its answer lost.
+        server.loseNextPut()
+        let first = await registrar.sync(PushWorld.ask)
+        #expect(first.standing == .unavailable && first.held)
+        // Thirty seconds on, Apple's token changes: a newer registration,
+        // with a key of its own, is put and answered.
+        world.pass(30)
+        world.device.set(token: String(repeating: "cd", count: 32))
+        world.transport.replace("POST", "/v1/register", json: #"{"pushKey":"v1.newer"}"#)
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+        #expect(server.key == "v1.newer")
+        #expect(await registrar.state()?.putAgainAt != nil)
+        // The earlier put lands now, over it.
+        server.landLate()
+        #expect(server.key == "v1.k")
+        let puts = world.sent("PUT", PushWorld.devicePath).count
+        // Before the earlier put's lifetime is over nothing is sent.
+        world.pass(30)
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == puts)
+        // After it, the next sync puts the newer one again, and it is settled.
+        world.pass(70)
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == puts + 1)
+        #expect(server.key == "v1.newer")
+        #expect(await registrar.state()?.putAgainAt == nil)
+        world.pass(600)
+        _ = await registrar.sync(PushWorld.ask)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == puts + 1)
     }
 
     /// A retirement the Keychain would not keep is not reported: the stored
