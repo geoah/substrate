@@ -132,7 +132,15 @@ extension ChatApp {
             if next.pushListed, !listed { next.asks.append(badge(next)) }
             resume(&next)
         case let .pushSynced(facts):
+            // A Keychain that could not be read says nothing: what was known
+            // stands.
+            guard facts.standing != .unreadable else { break }
+            let held = next.pushHeld
             next.push = facts
+            // Newly held, at a cold launch's first check above all: the
+            // pushes on the device are reconciled without waiting for the
+            // next return to the front.
+            if facts.held, !held { next.asks.append(.readDelivered) }
         case let .pushDelivered(threads):
             let unheld = threads.filter { next.thread($0) == nil && !next.pushDelivered.contains($0) }
             next.pushDelivered = Set(threads)
@@ -171,6 +179,8 @@ extension ChatApp {
             if next.pushListed { next.asks.append(badge(next)) }
         case let .markWriteFailed(thread, sent, refusal, failure):
             markWriteFailed(&next, thread: thread, sent: sent, refusal, failure)
+            // The capped badge is not left standing: the server is asked.
+            if next.pushListed { next.asks.append(badge(next)) }
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -569,7 +579,10 @@ extension ChatApp {
         state.disk = disk.lease
         state.asks.append(.prune(disk.lease))
         state.preferences = disk.preferences
-        if let push = disk.push { state.push = push }
+        if let push = disk.push, push.standing != .unreadable { state.push = push }
+        // A launch the system made for a tap or a refresh may never come to
+        // the front: the pushes standing on the device are read now.
+        if state.pushHeld { state.asks.append(.readDelivered) }
         state.drafts = disk.drafts
         // A reply typed into a notification before the folder was read,
         // which its time ran out on: it is the head of its chat's draft,

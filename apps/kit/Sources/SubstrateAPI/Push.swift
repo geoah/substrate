@@ -35,6 +35,9 @@ public enum PushRelay {
         else { return nil }
         let authority = relay.dropFirst(scheme.count).prefix { $0 != "/" }
         guard !authority.isEmpty, !authority.contains("@") else { return nil }
+        // A `%` starts two hex digits, and in the host only a byte past
+        // ASCII may be written so, as Go's URL parser holds it.
+        guard validEscapes(relay.utf8, host: false), validEscapes(authority.utf8, host: true) else { return nil }
         var host = Substring(authority)
         var port: Substring?
         if authority.hasPrefix("[") {
@@ -55,6 +58,27 @@ public enum PushRelay {
             else { return nil }
         }
         return (relay.hasSuffix("/") ? String(relay.dropLast()) : relay) + path
+    }
+
+    private static func validEscapes(_ bytes: some Collection<UInt8>, host: Bool) -> Bool {
+        let bytes = Array(bytes)
+        var index = 0
+        while index < bytes.count {
+            defer { index += 1 }
+            guard bytes[index] == UInt8(ascii: "%") else { continue }
+            guard index + 2 < bytes.count, let high = hex(bytes[index + 1]), hex(bytes[index + 2]) != nil, !host || high >= 8 else { return false }
+            index += 2
+        }
+        return true
+    }
+
+    private static func hex(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case UInt8(ascii: "0") ... UInt8(ascii: "9"): byte - UInt8(ascii: "0")
+        case UInt8(ascii: "a") ... UInt8(ascii: "f"): byte - UInt8(ascii: "a") + 10
+        case UInt8(ascii: "A") ... UInt8(ascii: "F"): byte - UInt8(ascii: "A") + 10
+        default: nil
+        }
     }
 
     /// Whether two relays are the same one: both valid, and the same

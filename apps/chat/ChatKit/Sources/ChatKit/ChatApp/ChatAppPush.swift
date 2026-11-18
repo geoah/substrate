@@ -121,8 +121,14 @@ extension ChatApp {
         }
     }
 
-    /// The threads of the pushed notifications standing on the device.
-    static func deliveredThreads(_ notifications: any Notifications) async -> [String] {
-        Array(Set(await notifications.delivered().compactMap { $0.push?.thread })).sorted()
+    /// The threads of the pushed notifications standing on the device whose
+    /// generation `accepted` says is this sign-in's.
+    static func deliveredThreads(_ notifications: any Notifications, accepted: (String) async -> Bool) async -> [String] {
+        var threads: Set<String> = []
+        for shown in await notifications.delivered() {
+            guard let push = shown.push, !threads.contains(push.thread), await accepted(push.generation) else { continue }
+            threads.insert(push.thread)
+        }
+        return threads.sorted()
     }
 }

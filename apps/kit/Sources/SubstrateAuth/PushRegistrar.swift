@@ -172,6 +172,10 @@ public struct PushFacts: Codable, Equatable, Sendable {
         case unavailable
         /// Not asked yet in this launch.
         case unknown
+        /// The Keychain could not be read (before the first unlock after a
+        /// restart): nothing was changed, and nothing can be said of what
+        /// is held. The app keeps what it last knew.
+        case unreadable
     }
 
     public var standing: Standing
@@ -263,15 +267,40 @@ public struct PushRegistrar: Sendable {
 
     /// The state as kept; nil where none is, or it could not be read.
     public func state() async -> PushState? {
-        guard case let .found(data) = await sessions.data(account: account) else { return nil }
-        return try? JSONDecoder().decode(PushState.self, from: data)
+        guard case let .found(state) = await stored() else { return nil }
+        return state
+    }
+
+    /// The state as kept, telling an item that is not there (or that no
+    /// longer decodes, which is as good as none) from a Keychain that could
+    /// not answer, which says nothing of what is there.
+    enum Stored {
+        case found(PushState)
+        case missing
+        case failed
+    }
+
+    func stored() async -> Stored {
+        switch await sessions.data(account: account) {
+        case let .found(data): (try? JSONDecoder().decode(PushState.self, from: data)).map(Stored.found) ?? .missing
+        case .missing: .missing
+        case .failed: .failed
+        }
     }
 
     /// What is kept, for the engine, without the network.
     public func facts() async -> PushFacts {
-        guard let session = await sessions.load(), let state = await state(), state.tokenID == session.tokenID, state.held
-        else { return PushFacts(standing: .unknown) }
-        return facts(.registered, state)
+        let session: Session
+        switch await sessions.read() {
+        case let .found(found): session = found
+        case .missing: return PushFacts(standing: .unknown)
+        case .failed: return PushFacts(standing: .unreadable)
+        }
+        switch await stored() {
+        case let .found(state) where state.tokenID == session.tokenID && state.held: return facts(.registered, state)
+        case .failed: return PushFacts(standing: .unreadable)
+        case .found, .missing: return PushFacts(standing: .unknown)
+        }
     }
 
     /// Whether a push's generation belongs to the sign-in in use: its
@@ -338,11 +367,18 @@ public struct PushRegistrar: Sendable {
         case .missing:
             try? await clear()
             return PushFacts(standing: .unknown)
-        case .failed: return await facts()
+        case .failed: return PushFacts(standing: .unreadable)
         }
         guard !control.isLeaving(session.tokenID) else { return PushFacts(standing: .unknown) }
         let client = SubstrateClient(session, transport: transport)
-        var state = await state()
+        // A Keychain that cannot answer is no absent registration: nothing
+        // is made over what it may hold.
+        var state: PushState?
+        switch await stored() {
+        case let .found(found): state = found
+        case .missing: state = nil
+        case .failed: return PushFacts(standing: .unreadable)
+        }
         // Another sign-in's registration: its device goes with its token.
         if let held = state, held.tokenID != session.tokenID {
             try? await clear()
@@ -406,7 +442,10 @@ public struct PushRegistrar: Sendable {
             generation: generation(), relay: build, publicKey: key.publicKey, deviceToken: deviceToken, environment: environment,
             notifies: notifies, registeredAt: now())
         next.pending.append(made)
+        // What `held` is read from on every way out: the state last saved,
+        // never an attempt only this run holds.
         guard await save(next, for: tokenID) else { return facts(.unavailable, state) }
+        let saved = next
         do {
             made.pushKey = try await PushRelay.register(
                 PushRelay.RegisterRequest(
@@ -419,11 +458,11 @@ public struct PushRegistrar: Sendable {
             // It never reached the server: only it goes, and every earlier
             // attempt the server may hold stays accepted.
             next.pending.removeAll { $0.generation == made.generation }
-            _ = await save(next, for: tokenID)
-            return facts(.unavailable, next)
+            return facts(.unavailable, await save(next, for: tokenID) ? next : saved)
         }
         next.pending[next.pending.count - 1] = made
-        guard await save(next, for: tokenID) else { return facts(.unavailable, next) }
+        // No put is sent for a key the Keychain did not keep.
+        guard await save(next, for: tokenID) else { return facts(.unavailable, saved) }
         return await put(made, &next, device: device, client: client)
     }
 
@@ -433,6 +472,8 @@ public struct PushRegistrar: Sendable {
         _ made: PushState.Registration, _ next: inout PushState, device: any PushRegistration, client: SubstrateClient
     ) async -> PushFacts {
         guard let pushKey = made.pushKey else { return facts(.unavailable, next) }
+        // A sign-out under way: its delete is not to be undone by a put.
+        guard !control.isLeaving(next.tokenID) else { return PushFacts(standing: .unknown) }
         do {
             try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
         } catch let refused as ServerError where refused.isPermanent {
@@ -440,8 +481,9 @@ public struct PushRegistrar: Sendable {
         } catch {
             return facts(.unavailable, next)
         }
+        let before = next
         next.confirm(made, at: now())
-        guard await save(next, for: next.tokenID) else { return facts(.unavailable, next) }
+        guard await save(next, for: next.tokenID) else { return facts(.unavailable, before) }
         return facts(.registered, next)
     }
 
@@ -479,6 +521,13 @@ public struct PushRegistrar: Sendable {
             }
         }
         try? await clear()
+    }
+
+    /// The sign-out did not go through (the session could not be removed):
+    /// the person is still signed in, so attempts may start and save again
+    /// for the sign-in, and the next one registers it anew.
+    public func signOutFailed(_ session: Session) {
+        control.stay(session.tokenID)
     }
 
     /// Stops using a registration: its device record deleted, then each
@@ -558,13 +607,21 @@ final class PushControl: @unchecked Sendable {
     }
 
     /// The sign-in of `tokenID` is being signed out: every attempt in flight
-    /// is cancelled, and none starts or saves for it again.
-    func leave(_ tokenID: String?) {
+    /// is cancelled, and none starts, saves or puts for it again. Without
+    /// `cancelling`, an attempt that would not stop for its cancellation is
+    /// stood in for, so a test reaches what still refuses it.
+    func leave(_ tokenID: String?, cancelling: Bool = true) {
         let tasks = lock.withLock {
             if let tokenID { leaving.insert(tokenID) }
             return Array(running.values)
         }
-        for task in tasks { task.cancel() }
+        if cancelling { for task in tasks { task.cancel() } }
+    }
+
+    /// A sign-out of `tokenID` failed: it is no longer leaving.
+    func stay(_ tokenID: String?) {
+        guard let tokenID else { return }
+        _ = lock.withLock { leaving.remove(tokenID) }
     }
 
     func isLeaving(_ tokenID: String?) -> Bool {
@@ -579,20 +636,48 @@ final class PushControl: @unchecked Sendable {
         _ = await Self.within(limit) { await tail?.value }
     }
 
-    /// `work`, given up after `limit`; true where it finished in time.
+    /// `work`, given up after `limit`: true where it finished in time. It
+    /// answers at the limit whatever `work` does, cancelled or not: a child
+    /// that ignores its cancellation runs on, and is waited for by nobody.
     static func within(_ limit: Duration, _ work: @escaping @Sendable () async -> Void) async -> Bool {
-        await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
+        let answer = AnswerOnce<Bool>()
+        return await withCheckedContinuation { continuation in
+            answer.set(continuation)
+            let task = Task {
                 await work()
-                return true
+                answer.resume(true)
             }
-            group.addTask {
+            Task {
                 try? await Task.sleep(for: limit)
-                return false
+                task.cancel()
+                answer.resume(false)
             }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
         }
+    }
+}
+
+/// A continuation resumed once, by whichever of two racers comes first.
+final class AnswerOnce<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Never>?
+    private var early: T?
+
+    func set(_ continuation: CheckedContinuation<T, Never>) {
+        let ready = lock.withLock { () -> T? in
+            if let early { return early }
+            self.continuation = continuation
+            return nil
+        }
+        if let ready { continuation.resume(returning: ready) }
+    }
+
+    func resume(_ value: T) {
+        let waiting = lock.withLock { () -> CheckedContinuation<T, Never>? in
+            guard early == nil else { return nil }
+            early = value
+            defer { continuation = nil }
+            return continuation
+        }
+        waiting?.resume(returning: value)
     }
 }

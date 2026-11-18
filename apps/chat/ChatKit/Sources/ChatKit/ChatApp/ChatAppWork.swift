@@ -620,8 +620,10 @@ extension ChatApp {
         case let .reconcilePush(read, settled, pending):
             return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled), pending: pending) }
         case .readDelivered:
-            guard let notifications else { return .none }
-            return .once { Event(.pushDelivered(await Self.deliveredThreads(notifications))) }
+            guard let notifications, let push else { return .none }
+            // Only this sign-in's pushes: a fallback alert another sign-in's
+            // push left never sends its thread's id to this server.
+            return .once { Event(.pushDelivered(await Self.deliveredThreads(notifications) { await push.accepts($0) })) }
         case let .showing(threads):
             return Self.device(notifications) { await $0.showing(threads: Set(threads)) }
         case .askPermission:

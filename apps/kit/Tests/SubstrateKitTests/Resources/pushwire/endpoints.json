@@ -25,6 +25,21 @@
     "push": "https://push.example.com:8443/v1/push"
   },
   {
+    "relay": "https://push.example.com:000443",
+    "register": "https://push.example.com:000443/v1/register",
+    "push": "https://push.example.com:000443/v1/push"
+  },
+  {
+    "relay": "https://push.example.com:65535",
+    "register": "https://push.example.com:65535/v1/register",
+    "push": "https://push.example.com:65535/v1/push"
+  },
+  {
+    "relay": "https://example.com/push%20relay",
+    "register": "https://example.com/push%20relay/v1/register",
+    "push": "https://example.com/push%20relay/v1/push"
+  },
+  {
     "relay": "http://push.example.com",
     "refused": true
   },
@@ -53,7 +68,37 @@
     "refused": true
   },
   {
+    "relay": "https://push.example.com:65536",
+    "refused": true
+  },
+  {
     "relay": "https://push.example.com:",
+    "refused": true
+  },
+  {
+    "relay": "https://example.com/%ZZ",
+    "refused": true
+  },
+  {
+    "relay": "https://example.com/push%",
+    "refused": true
+  },
+  {
+    "relay": "https://ex%41mple.com",
+    "refused": true
+  },
+  {
+    "relay": "https://%C3%A9xample.com",
+    "register": "https://%C3%A9xample.com/v1/register",
+    "push": "https://%C3%A9xample.com/v1/push"
+  },
+  {
+    "relay": "https://[::1]:8443/push",
+    "register": "https://[::1]:8443/push/v1/register",
+    "push": "https://[::1]:8443/push/v1/push"
+  },
+  {
+    "relay": "https://[::1",
     "refused": true
   },
   {

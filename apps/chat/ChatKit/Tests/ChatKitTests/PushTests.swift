@@ -222,6 +222,41 @@ struct PushTests {
         #expect(await rig.harness.state.pushDelivered == ["t9"])
     }
 
+    /// A launch iOS made for a tap or a refresh may never come to the
+    /// front: the alerts standing on the device are reconciled all the same,
+    /// and only this sign-in's name a chat to the server.
+    @Test func aColdLaunchReconcilesWhatThisSignInsPushesAlertedAndAskesOfNoOther() async throws {
+        let server = MarkServer(records: 9)
+        server.push(badge: 0)
+        server.chat("t1", readThrough: "t1-m2")
+        server.chat("t9", readThrough: "t9-m2")
+        server.write("t9", archived: true)
+        let held = HeldPush()
+        let rig = ChatRig(marks: server, platform: .ios, push: held.registrar)
+        rig.notifications.deliver(DeliveredNotification(id: "r9", thread: "t9", userInfo: pushed("reply", thread: "t9")))
+        rig.notifications.deliver(DeliveredNotification(id: "x8", thread: "t8", userInfo: pushed("reply", thread: "t8", generation: "gOther")))
+        try await rig.signIn(following: server)
+        try await rig.harness.until(advancing: 0.5) { _ in rig.notifications.standing.map(\.id) == ["x8"] }
+        #expect(await rig.harness.state.pushDelivered == ["t9"])
+        #expect(!server.requests.contains { $0.contains("t8") })
+    }
+
+    @Test func aKeychainThatCannotBeReadLeavesWhatWasKnown() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .ios)
+        var state = signedInState()
+        state.push = PushFacts(standing: .registered, held: true)
+        state = try app.apply(.init(.pushSynced(PushFacts(standing: .unreadable))), to: state)
+        #expect(state.pushHeld && state.push?.standing == .registered)
+    }
+
+    @Test func aMarkWriteThatFailedAsksTheServersBadgeAgain() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .ios)
+        var state = signedInState()
+        state.pushRevision = 1
+        state = try app.apply(.init(.markWriteFailed(thread: "t1", sent: MarkChange(readThrough: "m1"), .later, nil)), to: state)
+        #expect(state.asks.contains { if case .serverBadge = $0 { true } else { false } })
+    }
+
     /// The device keeps the chats' state on disk; Apple's token is in the
     /// registration's Keychain item alone, never there.
     @Test func noFileTheAppWritesHoldsApplesToken() async throws {

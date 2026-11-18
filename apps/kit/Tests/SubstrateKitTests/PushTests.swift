@@ -1,10 +1,11 @@
 import Foundation
 import SubstrateAPI
-import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateTesting
 import Testing
+
+@testable import SubstrateAuth
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -203,6 +204,27 @@ struct PushPayloadTests {
         filled["thread"] = "8f2c41d07a"
         #expect(PushPayload.thread(of: filled, key: "thread") { $0 == current } == "8f2c41d07a")
         #expect(PushPayload.thread(of: filled, key: "thread") { _ in false } == nil)
+    }
+}
+
+/// A value a test sets after the closure that reads it is made.
+final class Box<T>: @unchecked Sendable {
+    var value: T?
+}
+
+/// A transport that runs `hook` before each request reaches the stub.
+final class HookTransport: HTTPTransport, @unchecked Sendable {
+    let inner: StubTransport
+    let hook: @Sendable (URLRequest) async -> Void
+
+    init(_ inner: StubTransport, hook: @escaping @Sendable (URLRequest) async -> Void) {
+        self.inner = inner
+        self.hook = hook
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await hook(request)
+        return try await inner.data(for: request)
     }
 }
 
@@ -628,6 +650,113 @@ struct PushRegistrarTests {
         let unknown = await world.registrar.sync(PushWorld.ask)
         #expect(unknown.standing == .unavailable && unknown.held)
         #expect(world.sent("DELETE", PushWorld.devicePath).isEmpty)
+    }
+
+    /// A push state the Keychain does not answer for is no absent one: the
+    /// attempt stops before the network and writes nothing over it.
+    @Test func aPushStateThatCannotBeReadIsKeptAndNothingIsMadeOverIt() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        let kept = try #require(world.storage.stored(account: world.registrar.account))
+        world.device.set(token: String(repeating: "cd", count: 32))
+        world.storage.failReads(of: world.registrar.account, with: MemoryStorage.locked)
+        let asked = world.transport.requests.count
+        let facts = await world.registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unreadable)
+        #expect(await world.registrar.facts().standing == .unreadable)
+        #expect(world.transport.requests.count == asked)
+        world.storage.failReads(of: world.registrar.account, with: nil)
+        #expect(world.storage.stored(account: world.registrar.account) == kept)
+    }
+
+    /// The relay sealed a key and the Keychain would not keep it: no put is
+    /// sent for it, and the install does not count as registered.
+    @Test func aKeyTheKeychainWouldNotKeepIsNeverPutNorHeld() async throws {
+        let world = PushWorld()
+        let hooked = HookTransport(world.transport) { request in
+            if request.url.map(StubTransport.path) == "/v1/register" {
+                world.storage.failWrites(of: world.registrar.account, with: MemoryStorage.locked)
+            }
+        }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: hooked, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        let facts = await registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .unavailable && !facts.held)
+        #expect(world.sent("POST", "/v1/register").count == 1)
+        #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+        world.storage.failWrites(of: world.registrar.account, with: nil)
+        #expect(await registrar.state()?.held == false)
+    }
+
+    /// A sign-out that fails leaves the person signed in: pushes come back
+    /// at the next attempt.
+    @Test func aSignOutThatFailsLetsPushesRegisterAgain() async throws {
+        let world = PushWorld()
+        let registrar = world.registrar
+        #expect(await registrar.sync(PushWorld.ask).held)
+        let session = try #require(await world.sessions.load())
+        await registrar.signOut(session)
+        #expect(await registrar.sync(PushWorld.ask).standing == .unknown)
+        registrar.signOutFailed(session)
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+    }
+
+    /// The sign-out's bounds hold against work that ignores its cancellation.
+    @Test func theSignOutsBoundsAnswerAtTheirLimitWhateverTheWorkDoes() async throws {
+        let started = ContinuousClock.now
+        let finished = await PushControl.within(.milliseconds(200)) { await Self.uncancellable(seconds: 3) }
+        #expect(!finished)
+        #expect(ContinuousClock.now - started < .seconds(2))
+
+        let world = PushWorld()
+        let stuck = HookTransport(world.transport) { request in
+            if request.httpMethod == "DELETE" || request.url.map(StubTransport.path) == "/v1/register" { await Self.uncancellable(seconds: 12) }
+        }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: stuck, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        // Registered once over the plain transport, so the sign-out has a
+        // device to delete.
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.device.set(token: String(repeating: "cd", count: 32))
+        let attempt = Task { await registrar.sync(PushWorld.ask) }
+        while world.sent("POST", "/v1/register").count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        let signing = ContinuousClock.now
+        await registrar.signOut(try #require(await world.sessions.load()))
+        #expect(ContinuousClock.now - signing < .seconds(9))
+        #expect(await registrar.state() == nil)
+        attempt.cancel()
+    }
+
+    /// A put a sign-out overtakes is never sent: the sign-out's delete is
+    /// the last word.
+    @Test func aSignOutUnderWayRefusesThePutOfAnAttempt() async throws {
+        let world = PushWorld()
+        world.transport.replace("PUT", PushWorld.devicePath, status: 500, json: #"{"error":{"code":"internal","message":"no"}}"#)
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.transport.replace("PUT", PushWorld.devicePath, status: 200, json: PushWorld.record)
+        let puts = world.sent("PUT", PushWorld.devicePath).count
+        let session = try #require(await world.sessions.load())
+        let box = Box<PushRegistrar>()
+        let hooked = HookTransport(world.transport) { request in
+            // The person signs out while the attempt reads its key.
+            // An attempt that does not stop for its cancellation is stood in
+            // for: what refuses its put is the sign-in leaving.
+            if request.url.map(StubTransport.path) == "/api/v1/push/key" { box.value?.control.leave(session.tokenID, cancelling: false) }
+        }
+        // On the world's clock, so the attempt is still the one wanted and
+        // is put again rather than made anew.
+        let racing = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: hooked, buildRelay: "https://push.example.com", clientID: PushWorld.client,
+            now: { Date(timeIntervalSince1970: 1_763_459_000) })
+        box.value = racing
+        _ = await racing.sync(PushWorld.ask)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == puts)
+    }
+
+    static func uncancellable(seconds: Double) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { continuation.resume() }
+        }
     }
 
     @Test func anotherSignInsRegistrationIsForgotten() async throws {

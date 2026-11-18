@@ -9,9 +9,10 @@
 
 # push_relay_valid <relay>: 0 where it is an https URL with a host and a
 # port, if any, from 1 to 65535, an optional path, and no user info, query
-# or fragment, of printable ASCII and at most 2,048 characters.
+# or fragment, of printable ASCII and at most 2,048 characters, each `%`
+# starting two hex digits (and, in the host, a byte past ASCII).
 push_relay_valid() {
-	local LC_ALL=C relay="${1-}" rest authority host port=""
+	local LC_ALL=C relay="${1-}" rest authority host port="" tail
 	[ -n "$relay" ] && [ "${#relay}" -le 2048 ] || return 1
 	case "$relay" in https://*) ;; *) return 1 ;; esac
 	case "$relay" in *[!!-~]* | *\?* | *#* | *\\*) return 1 ;; esac
@@ -19,6 +20,18 @@ push_relay_valid() {
 	authority="${rest%%/*}"
 	[ -n "$authority" ] || return 1
 	case "$authority" in *@*) return 1 ;; esac
+	tail="$relay"
+	while [[ $tail == *%* ]]; do
+		tail="${tail#*%}"
+		[[ $tail =~ ^[0-9A-Fa-f][0-9A-Fa-f] ]] || return 1
+		tail="${tail:2}"
+	done
+	tail="$authority"
+	while [[ $tail == *%* ]]; do
+		tail="${tail#*%}"
+		[[ $tail =~ ^[89A-Fa-f] ]] || return 1
+		tail="${tail:2}"
+	done
 	if [ "${authority#\[}" != "$authority" ]; then
 		case "$authority" in *]*) ;; *) return 1 ;; esac
 		host="${authority%%]*}"
@@ -36,7 +49,9 @@ push_relay_valid() {
 	[ -n "$host" ] || return 1
 	if [ -n "$port" ]; then
 		case "$port" in *[!0-9]*) return 1 ;; esac
-		[ "${#port}" -le 5 ] && [ "$((10#$port))" -ge 1 ] && [ "$((10#$port))" -le 65535 ] || return 1
+		# Leading zeros are read past, as Go reads the number: :000443 is 443.
+		port="${port#"${port%%[!0]*}"}"
+		[ -n "$port" ] && [ "${#port}" -le 5 ] && [ "$((10#$port))" -le 65535 ] || return 1
 	fi
 	return 0
 }

@@ -405,6 +405,8 @@ public struct LinkController<App: LinkedApp>: Controller {
                     await push?.signOut(session)
                     try await sessions.signOut(session, transport: transport)
                 } catch {
+                    // Still signed in: pushes may register again.
+                    push?.signOutFailed(session)
                     return .signOutFailed(explain(error, app: manifest.appName, server: session.server), generation: generation)
                 }
                 // The sign-out only kept the token for revocation: it is
