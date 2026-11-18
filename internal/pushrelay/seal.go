@@ -88,7 +88,14 @@ func (s *Sealer) Seal(k PushKey) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	nonce := make([]byte, chacha20poly1305.NonceSizeX, chacha20poly1305.NonceSizeX+len(plain)+chacha20poly1305.Overhead)
+	// A key's plaintext is a few hundred bytes; one larger could never seal
+	// to a push key the wire carries.
+	if len(plain) > pushwire.MaxPushKey {
+		return "", fmt.Errorf("a push key's contents are %d bytes, over %d", len(plain), pushwire.MaxPushKey)
+	}
+	// Seal appends the ciphertext after the nonce, so no size is computed
+	// from the plaintext's length here.
+	nonce := make([]byte, chacha20poly1305.NonceSizeX)
 	if _, err := io.ReadFull(s.rand, nonce); err != nil {
 		return "", fmt.Errorf("read a nonce: %w", err)
 	}

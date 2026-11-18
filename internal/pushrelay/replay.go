@@ -2,57 +2,71 @@ package pushrelay
 
 import (
 	"container/heap"
-	"sync"
 	"time"
+
+	"github.com/geoah/substrate/internal/pushwire"
 )
 
-// maxReplays bounds the replay window. Past it the entry that would leave
-// soonest is dropped first.
-const maxReplays = 200_000
+// MaxReplays bounds the replay window: the signatures held to refuse a
+// repeat.
+const MaxReplays = 200_000
 
-// replays is every accepted signature, kept until its time plus the window,
+// replayHorizon is the longest one entry is held: a signature dated
+// SignatureWindow ahead of the relay's clock is kept until its time plus
+// the window.
+const replayHorizon = 2 * pushwire.SignatureWindow
+
+// ReplayCapacity is how many signatures the window must hold for a total
+// limit of total pushes a minute: an entry is admitted only once the total
+// limit lets its push through, so at most a full bucket plus the horizon's
+// refill are live at once. An entry is never dropped while it lives, so a
+// window that is full answers rate_limited instead.
+func ReplayCapacity(total int) int {
+	return total + total*int(replayHorizon/time.Minute)
+}
+
+// MaxTotal is the largest total limit whose replay window fits MaxReplays.
+var MaxTotal = MaxReplays / ReplayCapacity(1)
+
+// replays is every admitted signature, kept until its time plus the window,
 // so one dated ahead of the relay's clock is kept as long as it could be
-// accepted. It is per replica.
+// accepted. It is per replica, and the relay's admission lock guards it.
 type replays struct {
-	mu    sync.Mutex
-	until map[string]time.Time
-	queue replayQueue
-	max   int
+	until    map[string]time.Time
+	queue    replayQueue
+	capacity int
 }
 
-func newReplays(max int) *replays {
-	return &replays{until: map[string]time.Time{}, max: max}
+func newReplays(capacity int) *replays {
+	return &replays{until: map[string]time.Time{}, capacity: capacity}
 }
 
-// accept records sig, kept until until, and reports false when it is held
-// already: a repeat.
-func (r *replays) accept(sig []byte, until, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// prune drops every entry that can no longer be accepted at now.
+func (r *replays) prune(now time.Time) {
 	for len(r.queue) > 0 && r.queue[0].until.Before(now) {
 		e := heap.Pop(&r.queue).(replayEntry)
 		if r.until[e.sig].Equal(e.until) {
 			delete(r.until, e.sig)
 		}
 	}
-	key := string(sig)
-	if u, ok := r.until[key]; ok && !u.Before(now) {
-		return false
-	}
-	for len(r.until) >= r.max && len(r.queue) > 0 {
-		e := heap.Pop(&r.queue).(replayEntry)
-		delete(r.until, e.sig)
-	}
-	r.until[key] = until
-	heap.Push(&r.queue, replayEntry{sig: key, until: until})
-	return true
 }
 
-func (r *replays) len() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.until)
+// seen reports whether sig is held, after a prune at the same clock.
+func (r *replays) seen(sig []byte) bool {
+	_, ok := r.until[string(sig)]
+	return ok
 }
+
+func (r *replays) full() bool { return len(r.until) >= r.capacity }
+
+// add holds sig until until. The caller checked seen and full.
+func (r *replays) add(sig []byte, until time.Time) {
+	key := string(sig)
+	r.until[key] = until
+	heap.Push(&r.queue, replayEntry{sig: key, until: until})
+}
+
+func (r *replays) len() int { return len(r.until) }
 
 type replayEntry struct {
 	sig   string

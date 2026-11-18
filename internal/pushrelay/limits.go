@@ -21,10 +21,10 @@ type Limits struct {
 	Total int
 	// RegisterTotal is the registrations in all.
 	RegisterTotal int
-	// RefusedTotal is the refusals in all. Past it a refusal is answered
-	// rate_limited and logged no more, which bounds what a flood of bad
-	// requests costs the logs; a request that would be sent never charges
-	// it and is never held by it.
+	// RefusedTotal is the refusals in all. Past it a refusal is still
+	// answered with its own code, and counted, but no longer logged, which
+	// bounds what a flood of bad requests costs the logs. A request its
+	// caller's own limit holds is not charged to it.
 	RefusedTotal int
 }
 
@@ -39,6 +39,9 @@ const (
 	limitTotal         = "total"
 	limitRegisterTotal = "register_total"
 	limitRefusedTotal  = "refused_total"
+	// limitReplayWindow is the replay window full, which the total limit
+	// keeps from happening (ReplayCapacity).
+	limitReplayWindow = "replay_window"
 )
 
 // maxBuckets bounds the keyed buckets of every limit together; past it the

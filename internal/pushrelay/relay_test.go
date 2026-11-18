@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -114,8 +115,14 @@ func dropTime(groups []string, a slog.Attr) slog.Attr {
 
 func (h *harness) do(method, path string, body []byte, header map[string]string) *httptest.ResponseRecorder {
 	h.t.Helper()
+	return h.doFrom("198.51.100.7:40000", method, path, body, header)
+}
+
+// doFrom is do from the transport peer addr, with or without a port.
+func (h *harness) doFrom(addr, method, path string, body []byte, header map[string]string) *httptest.ResponseRecorder {
+	h.t.Helper()
 	r := httptest.NewRequest(method, path, bytes.NewReader(body))
-	r.RemoteAddr = "198.51.100.7:40000"
+	r.RemoteAddr = addr
 	for k, v := range header {
 		r.Header.Set(k, v)
 	}
@@ -288,7 +295,8 @@ func TestEveryPushFixtureReachesAppleAsWritten(t *testing.T) {
 	}
 }
 
-// The two cards on one thread both reach Apple, neither with a collapse id.
+// The two cards on one thread are two requests to Apple, neither with a
+// collapse id.
 func TestTwoCardsOnOneThreadBothReachApple(t *testing.T) {
 	h := newHarness(t)
 	for _, name := range []string{"push-request-card-1.json", "push-request-card-2.json"} {
@@ -349,6 +357,7 @@ func TestEveryAppleAnswerBecomesThePlans(t *testing.T) {
 		{"a bad device token", 400, "BadDeviceToken", nil, &Gone},
 		{"a token for another topic", 400, "DeviceTokenNotForTopic", nil, &Gone},
 		{"the key refused", 403, "InvalidProviderToken", nil, &Upstream},
+		{"a key of the other environment", 403, "BadEnvironmentKeyIdInToken", nil, &Upstream},
 		{"a provider token expired twice", 403, "ExpiredProviderToken", nil, &Upstream},
 		{"a topic the key may not send to", 400, "TopicDisallowed", nil, &Upstream},
 		{"a bad topic", 400, "BadTopic", nil, &Upstream},
@@ -478,26 +487,92 @@ func TestASignatureDatedAheadIsKeptAsLongAsItCouldBeAccepted(t *testing.T) {
 	wantRefusal(t, h.push(body, sig), StaleSignature)
 }
 
-// The window is bounded: past its size the entry that leaves soonest goes.
-func TestTheReplayWindowIsBounded(t *testing.T) {
-	r := newReplays(3)
-	now := time.Unix(1_800_000_000, 0)
-	for i, d := range []time.Duration{10, 30, 20} {
-		if !r.accept([]byte{byte(i)}, now.Add(d*time.Second), now) {
-			t.Fatal("a new signature was a repeat")
+// The window holds every signature the total limit lets through, so a
+// flood of signed pushes, each dated as far ahead as the window allows,
+// never drops the signature of a push that was delivered: the flood is held
+// by the limits, and what the limits refuse holds no entry.
+func TestAFloodCannotEvictADeliveredSignature(t *testing.T) {
+	const total = 3
+	h := newHarness(t, limits(with(func(l *Limits) { l.Total = total; l.Install = 1000 })))
+	victim := h.register(newToken(), pushwire.EnvironmentProduction)
+	delivered, deliveredSig := h.signed(victim, pushwire.EventReply, 1, eventID("delivered"), h.signer, h.clock.Now().Add(pushwire.SignatureWindow))
+	wantSent(t, h.push(delivered, deliveredSig))
+
+	flood := h.register(newToken(), pushwire.EnvironmentProduction)
+	start := h.clock.Now()
+	for step := range 60 {
+		for i := range 20 {
+			h.push(h.signed(flood, pushwire.EventReply, 1, eventID(fmt.Sprint("flood", step, i)), h.signer, h.clock.Now().Add(pushwire.SignatureWindow)))
 		}
+		if n, capacity := h.relay.replays.len(), ReplayCapacity(total); n > capacity {
+			t.Fatalf("the window holds %d, over its capacity %d", n, capacity)
+		}
+		if h.clock.Now().Before(start.Add(2*pushwire.SignatureWindow - 10*time.Second)) {
+			wantRefusal(t, h.push(delivered, deliveredSig), Replayed)
+		}
+		h.clock.Add(10 * time.Second)
 	}
-	if !r.accept([]byte{9}, now.Add(40*time.Second), now) || r.len() != 3 {
-		t.Fatalf("the window holds %d", r.len())
+}
+
+// A window full anyway answers rate_limited, keeps every entry it holds and
+// charges nothing.
+func TestAFullWindowAnswersRateLimitedAndKeepsItsEntries(t *testing.T) {
+	h := newHarness(t)
+	h.relay.replays = newReplays(1)
+	in := h.register(newToken(), pushwire.EnvironmentProduction)
+	first, firstSig := h.signed(in, pushwire.EventReply, 1, eventID("first"), h.signer, h.clock.Now())
+	wantSent(t, h.push(first, firstSig))
+	wantRefusal(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("second"), h.signer, h.clock.Now())), RateLimited)
+	wantRefusal(t, h.push(first, firstSig), Replayed)
+	if h.prod.count() != 1 {
+		t.Fatalf("Apple got %d", h.prod.count())
 	}
-	if !r.accept([]byte{0}, now.Add(time.Minute), now) {
-		t.Fatal("the soonest to leave was kept past the bound")
+}
+
+func TestTheWindowIsSizedFromTheTotalLimit(t *testing.T) {
+	if got := ReplayCapacity(DefaultLimits.Total); got != 11*DefaultLimits.Total || got > MaxReplays {
+		t.Fatalf("the default total's window is %d", got)
 	}
-	if r.accept([]byte{1}, now.Add(time.Minute), now) {
-		t.Fatal("a later one was dropped first")
+	if ReplayCapacity(MaxTotal) > MaxReplays || ReplayCapacity(MaxTotal+1) <= MaxReplays {
+		t.Fatalf("MaxTotal %d does not bound the window to %d", MaxTotal, MaxReplays)
 	}
-	if !r.accept([]byte{1}, now.Add(time.Minute), now.Add(31*time.Second)) {
-		t.Fatal("an entry past its time was still held")
+	keys := pushwiretest.LoadKeys(t)
+	sealer, _ := NewSealer(keys.SealKeyBytes(t), nil, rand.Reader)
+	l := DefaultLimits
+	l.Total = MaxTotal + 1
+	if _, err := New(Config{Topics: []string{keys.Topic}, Apple: map[string]Sender{"production": &fakeSender{}}, Sealer: sealer, Limits: l}); err == nil {
+		t.Fatal("a total limit the window cannot hold was accepted")
+	}
+}
+
+// A repeat whose body arrives after its signature left the window is
+// refused at the clock the window is pruned by, not at the clock it began
+// with: the entry that would have caught it is gone by then.
+func TestARepeatWithADelayedBodyIsStale(t *testing.T) {
+	h := newHarness(t)
+	in := h.register(newToken(), pushwire.EnvironmentProduction)
+	body, sig := h.signed(in, pushwire.EventReply, 1, eventID("once"), h.signer, h.clock.Now())
+	wantSent(t, h.push(body, sig))
+
+	h.clock.Add(10 * time.Second)
+	pr, pw := io.Pipe()
+	r := httptest.NewRequest(http.MethodPost, pushwire.PathPush, pr)
+	r.RemoteAddr = "198.51.100.7:40000"
+	r.Header.Set(pushwire.SignatureHeader, sig)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() { h.relay.ServeHTTP(w, r); close(done) }()
+
+	// The window moves on while the body is in flight, and another push
+	// prunes the first one's entry.
+	h.clock.Add(pushwire.SignatureWindow)
+	wantSent(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("prunes"), h.signer, h.clock.Now())))
+	_, _ = pw.Write(body)
+	_ = pw.Close()
+	<-done
+	wantRefusal(t, w, StaleSignature)
+	if h.prod.count() != 2 {
+		t.Fatalf("Apple got %d, want the first and the pruning push", h.prod.count())
 	}
 }
 
@@ -603,20 +678,60 @@ func TestRegistrationsAreLimited(t *testing.T) {
 	wantRefusal(t, w, RateLimited)
 }
 
-// Past the refused total a refusal is answered rate_limited and logged no
-// more, and a push that verifies is still sent.
-func TestPastTheRefusedTotalARefusalIsRateLimitedAndASignedPushIsNot(t *testing.T) {
+// Past the refused total a refusal keeps its own code, so a server still
+// learns to delete a dead device, and is counted rather than logged.
+func TestPastTheRefusedTotalARefusalKeepsItsCodeAndIsNotLogged(t *testing.T) {
 	h := newHarness(t, limits(with(func(l *Limits) { l.RefusedTotal = 2 })))
 	in := h.register(newToken(), pushwire.EnvironmentProduction)
-	for range 2 {
-		wantRefusal(t, h.do(http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), BadRequest(""))
+	for i := range 2 {
+		wantRefusal(t, h.doFrom(fmt.Sprintf("203.0.113.%d", i+1), http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), BadRequest(""))
 	}
 	logged := strings.Count(h.logs.String(), "refused a request")
-	wantRefusal(t, h.do(http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), RateLimited)
-	if strings.Count(h.logs.String(), "refused a request") != logged {
-		t.Error("a refusal past the refused total was logged")
+	h.clock.Add(pushwire.KeyLifetime + time.Second)
+	wantRefusal(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("expired"), h.signer, h.clock.Now())), KeyExpired)
+	h.relay.limits.global[limitRefusedTotal].tokens = 0
+	wantRefusal(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("expired again"), h.signer, h.clock.Now())), KeyExpired)
+	if got := strings.Count(h.logs.String(), "refused a request"); got != logged+1 {
+		t.Errorf("%d refusals logged past the first two, want the one the refilled budget allowed", got-logged)
 	}
-	wantSent(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("still sent"), h.signer, h.clock.Now())))
+}
+
+// One caller flooding past its own limit spends none of the refused total,
+// so another caller's refusal is answered and logged as ever.
+func TestAFloodFromOneCallerLeavesAnotherCallersKeyExpiredIntact(t *testing.T) {
+	h := newHarness(t, limits(with(func(l *Limits) { l.Caller = 5; l.RefusedTotal = 10 })))
+	in := h.register(newToken(), pushwire.EnvironmentProduction)
+	h.clock.Add(pushwire.KeyLifetime + time.Second)
+	expired, expiredSig := h.signed(in, pushwire.EventReply, 1, eventID("expired"), h.signer, h.clock.Now())
+	for i := range 100 {
+		path := pushwire.PathPush
+		if i%2 == 1 {
+			path = "/"
+		}
+		w := h.doFrom("203.0.113.66", http.MethodPost, path, []byte(`{}`), nil)
+		if i >= 5 {
+			wantRefusal(t, w, RateLimited)
+		}
+	}
+	w := h.doFrom("198.51.100.20", http.MethodPost, pushwire.PathPush, expired, map[string]string{pushwire.SignatureHeader: expiredSig})
+	wantRefusal(t, w, KeyExpired)
+	if !strings.Contains(h.logs.String(), `"code":"key_expired"`) {
+		t.Error("the other caller's refusal was not logged")
+	}
+}
+
+// An IPv6 caller is its /64: the addresses one network hands out share one
+// allowance, and the next network has its own.
+func TestAnIPv6CallerIsItsSlash64(t *testing.T) {
+	h := newHarness(t, limits(with(func(l *Limits) { l.Caller = 2 })))
+	for _, addr := range []string{"[2001:db8::1]:1", "[2001:db8::ffff:2]:1"} {
+		wantRefusal(t, h.doFrom(addr, http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), BadRequest(""))
+	}
+	wantRefusal(t, h.doFrom("[2001:db8::3]:1", http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), RateLimited)
+	wantRefusal(t, h.doFrom("[2001:db8:0:1::1]:1", http.MethodPost, pushwire.PathPush, []byte(`{}`), nil), BadRequest(""))
+	if callerKey("203.0.113.9") != "203.0.113.9" || callerKey("::ffff:203.0.113.9") != "203.0.113.9" || callerKey("2001:db8::1") != "2001:db8::/64" {
+		t.Error("callerKey")
+	}
 }
 
 func TestABodyOver4KiBIsRefused(t *testing.T) {
@@ -679,7 +794,10 @@ func TestNoLogLineHoldsWhatAPushCarries(t *testing.T) {
 	const thread, badge = "threadseventeen7x", 777
 	token := strings.Repeat("c0ffee", 10) + "beef"
 	in := h.register(token, pushwire.EnvironmentProduction)
-	secrets := []string{in.pushKey, token, strings.ToUpper(token), h.keys.PublicKey, in.generation, thread, strconv.Itoa(badge)}
+	// Token-sized values are scanned for in the raw lines; the badge, a
+	// short number, in each line's decoded values, where a fingerprint's hex
+	// cannot match it by chance.
+	secrets := []string{in.pushKey, token, strings.ToUpper(token), h.keys.PublicKey, in.generation, thread}
 	send := func(event, label string, answer func(apns.Notification) (apns.Response, error)) {
 		h.prod.answer = answer
 		id := eventID(label)
@@ -710,6 +828,9 @@ func TestNoLogLineHoldsWhatAPushCarries(t *testing.T) {
 	h.push([]byte(strings.Replace(string(body), thread, thread+" x", 1)), "")
 	h.push([]byte(strings.Replace(string(body), in.pushKey, in.pushKey[:40], 1)), "")
 	h.do(http.MethodPost, pushwire.PathRegister, []byte(`{"platform":"apns","token":"`+token+`","topic":"other.topic","environment":"production","publicKey":"`+h.keys.PublicKey+`","generation":"`+in.generation+`"}`), nil)
+	h.do(http.MethodPost, pushwire.PathRegister, []byte(`{"platform":"apns","token":"`+token+`","topic":"`+h.keys.Topic+`","environment":"staging777","publicKey":"`+h.keys.PublicKey+`","generation":"`+in.generation+`"}`), nil)
+	secrets = append(secrets, "other.topic", "staging777", "typing777")
+	h.push([]byte(strings.Replace(string(body), `"event":"reply"`, `"event":"typing777"`, 1)), "")
 
 	logs := h.logs.String()
 	if logs == "" {
@@ -728,6 +849,11 @@ func TestNoLogLineHoldsWhatAPushCarries(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			t.Fatalf("%s: %v", line, err)
 		}
+		for k, v := range rec {
+			if v == float64(badge) || v == strconv.Itoa(badge) || v == float64(badge*10) || v == strconv.Itoa(badge*10) {
+				t.Errorf("the line's %s is the badge: %s", k, line)
+			}
+		}
 		if rec["code"] == pushwire.StatusSent && rec["caller"] != nil {
 			t.Errorf("a sent push's line names its caller: %s", line)
 		}
@@ -737,5 +863,120 @@ func TestNoLogLineHoldsWhatAPushCarries(t *testing.T) {
 	}
 	if !strings.Contains(logs, Fingerprint(in.pushKey)) {
 		t.Error("no line names the push key by its fingerprint")
+	}
+}
+
+// A reason Apple does not document is counted as other, so the metric's
+// labels stay a finite set.
+func TestAppleReasonsAreAFiniteSet(t *testing.T) {
+	for in, want := range map[string]string{
+		"": "", "Unregistered": "Unregistered", "BadEnvironmentKeyIdInToken": "BadEnvironmentKeyIdInToken",
+		"Teapot": "other", strings.Repeat("A", 10): "other", "Bad Token": "other",
+	} {
+		if got := appleReason(in); got != want {
+			t.Errorf("appleReason(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A send to an Apple that does not answer, through the real client, logs
+// no device token: the transport's error names the URL, and the client
+// hands back a fixed category instead.
+func TestASendWithNoAnswerLogsNoDeviceToken(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client, err := apns.New(apns.Config{BaseURL: "https://" + addr, TeamID: "TEAM000001", KeyID: "KEY0000001", Key: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, func(c *Config) { c.Apple = map[string]Sender{pushwire.EnvironmentProduction: client} })
+	token := strings.Repeat("d00d", 16)
+	in := h.register(token, pushwire.EnvironmentProduction)
+	wantRefusal(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("no answer"), h.signer, h.clock.Now())), Upstream)
+	logs := h.logs.String()
+	if strings.Contains(logs, token) || strings.Contains(logs, "/3/device") || !strings.Contains(logs, "no answer from Apple: refused") {
+		t.Fatalf("logs:\n%s", logs)
+	}
+}
+
+// Every body in bad-requests.json is refused as bad_request, and its log
+// line repeats nothing the caller wrote.
+func TestTheBadRequestFixturesAreRefused(t *testing.T) {
+	var rows []pushwiretest.BadRequest
+	pushwiretest.Read(t, "bad-requests.json", &rows)
+	h := newHarness(t)
+	for _, r := range rows {
+		path := pushwire.PathPush
+		if r.Route == "register" {
+			path = pushwire.PathRegister
+		}
+		wantRefusal(t, h.do(http.MethodPost, path, []byte(r.Body), nil), BadRequest(""))
+	}
+	for _, echoed := range []string{"fcm", "sandbox", "typing", "zzzz", `"a b"`} {
+		if strings.Contains(h.logs.String(), echoed) {
+			t.Errorf("a log line repeats %q", echoed)
+		}
+	}
+}
+
+// A topic the relay does not serve is refused and never logged; one it
+// serves is.
+func TestOnlyAServedTopicIsLogged(t *testing.T) {
+	h := newHarness(t)
+	body, _ := json.Marshal(pushwire.RegisterRequest{
+		Platform: pushwire.PlatformAPNs, Token: newToken(), Topic: "dev.example.unserved", Environment: pushwire.EnvironmentProduction,
+		PublicKey: h.keys.PublicKey, Generation: pushwire.Encode(make([]byte, 16)),
+	})
+	wantRefusal(t, h.do(http.MethodPost, pushwire.PathRegister, body, nil), TopicRefused)
+	if strings.Contains(h.logs.String(), "dev.example.unserved") {
+		t.Fatal("an unserved topic was logged")
+	}
+}
+
+// A key issued further ahead of the relay's clock than a signature may be
+// was not sealed by this relay at this time, and is refused.
+func TestAKeyFromTheFutureIsRefused(t *testing.T) {
+	h := newHarness(t)
+	keys := pushwiretest.LoadKeys(t)
+	sealer, _ := NewSealer(keys.SealKeyBytes(t), nil, rand.Reader)
+	seal := func(ahead time.Duration) install {
+		key, err := sealer.Seal(PushKey{
+			Platform: pushwire.PlatformAPNs, Token: newToken(), Topic: keys.Topic, Environment: pushwire.EnvironmentProduction,
+			PublicKey: keys.PublicKey, Generation: pushwire.Encode(make([]byte, 16)), Issued: h.clock.Now().Add(ahead).Unix(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return install{pushKey: key}
+	}
+	wantSent(t, h.push(h.signed(seal(pushwire.SignatureWindow), pushwire.EventReply, 1, eventID("at the window"), h.signer, h.clock.Now())))
+	wantRefusal(t, h.push(h.signed(seal(pushwire.SignatureWindow+time.Second), pushwire.EventReply, 1, eventID("past it"), h.signer, h.clock.Now())), KeyRefused)
+}
+
+// Admission checks the window again at its own clock, under its lock: a
+// signature that verified a moment ago and left the window since is stale,
+// whatever the request's own clock said.
+func TestAdmissionRechecksTheWindowAtItsOwnClock(t *testing.T) {
+	h := newHarness(t)
+	in := h.register(newToken(), pushwire.EnvironmentProduction)
+	k, err := h.relay.cfg.Sealer.Open(in.pushKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signedAt := h.clock.Now()
+	h.clock.Add(pushwire.SignatureWindow + time.Second)
+	w := httptest.NewRecorder()
+	c := &call{relay: h.relay, w: w, r: httptest.NewRequest(http.MethodPost, pushwire.PathPush, nil), route: routePush, now: signedAt}
+	if c.admit(pushwire.Signature{T: signedAt, Sig: []byte("a signature that verified")}, k) {
+		t.Fatal("admitted a signature past the window")
+	}
+	wantRefusal(t, w, StaleSignature)
+	if h.relay.replays.len() != 0 {
+		t.Fatal("a refused signature is held")
 	}
 }
