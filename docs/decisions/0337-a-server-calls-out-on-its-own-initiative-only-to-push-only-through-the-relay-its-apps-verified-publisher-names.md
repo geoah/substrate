@@ -48,9 +48,23 @@ app reads when it opens anyway.
   person; `request` for the six conversation modes, to the thread's person or
   the admins whose view reads it; nothing for `subagent`, `judge`, `stopped`
   or a recovery's settle. Each waits 5 seconds (`read` 2) and is checked
-  again: a `failed` is dropped when the person's mark took a position since
-  the turn began, and nothing else stands for "reading" (C7, which replaces
-  the plan's stream-reader signal).
+  again: a `failed` is dropped when the person's mark took a position at or
+  after the settle, and nothing else stands for "reading" (C7, which replaces
+  the plan's stream-reader signal; a mark taken during the turn says nothing
+  of how it ended). A turn that raised a request pushes it and no reply, and
+  the request is seen once the mark reads through the message that turn's
+  settle left.
+- **When it is decided.** Each delivery takes one of four slots before it
+  reads anything, then reads the person's devices, the tokens and the
+  person's membership, and sends only to a device whose token's view reads
+  the live thread and the item. A `read` names only fingerprints its device
+  holds and asks no view of the thread; an alert is forgotten only once the
+  `read` naming it was taken. The rechecks read a snapshot and take neither
+  the write gate nor the changelog lock.
+- **Actions.** A request's id offers its decision only while the record waits
+  at the version the id names, the token's view reads it, the person's roles
+  and the token write its kind whole, and the token passes the decision's
+  continuation check.
 - **The event id** is the item's reference and version, the event, the
   thread and when it was issued, sealed with XChaCha20-Poly1305 under a key
   derived for the token, with its own additional data (C8), and resolvable

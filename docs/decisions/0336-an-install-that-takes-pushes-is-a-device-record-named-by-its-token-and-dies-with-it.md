@@ -57,7 +57,12 @@ What the engine holds (`internal/engine/devices.go`):
   gained it over the mark
   ([0313](0313-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md));
   the own-device rule narrows it to the person's own. A scoped app needs
-  `write:substrate.reamde.dev/core/device`, an ordinary kind scope.
+  `write:substrate.reamde.dev/core/device`, the one kind of `core` a scope
+  writes, named exactly: no glob over `core` reaches it, and every other
+  core write stays refused.
+- **Reading.** A person who is not an admin reads their own devices alone,
+  by id, in a list and in the change feed, whatever their roles read; an
+  admin reads them all.
 - **Going away.** The `token` reference is `onDelete: cascade`, so the sweep
   that collects a deleted token collects its device. `RunGC` deletes the
   device of a token past its expiry, which no cascade reaches. After a relay
@@ -72,9 +77,11 @@ What the engine holds (`internal/engine/devices.go`):
   step of the app's, and nothing on the relay has to be told.
 - Good, because a restore, an export and the change feed carry devices as
   they carry every record, and a reader of the record cannot push with it.
-- Bad, because whoever reads `core/device` reads every person's devices, as
-  a kind is the unit of permission
-  ([0275](0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md)).
+- Bad, because a device is a kind read row by row in a person's view, where
+  a kind is otherwise the unit of permission
+  ([0275](0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md)):
+  a person's own devices name their sign-ins and push keys, which no other
+  person's roles should reach.
 - Bad, because a restored copy holds the same devices and signs for them:
   every copy runs with `SUBSTRATE_PUSH=false` (0337).
 - Bad, because between a token's delete and the sweep that collects it the

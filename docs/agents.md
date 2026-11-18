@@ -1639,12 +1639,21 @@ cards on one thread are two waits. Then:
 
 - a `reply` is dropped when the person's mark reads through its message, or
   their mark says `archived`;
-- a `failed` is dropped when the person's mark took a position since the
-  turn began, or says `archived`, or the thread ran again;
-- a `request` is dropped when its record no longer waits, or when a settle
-  raised it and the person's mark reads through the message that settle
-  left. `archived` does not stop it: what waits on a person is always
-  notified.
+- a `failed` is dropped when the person's mark took a position at or after
+  the settle, or says `archived`, or the thread ran again. A mark taken
+  during the turn (a client marking the message it just sent) saw nothing
+  of how it ended;
+- a `request` is dropped when its record no longer waits at the version that
+  raised it, or when the turn that raised it settled and the person's mark
+  reads through the message that settle left. `archived` does not stop it:
+  what waits on a person is always notified. A turn that raised a request
+  pushes that request and no reply.
+
+Who may see an alert is read when it is sent, not when it was held: each
+delivery first takes one of four slots, then reads the person's devices
+(each token live and not expired, the person still in the repository), and
+sends only to a device whose token's view reads both the live thread and the
+item, the message of a reply or the record of a request.
 
 A `read` waits 2 seconds, keyed by its recipient and its thread alone, so
 every source in that time folds into one.
@@ -1656,7 +1665,10 @@ each alert of that thread: a reply the mark now reads through, a failure the
 person read past, an alert on a thread they archived, a request decided. Those
 are covered, and the `read` names their fingerprints, split over as many
 event ids as they need; the app removes exactly the delivered notifications
-whose event ids have them. A partial read covers only the older alerts, so a
+whose event ids have them. An alert is forgotten only once the relay took the
+`read` naming it, and one still being sent when its `read` comes is taken
+back as soon as the relay took it. A `read` names only fingerprints the
+device already holds, so it asks no view of the thread. A partial read covers only the older alerts, so a
 newer notification stays. The memory holds 10,000 alerts and lives in the
 process: after a restart no `read` is sent for what was alerted before it.
 

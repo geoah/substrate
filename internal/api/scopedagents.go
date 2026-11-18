@@ -32,8 +32,8 @@ const (
 	// kindDevice is read row by row in a person's view: their own devices
 	// alone, whatever their roles read (devices.go in the engine holds the
 	// writes the same way).
-	kindDevice = vocabulary.KindDevice
-	kindActorRow    = corePackage + "/actor"
+	kindDevice   = vocabulary.KindDevice
+	kindActorRow = corePackage + "/actor"
 )
 
 // agentListPage is the page size the grant's agent list is read in.

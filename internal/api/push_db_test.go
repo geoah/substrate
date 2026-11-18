@@ -322,6 +322,10 @@ func pushLLM(t *testing.T) *httptest.Server {
 		}
 		last := req.Messages[len(req.Messages)-1]
 		said, _ := json.Marshal(last["content"])
+		if len(req.Tools) > 0 && last["role"] != "tool" && strings.Contains(string(said), "fail") {
+			http.Error(w, `{"error":{"message":"the model failed"}}`, http.StatusBadRequest)
+			return
+		}
 		delta := map[string]any{"content": "Here is the summary you asked for."}
 		finish := "stop"
 		if len(req.Tools) > 0 && last["role"] != "tool" && strings.Contains(string(said), "ask") {

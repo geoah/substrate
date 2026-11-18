@@ -432,9 +432,12 @@ func (s *scopedDataset) requireRead(ctx context.Context, kind string) error {
 // requireWrite answers the refusal for a kind the grant cannot write: as
 // unknown when it cannot read it either, else forbidden.
 func (s *scopedDataset) requireWrite(ctx context.Context, kind string) error {
+	// A device is read row by row in a person's view and written by the
+	// rules of their roles, which the engine holds to their own token's
+	// record (devices.go).
 	if gated, err := s.rowGated(ctx, kind); err != nil {
 		return err
-	} else if gated {
+	} else if gated && !s.devicesHeld(kind) {
 		return fmt.Errorf("%w: an app's token does not write %s", substrate.ErrForbidden, kind)
 	}
 	if err := s.requireRead(ctx, kind); err != nil {

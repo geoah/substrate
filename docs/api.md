@@ -2574,8 +2574,11 @@ for that token, for 24 hours.
 | `read` | none | `covers` |
 
 `actions` is decided when the id is resolved: `true` only while the record
-still waits on a person, the token's view reads it, and the token could
-write its decision. A `read` answers the alerts it takes back, by the
+still waits on a person at the version the id names (a newer version of the
+record is a new item), the token's view reads it, the person's roles and the
+token write its kind whole (an app's agent scopes may reach the row; a
+person's roles never do by a row), and the token passes the continuation
+check the decision's own write passes. A `read` answers the alerts it takes back, by the
 fingerprint of each one's event id (`pushwire.EventFingerprint`):
 
 ```json
@@ -2615,11 +2618,16 @@ refused. The server fills `token` and `person` from the request and fixes
 them at the create, and stamps `seenAt`; the body leaves all three out. A
 `POST /api/v1/records` names no id, so it cannot write a device. The record
 is read with `GET` and deleted with `DELETE` at the same address: by its own
-token, by any other token of the same person, or by an admin. The shipped
-`viewer` role writes the kind, held to the person's own devices. The server
-deletes a device itself when its token is deleted (the token reference
-cascades), when its token expires (the periodic sweep), and when the relay
-says the install is gone or refuses its key.
+token, by any other token of the same person, or by an admin. A person who
+is not an admin reads their own devices alone, by id, in a list and in the
+change feed. The shipped `viewer` role writes the kind, held to the person's
+own devices. An app with scopes needs `write:substrate.reamde.dev/core/device`,
+the one kind of `core` a scope writes, named exactly. The server deletes a
+device itself when its token is deleted (the token reference cascades), when
+its token expires (the periodic sweep), and when the relay answers one of the
+deleting codes with the status it pairs with (`410 gone`; `401
+signature_refused`; `403` with `key_refused`, `key_expired`, `topic_refused`
+or `environment_refused`).
 
 The `errors` feature's revision 8 adds the two reasons.
 
