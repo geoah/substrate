@@ -416,51 +416,71 @@ func freePort(t *testing.T) string {
 
 // The relay serves: healthy at once, ready once each environment minted a
 // provider token, metrics on their own listener and not on the relay's.
+// Listening beyond loopback with no trusted proxy, it warns at boot that
+// every caller would be the terminator in front; on loopback it does not.
 func TestItServes(t *testing.T) {
-	env := baseEnv(t)
-	port, metricsPort := freePort(t), freePort(t)
-	env["PORT"], env["SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS"] = port, "127.0.0.1:"+metricsPort
-	setEnv(t, env)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	var logs bytes.Buffer
-	go func() { done <- run(ctx, nil, io.Discard, &logs) }()
-	base := "http://127.0.0.1:" + port
-	get := func(url string) int {
-		r, err := http.Get(url) //nolint:noctx // a loopback URL the test built.
-		if err != nil {
-			return 0
-		}
-		r.Body.Close()
-		return r.StatusCode
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for get(base+"/readyz") != http.StatusOK {
-		if time.Now().After(deadline) {
-			t.Fatalf("never ready; logs:\n%s", logs.String())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if get(base+"/healthz") != http.StatusOK || get(base+"/metrics") != http.StatusNotFound {
-		t.Fatal("healthz or the relay's own port serves metrics")
-	}
-	r, err := http.Get("http://127.0.0.1:" + metricsPort + "/metrics") //nolint:noctx // a loopback URL the test built.
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(r.Body)
-	r.Body.Close()
-	if !strings.Contains(string(body), `substrate_push_relay_tokens_minted_total{environment="production"} 1`) {
-		t.Fatalf("metrics:\n%s", body)
-	}
-	cancel()
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("serve exited %d; logs:\n%s", code, logs.String())
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("serve did not stop")
+	for _, tc := range []struct {
+		name, bind string
+		warn       bool
+	}{
+		{"on loopback", "127.0.0.1", false},
+		{"on every interface with no trusted proxy", "0.0.0.0", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := baseEnv(t)
+			port, metricsPort := freePort(t), freePort(t)
+			env["PORT"], env["SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS"] = port, "127.0.0.1:"+metricsPort
+			env["SUBSTRATE_BIND_ADDRESS"], env["SUBSTRATE_INSECURE_ALLOW_CLEARTEXT"] = tc.bind, "true"
+			setEnv(t, env)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan int, 1)
+			var logs bytes.Buffer
+			go func() { done <- run(ctx, nil, io.Discard, &logs) }()
+			base := "http://127.0.0.1:" + port
+			get := func(url string) int {
+				r, err := http.Get(url) //nolint:noctx // a loopback URL the test built.
+				if err != nil {
+					return 0
+				}
+				r.Body.Close()
+				return r.StatusCode
+			}
+			deadline := time.Now().Add(10 * time.Second)
+			for get(base+"/readyz") != http.StatusOK {
+				if time.Now().After(deadline) {
+					cancel()
+					<-done
+					t.Fatalf("never ready; logs:\n%s", logs.String())
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if get(base+"/healthz") != http.StatusOK || get(base+"/metrics") != http.StatusNotFound {
+				t.Error("healthz or the relay's own port serves metrics")
+			}
+			r, err := http.Get("http://127.0.0.1:" + metricsPort + "/metrics") //nolint:noctx // a loopback URL the test built.
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(r.Body)
+			r.Body.Close()
+			if !strings.Contains(string(body), `substrate_push_relay_tokens_minted_total{environment="production"} 1`) {
+				t.Errorf("metrics:\n%s", body)
+			}
+			cancel()
+			select {
+			case code := <-done:
+				if code != 0 {
+					t.Fatalf("serve exited %d; logs:\n%s", code, logs.String())
+				}
+			case <-time.After(30 * time.Second):
+				t.Fatal("serve did not stop")
+			}
+			// Read once serve has returned, so nothing writes the log meanwhile.
+			warned := strings.Contains(logs.String(), "level=WARN") && strings.Contains(logs.String(), "SUBSTRATE_TRUSTED_PROXIES is not set")
+			if warned != tc.warn {
+				t.Fatalf("warned %v, want %v; logs:\n%s", warned, tc.warn, logs.String())
+			}
+		})
 	}
 }
 

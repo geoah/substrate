@@ -629,7 +629,18 @@ func TestTheTotalPushesAreLimited(t *testing.T) {
 		wantSent(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID(fmt.Sprint(i)), h.signer, h.clock.Now())))
 	}
 	in := h.register(newToken(), pushwire.EnvironmentProduction)
-	wantRefusal(t, h.push(h.signed(in, pushwire.EventReply, 1, eventID("third"), h.signer, h.clock.Now())), RateLimited)
+	held := h.relay.replays.len()
+	third, thirdSig := h.signed(in, pushwire.EventReply, 1, eventID("third"), h.signer, h.clock.Now())
+	wantRefusal(t, h.push(third, thirdSig), RateLimited)
+	// A push the total limit refused holds no entry in the window: only a
+	// push that went to Apple does, so a flood the limits hold can take no
+	// delivered push's place, and the same request is still sent once the
+	// limit refills.
+	if got := h.relay.replays.len(); got != held {
+		t.Fatalf("the window holds %d after a refused push, want %d", got, held)
+	}
+	h.clock.Add(time.Minute)
+	wantSent(t, h.push(third, thirdSig))
 }
 
 func TestACallersRequestsAreLimited(t *testing.T) {
