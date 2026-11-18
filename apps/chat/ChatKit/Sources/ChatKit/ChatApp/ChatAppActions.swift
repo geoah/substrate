@@ -39,6 +39,9 @@ extension ChatApp {
         // decides nothing, and the person is told to open the chat.
         let pushed = PushPayload(response.userInfo) != nil
         let foreign = pushed && (response.userInfo[ChatPush.sessionKey] == nil || response.userInfo[ChatPush.sessionKey] != state.session?.identity)
+        // What everything this action starts is held to: the push and the
+        // session that accepted it.
+        let binding = pushed ? PushBinding(response.userInfo) : nil
         guard state.session != nil, !state.accessEnded, !foreign, let thread = response.userInfo[ChatNotifications.threadKey],
             case let .named(name) = response.action, let action = ChatNotifications.Action(name), !state.acted.contains(stamp)
         else {
@@ -73,7 +76,7 @@ extension ChatApp {
             // A launch for the action may hold no row of the chat (one
             // past the list's first page, or archived on another device):
             // it is read by name, and the reply goes when it is.
-            if action == .reply, state.opened, state.agentsRevision != nil, !rowKnown { state.asks.append(.fetchThread(thread)) }
+            if action == .reply, state.opened, state.agentsRevision != nil, !rowKnown { state.asks.append(.fetchThread(thread, bound: binding)) }
             // The one it waits behind is asked after now, in its turn.
             if behind { resume(&state) }
             return
@@ -95,11 +98,11 @@ extension ChatApp {
             // Rule 1: the thread's one conversation sends it, made here
             // where no window has shown the chat since the launch.
             let child = state.key(of: thread) ?? key
-            if state.conversations[child] == nil { converse(&state, thread, key: child) }
+            if state.conversations[child] == nil { converse(&state, thread, key: child, bound: binding) }
             // From a push, held to the session that accepted it: the
             // conversation sends it with that session's client or not at all.
             state.conversations[child]?.reply = Conversation.Reply(
-                id: message, text: text, at: at, generation: pushed ? response.userInfo[PushPayload.Key.generation] : nil)
+                id: message, text: text, at: at, binding: binding)
             act.reply = child
         case .approve, .decline, .option:
             guard let id = response.userInfo[ChatNotifications.cardKey], let version = response.userInfo[ChatNotifications.versionKey].flatMap(Int.init)
@@ -130,8 +133,7 @@ extension ChatApp {
             // that changed since is refused by the server.
             let kind = reference.isQuestion ? Kinds.interaction : Kinds.approval
             write(
-                &state, id, Record(id: id, kind: kind, properties: [:], version: version), properties, as: busy,
-                generation: pushed ? response.userInfo[PushPayload.Key.generation] : nil)
+                &state, id, Record(id: id, kind: kind, properties: [:], version: version), properties, as: busy, bound: binding)
         }
         state.acting[stamp] = act
     }
@@ -153,14 +155,15 @@ extension ChatApp {
     }
 
     /// A conversation for a thread no window shows: what `show` makes,
-    /// with no scene.
-    private func converse(_ state: inout State, _ thread: String, key: ChildKey) {
+    /// with no scene. Made for a push's action, it is held to that push
+    /// (`bound`) until the person opens the chat.
+    private func converse(_ state: inout State, _ thread: String, key: ChildKey, bound: PushBinding? = nil) {
         let row = state.thread(thread)
         let unsent = state.unsent[thread]
         state.conversations[key] = State.Entry(
             seed: Conversation.Seed(thread: thread, agent: row?.agentID, draft: state.drafts[thread] ?? "", listen: false, unsent: unsent),
-            thread: thread, agent: row?.agentID, unsent: unsent?.id)
-        if row == nil { state.asks.append(.fetchThread(thread)) }
+            thread: thread, agent: row?.agentID, unsent: unsent?.id, bound: bound)
+        if row == nil { state.asks.append(.fetchThread(thread, bound: bound)) }
     }
 
     /// The action's time is up. A reply stops being sent and stands in its
@@ -202,7 +205,7 @@ extension ChatApp {
             state.asks.append(.cancel("write:\(card.id)"))
             state.cards[card.id]?.busy = nil
             finish(&state, stamp, failure: Failure(card.isQuestion ? .answer : .decide, .timeout))
-            state.asks.append(.readCard(card, target: false))
+            state.asks.append(.readCard(card, target: false, bound: PushBinding(act.response.userInfo)))
         }
     }
 
@@ -229,7 +232,8 @@ extension ChatApp {
         guard let act = state.acting.removeValue(forKey: stamp) else { return }
         state.asks.append(.cancel("actWait:\(stamp)"))
         let keep = state.disk.map { KeptDrafts(lease: $0, drafts: state.drafts) }
-        state.asks.append(.finishAction(act.response, cancel: nil, notify: ChatNotifications.replyRefused(), keep: keep))
+        state.asks.append(
+            .finishAction(act.response, cancel: nil, notify: ChatNotifications.replyRefused(), keep: keep, unbound: ChatNotifications.replyRefused()))
     }
 
     /// A card's write was answered: where a notification asked for it, the
@@ -246,7 +250,10 @@ extension ChatApp {
         guard let stamp = state.acting.first(where: { $0.value.card?.id == id })?.key, let act = state.acting.removeValue(forKey: stamp) else {
             return
         }
-        state.asks += [.cancel("actWait:\(stamp)"), .finishAction(act.response, cancel: nil, notify: ChatNotifications.refused())]
+        state.asks += [
+            .cancel("actWait:\(stamp)"),
+            .finishAction(act.response, cancel: nil, notify: ChatNotifications.refused(), unbound: ChatNotifications.refused()),
+        ]
     }
 
     static func failedID(_ thread: String) -> String { ChatNotifications.prefix(thread) + "failed" }
@@ -278,7 +285,21 @@ extension ChatApp {
             if state.notifies(act.thread, waits: act.card == nil) { noteFailed(&state, act.thread) } else { said = nil }
         }
         let keep = failure == nil ? nil : state.disk.map { KeptDrafts(lease: $0, drafts: state.drafts) }
-        state.asks.append(.finishAction(act.response, cancel: failure == nil ? act.response.id : nil, notify: said, keep: keep))
+        state.asks.append(
+            .finishAction(
+                act.response, cancel: failure == nil ? act.response.id : nil, notify: said, keep: keep,
+                unbound: said == nil ? nil : Self.unboundWords(act, failure: failure)))
+    }
+
+    /// What a push's action says of how it ended where the push is no longer
+    /// accepted when it is said: nothing of the chat. Never acted on, or
+    /// refused before anything was written, nothing was sent or decided;
+    /// else it may have been, and that is what is said.
+    static func unboundWords(_ act: State.Act, failure: Failure?) -> NotificationRequest? {
+        guard PushBinding(act.response.userInfo) != nil, let failure else { return nil }
+        let definite = (act.reply == nil && act.card == nil) || failure.refusal() != nil || failure.neverSent
+        if act.card != nil { return definite ? ChatNotifications.refused() : ChatNotifications.decisionUncertain() }
+        return definite ? ChatNotifications.replyRefused() : ChatNotifications.replyUncertain()
     }
 }
 

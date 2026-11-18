@@ -30,6 +30,14 @@ extension ChatApp {
         let background = environment.devices.background
         let push = environment[PushRegistrarKey.self]
         let ids = environment.ids
+        // What a push started reads and writes with the client of the session
+        // that accepts that push, of the same repository, read as the
+        // request leaves, or not at all; anything else with the session held
+        // now.
+        @Sendable func clientFor(_ bound: PushBinding?) async -> SubstrateClient? {
+            if let bound { return await bound.client(push) }
+            return await source.current()
+        }
         @Sendable func failed(_ attempt: Failure.Attempt, _ error: any Error, _ client: SubstrateClient) -> Failure {
             Failure(attempt, error, server: client.server)
         }
@@ -336,9 +344,9 @@ extension ChatApp {
                 do { try await clock.sleep(until: date) } catch { return nil }
                 return Event(.undoPassed(thread))
             }
-        case let .fetchThread(thread):
+        case let .fetchThread(thread, bound):
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await clientFor(bound) else { return nil }
                 do {
                     guard let record = try await client.record(Kinds.thread, thread) else { return Event(.threadUnfetched(thread: thread, nil)) }
                     return Event(.threadFetched(record))
@@ -464,9 +472,9 @@ extension ChatApp {
                 }
                 return Event(.ownRead(thread: thread, asked: cards, mine: own?.mine, whole: own?.whole ?? false))
             }
-        case let .readCard(reference, target):
+        case let .readCard(reference, target, bound):
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await clientFor(bound) else { return nil }
                 do {
                     switch reference {
                     case let .question(id):
@@ -489,19 +497,14 @@ extension ChatApp {
                     return Task.isCancelled ? nil : Event(.cardFailed(reference.id, failed(.card, error, client)))
                 }
             }
-        case let .writeCard(id, kind, properties, ifVersion, generation):
+        case let .writeCard(id, kind, properties, ifVersion, bound):
             return .once {
                 // A decision from a push goes with the client of the session
                 // that accepted that push, read once, or nowhere: never with
                 // another sign-in's token.
-                let bound: SubstrateClient?
-                if let generation {
-                    bound = await push?.acceptance(of: generation).client
-                    if bound == nil { return Event(.cardWriteUnbound(id)) }
-                } else {
-                    bound = await source.current()
-                }
-                guard let client = bound else { return nil }
+                let chosen = await clientFor(bound)
+                if bound != nil, chosen == nil { return Event(.cardWriteUnbound(id)) }
+                guard let client = chosen else { return nil }
                 do {
                     return Event(.cardWritten(id, try await client.patch(kind, id, properties: properties, ifVersion: ifVersion)))
                 } catch {
@@ -575,13 +578,19 @@ extension ChatApp {
             return .once { await pause(seconds) ? Event(.actionDue(id)) : nil }
         case let .cardHold(id, seconds):
             return .once { await pause(seconds) ? Event(.cardHoldDue(id)) : nil }
-        case let .finishAction(response, cancel, notify, keep):
+        case let .finishAction(response, cancel, notify, keep, unbound):
             // Its place among the drafts' writes, taken now (`saveDrafts`).
             let ticket = keep.map { _ in storage.draftsTicket() }
+            let binding = PushBinding(response.userInfo)
             return Self.device(notifications) { notifications in
                 if let keep { storage.save(drafts: keep.drafts, keep.lease, ticket: ticket) }
                 if let cancel { await notifications.cancel(cancel) }
-                if let notify { await notifications.schedule(notify) }
+                // What a push's action says of its chat is shown only while
+                // the push is still accepted, asked as it is posted; else
+                // words that say nothing of the chat.
+                var said = notify
+                if notify != nil, notify != unbound, let binding, !(await binding.holds(push)) { said = unbound }
+                if let said { await notifications.schedule(said) }
                 await notifications.finished(response)
             }
         case let .notifyHeld(request, seconds):
@@ -637,7 +646,13 @@ extension ChatApp {
             guard let notifications, let push else { return .none }
             // Only this sign-in's pushes: a fallback alert another sign-in's
             // push left never sends its thread's id to this server.
-            return .once { Event(.pushDelivered(await Self.deliveredThreads(notifications) { await push.accepts($0) })) }
+            return .once {
+                let delivered = await Self.deliveredThreads(notifications) { generation in
+                    let acceptance = await push.acceptance(of: generation)
+                    return acceptance.verdict == .accepted ? acceptance.identity : nil
+                }
+                return Event(.pushDelivered(delivered.threads, identity: delivered.identity))
+            }
         case let .showing(threads):
             return Self.device(notifications) { await $0.showing(threads: Set(threads)) }
         case .askPermission:

@@ -69,6 +69,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// A reply typed into a notification, for the conversation to send:
         /// kept until it says what became of it.
         var reply: Conversation.Reply?
+        /// The push this conversation was made for, by a notification's
+        /// action: what it asks of the server goes with the session that
+        /// accepts that push, until the person opens the chat.
+        var bound: PushBinding?
     }
 
     /// One action of a notification under way: answered in the background,

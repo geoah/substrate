@@ -498,7 +498,7 @@ extension Conversation {
         let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
         send(
             &state, message: reply.text, agent: agent, at: reply.at, baseline: baseline, fromDraft: false, id: sendsIDs ? reply.id : nil,
-            typed: true, bound: reply.generation)
+            typed: true, bound: reply.binding)
     }
 
     /// The action's time is up with the reply unanswered: it stops being
@@ -638,6 +638,14 @@ extension Conversation {
     /// `repeatWindow` of the press; then, and after a refusal, the message
     /// stands unsent with Send Again.
     private func unanswered(_ state: inout State, _ run: State.Send, failure: Failure?, outcome: UUID) {
+        // A copy the push's sign-in can no longer send, after one that may
+        // have reached the server: what became of the message is not known,
+        // and is said so, never that nothing was sent. Nothing more can go.
+        if failure?.why == .sessionChanged, state.copies > 1 {
+            let unknown = state.lastFailure ?? Failure(.message, .unanswered, at: failure?.at)
+            state.failure = unknown
+            return stand(&state, run, unknown)
+        }
         if let failure { state.failure = failure }
         let failure = failure ?? Failure(.send, .streamEnded)
         let refused = failure.refusal() != nil || failure.neverSent || failure.report == .accessEnded
@@ -654,7 +662,7 @@ extension Conversation {
                 if !run.joins {
                     return send(
                         &state, message: run.message, agent: run.agent, at: run.sentAt, baseline: run.baseline, fromDraft: false, id: nil,
-                        typed: true)
+                        typed: true, bound: run.bound)
                 }
             }
             unsent(&state, run.message, typed: true, failure: failure, unconfirmed: false)
@@ -680,7 +688,7 @@ extension Conversation {
 
     private func send(
         _ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?, typed: Bool? = nil,
-        bound: String? = nil
+        bound: PushBinding? = nil
     ) {
         // A turn runs on the thread and the server takes a message into
         // it: the send's stream is that turn's, so the one being read is
@@ -709,6 +717,7 @@ extension Conversation {
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: baseline, sentAt: at, typed: typed ?? fromDraft)
         run.id = id
+        run.bound = bound
         (run.joins, run.held, run.replied) = (joining, known.0, known.1)
         // Sent from the composer while a question's card is aside for it:
         // this is the answer, in the person's own words.

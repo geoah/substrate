@@ -240,6 +240,19 @@ public enum ChatNotifications {
         NotificationRequest(id: "chat|refused", title: "Nothing was sent", body: "Open the chat to reply.", timeSensitive: true)
     }
 
+    /// A reply typed into a push's notification that may have reached the
+    /// server, told once the push's session is no longer held: nothing of
+    /// its chat.
+    static func replyUncertain() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Your reply may have been sent", body: "Open the chat to check.", timeSensitive: true)
+    }
+
+    /// A decision from a push's notification that may have been made, told
+    /// once the push's session is no longer held: nothing of its chat.
+    static func decisionUncertain() -> NotificationRequest {
+        NotificationRequest(id: "chat|refused", title: "Your decision may have been made", body: "Open the chat to check.", timeSensitive: true)
+    }
+
     /// What tells one response from every other: its notification, what
     /// that notification was about when it was shown, the action and the
     /// text. The same response heard twice acts once.

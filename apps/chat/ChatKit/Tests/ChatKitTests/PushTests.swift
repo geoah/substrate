@@ -430,12 +430,12 @@ struct PushTests {
         info[ChatPush.sessionKey] = try #require(state.session?.identity)
         let response = NotificationResponse(id: "apns-1", category: ChatNotifications.approvalCategory, action: .named("approve"), userInfo: info)
         let acted = try app.apply(.init(.notificationActed(response, key: ChildKey("k"), message: "m", at: Date())), to: state)
-        #expect(acted.asks.contains { if case .writeCard("ap1", _, _, 4, "gC"?) = $0 { true } else { false } })
+        #expect(acted.asks.contains { if case let .writeCard("ap1", _, _, 4, bound?) = $0 { bound.generation == "gC" } else { false } })
         let unbound = try app.apply(.init(.cardWriteUnbound("ap1")), to: acted)
         #expect(unbound.acting.isEmpty)
         #expect(unbound.cards["ap1"]?.busy == nil && unbound.cards["ap1"]?.problem == nil)
         #expect(!unbound.asks.contains { if case .readCard = $0 { true } else { false } })
-        #expect(unbound.asks.contains(.finishAction(response, cancel: nil, notify: ChatNotifications.refused())))
+        #expect(unbound.asks.contains(.finishAction(response, cancel: nil, notify: ChatNotifications.refused(), unbound: ChatNotifications.refused())))
         #expect(ChatNotifications.refused().body == "Open the chat to decide.")
     }
 

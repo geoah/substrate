@@ -66,7 +66,7 @@ extension ChatApp {
             case let .cancelGroup(thread): lines.append(Diagnostic("notifications taken back", chat: thread))
             case let .cancelNotification(id): lines.append(Self.taken(id))
             case .cancelAllNotifications: lines.append(Diagnostic("notifications taken back").with("all", true))
-            case let .finishAction(_, cancel, notify, _):
+            case let .finishAction(_, cancel, notify, _, _):
                 lines.append(Diagnostic("notification action over").with("done", cancel != nil).with("said", notify != nil))
             case let .refresh(_, held, beside): lines.append(Diagnostic("list read").with("held", held.count).with("beside", beside.count))
             case let .read(thread, first, _, _): lines.append(Diagnostic("rows read", chat: thread).with("first", first))

@@ -64,6 +64,51 @@ private func uncancellable(seconds: Double) async {
     }
 }
 
+/// A rig whose server is also the one a push's bound client reaches, as in
+/// the app, where both go to the session's server; signed in, the server's
+/// document read, and a chat no list holds, `t9`, ready to be read by name.
+private func boundRig() async throws -> (ChatRig, ChatServer, HeldPush) {
+    let held = HeldPush()
+    let server = ChatServer(baseRoutes())
+    server.route("GET", "/.well-known/substrate/server.json", featuresRoute(agents: 3).answer)
+    server.route("GET", "/llm/thread/t9", .json(200, threadRow().replacingOccurrences(of: threadID, with: "t9")))
+    let registrar = PushRegistrar(
+        sessions: held.registrar.sessions, device: ScriptedPush(), transport: server, buildRelay: "https://push.example.com",
+        clientID: HeldPush.client)
+    let rig = ChatRig(transport: server, push: registrar)
+    try await rig.signIn()
+    try await rig.harness.until { await $0.state.agentsRevision == 3 }
+    return (rig, server, held)
+}
+
+/// A reply typed into the notification of a push for `t9`.
+private func pushedReply() -> NotificationResponse {
+    let info: [String: String] = [
+        ChatNotifications.threadKey: "t9", PushPayload.Key.event: "reply", PushPayload.Key.thread: "t9", PushPayload.Key.generation: "gC",
+        PushPayload.Key.eventID: "e",
+    ]
+    return NotificationResponse(id: "apns-r", category: ChatNotifications.replyCategory, action: .named("reply"), userInfo: info, text: "On my way")
+}
+
+/// Another sign-in takes the Keychain the push's registration reads.
+private func switchSession(_ held: HeldPush) async throws {
+    var other = try #require(await held.registrar.sessions.load())
+    other.tokenID = "0b5e1a7c33"
+    other.secret = "another"
+    try await held.registrar.sessions.save(other)
+}
+
+private func finished(_ rig: ChatRig) -> Bool {
+    rig.notifications.calls.contains { if case .finished = $0 { true } else { false } }
+}
+
+/// The notices the actions posted, in order.
+private func notices(_ rig: ChatRig) -> [NotificationRequest] {
+    rig.notifications.calls.compactMap { call in
+        if case let .schedule(request) = call, request.id == "chat|refused" || request.id.hasSuffix("|failed") { request } else { nil }
+    }
+}
+
 /// Whether `condition` holds within `seconds`: a wait that fails the test,
 /// never one that hangs it.
 private func eventually(within seconds: Double = 15, _ condition: @Sendable () -> Bool) async -> Bool {
@@ -296,34 +341,19 @@ struct PushContentTests {
     /// accepted and before the reply leaves, and no server hears it; the
     /// person is told to open the chat to reply.
     @Test func aReplyFromAPushWhoseSessionChangedIsSentNowhere() async throws {
-        let held = HeldPush()
-        let rig = ChatRig(push: held.registrar)
-        try await rig.signIn(agents: 3)
-        // A chat no list holds: its row is read by name, and the reply waits
-        // for it.
-        rig.server.route("GET", "/llm/thread/t9", .json(200, threadRow().replacingOccurrences(of: threadID, with: "t9")))
-        rig.server.hold("/llm/thread/t9")
-        let info: [String: String] = [
-            ChatNotifications.threadKey: "t9", PushPayload.Key.event: "reply", PushPayload.Key.thread: "t9", PushPayload.Key.generation: "gC",
-            PushPayload.Key.eventID: "e",
-        ]
-        rig.notifications.respond(
-            NotificationResponse(id: "apns-r", category: ChatNotifications.replyCategory, action: .named("reply"), userInfo: info, text: "On my way"))
-        try await rig.harness.until { _ in rig.server.count("/llm/thread/t9") > 0 }
+        let (rig, server, held) = try await boundRig()
+        // A chat no list holds: its row is read by name, with the push's
+        // session, and the reply waits for it.
+        server.hold("/llm/thread/t9")
+        rig.notifications.respond(pushedReply())
+        try await rig.harness.until { _ in server.count("/llm/thread/t9") > 0 }
         // Another sign-in takes the Keychain before the reply leaves.
-        var other = try #require(await held.registrar.sessions.load())
-        other.tokenID = "0b5e1a7c33"
-        other.secret = "another"
-        try await held.registrar.sessions.save(other)
-        rig.server.letGo("/llm/thread/t9")
-        try await rig.harness.until { _ in rig.notifications.calls.contains { if case .finished = $0 { true } else { false } } }
+        try await switchSession(held)
+        server.letGo("/llm/thread/t9")
+        try await rig.harness.until { _ in finished(rig) }
         await rig.harness.settle()
-        #expect(!rig.server.requests.contains { $0.hasPrefix("POST") && $0.contains("/chat") })
-        #expect(held.transport.requests.allSatisfy { !($0.url?.path.hasSuffix("/chat") ?? false) })
-        let notice = rig.notifications.calls.compactMap { call -> NotificationRequest? in
-            if case let .schedule(request) = call, request.id == "chat|refused" { request } else { nil }
-        }
-        #expect(notice.map(\.body) == ["Open the chat to reply."])
+        #expect(!server.requests.contains { $0.hasPrefix("POST") && $0.contains("/chat") })
+        #expect(notices(rig).map(\.body) == ["Open the chat to reply."])
     }
 
     /// A sign-out while the last read is out: the push is asked about again
@@ -350,6 +380,85 @@ struct PushContentTests {
         let content = await ChatPush.content(push("reply", eventID: "e-reply"), accepting: checking, until: later)
         #expect(signedOut.value)
         #expect(content == .fallback(dropsBadge: true))
+    }
+
+    /// The compatibility retry of a pushed reply, after `400 unknown field
+    /// "messageId"`, is the push's too: the session changes while the 400
+    /// is out, and the retry goes to no server.
+    @Test func aPushedReplysCompatibilityRetryGoesNowhereOnceTheSessionChanged() async throws {
+        let (rig, server, held) = try await boundRig()
+        server.route("POST", "/chat", .json(400, #"{"error":{"code":"bad_request","message":"unknown field \"messageId\""}}"#))
+        server.hold("/chat")
+        rig.notifications.respond(pushedReply())
+        try await rig.harness.until { _ in server.count("/chat") == 1 }
+        try await switchSession(held)
+        server.letGo("/chat")
+        try await rig.harness.until { _ in finished(rig) }
+        await rig.harness.settle()
+        #expect(server.count("/chat") == 1)
+        #expect(notices(rig).map(\.title) == ["Nothing was sent"])
+    }
+
+    /// A pushed reply that waits for its chat's row reads it with the push's
+    /// session: the session changes before the read leaves, and no server
+    /// is asked for the row; the person is told nothing of the chat.
+    @Test func aPushedReplysRowReadGoesNowhereOnceTheSessionChanged() async throws {
+        let held = HeldPush()
+        let rig = ChatRig(push: held.registrar)
+        rig.server.route("GET", "/.well-known/substrate/server.json", featuresRoute(agents: 3).answer)
+        rig.server.hold("/.well-known/substrate/server.json")
+        rig.server.route("GET", "/llm/thread/t9", .json(200, threadRow().replacingOccurrences(of: threadID, with: "t9")))
+        try await rig.signIn()
+        // Before the server's document is read the reply waits, and no row
+        // is asked for yet.
+        rig.notifications.respond(pushedReply())
+        try await rig.harness.until { await $0.state.deferred.count == 1 }
+        try await switchSession(held)
+        rig.server.letGo("/.well-known/substrate/server.json")
+        try await rig.harness.until(advancing: 30) { _ in finished(rig) }
+        await rig.harness.settle()
+        #expect(rig.server.count("/llm/thread/t9") == 0)
+        #expect(held.transport.requests.allSatisfy { !($0.url?.path.hasSuffix("/llm/thread/t9") ?? false) })
+        #expect(!rig.server.requests.contains { $0.hasPrefix("POST") && $0.contains("/chat") })
+        #expect(notices(rig).map(\.title) == ["Nothing was sent"])
+    }
+
+    /// A copy refused because the session changed, after one that may have
+    /// reached the server, says the reply may have been sent: never that
+    /// nothing was.
+    @Test func aLaterCopyRefusedForTheSessionKeepsTheUncertainWords() async throws {
+        let (rig, server, held) = try await boundRig()
+        // The first copy's answer is a gateway's: it may have been written.
+        server.route("POST", "/chat", once: true, .json(502, #"{"error":{"code":"bad_gateway","message":"upstream"}}"#))
+        rig.notifications.respond(pushedReply())
+        try await rig.harness.until { _ in server.count("/chat") == 1 }
+        try await switchSession(held)
+        try await rig.harness.until(advancing: 5) { _ in finished(rig) }
+        await rig.harness.settle()
+        #expect(server.count("/chat") == 1)
+        let said = notices(rig)
+        #expect(said.map(\.title) == ["Your reply may have been sent"])
+        #expect(said.map(\.body) == ["Open the chat to check."])
+    }
+
+    /// The badge a `read` sets is the accepting session's count: a sign-out
+    /// while it is read sets none.
+    @Test func aSignOutDuringTheBadgeReadSetsNoBadge() async throws {
+        let notifications = RecordedNotifications()
+        let (server, client) = server([
+            .init(method: "GET", path: "/api/v1/push/events/e-read", answer: .json(200, try Fixture.text("pushserver", "event-read"))),
+            .init(method: "GET", path: "/api/v1/push/badge", answer: .json(200, #"{"badge":2}"#)),
+        ])
+        let signedOut = Ran()
+        server.onRequest { request in
+            if request.contains("/api/v1/push/badge") { signedOut.mark() }
+        }
+        let checking: ChatPush.Accepting = { _ in
+            signedOut.value ? PushAcceptance(.refused) : PushAcceptance(.accepted, client: client, identity: "https://s.example.com|r.example.com")
+        }
+        let read = await ChatPush.takeBack(push("read", eventID: "e-read"), accepting: checking, notifications: notifications, until: later)
+        #expect(signedOut.value && !read)
+        #expect(!notifications.calls.contains { if case .badge = $0 { true } else { false } })
     }
 
     @Test func aReadThatStartsInTimeAndRunsPastIsCutAtTheDeadline() async throws {

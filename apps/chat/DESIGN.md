@@ -758,6 +758,17 @@ and the badge the server counted.
   goes with the client of the session that accepts the push, read as it
   leaves, so one whose session changed goes to no server, its text stays
   in the chat, and a notification says to open the chat to reply.
+- **Everything a push starts is held to it.** A push's binding is its
+  generation and the repository of the session that accepted it. Every
+  request a push leads to goes with the client of the session that
+  accepts it then, for that repository, or nowhere: the extension's reads,
+  the background `read`'s, a reply's copies and its compatibility retry,
+  the read of a chat a reply waits for, the reads its conversation makes
+  until the person opens the chat, a decision and the card reads after it.
+  Before anything it led to is shown (a preview, a badge, a notification
+  taken back, an action's notice, a chat opened) the push is asked about
+  again: one no longer accepted shows nothing of its chat, and an action's
+  notice says only whether it may have gone through.
 - **Taking notifications back.** The app has the `remote-notification`
   background mode. When iOS runs it for a `read` push whose generation
   matches, it resolves the event id and removes exactly the delivered

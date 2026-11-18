@@ -9,22 +9,33 @@ import SubstrateScreens
 extension Conversation {
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let source = environment.client
+        let push = environment[PushRegistrarKey.self]
+        // A conversation acting for a push reads and writes with the client
+        // of the session that accepts that push, read as each request
+        // leaves, or not at all; any other with the client of the session
+        // held now.
+        let held = bound
+        let current: @Sendable () async -> SubstrateClient? = {
+            if let held { return await held.client(push) }
+            return await source.current()
+        }
         let clock = environment.clock
         let ids = environment.ids
         let timeZone = environment.timeZone.identifier
         let quiet = quiet
         switch effect.ask {
-        case let .chat(agent, thread, message, id, repliesTo, bound):
-            let push = environment[PushRegistrarKey.self]
+        case let .chat(agent, thread, message, id, repliesTo, sendBound):
+            let bound = sendBound ?? held
             return .sequence {
                 Self.relay { yield in
                     // A reply typed into a push's notification goes with the
-                    // client of the session that accepts that push, read as
-                    // the request leaves: once another sign-in holds the app,
-                    // nothing is sent, to its server or any.
+                    // client of the session that accepts that push, of the
+                    // same repository, read as the request leaves: once
+                    // another sign-in holds the app, nothing is sent, to its
+                    // server or any.
                     let chosen: SubstrateClient?
                     if let bound {
-                        chosen = await push?.acceptance(of: bound).client
+                        chosen = await bound.client(push)
                         if chosen == nil {
                             yield(.streamEnded(Failure(.send, .sessionChanged, at: clock.now), outcome: ids.next()))
                             return
@@ -54,7 +65,7 @@ extension Conversation {
         case let .resume(thread):
             return .sequence {
                 Self.relay { yield in
-                    guard let client = await source.current() else { return }
+                    guard let client = await current() else { return }
                     do {
                         for try await event in ChatAPI.resume(client, thread: thread, quiet: quiet) {
                             if event.kind == .thread, let named = event.thread {
@@ -77,7 +88,7 @@ extension Conversation {
             }
         case let .find(id):
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await current() else { return nil }
                 do {
                     return Event(.found(id: id, thread: try await ChatAPI.sent(client, messageID: id)?.thread, at: clock.now))
                 } catch {
@@ -96,7 +107,7 @@ extension Conversation {
         case let .attach(thread):
             return .sequence {
                 Self.relay { yield in
-                    guard let client = await source.current() else { return }
+                    guard let client = await current() else { return }
                     do {
                         let now = try await ChatAPI.readNow(client, thread: thread)
                         // A run started since: this one opens no stream.
@@ -125,7 +136,7 @@ extension Conversation {
             }
         case let .handover(thread):
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await current() else { return nil }
                 let step = await withTaskGroup(of: Step?.self) { group -> Step? in
                     group.addTask {
                         do {
@@ -157,7 +168,7 @@ extension Conversation {
             }
         case let .poll(thread):
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await current() else { return nil }
                 do {
                     let now = try await ChatAPI.readNow(client, thread: thread)
                     return Event(.polled(thread: now.thread, rows: now.rows))
@@ -168,7 +179,7 @@ extension Conversation {
         case let .stop(thread):
             // The stream's own `done` settles the run.
             return .once {
-                guard let client = await source.current() else { return nil }
+                guard let client = await current() else { return nil }
                 do {
                     try await ChatAPI.stop(client, thread: thread)
                     return nil
@@ -184,7 +195,7 @@ extension Conversation {
         case let .check(check):
             return .once {
                 do { try await clock.sleep(until: clock.now.addingTimeInterval(1)) } catch { return nil }
-                guard let client = await source.current() else { return nil }
+                guard let client = await current() else { return nil }
                 do {
                     let found = try await Self.find(check, client: client)
                     return Event(.checked(outcome: check.outcome, found: found, failure: nil))

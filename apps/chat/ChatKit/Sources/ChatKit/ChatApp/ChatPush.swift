@@ -19,6 +19,41 @@ public enum PushContent: Equatable, Sendable {
     case shown(NotificationRequest)
 }
 
+/// What everything a push starts is held to: the push's generation and the
+/// repository of the session that accepted it, as the responses relay
+/// names it (`ChatPush.sessionKey`). Each request it makes goes with the
+/// client of the session that accepts the push as the request leaves
+/// (`client`), and nowhere once the sign-in held is another.
+struct PushBinding: Codable, Hashable, Sendable {
+    var generation: String
+    var identity: String
+
+    /// The binding a response carries; nil for a local notification's, or
+    /// a push's this install did not accept.
+    init?(_ userInfo: [String: String]) {
+        guard PushPayload(userInfo) != nil, let generation = userInfo[PushPayload.Key.generation], !generation.isEmpty,
+            let identity = userInfo[ChatPush.sessionKey]
+        else { return nil }
+        self.init(generation: generation, identity: identity)
+    }
+
+    init(generation: String, identity: String) {
+        self.generation = generation
+        self.identity = identity
+    }
+
+    /// The client of the session that accepts the push now, of the same
+    /// repository; nil where none does.
+    func client(_ push: PushRegistrar?) async -> SubstrateClient? {
+        guard let acceptance = await push?.acceptance(of: generation), acceptance.identity == identity else { return nil }
+        return acceptance.client
+    }
+
+    /// Whether the push is still accepted for the same repository: asked
+    /// just before anything it led to is shown.
+    func holds(_ push: PushRegistrar?) async -> Bool { await client(push) != nil }
+}
+
 /// The extension's work and the app's handling of a `read` push, below any
 /// UI framework so they are tested like the rest of the chat.
 public enum ChatPush {
@@ -67,7 +102,9 @@ public enum ChatPush {
             // Asked again just before it is shown: a sign-out while it was
             // read accepts the push no more, and then nothing read for it
             // is shown, and no badge either.
-            guard race.live, await accepting(push.generation).verdict == .accepted else { return .fallback(dropsBadge: true) }
+            guard race.live else { return .fallback(dropsBadge: true) }
+            let now = await accepting(push.generation)
+            guard race.live, now.verdict == .accepted, now.identity == acceptance.identity else { return .fallback(dropsBadge: true) }
             return content
         }
     }
@@ -201,24 +238,32 @@ public enum ChatPush {
             let acceptance = await accepting(push.generation)
             guard acceptance.verdict == .accepted, var client = acceptance.client else { return false }
             client.pause = { _ in throw CancellationError() }
-            // Each request and each call to the device below is made only
-            // while the race is undecided, checked immediately before it: a
-            // result that comes late acts on nothing.
+            // Each request is made only while the race is undecided; each
+            // call to the device, only while the push is still accepted for
+            // the same repository too, asked immediately before it: a sign-out
+            // or a result that comes late acts on nothing.
+            @Sendable func holds() async -> Bool {
+                guard race.live else { return false }
+                let now = await accepting(push.generation)
+                return race.live && now.verdict == .accepted && now.identity == acceptance.identity
+            }
             guard let time = left(race), let info = try? await client.pushEvent(push.eventID, timeout: time), info.event == "read",
                 info.thread == push.thread, let covers = info.covers
             else { return false }
             let alerts = Set(covers.alerts)
-            guard race.live else { return false }
+            guard await holds() else { return false }
             let delivered = await notifications.delivered()
             for shown in delivered {
                 guard let eventID = shown.push?.eventID, !eventID.isEmpty, alerts.contains(PushFingerprint.of(eventID: eventID)) else { continue }
-                guard race.live else { return false }
+                guard await holds() else { return false }
                 await notifications.cancel(shown.id)
             }
             guard let time = left(race),
                 let badge = try? await client.send("GET", "api/v1/push/badge", timeout: time, retries: 0).decode(PushBadge.self).badge
             else { return true }
-            guard race.live else { return false }
+            // The count is the accepting session's: a sign-out during its
+            // read sets no badge.
+            guard await holds() else { return false }
             await notifications.setBadge(min(max(badge, 0), 999))
             return true
         }

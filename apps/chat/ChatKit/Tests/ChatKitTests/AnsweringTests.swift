@@ -1222,7 +1222,7 @@ struct NotificationActions {
         state.asks = []
         state = try app.apply(.init(.actionDue(stamp)), to: state)
         let over = state.asks.compactMap { ask -> (NotificationRequest?, KeptDrafts?)? in
-            if case let .finishAction(told, _, notify, keep) = ask, told == response { (notify, keep) } else { nil }
+            if case let .finishAction(told, _, notify, keep, _) = ask, told == response { (notify, keep) } else { nil }
         }
         #expect(over.count == 1 && over.first?.1 == nil)
         #expect(over.first?.0?.body == "The server took too long to answer. Your reply was not sent or saved. You wrote: “On my way”")
@@ -1250,7 +1250,7 @@ struct NotificationActions {
         state = try app.apply(.init(.actionDue(stamp)), to: state)
         #expect(state.drafts["t1"] == "On my way")
         let keep = state.asks.compactMap { ask -> KeptDrafts? in
-            if case let .finishAction(told, _, notify, keep) = ask, told == response, notify?.body?.hasSuffix("Your reply is kept in the chat.") == true {
+            if case let .finishAction(told, _, notify, keep, _) = ask, told == response, notify?.body?.hasSuffix("Your reply is kept in the chat.") == true {
                 keep
             } else {
                 nil
