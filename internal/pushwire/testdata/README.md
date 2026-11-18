@@ -21,9 +21,10 @@ anybody's, and none is an Apple key.
 | `register.json` | an app's register request, made at `registeredAt`, and the relay's answer: the push key every push fixture but the largest carries |
 | `push-reply.json` | a `reply`: the signature, the exact signed body, what the push key seals, the request the relay makes to Apple and the relay's answer |
 | `push-failed.json` | the same for `failed` |
-| `push-request-card-1.json`, `push-request-card-2.json` | two cards waiting on one thread: one `thread-id`, two event ids, and no `apns-collapse-id`, so Apple delivers both |
+| `push-request-card-1.json`, `push-request-card-2.json` | two cards waiting on one thread: two distinct requests to Apple, one `thread-id`, two event ids, and neither carries an `apns-collapse-id` |
 | `push-read.json` | a `read`: the badge and `content-available`, priority 5 |
 | `push-reply-largest.json` | every bound at its largest: a 400-character Apple token, a 128-character thread (too long to collapse by), badge 999 and a 1,024-character event id, on `development` |
+| `bad-requests.json` | bodies the wire refuses as `bad_request`, on the route each is posted to: values in a second spelling of base64url (broken over lines, padded, in standard base64), and values outside a closed set |
 | `errors.json` | every refusal the relay answers, one per row of the plan's table, 413 among them |
 | `signatures.json` | an Ed25519 seed, a time, a body, the bytes signed and the header; then cases: inside the window either way, stale either way, another key, a changed body, a malformed header, and a repeat, which verifies and which a relay refuses as `replayed` |
 | `fingerprints.json` | event ids and the fingerprint (`pushwire.EventFingerprint`) a `read` and the app name each alert by |

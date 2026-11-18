@@ -190,17 +190,17 @@ func DecodeRegister(body []byte) (RegisterRequest, error) {
 func (r RegisterRequest) Check() error {
 	switch {
 	case r.Platform != PlatformAPNs:
-		return refuse("platform %q is not one this wire knows", r.Platform)
+		return refuse("platform is not apns")
 	case len(r.Token) < MinToken || len(r.Token) > MaxToken || !isHex(r.Token):
-		return refuse("token is not %d to %d hex characters", MinToken, MaxToken)
+		return refuse("token is not 32 to 400 hex characters")
 	case !validTopic(r.Topic):
-		return refuse("topic is not a bundle id of at most %d characters", MaxTopic)
+		return refuse("topic is not a bundle id of at most 155 characters")
 	case !oneOf(r.Environment, Environments):
-		return refuse("environment %q is not production or development", r.Environment)
+		return refuse("environment is not production or development")
 	case decodedLen(r.PublicKey) != PublicKeySize:
-		return refuse("publicKey is not the unpadded base64url of %d bytes", PublicKeySize)
+		return refuse("publicKey is not the unpadded base64url of 32 bytes")
 	case decodedLen(r.Generation) != GenerationSize:
-		return refuse("generation is not the unpadded base64url of %d bytes", GenerationSize)
+		return refuse("generation is not the unpadded base64url of 16 bytes")
 	}
 	return nil
 }
@@ -234,15 +234,15 @@ func DecodePush(body []byte) (PushRequest, error) {
 func (p PushRequest) Check() error {
 	switch {
 	case p.PushKey == "" || len(p.PushKey) > MaxPushKey:
-		return refuse("pushKey is empty or over %d characters", MaxPushKey)
+		return refuse("pushKey is empty or over 1024 characters")
 	case !oneOf(p.Event, Events):
-		return refuse("event %q is not reply, failed, request or read", p.Event)
+		return refuse("event is not reply, failed, request or read")
 	case !recordid.Valid(p.Thread):
 		return refuse("thread is not a record id")
 	case p.Badge < 0 || p.Badge > MaxBadge:
-		return refuse("badge is not 0 to %d", MaxBadge)
+		return refuse("badge is not 0 to 999")
 	case len(p.EventID) < MinEventID || len(p.EventID) > MaxEventID || decodedLen(p.EventID) < 0:
-		return refuse("eventId is not %d to %d characters of unpadded base64url", MinEventID, MaxEventID)
+		return refuse("eventId is not 32 to 1024 characters of unpadded base64url")
 	}
 	return nil
 }
@@ -263,16 +263,18 @@ func object(body []byte) (map[string]json.RawMessage, error) {
 func field(fields map[string]json.RawMessage, name string, v any) error {
 	raw, ok := fields[name]
 	if !ok || string(raw) == "null" {
-		return refuse("%s is missing", name)
+		return refuse(name + " is missing")
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return refuse("%s is not of its type", name)
+		return refuse(name + " is not of its type")
 	}
 	return nil
 }
 
-func refuse(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrBadRequest, fmt.Sprintf(format, args...))
+// refuse wraps a fixed message: it is logged, so it never repeats a value
+// the caller wrote.
+func refuse(message string) error {
+	return fmt.Errorf("%w: %s", ErrBadRequest, message)
 }
 
 func oneOf(s string, set []string) bool {
@@ -316,7 +318,7 @@ func ValidTopic(s string) bool { return validTopic(s) }
 // decodedLen is how many bytes s decodes to as strict unpadded base64url,
 // or -1 when it does not decode.
 func decodedLen(s string) int {
-	b, err := b64.DecodeString(s)
+	b, err := Decode(s)
 	if err != nil {
 		return -1
 	}
@@ -327,5 +329,18 @@ func decodedLen(s string) int {
 // this wire.
 func Encode(b []byte) string { return b64.EncodeToString(b) }
 
-// Decode reads a value Encode wrote, refusing any other spelling.
-func Decode(s string) ([]byte, error) { return b64.DecodeString(s) }
+// Decode reads a value Encode wrote, refusing any other spelling. The
+// standard decoder skips CR and LF even in strict mode, so a value broken
+// over lines would decode as a second spelling of the same bytes: anything
+// outside the alphabet is refused before it is decoded.
+func Decode(s string) ([]byte, error) {
+	for i := range len(s) {
+		c := s[i]
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' && c != '_' {
+			return nil, errNotBase64URL
+		}
+	}
+	return b64.DecodeString(s)
+}
+
+var errNotBase64URL = errors.New("not unpadded base64url")

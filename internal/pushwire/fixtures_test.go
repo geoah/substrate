@@ -174,7 +174,7 @@ func TestFixtures(t *testing.T) {
 		Event: pushwire.EventFailed, Thread: fixtureThread, Badge: 1, EventID: eventID("event failed", 60),
 	}))
 	// Two cards waiting on one thread: two pushes, one thread-id, two event
-	// ids, and no collapse id, so Apple delivers both.
+	// ids, and no collapse id: two requests Apple does not collapse.
 	golden(t, "push-request-card-1.json", w.push(t, key, sealed, pushwire.PushRequest{
 		Event: pushwire.EventRequest, Thread: fixtureThread, Badge: 4, EventID: eventID("event card 1", 60),
 	}))
@@ -199,6 +199,8 @@ func TestFixtures(t *testing.T) {
 		Event: pushwire.EventReply, Thread: "t" + strings.Repeat("0123456789abcdef", 8)[:127], Badge: pushwire.MaxBadge,
 		EventID: eventID("event largest", pushwire.MaxEventID*3/4),
 	}))
+
+	golden(t, "bad-requests.json", badRequests(t, reg, key))
 
 	var refusals []pushwiretest.Refusal
 	for _, r := range []pushrelay.Refusal{
@@ -292,4 +294,38 @@ func signatureVectors(t *testing.T, w world) pushwiretest.Signatures {
 			c("a repeat: the first request again, within the window", header, body, pub, ts+10, "ok", pushwire.CodeReplayed),
 		},
 	}
+}
+
+// badRequests are bodies the wire refuses: each value in a second spelling
+// the standard base64 decoder would take, or outside its closed set.
+func badRequests(t *testing.T, reg pushwire.RegisterRequest, key string) []pushwiretest.BadRequest {
+	t.Helper()
+	var out []pushwiretest.BadRequest
+	register := func(name string, change func(*pushwire.RegisterRequest)) {
+		r := reg
+		change(&r)
+		out = append(out, pushwiretest.BadRequest{Name: name, Route: "register", Body: compact(t, r)})
+	}
+	push := func(name string, change func(*pushwire.PushRequest)) {
+		p := pushwire.PushRequest{PushKey: key, Event: pushwire.EventReply, Thread: fixtureThread, Badge: 1, EventID: pushwire.Encode(stream("bad event", 48))}
+		change(&p)
+		out = append(out, pushwiretest.BadRequest{Name: name, Route: "push", Body: compact(t, p)})
+	}
+	register("a generation broken over two lines", func(r *pushwire.RegisterRequest) { r.Generation = r.Generation[:11] + "\n" + r.Generation[11:] })
+	register("a public key broken by CR LF", func(r *pushwire.RegisterRequest) { r.PublicKey = r.PublicKey[:20] + "\r\n" + r.PublicKey[20:] })
+	register("a padded generation", func(r *pushwire.RegisterRequest) { r.Generation += "==" })
+	register("a generation in standard base64", func(r *pushwire.RegisterRequest) {
+		r.Generation = strings.NewReplacer("-", "+", "_", "/").Replace(pushwire.Encode([]byte{0xfb, 0xff, 0xfe, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}))
+	})
+	register("an unknown platform", func(r *pushwire.RegisterRequest) { r.Platform = "fcm" })
+	register("an unknown environment", func(r *pushwire.RegisterRequest) { r.Environment = "sandbox" })
+	register("a token that is not hex", func(r *pushwire.RegisterRequest) { r.Token = strings.Repeat("zz", 32) })
+	push("an event id that reaches 32 characters only by its line breaks", func(p *pushwire.PushRequest) {
+		p.EventID = pushwire.Encode(stream("short event", 22)) + "\n\n"
+	})
+	push("an event id broken over two lines", func(p *pushwire.PushRequest) { p.EventID = p.EventID[:32] + "\n" + p.EventID[32:] })
+	push("an unknown event", func(p *pushwire.PushRequest) { p.Event = "typing" })
+	push("a thread that is no record id", func(p *pushwire.PushRequest) { p.Thread = "a b" })
+	push("a badge over 999", func(p *pushwire.PushRequest) { p.Badge = 1000 })
+	return out
 }

@@ -143,6 +143,14 @@ type Endpoint struct {
 	Refused  bool   `json:"refused,omitempty"`
 }
 
+// BadRequest is one row of bad-requests.json: a body the wire refuses as
+// bad_request, on the route it is posted to (register or push).
+type BadRequest struct {
+	Name  string `json:"name"`
+	Route string `json:"route"`
+	Body  string `json:"body"`
+}
+
 // Read decodes the named fixture into v, failing the test when it cannot.
 func Read(t testing.TB, name string, v any) {
 	t.Helper()

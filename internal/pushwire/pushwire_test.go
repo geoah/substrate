@@ -428,3 +428,43 @@ func TestDecodeRefusesWhatTheWireDoesNotAllow(t *testing.T) {
 		}
 	}
 }
+
+// Every body in bad-requests.json is refused, the ones in a second spelling
+// of base64url among them, and the refusal repeats none of what was sent.
+func TestTheBadRequestFixturesAreRefused(t *testing.T) {
+	var rows []pushwiretest.BadRequest
+	pushwiretest.Read(t, "bad-requests.json", &rows)
+	if len(rows) == 0 {
+		t.Fatal("no bad requests")
+	}
+	for _, r := range rows {
+		var err error
+		if r.Route == "register" {
+			_, err = pushwire.DecodeRegister([]byte(r.Body))
+		} else {
+			_, err = pushwire.DecodePush([]byte(r.Body))
+		}
+		if !errors.Is(err, pushwire.ErrBadRequest) {
+			t.Errorf("%s: %v, want ErrBadRequest", r.Name, err)
+			continue
+		}
+		for _, echoed := range []string{"fcm", "sandbox", "typing", "zz", "a b", "1000"} {
+			if strings.Contains(err.Error(), echoed) {
+				t.Errorf("%s: the refusal %q repeats %q", r.Name, err, echoed)
+			}
+		}
+	}
+}
+
+func TestDecodeTakesOneSpellingOnly(t *testing.T) {
+	b := pushwiretest.Stream("one spelling", 16)
+	enc := pushwire.Encode(b)
+	if got, err := pushwire.Decode(enc); err != nil || string(got) != string(b) {
+		t.Fatalf("Decode(Encode) = %v, %v", got, err)
+	}
+	for _, other := range []string{enc[:5] + "\n" + enc[5:], enc[:5] + "\r" + enc[5:], enc + "==", " " + enc, enc[:21] + "B"} {
+		if _, err := pushwire.Decode(other); err == nil {
+			t.Errorf("Decode(%q) took a second spelling", other)
+		}
+	}
+}
