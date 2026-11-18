@@ -100,26 +100,36 @@ func TestAPersonReadsTheirOwnDevicesAlone(t *testing.T) {
 		t.Fatalf("the admin lists %v, want both devices", got)
 	}
 	// A list naming no kind, and a ranked search naming none, hold no other
-	// person's device: the kind is left out before anything is paged.
-	for _, l := range [][]string{list(viewer.token, `{}`)} {
-		for _, id := range l {
-			if id == admin.ID {
-				t.Fatal("a list naming no kind held another person's device")
+	// person's device: the kind is left out before anything is paged. The
+	// admin's list naming no kind holds it, so the viewer's missing it is
+	// the rule.
+	unnamed := func(bearer string) map[string]bool {
+		t.Helper()
+		rec := env.do(t, http.MethodGet, "/api/v1/records?first=1000&filter={}", bearer, nil)
+		wantStatus(t, rec, http.StatusOK)
+		out := map[string]bool{}
+		for _, r := range decodeJSON[substrate.Page](t, rec).Records {
+			if r.Kind == vocabulary.KindDevice {
+				out[r.ID] = true
 			}
 		}
+		return out
+	}
+	if got := unnamed(adminBearer); !got[admin.ID] {
+		t.Fatalf("the admin's list naming no kind holds devices %v: the viewer's case proves nothing", got)
+	}
+	if got := unnamed(viewer.token); len(got) != 0 {
+		t.Fatalf("a viewer's list naming no kind holds devices %v", got)
 	}
 	rec := env.do(t, http.MethodGet, "/api/v1/records?q=iPhone&mode=lexical", viewer.token, nil)
 	wantStatus(t, rec, http.StatusOK)
 	for _, h := range decodeJSON[substrate.SearchResult](t, rec).Hits {
-		if h.Record != nil && h.Record.Kind == vocabulary.KindDevice && h.Record.ID != viewer.tokenID {
-			t.Fatalf("a search naming no kind found another person's device: %+v", h.Record)
+		if h.Record != nil && h.Record.Kind == vocabulary.KindDevice {
+			t.Fatalf("a search naming no kind found a device: %+v", h.Record)
 		}
 	}
-	// The admin's search finds it, so the viewer's missing it is the rule.
-	rec = env.do(t, http.MethodGet, "/api/v1/records?q=iPhone&mode=lexical&filter="+kinds, adminBearer, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if len(decodeJSON[substrate.SearchResult](t, rec).Hits) == 0 {
-		t.Fatal("the admin's search found no device: the viewer's case proves nothing")
+	if rec := env.do(t, http.MethodGet, "/api/v1/records?q=iPhone&mode=lexical&filter="+kinds, viewer.token, nil); rec.Code == http.StatusOK {
+		t.Fatalf("a viewer's search naming the device kind answered %s", rec.Body.String())
 	}
 	// Which records devices point at says who has one: refused.
 	byDevice := `{"kinds":["` + vocabulary.CoreKind("actor") + `"],"referencedBy":{"kind":"` + vocabulary.KindDevice + `","property":"person"}}`
