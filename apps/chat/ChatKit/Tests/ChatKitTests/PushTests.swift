@@ -353,9 +353,9 @@ struct PushTests {
         state.pushRevision = 1
         state.permission = .on
         let off = try app.apply(.init(.setting(row: "notifyReplies", toggle: false, choice: nil)), to: state)
-        #expect(off.asks.contains(.syncPush(listed: true, notifies: ["requests"])))
+        #expect(off.asks.contains(.syncPush(listed: true, notifies: ["requests"], tokenID: nil)))
         let both = try app.apply(.init(.setting(row: "notifyAttention", toggle: false, choice: nil)), to: off)
-        #expect(both.asks.contains(.syncPush(listed: true, notifies: [])))
+        #expect(both.asks.contains(.syncPush(listed: true, notifies: [], tokenID: nil)))
         let denied = try app.apply(.init(.permissionRead(.off)), to: state)
         #expect(denied.asks.contains { if case .syncPush = $0 { true } else { false } })
         // Before the server's document says whether it pushes, nothing is asked.
@@ -364,15 +364,28 @@ struct PushTests {
         #expect(!early.asks.contains { if case .syncPush = $0 { true } else { false } })
     }
 
+    /// A sync is asked for the sign-in the app holds, by its token's id, as
+    /// it is asked: however late it runs, it is for that sign-in.
+    @Test func aSyncIsAskedForTheSignInTheAppHolds() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .ios)
+        let state = signedInState()
+        var link = LinkSnapshot(phase: .signedIn, server: origin, repository: repository, tokenID: "0b5e1a7c33")
+        link.online = true
+        let linked = try app.apply(.init(.linked(link)), to: state)
+        #expect(linked.session?.tokenID == "0b5e1a7c33")
+        let listed = try app.apply(.init(.featuresRead(agents: 3, records: 9, push: 1)), to: linked)
+        #expect(listed.asks.contains(.syncPush(listed: true, notifies: ["replies", "requests"], tokenID: "0b5e1a7c33")))
+    }
+
     @Test func theDocumentReadAtEveryRefreshChecksTheRegistration() throws {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .ios)
         let state = signedInState()
         let listed = try app.apply(.init(.featuresRead(agents: 3, records: 9, push: 1)), to: state)
         #expect(listed.pushListed)
-        #expect(listed.asks.contains(.syncPush(listed: true, notifies: ["replies", "requests"])))
+        #expect(listed.asks.contains(.syncPush(listed: true, notifies: ["replies", "requests"], tokenID: nil)))
         #expect(listed.asks.contains { if case .serverBadge = $0 { true } else { false } })
         let unlisted = try app.apply(.init(.featuresRead(agents: 3, records: 9)), to: state)
-        #expect(unlisted.asks.contains(.syncPush(listed: false, notifies: ["replies", "requests"])))
+        #expect(unlisted.asks.contains(.syncPush(listed: false, notifies: ["replies", "requests"], tokenID: nil)))
         #expect(!unlisted.asks.contains { if case .serverBadge = $0 { true } else { false } })
     }
 

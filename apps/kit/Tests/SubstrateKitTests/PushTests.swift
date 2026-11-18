@@ -287,6 +287,28 @@ final class DeviceServer: HTTPTransport, @unchecked Sendable {
     }
 }
 
+/// A secure store over memory that runs `hook` as each write lands, as a
+/// Keychain whose write suspends: the hook may move a test's clock.
+final class HookStorage: SessionStorage, @unchecked Sendable {
+    let inner: MemoryStorage
+    let hook: @Sendable (Data, String) -> Void
+
+    init(_ inner: MemoryStorage, hook: @escaping @Sendable (Data, String) -> Void) {
+        self.inner = inner
+        self.hook = hook
+    }
+
+    var location: String { inner.location }
+    func read(account: String) async -> StoredItem { inner.read(account: account) }
+
+    func write(_ data: Data, account: String) async throws {
+        try inner.write(data, account: account)
+        hook(data, account)
+    }
+
+    func delete(account: String) async throws { try inner.delete(account: account) }
+}
+
 /// A count a test's concurrent work keeps.
 final class Counter: @unchecked Sendable {
     private let lock = NSLock()
@@ -597,7 +619,8 @@ struct PushRegistrarTests {
         world.pass(PushRegistrar.renewal - 60)
         _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
         #expect(world.sent("POST", "/v1/register").count == 3)
-        world.pass(120)
+        // Past the renewal, and past the window of the put before it.
+        world.pass(180)
         _ = await world.registrar.sync(PushAsk(listed: true, notifies: ["replies"], permitted: true))
         #expect(world.sent("POST", "/v1/register").count == 4)
 
@@ -741,21 +764,34 @@ struct PushRegistrarTests {
         let session = try #require(await world.sessions.load())
         await world.registrar.signOut(session)
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
-        #expect(await world.registrar.state() == nil)
+        #expect(await Self.forgotten(world.registrar))
         let (current, pending) = (await world.registrar.accepts("g1"), await world.registrar.accepts("g2"))
         #expect(!current && !pending)
     }
 
-    /// A delete the server does not answer is left to it, which deletes the
-    /// device with its token: the sign-out forgets everything all the same.
-    @Test func aSignOutWhoseDeleteFailsForgetsEverythingAllTheSame() async throws {
+    /// A delete the server does not answer leaves the registration held:
+    /// the sign-in leaving accepts nothing, and should the app end before
+    /// the session is removed, the next launch deletes it again. Once the
+    /// session is, the server deletes the device with its token.
+    @Test func aSignOutWhoseDeleteFailsKeepsTheRegistrationToDeleteAgain() async throws {
         let world = PushWorld()
         #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.pass(300)
         world.transport.replace("DELETE", PushWorld.devicePath, status: 502, json: #"{"error":{"code":"upstream","message":"no"}}"#)
-        await world.registrar.signOut(try #require(await world.sessions.load()))
+        let registrar = world.registrar
+        let session = try #require(await world.sessions.load())
+        await registrar.signOut(session)
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
-        #expect(await world.registrar.state() == nil)
-        #expect(!(await world.registrar.accepts("g1")))
+        #expect(!(await registrar.accepts("g1")))
+        #expect(await registrar.state()?.held == true)
+        await registrar.retired(session)
+        #expect(await registrar.state()?.held == true)
+        // The app ended before the session was removed: still signed in.
+        world.transport.replace("DELETE", PushWorld.devicePath, status: 204)
+        let relaunched = world.registrar
+        _ = await relaunched.sync(PushAsk(listed: true, notifies: [], permitted: true))
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 2)
+        #expect(await relaunched.state()?.held == false)
     }
 
     /// Sign Out waits for an attempt stuck on the network at most its bound
@@ -778,7 +814,7 @@ struct PushRegistrarTests {
         let asked = world.transport.requests.count
         #expect(await registrar.sync(PushWorld.ask).standing == .unknown)
         #expect(world.transport.requests.count == asked)
-        #expect(await registrar.state() == nil)
+        #expect(await Self.forgotten(registrar))
         #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
     }
 
@@ -803,7 +839,7 @@ struct PushRegistrarTests {
         let putEnded = try #require(events.firstIndex(of: "end PUT \(PushWorld.devicePath)"))
         let deleteStarted = try #require(events.firstIndex(of: "start DELETE \(PushWorld.devicePath)"))
         #expect(putEnded < deleteStarted)
-        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
+        #expect(await Self.forgotten(registrar))
     }
 
     /// A caller that stops waiting does not stop its attempt: the put it
@@ -929,7 +965,7 @@ struct PushRegistrarTests {
         // its forgetting run when the attempt before them has ended.
         #expect(await registrar.verdict("g1") == .refused)
         _ = await attempt.value
-        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
+        #expect(await Self.forgotten(registrar))
         #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
     }
 
@@ -1023,10 +1059,10 @@ struct PushRegistrarTests {
         // "on" wanted; the switch goes off before that attempt runs.
         let ahead = registrar.control.enqueue { await Self.uncancellable(seconds: 0.5) }
         registrar.want(listed: true, notifies: ["replies"], permitted: { true })
-        let early = Task { await registrar.sync() }
+        let early = Task { await registrar.sync(tokenID: PushWorld.tokenID) }
         try await Task.sleep(for: .milliseconds(100))
         registrar.want(listed: true, notifies: [], permitted: { true })
-        let off = await registrar.sync()
+        let off = await registrar.sync(tokenID: PushWorld.tokenID)
         let ran = await early.value
         _ = await ahead.value
         #expect(ran.standing == .switchedOff && off.standing == .switchedOff && !off.held)
@@ -1036,7 +1072,7 @@ struct PushRegistrarTests {
         let allowed = Gate(open: true)
         registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { allowed.isOpen })
         allowed.close()
-        #expect(await registrar.sync().standing == .notPermitted)
+        #expect(await registrar.sync(tokenID: PushWorld.tokenID).standing == .notPermitted)
     }
 
     /// A's attempt queued, then A signs out and B signs in before the queue
@@ -1052,9 +1088,9 @@ struct PushRegistrarTests {
             sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
         registrar.control.signOutBound = .milliseconds(200)
         registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
-        let inFlight = Task { await registrar.sync() }
+        let inFlight = Task { await registrar.sync(tokenID: PushWorld.tokenID) }
         #expect(await Self.eventually { registers.count >= 1 })
-        let queued = Task { await registrar.sync() }
+        let queued = Task { await registrar.sync(tokenID: PushWorld.tokenID) }
         try await Task.sleep(for: .milliseconds(100))
         let signedOut = try #require(await world.sessions.load())
         await registrar.signOut(signedOut)
@@ -1066,7 +1102,7 @@ struct PushRegistrarTests {
         registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
         _ = await inFlight.value
         _ = await queued.value
-        #expect(await Self.eventually { world.storage.stored(account: registrar.account) == nil })
+        #expect(await Self.forgotten(registrar))
         let device = "/api/v1/substrate.reamde.dev/core/device/0b5e1a7c33"
         #expect(world.transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") != "Bearer another" })
         #expect(world.sent("PUT", device).isEmpty)
@@ -1075,7 +1111,7 @@ struct PushRegistrarTests {
         let record = PushWorld.record.replacingOccurrences(of: PushWorld.tokenID, with: "0b5e1a7c33")
         world.transport.on("PUT", device, status: 201, json: record)
         world.transport.on("GET", device, json: record)
-        #expect(await registrar.sync().standing == .registered)
+        #expect(await registrar.sync(tokenID: "0b5e1a7c33").standing == .registered)
         #expect(await registrar.state()?.tokenID == "0b5e1a7c33")
     }
 
@@ -1165,6 +1201,129 @@ struct PushRegistrarTests {
         world.pass(600)
         _ = await registrar.sync(PushWorld.ask)
         #expect(world.sent("PUT", PushWorld.devicePath).count == puts + 1)
+    }
+
+    /// A sync asked for one sign-in, run after it signed out and the next
+    /// signed in and said its wish, does nothing for the next: the sign-in
+    /// is named as the sync is asked for, never when it runs.
+    @Test func aSyncAskedForOneSignInDoesNothingWhenItRunsForTheNext() async throws {
+        let world = PushWorld()
+        let registrar = world.registrar
+        let signedOut = try #require(await world.sessions.load())
+        registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
+        await registrar.signOut(signedOut)
+        var signedIn = signedOut
+        signedIn.tokenID = "0b5e1a7c33"
+        signedIn.secret = "another"
+        try await world.sessions.save(signedIn)
+        registrar.want(listed: true, notifies: ["replies", "requests"], permitted: { true })
+        let device = "/api/v1/substrate.reamde.dev/core/device/0b5e1a7c33"
+        let record = PushWorld.record.replacingOccurrences(of: PushWorld.tokenID, with: "0b5e1a7c33")
+        world.transport.on("PUT", device, status: 201, json: record)
+        // A's effect, deferred until now.
+        let late = await registrar.sync(tokenID: signedOut.tokenID)
+        #expect(late.standing == .unknown && !late.held)
+        #expect(world.transport.requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") != "Bearer another" })
+        #expect(world.sent("PUT", device).isEmpty)
+        // B's own registers B.
+        #expect(await registrar.sync(tokenID: signedIn.tokenID).standing == .registered)
+    }
+
+    /// A save that suspends between a put's stamp and its send: the put is
+    /// stamped again once the save is done, so the two-minute rules count
+    /// from the true send.
+    @Test func aPutIsStampedWhenItIsSentThoughItsSaveSuspends() async throws {
+        let world = PushWorld()
+        let start = world.clock
+        let armed = Gate(open: true)
+        let slow = HookStorage(world.storage) { data, _ in
+            guard armed.isOpen, let state = try? JSONDecoder().decode(PushState.self, from: data), !state.puts.isEmpty else { return }
+            armed.close()
+            world.pass(30)
+        }
+        let sessions = SessionStore(account: world.sessions.account, storage: slow)
+        let registrar = PushRegistrar(
+            sessions: sessions, device: world.device, transport: world.transport, buildRelay: "https://push.example.com", clientID: PushWorld.client,
+            now: { world.clock }, generation: { world.mint() })
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+        let stamped = try #require(await registrar.state()?.puts.first?.at)
+        #expect(stamped == start.addingTimeInterval(30))
+        // A switch-off 100 seconds after the true send is not final.
+        world.pass(100)
+        #expect(await registrar.sync(PushAsk(listed: true, notifies: [], permitted: true)).standing == .switchedOff)
+        #expect(await registrar.state()?.deleteAgainAt == PushState.landsBy(stamped))
+    }
+
+    /// A sign-out the app ends before the session is removed keeps what is
+    /// left to retire: the next launch, still signed in, deletes again once
+    /// the put can no longer land. Once the session is removed and the
+    /// delete was final, the state goes.
+    @Test func aSignOutInterruptedBeforeTheSessionIsRetiredStillDeletesAfterARelaunch() async throws {
+        let world = PushWorld()
+        #expect(await world.registrar.sync(PushWorld.ask).held)
+        world.pass(10)
+        let session = try #require(await world.sessions.load())
+        await world.registrar.signOut(session)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 1)
+        #expect(await world.registrar.state()?.deleteAgainAt != nil)
+        // The app ends here: the session is never removed.
+        world.pass(130)
+        let relaunched = world.registrar
+        let off = PushAsk(listed: true, notifies: [], permitted: true)
+        #expect(await relaunched.sync(off).standing == .switchedOff)
+        #expect(world.sent("DELETE", PushWorld.devicePath).count == 2)
+        #expect(await relaunched.state()?.deleteAgainAt == nil)
+        // Signed out for good now: the delete was final, so the state goes.
+        await relaunched.signOut(session)
+        await relaunched.retired(session)
+        #expect(world.storage.stored(account: relaunched.account) == nil)
+    }
+
+    /// The recent puts are one per registration and at most eight: fifty
+    /// retries of one keep one entry, and a renewal keeps only its own, the
+    /// expired one dropped before any save.
+    @Test func theRecentPutsStayBoundedThroughRetriesAndARenewal() async throws {
+        let world = PushWorld()
+        let registrar = world.registrar
+        world.transport.replace("PUT", PushWorld.devicePath, status: 500, json: #"{"error":{"code":"internal","message":"no"}}"#)
+        for _ in 0 ..< 50 {
+            world.pass(1)
+            _ = await registrar.sync(PushWorld.ask)
+        }
+        #expect(world.sent("PUT", PushWorld.devicePath).count == 50)
+        #expect(await registrar.state()?.puts.count == 1)
+        world.transport.replace("PUT", PushWorld.devicePath, status: 200, json: PushWorld.record)
+        world.pass(PushRegistrar.renewal + 60)
+        #expect(await registrar.sync(PushWorld.ask).standing == .registered)
+        let kept = try #require(await registrar.state())
+        #expect(kept.puts.map(\.generation) == [try #require(kept.current?.generation)])
+
+        var many = PushState(tokenID: PushWorld.tokenID)
+        let now = Date(timeIntervalSince1970: 1_763_459_000)
+        for index in 0 ..< 12 {
+            let made = PushState.Registration(
+                generation: "g\(index)", relay: "https://push.example.com", publicKey: "key", deviceToken: "ab", environment: .development,
+                notifies: ["replies"], registeredAt: now)
+            many.sending(made, at: now.addingTimeInterval(Double(index)))
+        }
+        #expect(many.puts.map(\.generation) == (4 ..< 12).map { "g\($0)" })
+    }
+
+    /// A state an earlier build saved, without the recent puts, still reads:
+    /// as none.
+    @Test func aStateSavedWithoutRecentPutsStillReads() throws {
+        let state = PushState(
+            tokenID: PushWorld.tokenID,
+            current: .init(
+                generation: "g1", relay: "https://push.example.com", publicKey: "key", deviceToken: "ab", environment: .development,
+                notifies: ["replies"], registeredAt: Date(timeIntervalSince1970: 1_763_459_000), pushKey: "v1.k"))
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        object["puts"] = nil
+        object["deleteAgainAt"] = nil
+        object["putAgainAt"] = nil
+        let saved = try JSONSerialization.data(withJSONObject: object)
+        let read = try JSONDecoder().decode(PushState.self, from: saved)
+        #expect(read.puts.isEmpty && read.current?.generation == "g1" && read.held)
     }
 
     /// A retirement the Keychain would not keep is not reported: the stored
@@ -1274,6 +1433,14 @@ struct PushRegistrarTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return true
+    }
+
+    /// Whether, once the queue has drained, nothing of the sign-in is held
+    /// or accepted: what a sign-out leaves until its session is retired.
+    static func forgotten(_ registrar: PushRegistrar) async -> Bool {
+        await registrar.control.enqueue {}.value
+        guard let kept = await registrar.state() else { return true }
+        return !kept.held && kept.current == nil && kept.pending.isEmpty && kept.previous.isEmpty
     }
 
     static func uncancellable(seconds: Double) async {

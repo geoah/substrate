@@ -11,16 +11,21 @@ public struct SessionFacts: Codable, Hashable, Sendable {
     /// everything.
     public var scopes: [String]?
     public var expiresAt: Date?
+    /// The id of the session's token record (never the token): what work
+    /// asked for this sign-in is bound to.
+    public var tokenID: String?
 
-    public init(server: URL, repository: String, scopes: [String]? = nil, expiresAt: Date? = nil) {
+    public init(server: URL, repository: String, scopes: [String]? = nil, expiresAt: Date? = nil, tokenID: String? = nil) {
         self.server = server
         self.repository = repository
         self.scopes = scopes
         self.expiresAt = expiresAt
+        self.tokenID = tokenID
     }
 
     public init(_ session: Session) {
-        self.init(server: session.server, repository: session.repository, scopes: session.scopes, expiresAt: session.expiresAt)
+        self.init(
+            server: session.server, repository: session.repository, scopes: session.scopes, expiresAt: session.expiresAt, tokenID: session.tokenID)
     }
 
     public var isApp: Bool { scopes != nil }

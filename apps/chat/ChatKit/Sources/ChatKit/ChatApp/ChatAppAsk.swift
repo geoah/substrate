@@ -144,7 +144,7 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case serverBadge(local: Int, ceiling: Int?)
     /// Registers with the publisher's push relay where it is due, or gives
     /// a registration up (`PushRegistrar.sync`).
-    case syncPush(listed: Bool, notifies: [String])
+    case syncPush(listed: Bool, notifies: [String], tokenID: String?)
     /// The pushed notifications that what was read says are seen, taken
     /// back: a reply's or a failure's whose thread is read, a request's
     /// whose thread has nothing waiting, and a request's for a card that no

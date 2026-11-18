@@ -10,12 +10,16 @@ struct ChatSession: Codable, Equatable, Sendable {
     /// An app token's approved scopes; nil for a password sign-in's, which
     /// reaches everything.
     var scopes: [String]?
+    /// The id of the session's token record: a push sync is asked for it,
+    /// and does nothing once another sign-in is in use.
+    var tokenID: String?
 
     init?(_ link: LinkSnapshot) {
         guard link.phase != .signedOut, let server = link.server, let repository = link.repository else { return nil }
         self.server = server
         self.repository = repository
         scopes = link.scopes
+        tokenID = link.tokenID
     }
 
     /// One server and repository, however spelled: what the device keeps

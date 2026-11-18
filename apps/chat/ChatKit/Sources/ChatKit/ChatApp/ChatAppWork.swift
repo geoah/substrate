@@ -610,16 +610,17 @@ extension ChatApp {
                 await notifications.setBadge(count)
                 return nil
             }
-        case let .syncPush(listed, notifies):
+        case let .syncPush(listed, notifies, tokenID):
             guard let push else { return .none }
             // Said now, as the effect starts, in the order they are asked:
             // every attempt, this one and any still queued, reads the newest
-            // when it runs, and the permission then.
+            // when it runs, and the permission then. The attempt is for the
+            // sign-in the ask was made under, whenever it runs.
             push.want(listed: listed, notifies: notifies) {
                 let permitted = await notifications?.permission()
                 return permitted == .on || permitted == .notTimeSensitive
             }
-            return .once { Event(.pushSynced(await push.sync())) }
+            return .once { Event(.pushSynced(await push.sync(tokenID: tokenID))) }
         case let .reconcilePush(read, settled, pending):
             return Self.device(notifications) { await Self.reconcile($0, read: Set(read), settled: Set(settled), pending: pending) }
         case .readDelivered:

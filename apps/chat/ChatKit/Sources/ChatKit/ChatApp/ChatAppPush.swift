@@ -87,7 +87,7 @@ extension ChatApp {
     /// document said whether it lists `push`.
     func syncPush(_ state: inout State) {
         guard state.session != nil, state.pushRevision != nil else { return }
-        state.asks.append(.syncPush(listed: state.pushListed, notifies: state.preferences.pushNotifies))
+        state.asks.append(.syncPush(listed: state.pushListed, notifies: state.preferences.pushNotifies, tokenID: state.session?.tokenID))
     }
 
     /// The thread a tapped notification opens: a local one's, or a push's

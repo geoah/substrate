@@ -401,9 +401,11 @@ public struct LinkController<App: LinkedApp>: Controller {
                     generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
                     // The install's device record goes while the token can
                     // still delete it, and every registration of the
-                    // sign-in is forgotten before the token is revoked.
+                    // sign-in is retired before the token is revoked; what
+                    // is kept of them goes once the session is.
                     await push?.signOut(session)
                     try await sessions.signOut(session, transport: transport)
+                    await push?.retired(session)
                 } catch {
                     // Still signed in: pushes may register again.
                     push?.signOutFailed(session)
@@ -456,7 +458,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         LinkSnapshot(
             phase: state.session == nil ? .signedOut : state.accessEnded ? .accessEnded : .signedIn,
             server: state.session?.server, repository: state.session?.repository, scopes: state.session?.scopes,
-            accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
+            tokenID: state.session?.tokenID, accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
             packages: state.packages.compactMapValues(\.held), waiting: state.outbox.waiting, refused: state.outbox.parked.count)
     }
 

@@ -69,6 +69,15 @@ public struct PushState: Codable, Equatable, Sendable {
     /// request the server accepted commits within its lifetime. A delete is
     /// final only once it was sent this long after the last put.
     public static let putLifetime: TimeInterval = 120
+    /// How far a put's saved time may fall short of its true send: the time
+    /// is taken just before the request goes out, and saved first, and the
+    /// put is sent only where that save ended within this.
+    public static let sendSkew: TimeInterval = 1
+    /// How many recent puts are kept, one per registration.
+    static let recentPuts = 8
+
+    /// Until when a put stamped `at` may still land.
+    static func landsBy(_ at: Date) -> Date { at.addingTimeInterval(putLifetime + sendSkew) }
     /// How many unconfirmed attempts are kept: an older one goes to
     /// `previous`.
     static let attempts = 4
@@ -126,11 +135,18 @@ public struct PushState: Codable, Equatable, Sendable {
     /// When the last put was sent, of any registration.
     var lastPutAt: Date? { puts.map(\.at).max() }
 
-    /// A put of `made` about to be sent at `now`, kept with the puts still
-    /// within their lifetime.
+    /// The puts that can no longer land are dropped.
+    mutating func prunePuts(at now: Date) {
+        puts.removeAll { now >= Self.landsBy($0.at) }
+    }
+
+    /// A put of `made` about to be sent at `now`: one entry per registration,
+    /// its time the latest, and at most `recentPuts` of them, the newest.
     mutating func sending(_ made: Registration, at now: Date) {
-        puts.removeAll { now.timeIntervalSince($0.at) >= Self.putLifetime }
+        prunePuts(at: now)
+        puts.removeAll { $0.generation == made.generation }
         puts.append(Put(generation: made.generation, at: now))
+        puts = Array(puts.sorted { $0.at < $1.at }.suffix(Self.recentPuts))
     }
 
     /// `made`'s put, sent at `sent`, was answered: settled unless another
@@ -138,7 +154,7 @@ public struct PushState: Codable, Equatable, Sendable {
     /// which case it is put again once that one can no longer land.
     mutating func answered(_ made: Registration, sent: Date) {
         let earlier = puts.filter { $0.generation != made.generation && $0.at <= sent }.map(\.at).max()
-        putAgainAt = earlier.map { $0.addingTimeInterval(Self.putLifetime) }.flatMap { $0 > sent ? $0 : nil }
+        putAgainAt = earlier.map(Self.landsBy).flatMap { $0 > sent ? $0 : nil }
     }
 
     /// The server pushes, or may push, to this install. Not while a
@@ -184,6 +200,21 @@ public struct PushState: Codable, Equatable, Sendable {
             let oldest = pending.removeFirst()
             previous.append(Retired(generation: oldest.generation, until: now.addingTimeInterval(Self.retirement)))
         }
+    }
+}
+
+extension PushState {
+    /// A state an earlier build saved: the puts it does not name are none.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            tokenID: try container.decode(String.self, forKey: .tokenID),
+            current: try container.decodeIfPresent(Registration.self, forKey: .current),
+            pending: try container.decode([Registration].self, forKey: .pending),
+            previous: try container.decode([Retired].self, forKey: .previous),
+            puts: try container.decodeIfPresent([Put].self, forKey: .puts) ?? [],
+            deleteAgainAt: try container.decodeIfPresent(Date.self, forKey: .deleteAgainAt),
+            putAgainAt: try container.decodeIfPresent(Date.self, forKey: .putAgainAt))
     }
 }
 
@@ -419,25 +450,21 @@ public struct PushRegistrar: Sendable {
     }
 
     /// Brings the server and the Keychain into line with what is wanted
-    /// when the attempt runs (`want`), for the sign-in in use now, and
-    /// answers where it stands. The attempt is queued behind the registrar's
-    /// other work and runs to its end, whether or not its caller still waits.
-    /// It acts for this sign-in alone: run once another is in use, it does
-    /// nothing; and it saves and puts nothing for one being signed out.
-    public func sync() async -> PushFacts {
-        let tokenID: String?
-        switch await sessions.read() {
-        case let .found(session): tokenID = session.tokenID
-        case .missing: tokenID = nil
-        case .failed: return PushFacts(standing: .unreadable)
-        }
-        return await control.enqueue { await register(for: tokenID) }.value
+    /// when the attempt runs (`want`), for the sign-in of `tokenID`, and
+    /// answers where it stands. The caller names the sign-in it asks for as
+    /// it asks, never later: run once another is in use, the attempt does
+    /// nothing; and it saves and puts nothing for one being signed out. The
+    /// attempt is queued behind the registrar's other work and runs to its
+    /// end, whether or not its caller still waits.
+    public func sync(tokenID: String?) async -> PushFacts {
+        await control.enqueue { await register(for: tokenID) }.value
     }
 
-    /// `want` and `sync` at once, for tests.
+    /// `want` and `sync` at once, for the sign-in kept now, for tests.
     func sync(_ ask: PushAsk) async -> PushFacts {
         want(listed: ask.listed, notifies: ask.notifies, permitted: { ask.permitted })
-        return await sync()
+        guard case let .found(session) = await sessions.read() else { return await sync(tokenID: nil) }
+        return await sync(tokenID: session.tokenID)
     }
 
     /// The client the registrar's own requests go with: each ends within the
@@ -579,9 +606,7 @@ public struct PushRegistrar: Sendable {
         // ends before the sign-out's delete starts, which is queued after.
         guard !control.isLeaving(next.tokenID) else { return PushFacts(standing: .unknown) }
         let unsent = next
-        let sent = now()
-        next.sending(made, at: sent)
-        guard await save(next, for: next.tokenID) else { return facts(.unavailable, unsent) }
+        guard let sent = await stamp(made, &next) else { return facts(.unavailable, unsent) }
         do {
             try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
         } catch let refused as ServerError where refused.isPermanent {
@@ -596,6 +621,23 @@ public struct PushRegistrar: Sendable {
         next.deleteAgainAt = nil
         guard await save(next, for: next.tokenID) else { return facts(.unavailable, before) }
         return facts(.registered, next)
+    }
+
+    /// Saves a put of `made` as sent now and answers its time, once the save
+    /// is done and that time is still the time of sending (within
+    /// `PushState.sendSkew`): a save that took longer is made again with a
+    /// new time, so the two-minute rules count from the true send. A save
+    /// that fails, or keeps ending late, sends nothing: nil.
+    private func stamp(_ made: PushState.Registration, _ next: inout PushState) async -> Date? {
+        for _ in 0 ..< 3 {
+            var stamped = next
+            let at = now()
+            stamped.sending(made, at: at)
+            guard await save(stamped, for: stamped.tokenID) else { return nil }
+            next = stamped
+            if now().timeIntervalSince(at) <= PushState.sendSkew { return at }
+        }
+        return nil
     }
 
     /// Whether a registration is made again: Apple's token, the relay, the
@@ -639,17 +681,30 @@ public struct PushRegistrar: Sendable {
     }
 
     /// What a sign-out leaves to the queue, for its own sign-in alone: the
-    /// device and the state kept for its token, never another's. Where the
-    /// sign-out failed meanwhile (`signOutFailed`), nothing: the person is
-    /// still signed in.
+    /// device deleted and every registration retired, as a switch-off gives
+    /// them up (`giveUp`), never another sign-in's. The state is kept, a
+    /// delete that may not be final with it: should the app end before the
+    /// session is removed, the next launch finishes the retirement. It goes
+    /// once the session is (`retired`). Where the sign-out failed meanwhile
+    /// (`signOutFailed`), nothing: the person is still signed in.
     private func forget(_ session: Session) async {
         guard control.isLeaving(session.tokenID), let tokenID = session.tokenID,
             case let .found(state) = await stored(), state.tokenID == tokenID
         else { return }
-        if state.held || state.deleteAgainAt != nil {
-            try? await pushClient(session).delete(SubstrateClient.deviceKind, tokenID)
+        _ = await retire(state, pushClient(session), leaving: true)
+    }
+
+    /// The session the sign-out was for is removed and its token revoked:
+    /// the state kept for it goes, once its delete was final. One that was
+    /// not stays, never to be put again; the next sign-in's first attempt
+    /// forgets it, and the server deleted the device with the token.
+    public func retired(_ session: Session) async {
+        guard let tokenID = session.tokenID else { return }
+        let forgetting = control.enqueue {
+            guard case let .found(state) = await stored(), state.tokenID == tokenID, !state.held, state.deleteAgainAt == nil else { return }
+            try? await clear()
         }
-        try? await clear()
+        _ = await PushControl.within(control.signOutBound) { await forgetting.value }
     }
 
     /// The sign-out did not go through (the session could not be removed):
@@ -670,15 +725,28 @@ public struct PushRegistrar: Sendable {
     /// state, still held, and the next sync deletes again.
     private func giveUp(_ standing: PushFacts.Standing, _ state: PushState?, _ client: SubstrateClient) async -> PushFacts {
         guard let stored = state else { return PushFacts(standing: standing) }
+        return facts(standing, await retire(stored, client))
+    }
+
+    /// The device record deleted and every registration of `stored` retired,
+    /// answering the state saved: the retired one, or, where the delete could
+    /// not be made now or the retirement not saved, `stored`. A delete sent
+    /// before the last put can no longer land is not final: `deleteAgainAt`
+    /// says when to delete again.
+    ///
+    /// - Parameter leaving: a sign-out's, which saves for its sign-in though
+    ///   no attempt may any more, and forgets every generation: nothing of a
+    ///   sign-in signed out is accepted again.
+    private func retire(_ stored: PushState, _ client: SubstrateClient, leaving: Bool = false) async -> PushState {
         var next = stored
         let retiring = !stored.held && stored.deleteAgainAt != nil
-        if retiring, let again = stored.deleteAgainAt, now() < again { return facts(standing, stored) }
-        if stored.held || retiring {
+        let early = retiring && stored.deleteAgainAt.map { now() < $0 } == true
+        if stored.held || (retiring && !early) {
             let sent = now()
             do {
                 try await client.delete(SubstrateClient.deviceKind, stored.tokenID)
-                if let putAt = stored.lastPutAt, sent.timeIntervalSince(putAt) < PushState.putLifetime {
-                    next.deleteAgainAt = putAt.addingTimeInterval(PushState.putLifetime)
+                if let last = stored.lastPutAt, sent < PushState.landsBy(last) {
+                    next.deleteAgainAt = PushState.landsBy(last)
                 } else {
                     next.deleteAgainAt = nil
                 }
@@ -686,15 +754,16 @@ public struct PushRegistrar: Sendable {
                 // The token is gone, and its device with it.
                 next.deleteAgainAt = nil
             } catch {
-                return facts(standing, stored)
+                return stored
             }
         }
         next.retireAll(at: now())
         // Nothing current is left to put again.
         next.putAgainAt = nil
-        guard next != stored else { return facts(standing, stored) }
-        guard await save(next, for: next.tokenID) else { return facts(standing, stored) }
-        return facts(standing, next)
+        if leaving { next.previous = [] }
+        guard next != stored else { return stored }
+        guard await save(next, for: next.tokenID, leaving: leaving) else { return stored }
+        return next
     }
 
     private func facts(_ standing: PushFacts.Standing, _ state: PushState?) -> PushFacts {
@@ -704,10 +773,14 @@ public struct PushRegistrar: Sendable {
             deviceToken: latest.environment == .development ? latest.deviceToken : nil)
     }
 
-    /// Saves unless the sign-in is being signed out: a save after the
-    /// sign-out forgot the registrations would bring one back.
-    private func save(_ state: PushState, for tokenID: String) async -> Bool {
-        guard !control.isLeaving(tokenID), let data = try? JSONEncoder().encode(state) else { return false }
+    /// Saves unless the sign-in is being signed out, but for the sign-out's
+    /// own retirement (`leaving`): a save of an attempt after the sign-out
+    /// retired the registrations would bring one back. The puts that can no
+    /// longer land are dropped first, whatever is saved.
+    private func save(_ state: PushState, for tokenID: String, leaving: Bool = false) async -> Bool {
+        var state = state
+        state.prunePuts(at: now())
+        guard leaving || !control.isLeaving(tokenID), let data = try? JSONEncoder().encode(state) else { return false }
         do {
             try await sessions.write(data, account: account)
             return true

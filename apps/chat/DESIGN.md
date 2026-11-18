@@ -669,11 +669,16 @@ and the badge the server counted.
   answered is settled only once 2 minutes have passed since an earlier
   registration's put: until then the next sync after them puts it again,
   the same key and generation, so an earlier put that lands late does not
-  stay. Signing out marks the sign-in leaving, so no
-  attempt saves or puts for it again, queues the device's delete and the
-  forgetting of every generation behind the work in flight, for its own
-  sign-in alone, waits for them at most 7 seconds, and lets them finish in
-  their turn.
+  stay. A put's time is taken just before it goes out, after the save
+  that keeps it, so the 2 minutes count from the true send. A sync is
+  asked for the sign-in the app holds as it asks (its token's id) and
+  does nothing once another is in use. Signing out marks the sign-in
+  leaving, so no attempt saves or puts for it again, and queues behind the
+  work in flight, for its own sign-in alone, the device's delete and the
+  retirement of every generation; it waits for them at most 7 seconds and
+  lets them finish in their turn. What is left to retire is kept until the
+  session is removed and the delete is final, so an app that ends between
+  the two finishes the retirement at its next launch.
 - **The environment** is the exported build's own: `development` in a
   simulator, else the embedded profile's `aps-environment`, and
   `production` where there is no profile (TestFlight, the App Store).

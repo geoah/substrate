@@ -157,8 +157,11 @@ struct ChatRig {
 
     var runtime: Runtime<ChatApp> { harness.runtime }
 
+    /// Signed in with the token a held push registration names
+    /// (`HeldPush`): a push sync is asked for it.
     func signIn() async throws {
-        await runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: scopes, online: true))
+        await runtime.linkChanged(
+            LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: scopes, tokenID: HeldPush.tokenID, online: true))
         try await harness.until { harness in
             let state = await harness.state
             return state.loaded && !state.refreshing
