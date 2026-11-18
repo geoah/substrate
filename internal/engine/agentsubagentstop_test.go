@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +18,8 @@ func TestASubagentStoppedByItsDeadlineSaysWhichCallTookTheTime(t *testing.T) {
 	t.Parallel()
 	sub := &vocabulary.Agent{Name: "architect"}
 	o := &subagentOutcome{window: 300 * time.Second}
-	o.noteTool("query", `{"record":null}`, true)
-	o.noteTool("vocabulary", toolError("substrate/engine: create index for ~/trips/flight: timeout: context deadline exceeded"), false)
+	o.noteTool("query", `{"record":null}`, true, nil)
+	o.noteTool("vocabulary", toolError("substrate/engine: create index for ~/trips/flight: timeout: context deadline exceeded"), false, nil)
 	got := subagentResult(sub, &substrate.AgentResult{
 		Thread: "t1", Status: threadOverBudget, Cause: substrate.CauseDeadline, Reason: reasonDeadline,
 	}, o)
@@ -42,6 +43,57 @@ func TestASubagentStoppedByItsDeadlineSaysWhichCallTookTheTime(t *testing.T) {
 	}
 }
 
+// A declaration whose index work the architect's time cut says so first,
+// naming the phase the end met: "ran out of time" alone had Moss tell the
+// owner to raise a budget (#1496). It says nothing of why the work took the
+// time, which is not known, and the model reads no driver error.
+func TestASubagentWhoseIndexWorkTheDeadlineCutSaysWhereItStood(t *testing.T) {
+	t.Parallel()
+	driver := errors.New("read tcp 192.0.2.1:5432: i/o timeout: context deadline exceeded")
+	for _, tc := range []struct {
+		phase       indexCutPhase
+		error, said string
+	}{
+		{
+			indexCutPreparing,
+			"substrate/engine: create index for ~/trips/flight: the call ended before index preparation finished, so the declaration was not applied",
+			"architect's vocabulary call was still preparing the index for ~/trips/flight when its time ran out, so nothing it was declaring was applied.",
+		},
+		{
+			indexCutQueued,
+			"substrate/engine: create index for ~/trips/flight: the call ended while it was waiting for another index build on the database to finish, so the declaration was not applied",
+			"architect's vocabulary call was still waiting for another index build on the database to finish before it could build the index for ~/trips/flight when its time ran out, so nothing it was declaring was applied.",
+		},
+	} {
+		cut := &indexBuildCut{kind: "~/trips/flight", phase: tc.phase, err: driver}
+		if !errors.Is(cut, driver) {
+			t.Fatalf("phase %d: the driver's error is not reachable through the cut", tc.phase)
+		}
+		o := &subagentOutcome{window: 300 * time.Second}
+		o.noteTool("vocabulary", toolError(cut.Error()), false, cut)
+		got := subagentResult(&vocabulary.Agent{Name: "architect"}, &substrate.AgentResult{
+			Thread: "t1", Status: threadOverBudget, Cause: substrate.CauseDeadline, Reason: reasonDeadline,
+		}, o)
+		failed, _ := got["failedCall"].(map[string]any)
+		if failed["tool"] != "vocabulary" || failed["error"] != tc.error {
+			t.Fatalf("phase %d: failedCall = %v\nwant error %q", tc.phase, got["failedCall"], tc.error)
+		}
+		want := tc.said +
+			" It had 5 min, its own time limit." +
+			" The time went to the database's index work, not to architect's turns or tool calls." +
+			" Its daily spend was not what stopped it."
+		stopped := got["stopped"].(string)
+		if stopped != want {
+			t.Fatalf("phase %d: stopped = %q\nwant      %q", tc.phase, stopped, want)
+		}
+		for _, leak := range []string{"192.0.2.1", "i/o timeout", "deadline exceeded"} {
+			if strings.Contains(stopped, leak) || strings.Contains(tc.error, leak) {
+				t.Fatalf("phase %d: the model reads the driver's error (%q)", tc.phase, leak)
+			}
+		}
+	}
+}
+
 func TestASubagentCutShortByItsCallerSaysTheCallersTimeEnded(t *testing.T) {
 	t.Parallel()
 	o := &subagentOutcome{window: 95 * time.Second, callerBound: true}
@@ -59,8 +111,8 @@ func TestASubagentCutShortByItsCallerSaysTheCallersTimeEnded(t *testing.T) {
 func TestALaterCallThatSucceededClearsTheFailedOne(t *testing.T) {
 	t.Parallel()
 	o := &subagentOutcome{}
-	o.noteTool("query", toolError("no such kind"), false)
-	o.noteTool("query", `{"records":[]}`, true)
+	o.noteTool("query", toolError("no such kind"), false, nil)
+	o.noteTool("query", `{"records":[]}`, true, nil)
 	got := subagentResult(&vocabulary.Agent{Name: "librarian", Budgets: vocabulary.AgentBudgets{MaxTurns: 24}}, &substrate.AgentResult{
 		Status: threadOverBudget, Cause: substrate.CauseTurnLimit,
 	}, o)

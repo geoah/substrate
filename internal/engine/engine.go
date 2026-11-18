@@ -1029,6 +1029,10 @@ type service struct {
 	// this process, nested ones included (archivepace.go invocationStarted):
 	// what an archive pass yields to.
 	invocations atomic.Int64
+	// indexBuilds counts the index builds a vocabulary apply runs in this
+	// process (archivepace.go indexBuildStarted): while one runs, no archive
+	// pass pauses for invocations inside its snapshot.
+	indexBuilds atomic.Int64
 	// archiveYieldMax is the longest a pass waits for invocations to return
 	// before it copies on (archivepace.go yield).
 	archiveYieldMax time.Duration

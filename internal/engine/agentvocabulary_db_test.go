@@ -21,10 +21,10 @@ import (
 // `anthropic` row pointed at the fake on the wire the fake speaks, and one
 // kind of the owner's own with a long text to edit: `<repo>/scratch/pad`. It
 // installs no function body, so the suite runs where no sandbox can confine
-// one.
-func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
+// one. opts reach the engine's open.
+func openMossDataset(t *testing.T, opts ...Option) (*dataset, *fakeLLM, string) {
 	t.Helper()
-	ds := openInternalDataset(t)
+	ds := openInternalDataset(t, opts...)
 	fake := newFakeLLM(t)
 	ds.mu.Lock()
 	ds.skipThreadTitles = true

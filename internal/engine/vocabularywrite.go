@@ -785,7 +785,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		},
 		waiting: func() { ds.logApply("waiting for another session's index builds") },
 	}
-	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), progress); err != nil {
+	if err := ds.svc.buildIndexes(ctx, touchedKinds(candidate, touched), progress); err != nil {
 		return nil, err
 	}
 
@@ -1720,6 +1720,19 @@ type projectOpts struct {
 	// boot upgrade and a repository migration run once per repository at open
 	// and leave it off.
 	logPackages bool
+}
+
+// buildIndexes is ensureIndices for a vocabulary apply, with the archive
+// passes copying on without pausing while it runs: a pass holds its
+// snapshot through a pause, the build waits for that snapshot, and the
+// pause may be waiting for the agent whose call this is (archivepace.go).
+// The count comes down however the work ends, a panic in a progress
+// callback included, so the passes pause again before the apply's
+// transaction begins and never stay unpaused for the life of the process.
+func (s *service) buildIndexes(ctx context.Context, types []*vocabulary.Kind, progress indexProgress) error {
+	s.indexBuildStarted()
+	defer s.indexBuildEnded()
+	return ensureIndices(ctx, s.admin, types, progress)
 }
 
 // logApply logs one step of a vocabulary batch at info. The apply door holds

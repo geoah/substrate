@@ -60,7 +60,16 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind,
 	}
 	// The build lock, taken at the first index that needs work and held to
 	// the end of the batch. Every catalog read after it runs on its session.
+	// refused is whether another session held it at a try (lockAdvisory's
+	// waiting): only then did this call wait for another build.
 	var conn *sql.Conn
+	refused := false
+	waiting := func() {
+		refused = true
+		if progress.waiting != nil {
+			progress.waiting()
+		}
+	}
 	defer func() {
 		if conn != nil {
 			unlockIndexBuilds(ctx, conn)
@@ -79,16 +88,63 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind,
 			continue
 		}
 		if conn == nil {
-			if conn, err = lockIndexBuilds(ctx, admin, progress.waiting); err != nil {
+			if conn, err = lockIndexBuilds(ctx, admin, waiting); err != nil {
+				if ctx.Err() != nil {
+					phase := indexCutPreparing
+					if refused {
+						phase = indexCutQueued
+					}
+					return &indexBuildCut{kind: s.kind, phase: phase, err: err}
+				}
 				return fmt.Errorf("substrate/engine: index build lock for %s: %w", s.kind, err)
 			}
 		}
 		if err := s.rebuild(ctx, conn, progress.building); err != nil {
+			if ctx.Err() != nil {
+				return &indexBuildCut{kind: s.kind, phase: indexCutPreparing, err: err}
+			}
 			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)
 		}
 	}
 	return nil
 }
+
+// indexBuildCut is index work the caller's context ended before it
+// finished, so the declaration it was for was not applied. It says which
+// phase the end met and nothing about why the phase took the time: a build
+// may wait on another transaction or simply scan a large table. Its text
+// leaves out the driver's error, which can carry transport details and is
+// what a model reads; Unwrap keeps it. "context deadline exceeded" alone
+// was read as a budget the caller should raise. An agent's call reads the
+// kind and the phase off it (agentvocabulary.go).
+type indexBuildCut struct {
+	kind  string
+	phase indexCutPhase
+	err   error
+}
+
+// indexCutPhase is where index work stood when its caller's context ended.
+type indexCutPhase int
+
+const (
+	// indexCutQueued: waiting for the build lock after another session
+	// refused it at least once, so another build held it.
+	indexCutQueued indexCutPhase = iota + 1
+	// indexCutPreparing: anywhere else in the work, said without a cause:
+	// before any refusal of the lock (its connection, its first try), or in
+	// this call's own rebuild, whose last step drops the replaced index
+	// after the new one is already in place.
+	indexCutPreparing
+)
+
+func (e *indexBuildCut) Error() string {
+	if e.phase == indexCutQueued {
+		return fmt.Sprintf("substrate/engine: create index for %s: the call ended while it was waiting for another index build on the database to finish, so the declaration was not applied", e.kind)
+	}
+	return fmt.Sprintf("substrate/engine: create index for %s: the call ended before index preparation finished, so the declaration was not applied", e.kind)
+}
+
+func (e *indexBuildCut) Unwrap() error { return e.err }
 
 // indexProgress is what ensureIndices reports while it works. building is
 // told each index before its build, which on a large records table runs for
