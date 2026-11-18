@@ -344,6 +344,10 @@ so its archive is at the head it stopped at.
 copies, so the process's passes together copy at most
 `SUBSTRATE_ARCHIVE_BYTES_PER_SECOND` (8 MiB by default), and pause while any
 function body or agent loop runs in the process, for at most 30 s at a time.
+They do not pause while a vocabulary apply builds an index: a pass holds its
+snapshot through a pause, a concurrent index build waits for every older
+snapshot to end, and the agent the pass paused for may be the one whose
+declaration is waiting on that build.
 The first pass over a long history copies all of it: about an hour for 27 GB
 at the default, after an upgrade from a release before the archive, a new
 archive, or a move to a new store. A process stopped in the middle of it

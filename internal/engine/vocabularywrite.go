@@ -785,7 +785,14 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		},
 		waiting: func() { ds.logApply("waiting for another session's index builds") },
 	}
-	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), progress); err != nil {
+	// The archive passes copy on without pausing while it runs: a pass holds
+	// its snapshot through a pause, the build waits for that snapshot, and
+	// the pause may be waiting for the agent whose call this is
+	// (archivepace.go).
+	ds.svc.indexBuildStarted()
+	err = ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), progress)
+	ds.svc.indexBuildEnded()
+	if err != nil {
 		return nil, err
 	}
 

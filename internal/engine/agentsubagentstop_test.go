@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +18,8 @@ func TestASubagentStoppedByItsDeadlineSaysWhichCallTookTheTime(t *testing.T) {
 	t.Parallel()
 	sub := &vocabulary.Agent{Name: "architect"}
 	o := &subagentOutcome{window: 300 * time.Second}
-	o.noteTool("query", `{"record":null}`, true)
-	o.noteTool("vocabulary", toolError("substrate/engine: create index for ~/trips/flight: timeout: context deadline exceeded"), false)
+	o.noteTool("query", `{"record":null}`, true, "")
+	o.noteTool("vocabulary", toolError("substrate/engine: create index for ~/trips/flight: timeout: context deadline exceeded"), false, "")
 	got := subagentResult(sub, &substrate.AgentResult{
 		Thread: "t1", Status: threadOverBudget, Cause: substrate.CauseDeadline, Reason: reasonDeadline,
 	}, o)
@@ -42,6 +43,31 @@ func TestASubagentStoppedByItsDeadlineSaysWhichCallTookTheTime(t *testing.T) {
 	}
 }
 
+// A declaration whose index build was still waiting on the database when the
+// architect's time ran out says so first, and that the time limit and the
+// budget are not the fix: "ran out of time" alone had Moss tell the owner to
+// raise a budget (#1496).
+func TestASubagentWhoseIndexBuildTheDeadlineCutSaysTheDatabaseTookTheTime(t *testing.T) {
+	t.Parallel()
+	o := &subagentOutcome{window: 300 * time.Second}
+	cut := &indexBuildCut{kind: "~/trips/flight", err: context.DeadlineExceeded}
+	o.noteTool("vocabulary", toolError(cut.Error()), false, cut.kind)
+	got := subagentResult(&vocabulary.Agent{Name: "architect"}, &substrate.AgentResult{
+		Thread: "t1", Status: threadOverBudget, Cause: substrate.CauseDeadline, Reason: reasonDeadline,
+	}, o)
+	failed, _ := got["failedCall"].(map[string]any)
+	if failed["tool"] != "vocabulary" || !strings.Contains(failed["error"].(string), "create index for ~/trips/flight: the index was still being built when the call ended, so nothing was applied") {
+		t.Fatalf("failedCall = %v", got["failedCall"])
+	}
+	want := "architect's vocabulary call was still waiting for the database to build the index for ~/trips/flight when its time ran out, so nothing it was declaring was applied." +
+		" It had 5 min, its own time limit." +
+		" An index build waits for the database's other work to finish; architect's time limit and budget did not cause the wait, and raising them is not the fix." +
+		" Its daily spend was not what stopped it."
+	if s := got["stopped"].(string); s != want {
+		t.Fatalf("stopped = %q\nwant      %q", s, want)
+	}
+}
+
 func TestASubagentCutShortByItsCallerSaysTheCallersTimeEnded(t *testing.T) {
 	t.Parallel()
 	o := &subagentOutcome{window: 95 * time.Second, callerBound: true}
@@ -59,8 +85,8 @@ func TestASubagentCutShortByItsCallerSaysTheCallersTimeEnded(t *testing.T) {
 func TestALaterCallThatSucceededClearsTheFailedOne(t *testing.T) {
 	t.Parallel()
 	o := &subagentOutcome{}
-	o.noteTool("query", toolError("no such kind"), false)
-	o.noteTool("query", `{"records":[]}`, true)
+	o.noteTool("query", toolError("no such kind"), false, "")
+	o.noteTool("query", `{"records":[]}`, true, "")
 	got := subagentResult(&vocabulary.Agent{Name: "librarian", Budgets: vocabulary.AgentBudgets{MaxTurns: 24}}, &substrate.AgentResult{
 		Status: threadOverBudget, Cause: substrate.CauseTurnLimit,
 	}, o)

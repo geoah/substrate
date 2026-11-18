@@ -12,6 +12,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -93,6 +94,9 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 	}
 	written, err := l.ds.applyVocabularyDocuments(ctx, l.actor, docs, substrate.VocabularyApply{}, &c.changes)
 	if err != nil {
+		if cut := (*indexBuildCut)(nil); errors.As(err, &cut) {
+			c.cutIndex = cut.kind
+		}
 		return toolError(err.Error()), false
 	}
 	applied := make([]map[string]any, 0, len(written))

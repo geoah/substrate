@@ -84,11 +84,31 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind,
 			}
 		}
 		if err := s.rebuild(ctx, conn, progress.building); err != nil {
+			if ctx.Err() != nil {
+				return &indexBuildCut{kind: s.kind, err: err}
+			}
 			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)
 		}
 	}
 	return nil
 }
+
+// indexBuildCut is a build the caller's context ended before it finished,
+// so the declaration it was for was not applied. Its text says the wait was
+// the database's: a concurrent build waits for every older transaction, and
+// "context deadline exceeded" alone was read as a budget the caller should
+// raise. An agent's call reads the kind off it (agentvocabulary.go).
+type indexBuildCut struct {
+	kind string
+	err  error
+}
+
+func (e *indexBuildCut) Error() string {
+	return fmt.Sprintf("substrate/engine: create index for %s: the index was still being built when the call ended, so nothing was applied; "+
+		"a concurrent index build waits for every older transaction in the database to end (%v)", e.kind, e.err)
+}
+
+func (e *indexBuildCut) Unwrap() error { return e.err }
 
 // indexProgress is what ensureIndices reports while it works. building is
 // told each index before its build, which on a large records table runs for

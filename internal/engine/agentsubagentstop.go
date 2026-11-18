@@ -24,20 +24,23 @@ type subagentOutcome struct {
 	window      time.Duration
 	callerBound bool
 	// failedTool and failedError are the run's newest tool outcome where it
-	// failed; a later call that succeeded clears them.
-	failedTool, failedError string
+	// failed; a later call that succeeded clears them. failedIndex is the
+	// kind whose index build that call was still waiting on when its time
+	// ran out.
+	failedTool, failedError, failedIndex string
 }
 
-// noteTool records one settled call of the run.
-func (o *subagentOutcome) noteTool(name, out string, ok bool) {
+// noteTool records one settled call of the run; index is the kind whose
+// index build the call's time cut short, where it was one.
+func (o *subagentOutcome) noteTool(name, out string, ok bool, index string) {
 	if o == nil {
 		return
 	}
 	if ok {
-		o.failedTool, o.failedError = "", ""
+		o.failedTool, o.failedError, o.failedIndex = "", "", ""
 		return
 	}
-	o.failedTool, o.failedError = name, toolErrorText(out)
+	o.failedTool, o.failedError, o.failedIndex = name, toolErrorText(out), index
 }
 
 // toolErrorText is the error a toolError result carries, else the result.
@@ -82,13 +85,27 @@ func subagentStopped(sub *vocabulary.Agent, res *substrate.AgentResult, o *subag
 	var b strings.Builder
 	switch res.Cause {
 	case substrate.CauseDeadline:
+		had := ""
 		if o != nil && o.window > 0 {
 			whose := "its own time limit"
 			if o.callerBound {
 				whose = "the time left in your own run"
 			}
-			fmt.Fprintf(&b, "%s ran out of time: it had %s, %s.", name, wordsDuration(o.window), whose)
-		} else {
+			had = fmt.Sprintf("had %s, %s", wordsDuration(o.window), whose)
+		}
+		switch {
+		case o != nil && o.failedIndex != "":
+			// Said first and plainly: "ran out of time" was read as a
+			// budget to raise, when the time went to the database.
+			fmt.Fprintf(&b, "%s's %s call was still waiting for the database to build the index for %s when its time ran out, so nothing it was declaring was applied.",
+				name, o.failedTool, o.failedIndex)
+			if had != "" {
+				fmt.Fprintf(&b, " It %s.", had)
+			}
+			fmt.Fprintf(&b, " An index build waits for the database's other work to finish; %s's time limit and budget did not cause the wait, and raising them is not the fix.", name)
+		case had != "":
+			fmt.Fprintf(&b, "%s ran out of time: it %s.", name, had)
+		default:
 			fmt.Fprintf(&b, "%s ran out of time.", name)
 		}
 	case substrate.CauseTurnLimit:
@@ -108,7 +125,7 @@ func subagentStopped(sub *vocabulary.Agent, res *substrate.AgentResult, o *subag
 			fmt.Fprintf(&b, " The run's reason: %s.", strings.TrimSuffix(res.Reason, "."))
 		}
 	}
-	if o != nil && o.failedTool != "" {
+	if o != nil && o.failedTool != "" && o.failedIndex == "" {
 		fmt.Fprintf(&b, " Its last call, %s, failed: %s.", o.failedTool, strings.TrimSuffix(o.failedError, "."))
 		if res.Cause == substrate.CauseDeadline && strings.Contains(o.failedError, "deadline exceeded") {
 			b.WriteString(" That call was still running when the time ran out, so it is the call that took the time, and nothing it was doing was applied.")

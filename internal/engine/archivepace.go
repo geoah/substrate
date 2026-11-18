@@ -13,6 +13,17 @@ package engine
 // process, and go on when the last of them returns, for at most
 // archiveYieldMax at a time, so a server whose bodies run back to back still
 // archives.
+//
+// A PASS NEVER PAUSES WHILE AN INDEX BUILD RUNS. The pause is taken inside
+// the pass's REPEATABLE READ snapshot, and a concurrent index build waits for
+// every snapshot older than its last scan to end (indices.go). The invocation
+// the pass waits for may be the very one waiting on that build, an agent's
+// `vocabulary` call: the build then waited on the pass, the pass on the
+// agent, the agent on the build, and the call ended at its deadline with
+// nothing applied, a pause of up to archiveYieldMax for each line still to
+// copy. So while this process builds an index (indexBuildStarted) a pass
+// copies on at its byte rate alone, and its snapshot ends as soon as that
+// allows.
 
 import (
 	"context"
@@ -121,9 +132,11 @@ func (p *archivePacer) pace(ctx context.Context, n int) error {
 const archiveBurstBytes = 1 << 20
 
 // yield waits while any function body or agent loop runs in this process,
-// for at most the service's archiveYieldMax, and counts the wait.
+// for at most the service's archiveYieldMax, and counts the wait. It never
+// waits while an index build runs, and a wait a build starts during ends at
+// the next poll (the header).
 func (p *archivePacer) yield(ctx context.Context) error {
-	if p.svc.invocations.Load() == 0 {
+	if !p.svc.archiveYields() {
 		return nil
 	}
 	began := time.Now()
@@ -132,7 +145,7 @@ func (p *archivePacer) yield(ctx context.Context) error {
 	defer ticker.Stop()
 	bound := time.NewTimer(p.svc.archiveYieldMax)
 	defer bound.Stop()
-	for p.svc.invocations.Load() > 0 {
+	for p.svc.archiveYields() {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -149,3 +162,15 @@ func (p *archivePacer) yield(ctx context.Context) error {
 // runAgent), nested ones included: the count is what a pass yields to.
 func (s *service) invocationStarted() { s.invocations.Add(1) }
 func (s *service) invocationEnded()   { s.invocations.Add(-1) }
+
+// indexBuildStarted and indexBuildEnded bracket every index build a
+// vocabulary apply runs in this process (vocabularywrite.go): while one
+// runs, no pass pauses (the header).
+func (s *service) indexBuildStarted() { s.indexBuilds.Add(1) }
+func (s *service) indexBuildEnded()   { s.indexBuilds.Add(-1) }
+
+// archiveYields reports whether a pass pauses now: an invocation is in
+// flight and no index build is.
+func (s *service) archiveYields() bool {
+	return s.invocations.Load() > 0 && s.indexBuilds.Load() == 0
+}
