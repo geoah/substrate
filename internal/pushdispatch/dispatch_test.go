@@ -104,6 +104,8 @@ type fakeStore struct {
 	devicesN int
 	// gone are the request records Get no longer finds, kind/id.
 	gone map[string]bool
+	// badgeErr, when set, fails every badge read.
+	badgeErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -185,6 +187,9 @@ func (s *fakeStore) PushBadgeThreads(_ context.Context, _, after string) ([]*sub
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.badgeN++
+	if s.badgeErr != nil {
+		return nil, s.badgeErr
+	}
 	var page []*substrate.Record
 	for _, th := range s.badge {
 		if th.ID > after && len(page) < 500 {
@@ -1460,5 +1465,167 @@ func TestEveryCloseCallerWaits(t *testing.T) {
 	callers.Wait()
 	if early.Load() {
 		t.Fatal("a Close returned before the delivery in flight finished")
+	}
+}
+
+// A request of a thread for nobody goes to the people who hold `admin` at
+// its send: one demoted during an earlier admin's send gets nothing.
+func TestAnAdminDemotedBeforeTheirSendGetsNoRequest(t *testing.T) {
+	r := newRig(t)
+	r.store.admins = []string{"actor-admin1", "actor-admin2"}
+	r.device("actor-admin1", "tok-a1")
+	r.device("actor-admin2", "tok-a2")
+	r.raise(0, "", "ap1", 1)
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.PushKey == "key-tok-a1" {
+			r.store.mu.Lock()
+			r.store.admins = []string{"actor-admin1"}
+			r.store.mu.Unlock()
+		}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	if got := r.sender.to("tok-a2"); len(got) != 0 {
+		t.Fatalf("an admin demoted before their send got %+v", got)
+	}
+	if got := r.sender.to("tok-a1"); len(got) != 1 {
+		t.Fatalf("the admin still holding it got %d", len(got))
+	}
+}
+
+// A `read` names an alert by its fingerprint as it stands when the read
+// takes it: one whose send completes during the read's recheck by its real
+// fingerprint, one still being prepared never, by an empty one or at all.
+func TestAReadRacingAPreparingAlertNamesOnlyRealFingerprints(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	item := substrate.PushItem{Kind: vocabulary.KindLLMMessage, ID: "m1", Version: 1}
+	preparing := func() uint64 {
+		return r.d.alerted.add(alert{
+			device: "tok1", repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventReply,
+			item: item, check: substrate.PushCheck{Event: substrate.PushEventReply, Person: testPerson, Thread: testThread, Message: "m1"},
+		})
+	}
+	read := func() *hold {
+		return &hold{
+			key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+			check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+			writers: map[string]bool{},
+		}
+	}
+	// It completes during the read's recheck: the read names it as sent.
+	seq := preparing()
+	r.store.recheck = func(substrate.PushCheck) string {
+		r.d.alerted.ready(seq, item, "fp-real")
+		r.d.alerted.sent(seq, true)
+		return substrate.PushSeen
+	}
+	if err := r.d.deliver(context.Background(), fakeDatasets{ds: r.store}, read()); err != nil {
+		t.Fatal(err)
+	}
+	reads := r.readsTo("tok1")
+	if len(reads) != 1 || !slices.Equal(reads[0], []string{"fp-real"}) {
+		t.Fatalf("reads %v, want the completed alert by its real fingerprint", reads)
+	}
+	// It is still being prepared: the read names nothing and marks it.
+	seq = preparing()
+	r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+	if err := r.d.deliver(context.Background(), fakeDatasets{ds: r.store}, read()); err != nil {
+		t.Fatal(err)
+	}
+	if reads := r.readsTo("tok1"); len(reads) != 1 {
+		t.Fatalf("a read of an alert still being prepared went out: %v", reads)
+	}
+	if !r.d.alerted.canceled(seq) {
+		t.Fatal("the read did not mark the alert it covered while it was prepared")
+	}
+}
+
+// A take-back whose badge cannot be counted is not sent with an older
+// count: the alert stays, and the next read takes it back.
+func TestATakeBackWithNoBadgeWaitsForTheNextRead(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.message("m1", 1)
+	r.reply(0, "m1")
+	read := func() *hold {
+		return &hold{
+			key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+			check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+			writers: map[string]bool{},
+		}
+	}
+	r.sender.mu.Lock()
+	r.sender.during = func(ctx context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventReply {
+			return
+		}
+		r.store.mu.Lock()
+		r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+		r.store.badgeErr = errors.New("the badge could not be read")
+		r.store.mu.Unlock()
+		if err := r.d.deliver(ctx, fakeDatasets{ds: r.store}, read()); err != nil {
+			t.Error(err)
+		}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	if reads := r.readsTo("tok1"); len(reads) != 0 {
+		t.Fatalf("a take-back went out with no badge counted: %v", reads)
+	}
+	if n := r.d.alerted.size(); n != 1 {
+		t.Fatalf("%d alerts remembered, want the one left for the next read", n)
+	}
+	r.store.mu.Lock()
+	r.store.badgeErr = nil
+	r.store.mu.Unlock()
+	r.sender.mu.Lock()
+	r.sender.during = nil
+	r.sender.mu.Unlock()
+	if err := r.d.deliver(context.Background(), fakeDatasets{ds: r.store}, read()); err != nil {
+		t.Fatal(err)
+	}
+	if reads := r.readsTo("tok1"); len(reads) != 1 {
+		t.Fatalf("the next read took back %v", reads)
+	}
+}
+
+// A read reads each device again at its send: one revoked during the
+// read's earlier send gets nothing, and its alerts are forgotten.
+func TestAReadReadsEachDeviceAgainAtItsSend(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.device(testPerson, "tok2")
+	r.message("m1", 1)
+	r.reply(0, "m1")
+	r.at(Hold)
+	if len(r.sender.all()) != 2 {
+		t.Fatalf("the reply went to %d devices", len(r.sender.all()))
+	}
+	r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+	revoked := false
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventRead || revoked {
+			return
+		}
+		revoked = true
+		other := "tok2"
+		if req.PushKey == "key-tok2" {
+			other = "tok1"
+		}
+		r.store.mu.Lock()
+		r.store.devices[testPerson] = slices.DeleteFunc(r.store.devices[testPerson], func(dv substrate.PushDevice) bool { return dv.ID == other })
+		r.store.mu.Unlock()
+	}
+	r.sender.mu.Unlock()
+	r.signal(Hold, substrate.PushSignal{Kind: substrate.PushMarked, Person: testPerson, Token: "tok9"})
+	r.at(Hold + ReadHold)
+	if n := len(r.readsTo("tok1")) + len(r.readsTo("tok2")); n != 1 {
+		t.Fatalf("%d reads went out, want one: the other device was revoked during it", n)
+	}
+	if n := r.d.alerted.size(); n != 0 {
+		t.Fatalf("%d alerts remembered of a taken-back and a revoked device", n)
 	}
 }

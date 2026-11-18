@@ -140,6 +140,28 @@ func TestAPersonReadsTheirOwnDevicesAlone(t *testing.T) {
 	if rec := env.do(t, http.MethodGet, "/api/v1/records?filter="+byToken, viewer.token, nil); rec.Code == http.StatusOK {
 		t.Fatalf("a list referencing another person's device answered %s", rec.Body.String())
 	}
+	// The record page's "Connected to" asks every record what references
+	// it: the viewer's own device answers, another person's does not, by
+	// a list naming no kind or one of the kind declarations alike; the
+	// admin's answers for any device.
+	connected := func(bearer, device, kinds string) int {
+		t.Helper()
+		filter := `{` + kinds + `"referencing":{"ref":"` + vocabulary.RecordPath(vocabulary.KindDevice, device) + `"}}`
+		return env.do(t, http.MethodGet, "/api/v1/records?first=200&filter="+filter, bearer, nil).Code
+	}
+	declarations := `"kinds":["` + vocabulary.CoreKind("kind") + `"],`
+	if got := connected(viewer.token, viewer.tokenID, ""); got != http.StatusOK {
+		t.Fatalf("the viewer's own device's connected query answered %d", got)
+	}
+	if got := connected(viewer.token, admin.ID, ""); got != http.StatusNotFound {
+		t.Fatalf("another person's device's connected query answered %d, want 404", got)
+	}
+	if got := connected(viewer.token, admin.ID, declarations); got != http.StatusNotFound {
+		t.Fatalf("the kind declarations referencing another person's device answered %d, want 404", got)
+	}
+	if got := connected(adminBearer, viewer.tokenID, ""); got != http.StatusOK {
+		t.Fatalf("the admin's connected query of another person's device answered %d", got)
+	}
 }
 
 // A card's actions are offered to who may decide it now: an editor in

@@ -629,6 +629,9 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
 			return nil, err
 		}
+		if err := s.holdReferencing(ctx, q.Filter.Referencing); err != nil {
+			return nil, err
+		}
 		return s.listDeclarations(ctx, q)
 	}
 	if gated, err := s.anyRowGated(ctx, q.Filter.Kinds); err != nil {

@@ -104,15 +104,20 @@ func (m *alertedMap) of(repository, thread, person string) []alert {
 }
 
 // covered marks a `read`'s coverage of alert seq: a sent alert is answered
-// true, for the `read` to take back; one still sending is marked to be
-// taken back (or forgotten, drop) when its send settles, and answered
-// false.
-func (m *alertedMap) covered(seq uint64, drop bool) bool {
+// true, with its fingerprint, for the `read` to take back; one still being
+// prepared or sent is marked to be taken back (or forgotten, drop) when its
+// send settles, and answered false.
+//
+// The fingerprint answered is the alert's own as it stands under the lock,
+// never a copy read before it: an alert whose send completed since the
+// `read` listed it is named by its real fingerprint, and one with none yet
+// is never named.
+func (m *alertedMap) covered(seq uint64, drop bool) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.byID[seq]
 	if !ok {
-		return false
+		return "", false
 	}
 	if a.sending {
 		if drop {
@@ -120,9 +125,12 @@ func (m *alertedMap) covered(seq uint64, drop bool) bool {
 		} else {
 			a.takeBack = true
 		}
-		return false
+		return "", false
 	}
-	return true
+	if a.fingerprint == "" {
+		return "", false
+	}
+	return a.fingerprint, true
 }
 
 // forget forgets the alerts seqs.

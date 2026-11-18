@@ -513,6 +513,18 @@ func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store 
 			d.alerted.sent(seq, false)
 		}
 	}()
+	// A request that acts for nobody goes to the people who hold `admin`
+	// at its send, not at its hold: one demoted meanwhile gets nothing.
+	if h.key.person == "" {
+		admins, err := store.PushAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(admins, person) {
+			count(event, outcomeUnreadable)
+			return nil
+		}
+	}
 	devices, err := store.PushDevices(ctx, person)
 	if err != nil {
 		return err
@@ -587,9 +599,17 @@ func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store 
 	settled = true
 	if takeBack, _ := d.alerted.sent(seq, took); takeBack {
 		// Covered while it was in flight: take it back now, with the badge
-		// as it stands after what covered it.
-		if fresh, err := push.Badge(ctx, store, view.Reads, dv.Person); err == nil {
-			badge = fresh
+		// as a view built now counts it after what covered it. The wire
+		// carries a badge on every push, so where it cannot be counted the
+		// take-back waits for the next `read`, which finds the alert sent.
+		fresh, err := d.view(ctx, ds, dv.Token)
+		if err != nil {
+			return nil
+		}
+		badge, err := push.Badge(ctx, store, fresh.Reads, dv.Person)
+		if err != nil {
+			d.log.Warn("substrate: a take-back's badge could not be counted; the next read takes it back", "error", err)
+			return nil
 		}
 		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, []string{fingerprint}, badge) {
 			d.alerted.forget(seq)
@@ -637,7 +657,12 @@ func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, stor
 	if len(held) == 0 {
 		return nil
 	}
-	covered := map[string][]alert{}
+	type take struct {
+		seq         uint64
+		fingerprint string
+	}
+	covered := map[string][]take{}
+	persons := map[string]string{}
 	for _, a := range held {
 		check := d.checkOf(a.repository, a.check)
 		if a.event == substrate.PushEventRequest {
@@ -651,40 +676,36 @@ func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, stor
 			continue
 		}
 		writer := h.writers[a.device]
-		if !d.alerted.covered(a.seq, writer) {
+		fingerprint, sent := d.alerted.covered(a.seq, writer)
+		if !sent {
 			continue
 		}
 		if writer {
 			d.alerted.forget(a.seq)
 			continue
 		}
-		covered[a.device] = append(covered[a.device], a)
+		covered[a.device] = append(covered[a.device], take{a.seq, fingerprint})
+		persons[a.device] = a.person
 	}
-	devices := map[string]substrate.PushDevice{}
-	listed := map[string]bool{}
 	for device, list := range covered {
-		person := list[0].person
-		if !listed[person] {
-			listed[person] = true
-			found, err := store.PushDevices(ctx, person)
-			if err != nil {
-				return err
-			}
-			for _, dv := range found {
-				devices[dv.ID] = dv
-			}
-		}
-		dv, live := devices[device]
 		seqs := make([]uint64, len(list))
 		prints := make([]string, len(list))
 		for i, a := range list {
 			seqs[i], prints[i] = a.seq, a.fingerprint
 		}
-		if !live {
+		// The device as it stands at this send, not as an earlier send of
+		// this `read` found it.
+		found, err := store.PushDevices(ctx, persons[device])
+		if err != nil {
+			return err
+		}
+		i := slices.IndexFunc(found, func(dv substrate.PushDevice) bool { return dv.ID == device })
+		if i < 0 {
 			// The device went: nothing of it is left to take back.
 			d.alerted.forget(seqs...)
 			continue
 		}
+		dv := found[i]
 		relay, signer, badge, outcome := d.prepareRead(ctx, ds, store, dv)
 		if outcome != "" {
 			count(substrate.PushEventRead, outcome)
