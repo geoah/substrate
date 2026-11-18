@@ -155,7 +155,7 @@ extension ChatApp {
             notificationOffer: state.notificationOffer == .offered ? Self.notificationOffer(platform) : nil,
             keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
             diagnostics: state.diagnostics.map {
-                DiagnosticsReport(lines: $0, platform: platform, agents: state.agentsRevision, records: state.recordsRevision)
+                DiagnosticsReport(lines: $0, platform: platform, agents: state.agentsRevision, records: state.recordsRevision, push: state.push)
             },
             redrawAt: redrawAt)
     }

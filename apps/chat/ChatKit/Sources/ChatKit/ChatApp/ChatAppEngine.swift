@@ -18,6 +18,8 @@ extension ChatApp {
         case .unsentRetryDue:
             if next.unsaved != nil, let disk = next.disk { next.asks.append(.saveUnsent(disk, next.unsent, drafts: next.drafts)) }
         case let .permissionRead(permission):
+            // Pushes are kept only while the person allows notifications.
+            if permission != next.permission, next.permission != nil || permission == .off { syncPush(&next) }
             next.permission = permission
             // Offered in the app's words only where the system was never
             // asked: its prompt shows once.
@@ -120,9 +122,17 @@ extension ChatApp {
                 next.olderReading.remove(thread)
                 sought(&next, thread, found: false)
             }
-        case let .featuresRead(agents, records):
+        case let .featuresRead(agents, records, push):
             featuresRead(&next, agents: agents, records: records)
+            let listed = next.pushListed
+            next.pushRevision = push
+            // Read with every refresh, so at launch and whenever the app
+            // comes to the front: the registration is checked each time.
+            syncPush(&next)
+            if next.pushListed, !listed { next.asks.append(badge(next)) }
             resume(&next)
+        case let .pushSynced(facts):
+            next.push = facts
         case let .marksRead(marks):
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
@@ -542,6 +552,7 @@ extension ChatApp {
         state.disk = disk.lease
         state.asks.append(.prune(disk.lease))
         state.preferences = disk.preferences
+        if let push = disk.push { state.push = push }
         state.drafts = disk.drafts
         // A reply typed into a notification before the folder was read,
         // which its time ran out on: it is the head of its chat's draft,
@@ -646,6 +657,8 @@ extension ChatApp {
             state.asks.append(.finishRun(run, success: true))
             return
         }
+        // A background refresh checks the registration too.
+        syncPush(&state)
         // The refresh under way is cancelled by this one's key.
         if let earlier = state.backgroundRun { state.asks.append(.finishRun(earlier, success: false)) }
         state.backgroundRun = run
@@ -671,7 +684,7 @@ extension ChatApp {
             state.leaving = true
             flushMarks(&state)
             if let disk = state.disk { state.asks.append(.scheduleRefresh(disk)) }
-            state.asks.append(.badge(state.unreadCount))
+            state.asks.append(badge(state))
             if pausesWhenAway {
                 state.watching = false
                 state.asks.append(.cancel("watch"))
@@ -833,7 +846,9 @@ extension ChatApp {
         if carried { return }
         // A stop is the owner's own act; an error says so rather than
         // offering the turn before it as the answer.
-        guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
+        // A held registration's push says it: never a notification of the
+        // app's own beside it.
+        guard state.baselined, !state.pushHeld, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
             thread.status != "stopped", thread.status == "error" || thread.record["lastReply"]?.text != nil,
             state.marks == nil || state.unread(thread) || state.failedUnseen(thread)
         else { return }
@@ -1289,8 +1304,12 @@ extension ChatApp {
         case let ("expandThinking", on?, _): state.preferences.expandThinking = on
         case let ("technicalDetails", on?, _): state.preferences.technicalDetails = on
         case let ("wrapCode", on?, _): state.preferences.wrapCode = on
-        case let ("notifyReplies", on?, _): state.preferences.notifyReplies = on
-        case let ("notifyAttention", on?, _): state.preferences.notifyAttention = on
+        case let ("notifyReplies", on?, _):
+            state.preferences.notifyReplies = on
+            syncPush(&state)
+        case let ("notifyAttention", on?, _):
+            state.preferences.notifyAttention = on
+            syncPush(&state)
         case let ("defaultAgent", _, option?): state.preferences.defaultAgent = option.isEmpty ? nil : option
         case let ("voiceLocale", _, option?): state.preferences.voiceLocale = option.isEmpty ? nil : option
         case let (row, on?, _) where row.hasPrefix("agent:"):

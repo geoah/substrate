@@ -342,7 +342,10 @@ public struct ChatApp: LinkedApp {
             }
             if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
         }
-        if state.unreadCount != previous.unreadCount { asks.append(.badge(state.unreadCount)) }
+        if state.unreadCount != previous.unreadCount { asks.append(badge(state)) }
+        // A notification of a chat on screen, pushed or local, is quiet in
+        // front: the device is told which those are.
+        if state.visibleThreads != previous.visibleThreads { asks.append(.showing(state.visibleThreads.sorted())) }
         var taken = state.visibleThreads.subtracting(previous.visibleThreads)
         // Read, not merely running again: a chat at work is not unread,
         // and what it notified before is still to be read. The first marks
@@ -351,6 +354,10 @@ public struct ChatApp: LinkedApp {
         if state.marks != nil, state.readState != previous.readState {
             taken.formUnion(previous.unreadThreads.subtracting(state.unreadThreads).filter { state.thread($0)?.running == false })
         }
+        // What a push alerted that the reads say is seen goes, here or on
+        // another device: whenever the server answered the lists, and
+        // whenever a chat came to read as read.
+        if state.push?.held == true, !taken.isEmpty || Self.answeredLists(event) { asks.append(reconcile(state)) }
         for thread in taken.sorted() {
             // Opened here, everything the chat notified goes. Read on
             // another device, the reply's own goes: a card's stands while
@@ -426,6 +433,10 @@ public struct ChatApp: LinkedApp {
         case .readUsage: "usage"
         case .readDiagnostics: "diagnostics"
         case .readPermission: "permission"
+        case .serverBadge: "badge"
+        case .syncPush: "push"
+        case .reconcilePush: "reconcile"
+        case .showing: "showing"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
             .askPermission, .finishRun, .scheduleRefresh, .notifyCard, .finishAction, .cancelNotification, .diagnose, .timings,

@@ -286,6 +286,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         let (sessions, manifest, packages, outboxes, fixed) = (sessions, manifest, packages, outboxes, outbox)
         let transport = environment.devices.transport
         let folder = environment.folder
+        let push = environment[PushRegistrarKey.self]
         let now = environment.clock
         @Sendable func client(_ session: Session) -> SubstrateClient {
             SubstrateClient(server: session.server, token: session.secret, transport: transport)
@@ -398,6 +399,10 @@ public struct LinkController<App: LinkedApp>: Controller {
                     // The generation moves first: work scheduled before this
                     // writes nothing from here on.
                     generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
+                    // The install's device record goes while the token can
+                    // still delete it, and every registration of the
+                    // sign-in is forgotten before the token is revoked.
+                    await push?.signOut(session)
                     try await sessions.signOut(session, transport: transport)
                 } catch {
                     return .signOutFailed(explain(error, app: manifest.appName, server: session.server), generation: generation)

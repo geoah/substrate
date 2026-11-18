@@ -96,6 +96,21 @@ public struct SystemNotifications: Notifications {
         await UNUserNotificationCenter.current().pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }.sorted()
     }
 
+    public func delivered() async -> [DeliveredNotification] {
+        await UNUserNotificationCenter.current().deliveredNotifications().map { notification in
+            let content = notification.request.content
+            var userInfo = PushPayload.flatten(content.userInfo)
+            userInfo[SystemNotificationDelegate.quietInFront] = nil
+            return DeliveredNotification(
+                id: notification.request.identifier, thread: content.threadIdentifier.isEmpty ? nil : content.threadIdentifier,
+                userInfo: userInfo)
+        }
+    }
+
+    public func showing(threads: Set<String>) async {
+        SystemNotificationDelegate.shared.show(threads)
+    }
+
     public func responses() -> AsyncStream<NotificationResponse> {
         SystemNotificationDelegate.shared.responses()
     }
@@ -155,6 +170,8 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 
     private let lock = NSLock()
     private var held: [NotificationResponse] = []
+    /// The threads the app shows in front (`Notifications.showing`).
+    private var onScreen: Set<String> = []
     private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
     /// The background actions the app has not said it finished.
     let waits = ResponseWaits()
@@ -183,11 +200,22 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    func show(_ threads: Set<String>) {
+        lock.withLock { onScreen = threads }
+    }
+
+    /// In front, a request that asked to be quiet there shows nothing, and
+    /// neither does one of a thread the app shows, a push's included: the
+    /// screen already says it.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        notification.request.content.userInfo[Self.quietInFront] == nil ? [.banner, .list, .sound] : []
+        let content = notification.request.content
+        if content.userInfo[Self.quietInFront] != nil { return [] }
+        let thread = content.threadIdentifier
+        if !thread.isEmpty, lock.withLock({ onScreen.contains(thread) }) { return [] }
+        return [.banner, .list, .sound]
     }
 
     /// A background action holds the app awake until the app says it is
@@ -226,11 +254,9 @@ final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 
     static func response(_ response: UNNotificationResponse) -> NotificationResponse {
         let request = response.notification.request
-        var userInfo: [String: String] = [:]
-        for (key, value) in request.content.userInfo {
-            guard let key = key as? String, key != quietInFront, let value = value as? String else { continue }
-            userInfo[key] = value
-        }
+        // A push's own values arrive under `substrate.`.
+        var userInfo = PushPayload.flatten(request.content.userInfo)
+        userInfo[quietInFront] = nil
         let action: NotificationResponse.Action =
             switch response.actionIdentifier {
             case UNNotificationDefaultActionIdentifier: .open

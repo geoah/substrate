@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
@@ -557,6 +558,12 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var answered = Signal<ChatAnswer>()
     var usage: [AreaUsage] = []
     var permission: NotificationPermission?
+    /// The `push` feature's revision, from the server's discovery document;
+    /// nil until it is read, when the app registers nowhere.
+    var pushRevision: Int?
+    /// What the install's registration with its publisher's relay says of
+    /// itself: read with the folder, then after each attempt to register.
+    var push: PushFacts?
     var guidance = Guidance()
     /// Whether the next sign-out forgets the saved chats: Sign Out does,
     /// Sign In Again after a refused token does not.

@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
@@ -49,7 +50,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case refreshFailed(Failure)
     /// The `agents` and the `records` features' revisions, as the
     /// discovery document says them.
-    case featuresRead(agents: Int, records: Int)
+    case featuresRead(agents: Int, records: Int, push: Int = 0)
+    /// An attempt to register with the publisher's push relay ended here.
+    case pushSynced(PushFacts)
     /// The person's marks of some threads, read on their own.
     case marksRead(Marks)
     /// The mark of a thread the person spoke in, read after they did.
@@ -200,6 +203,10 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         /// What the watch marked to read again that was not read before the
         /// app last stopped.
         var stale: [WatchKey]
+        /// What the push registration kept says, read with the folder, so a
+        /// background refresh that lands before any attempt to register
+        /// posts nothing a push says.
+        var push: PushFacts? = nil
     }
 
     typealias WatchKey = ChatAppState.WatchKey

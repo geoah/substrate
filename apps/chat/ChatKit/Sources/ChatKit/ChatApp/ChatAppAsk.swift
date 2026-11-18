@@ -135,6 +135,20 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case cancelNotification(String)
     case cancelAllNotifications
     case badge(Int)
+    /// The badge as the server counts it, where it lists `push`: what a push
+    /// sets it to. `fallback` is the app's own count, set where the server
+    /// does not answer.
+    case serverBadge(fallback: Int)
+    /// Registers with the publisher's push relay where it is due, or gives
+    /// a registration up (`PushRegistrar.sync`).
+    case syncPush(listed: Bool, notifies: [String])
+    /// The pushed notifications that what was read says are seen, taken
+    /// back: a reply's or a failure's whose thread is read, and a
+    /// request's whose thread has nothing waiting.
+    case reconcilePush(read: [String], settled: [String])
+    /// The threads a window in front shows: a notification of one, pushed
+    /// or local, stays quiet while the app is in front.
+    case showing([String])
     case askPermission
     case readPermission
     case followRuns
