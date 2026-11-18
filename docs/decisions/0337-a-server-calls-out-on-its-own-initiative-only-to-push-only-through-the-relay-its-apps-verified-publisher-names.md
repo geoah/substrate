@@ -51,8 +51,9 @@ app reads when it opens anyway.
   again: a `failed` is dropped when the person's mark took a position at or
   after the settle, and nothing else stands for "reading" (C7, which replaces
   the plan's stream-reader signal; a mark taken during the turn says nothing
-  of how it ended). A turn that raised a request pushes it and no reply, and
-  the request is seen once the mark reads through the message that turn's
+  of how it ended). A turn that raised a request pushes it and no reply and
+  no `failed`, even when the request was decided before the settle, and the
+  request is seen once the mark reads through the message that turn's
   settle left.
 - **When it is decided.** Each delivery takes one of four slots before it
   reads anything, then reads the person's devices, the tokens and the

@@ -835,8 +835,10 @@ A reply needs an `assistant` message because `newestMessage` names the
 person's own message when a new chat's first call fails
 (`internal/engine/threadmarks.go`): `lastMessage` moving does not by itself
 mean Moss replied. A run that errors after its tool calls may leave no
-`assistant` message at all; that is the `failed` event's case. A settle that
-also raised a request sends the `request`, not a `reply` too. A request is
+`assistant` message at all; that is the `failed` event's case. A turn that
+raised a request sends the `request`, and no `reply` and no `failed` for
+its settle, even when the request was decided before the turn settled: the
+person answered it, so they are at the chat. A request is
 sent for an archived thread too, since what waits on a person is always
 notified
 ([0322](../decisions/0322-a-person-pins-and-archives-a-thread-on-their-own-mark-and-a-list-is-narrowed-by-the-records-that-point-at-its-rows.md)).
@@ -870,8 +872,8 @@ thread is its own wait. A second event with the same key restarts its wait.
 - **`request`**: 5 seconds. Then it is dropped if the record is no longer
   pending at that version, or, when a turn raised it, if the mark reads
   through the message that turn's settle wrote. The turn records what it
-  raised, so its settle pushes the request and no reply, and names the
-  message the request is read at. A newer version of the same record is a
+  raised, so its settle pushes no reply and no failure, even for a request
+  decided before it settled, and names the message the request is read at. A newer version of the same record is a
   new item.
 - **`read`**: 2 seconds, keyed by the recipient and the thread alone, so
   every source in that time folds into one `read` that takes back all the

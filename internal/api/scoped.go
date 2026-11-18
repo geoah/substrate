@@ -470,6 +470,9 @@ func (s *scopedDataset) narrow(ctx context.Context, kinds []string) ([]string, b
 		if err != nil {
 			return nil, false, err
 		}
+		// A kind read row by row is never part of "every kind": its rows
+		// would be ranked and paged before any row rule could hold them.
+		all = slices.DeleteFunc(all, s.devicesHeld)
 		return all, len(all) > 0, nil
 	}
 	out := make([]string, 0, len(kinds))
@@ -1052,7 +1055,7 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 		if h.Record == nil {
 			continue
 		}
-		if ok, err := s.reads(ctx, h.Record.Kind); err != nil {
+		if ok, err := s.visible(ctx, h.Record); err != nil {
 			return substrate.SearchResult{}, err
 		} else if !ok {
 			continue

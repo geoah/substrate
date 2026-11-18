@@ -119,14 +119,27 @@ type Dispatcher struct {
 	datasets Datasets
 	holds    map[holdKey]*hold
 	seq      uint64
-	queue    []*hold
-	workers  sync.WaitGroup
-	running  int
-	alerted  *alertedMap
-	wake     chan struct{}
-	done     chan struct{}
-	closed   bool
+	// queue is the work due and not yet taken; holds and queue together
+	// stay within MaxHolds. running workers are alive, busy of them
+	// delivering.
+	queue   []*hold
+	workers sync.WaitGroup
+	running int
+	busy    int
+	// settled is the message the settle of the turn that raised a request
+	// left, by the request's record: what a person reads the request at,
+	// consulted at every recheck, so it reaches a hold, queued work, a
+	// delivery being prepared and a remembered alert alike.
+	settled      map[settleKey]string
+	settledOrder []settleKey
+	alerted      *alertedMap
+	wake         chan struct{}
+	done         chan struct{}
+	closed       bool
 }
+
+// settleKey names a request's record in one repository.
+type settleKey struct{ repository, kind, id string }
 
 var _ substrate.PushSink = (*Dispatcher)(nil)
 
@@ -135,7 +148,7 @@ var _ substrate.PushSink = (*Dispatcher)(nil)
 func New(o Options) *Dispatcher {
 	d := &Dispatcher{
 		view: o.View, docs: o.Documents, sender: o.Sender, log: o.Log, now: o.Now, manual: o.Manual,
-		holds: map[holdKey]*hold{}, alerted: newAlertedMap(MaxAlerted),
+		holds: map[holdKey]*hold{}, settled: map[settleKey]string{}, alerted: newAlertedMap(MaxAlerted),
 		wake: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 	d.ctx, d.cancel = context.WithCancel(context.Background())
@@ -161,18 +174,16 @@ func (d *Dispatcher) Start(datasets Datasets) {
 }
 
 // Close stops the loop, drops what was waiting, cancels the deliveries in
-// flight and waits for them: after it returns no delivery runs, and none
-// starts.
+// flight and waits for them: after it returns, from any caller, no delivery
+// runs and none starts.
 func (d *Dispatcher) Close() {
 	d.mu.Lock()
-	if d.closed {
-		d.mu.Unlock()
-		return
+	if !d.closed {
+		d.closed = true
+		d.holds = map[holdKey]*hold{}
+		d.queue = nil
+		close(d.done)
 	}
-	d.closed = true
-	d.holds = map[holdKey]*hold{}
-	d.queue = nil
-	close(d.done)
 	d.mu.Unlock()
 	d.cancel()
 	d.workers.Wait()
@@ -211,15 +222,11 @@ func (d *Dispatcher) PushSignal(s substrate.PushSignal) {
 	switch s.Kind {
 	case substrate.PushSettled:
 		if len(s.Raised) > 0 {
-			// The turn raised requests: they push, and no reply does. The
-			// person reads them at the message the settle left.
+			// The turn raised requests: they push, and no reply and no
+			// failure does, even for a request decided before the settle.
+			// The person reads them at the message the settle left.
 			for _, item := range s.Raised {
-				for k, h := range d.holds {
-					if k.repository == s.Repository && k.thread == s.Thread && k.event == substrate.PushEventRequest && k.item == item {
-						h.check.SettleMessage = s.Wrote
-					}
-				}
-				d.alerted.update(s.Repository, s.Thread, item, func(c *substrate.PushCheck) { c.SettleMessage = s.Wrote })
+				d.settle(settleKey{s.Repository, item.Kind, item.ID}, s.Wrote)
 			}
 			return
 		}
@@ -247,21 +254,41 @@ func (d *Dispatcher) PushSignal(s substrate.PushSignal) {
 	}
 }
 
+// settle records the message a request is read at, the oldest forgotten
+// past MaxAlerted. d.mu is held.
+func (d *Dispatcher) settle(key settleKey, message string) {
+	if _, held := d.settled[key]; !held {
+		if len(d.settledOrder) >= MaxAlerted {
+			delete(d.settled, d.settledOrder[0])
+			d.settledOrder = d.settledOrder[1:]
+		}
+		d.settledOrder = append(d.settledOrder, key)
+	}
+	d.settled[key] = message
+}
+
+// checkOf is a check as it stands now: for a request, with the message the
+// settle of the turn that raised it left, wherever the check was copied.
+func (d *Dispatcher) checkOf(repository string, c substrate.PushCheck) substrate.PushCheck {
+	if c.Event != substrate.PushEventRequest {
+		return c
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if m, ok := d.settled[settleKey{repository, c.Item.Kind, c.Item.ID}]; ok {
+		c.SettleMessage = m
+	}
+	return c
+}
+
 // hold starts a wait of wait from now, or restarts the one already under
-// key, never past MaxHoldDelay after its first signal. Past MaxHolds the
-// oldest is dropped. d.mu is held.
+// key, never past MaxHoldDelay after its first signal. Past MaxHolds, held
+// and queued together, the oldest is dropped. d.mu is held.
 func (d *Dispatcher) hold(key holdKey, now time.Time, wait time.Duration, check substrate.PushCheck, writer string) {
 	h, ok := d.holds[key]
 	if !ok {
-		if len(d.holds) >= MaxHolds {
-			var oldest *hold
-			for _, x := range d.holds {
-				if oldest == nil || x.seq < oldest.seq {
-					oldest = x
-				}
-			}
-			delete(d.holds, oldest.key)
-			count(oldest.key.event, outcomeDropped)
+		if len(d.holds)+len(d.queue) >= MaxHolds {
+			d.dropOldest()
 		}
 		h = &hold{key: key, first: now, check: check, writers: map[string]bool{}}
 		d.holds[key] = h
@@ -277,6 +304,26 @@ func (d *Dispatcher) hold(key holdKey, now time.Time, wait time.Duration, check 
 	select {
 	case d.wake <- struct{}{}:
 	default:
+	}
+}
+
+// dropOldest drops the oldest work: queued work was due first, then the
+// oldest hold. d.mu is held.
+func (d *Dispatcher) dropOldest() {
+	if len(d.queue) > 0 {
+		count(d.queue[0].key.event, outcomeDropped)
+		d.queue = d.queue[1:]
+		return
+	}
+	var oldest *hold
+	for _, x := range d.holds {
+		if oldest == nil || x.seq < oldest.seq {
+			oldest = x
+		}
+	}
+	if oldest != nil {
+		delete(d.holds, oldest.key)
+		count(oldest.key.event, outcomeDropped)
 	}
 }
 
@@ -323,12 +370,12 @@ func (d *Dispatcher) Holds() int {
 	return len(d.holds)
 }
 
-// fire queues every hold due at now and starts workers for them, at most
-// MaxInFlight at once.
+// fire queues every hold due at now and starts a worker for each queued
+// item no idle worker will take, at most MaxInFlight alive.
 func (d *Dispatcher) fire(now time.Time) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.closed || d.datasets == nil {
+		d.mu.Unlock()
 		return
 	}
 	var due []*hold
@@ -359,14 +406,14 @@ func (d *Dispatcher) fire(now time.Time) {
 		if start {
 			d.work()
 		}
-		d.mu.Lock()
 		return
 	}
-	for d.running < MaxInFlight && d.running < len(d.queue) {
+	for d.running < MaxInFlight && d.running-d.busy < len(d.queue) {
 		d.running++
 		d.workers.Add(1)
 		go d.work()
 	}
+	d.mu.Unlock()
 }
 
 // work delivers queued holds until none are left: one slot of
@@ -382,6 +429,7 @@ func (d *Dispatcher) work() {
 		}
 		h := d.queue[0]
 		d.queue = d.queue[1:]
+		d.busy++
 		datasets := d.datasets
 		d.mu.Unlock()
 		ctx, cancel := context.WithTimeout(d.ctx, deliverTimeout)
@@ -390,13 +438,16 @@ func (d *Dispatcher) work() {
 			d.log.Warn("substrate: a push could not be decided", "event", h.key.event, "error", err)
 		}
 		cancel()
+		d.mu.Lock()
+		d.busy--
+		d.mu.Unlock()
 	}
 }
 
-// deliver decides one hold and sends what it decides. Who may see it is
-// read now, after the hold and its slot: the person's devices, each one's
-// token live and not expired, and the view a request with that token gets
-// reading both the live thread and the item.
+// deliver decides one hold and sends what it decides, device by device:
+// which devices to try is read once, and everything each send is held to is
+// read again right before it (sendAlert), so a revocation during an earlier
+// device's send holds the later one.
 func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) error {
 	ds, err := datasets.Dataset(ctx, h.key.repository)
 	if err != nil {
@@ -422,40 +473,6 @@ func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) er
 	if h.key.event == substrate.PushEventRequest {
 		class = substrate.PushNotifiesRequests
 	}
-	// What every recipient's devices are held to, read once and only once
-	// a device is found.
-	var thread, record *substrate.Record
-	item := h.key.item
-	read := func() (string, error) {
-		if thread != nil {
-			return "", nil
-		}
-		th, err := ds.Get(ctx, vocabulary.KindLLMThread, h.key.thread)
-		if errors.Is(err, substrate.ErrNotFound) {
-			return outcomeUnreadable, nil
-		}
-		if err != nil {
-			return "", err
-		}
-		switch h.key.event {
-		case substrate.PushEventFailed:
-			record = th
-		default:
-			rec, err := ds.Get(ctx, item.Kind, item.ID)
-			if errors.Is(err, substrate.ErrNotFound) {
-				return outcomeSeen, nil
-			}
-			if err != nil {
-				return "", err
-			}
-			record = rec
-			if h.key.event == substrate.PushEventReply {
-				item.Version = rec.Version
-			}
-		}
-		thread = th
-		return "", nil
-	}
 	for _, person := range recipients {
 		devices, err := store.PushDevices(ctx, person)
 		if err != nil {
@@ -466,84 +483,155 @@ func (d *Dispatcher) deliver(ctx context.Context, datasets Datasets, h *hold) er
 			count(h.key.event, outcomeNoDevice)
 			continue
 		}
-		check := h.check
-		check.Person = person
-		answer, err := store.PushRecheck(ctx, check)
-		if err != nil {
-			return err
-		}
-		switch answer {
-		case substrate.PushSeen:
-			count(h.key.event, outcomeSeen)
-			continue
-		case substrate.PushArchived:
-			count(h.key.event, outcomeArchived)
-			continue
-		}
-		if why, err := read(); err != nil {
-			return err
-		} else if why != "" {
-			count(h.key.event, why)
-			return nil
-		}
-		badges := map[string]int{}
 		for _, dv := range devices {
-			d.sendAlert(ctx, ds, store, dv, thread, record, item, h, check, badges)
+			if err := d.sendAlert(ctx, ds, store, h, person, class, dv.ID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// sendAlert sends one alert to one device: its token's view reads the
-// thread and the item now, its app names a relay, and the alert is
-// remembered from before its request, so a `read` that comes while it is in
-// flight takes it back once the relay took it.
-func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, dv substrate.PushDevice,
-	thread, record *substrate.Record, item substrate.PushItem, h *hold, check substrate.PushCheck, badges map[string]int,
-) {
+// sendAlert sends one alert to one device. It is remembered from before
+// anything is read, so a `read` that comes while it is prepared or sent
+// covers it; then the device, its token and its person are read again, the
+// recheck runs, the thread and the item are read live and the token's view
+// must read both, and coverage is asked once more right before the post.
+// Once the relay took it, a `read` that covered it meanwhile takes it back
+// with a badge counted then.
+func (d *Dispatcher) sendAlert(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, h *hold, person, class, deviceID string) error {
 	event := h.key.event
+	base := h.check
+	base.Person = person
+	seq := d.alerted.add(alert{
+		device: deviceID, repository: h.key.repository, person: person, thread: h.key.thread,
+		event: event, item: h.key.item, check: base,
+	})
+	settled := false
+	defer func() {
+		if !settled {
+			d.alerted.sent(seq, false)
+		}
+	}()
+	devices, err := store.PushDevices(ctx, person)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(devices, func(dv substrate.PushDevice) bool { return dv.ID == deviceID && slices.Contains(dv.Notifies, class) })
+	if i < 0 {
+		count(event, outcomeNoDevice)
+		return nil
+	}
+	dv := devices[i]
+	recheck := func() (bool, error) {
+		answer, err := store.PushRecheck(ctx, d.checkOf(h.key.repository, base))
+		switch {
+		case err != nil:
+			return false, err
+		case answer == substrate.PushSeen:
+			count(event, outcomeSeen)
+		case answer == substrate.PushArchived:
+			count(event, outcomeArchived)
+		default:
+			return true, nil
+		}
+		return false, nil
+	}
+	if ok, err := recheck(); err != nil || !ok {
+		return err
+	}
+	thread, record, item, why, err := d.records(ctx, ds, h)
+	if err != nil {
+		return err
+	}
+	if why != "" {
+		count(event, why)
+		return nil
+	}
 	view, err := d.view(ctx, ds, dv.Token)
 	if err != nil {
 		count(event, outcomeUnreadable)
-		return
+		return nil
 	}
 	for _, rec := range []*substrate.Record{thread, record} {
 		if ok, err := view.Reads(ctx, rec); err != nil || !ok {
 			count(event, outcomeUnreadable)
-			return
+			return nil
 		}
 	}
-	relay, signer, badge, outcome := d.prepare(ctx, store, dv, view, badges)
+	relay, signer, badge, outcome := d.prepare(ctx, store, dv, view)
 	if outcome != "" {
 		count(event, outcome)
-		return
+		return nil
 	}
 	eventID, err := signer.SealEvent(substrate.PushEvent{Event: event, Thread: thread.ID, Item: item, IssuedAt: d.now()})
 	if err != nil {
 		count(event, outcomeFailed)
 		d.log.Warn("substrate: a push's event could not be sealed", "event", event, "error", err)
-		return
+		return nil
 	}
-	seq := d.alerted.add(alert{
-		device: dv.ID, repository: h.key.repository, person: check.Person, thread: h.key.thread,
-		event: event, item: item, check: check, fingerprint: pushwire.EventFingerprint(eventID),
-	})
+	fingerprint := pushwire.EventFingerprint(eventID)
+	d.alerted.ready(seq, item, fingerprint)
+	// Coverage once more, right before the post: a mark that committed
+	// while this was prepared, or a `read` that marked it.
+	if d.alerted.canceled(seq) {
+		count(event, outcomeSeen)
+		return nil
+	}
+	if ok, err := recheck(); err != nil || !ok {
+		return err
+	}
 	took := d.send(ctx, store, dv, relay, signer, pushwire.PushRequest{
 		PushKey: dv.PushKey, Event: event, Thread: thread.ID, Badge: badge, EventID: eventID,
 	})
+	settled = true
 	if takeBack, _ := d.alerted.sent(seq, took); takeBack {
-		// Covered while it was in flight: take it back now.
-		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, []string{pushwire.EventFingerprint(eventID)}, badge) {
+		// Covered while it was in flight: take it back now, with the badge
+		// as it stands after what covered it.
+		if fresh, err := push.Badge(ctx, store, view.Reads, dv.Person); err == nil {
+			badge = fresh
+		}
+		if d.sendReadIDs(ctx, store, dv, relay, signer, h.key.thread, []string{fingerprint}, badge) {
 			d.alerted.forget(seq)
 		}
 	}
+	return nil
+}
+
+// records reads what an alert is held to, live: the thread, and the item
+// (the thread itself for a failure), with the item at the version an alert
+// names. why is the outcome when either is gone.
+func (d *Dispatcher) records(ctx context.Context, ds substrate.Dataset, h *hold) (thread, record *substrate.Record, item substrate.PushItem, why string, err error) {
+	item = h.key.item
+	thread, err = ds.Get(ctx, vocabulary.KindLLMThread, h.key.thread)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return nil, nil, item, outcomeUnreadable, nil
+	}
+	if err != nil {
+		return nil, nil, item, "", err
+	}
+	if h.key.event == substrate.PushEventFailed {
+		return thread, thread, item, "", nil
+	}
+	record, err = ds.Get(ctx, item.Kind, item.ID)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return nil, nil, item, outcomeSeen, nil
+	}
+	if err != nil {
+		return nil, nil, item, "", err
+	}
+	if h.key.event == substrate.PushEventReply {
+		item.Version = record.Version
+	}
+	return thread, record, item, "", nil
 }
 
 // deliverRead sends the `read` a mark or a decision causes to each device
 // holding an alert it now covers, but the devices of the tokens that wrote
-// it, and forgets each alert once the relay took the `read` naming it. A
-// `read` names only fingerprints the device holds, so no view of the
-// thread is asked for.
+// it, and forgets each alert once the relay took the `read` naming it. An
+// alert still being prepared or sent is marked instead, and its own
+// delivery drops it or takes it back. A `read` names only fingerprints the
+// device holds, so no view of the thread is asked for.
 func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, store substrate.PushStore, h *hold) error {
 	held := d.alerted.of(h.key.repository, h.key.thread, h.key.person)
 	if len(held) == 0 {
@@ -551,7 +639,7 @@ func (d *Dispatcher) deliverRead(ctx context.Context, ds substrate.Dataset, stor
 	}
 	covered := map[string][]alert{}
 	for _, a := range held {
-		check := a.check
+		check := d.checkOf(a.repository, a.check)
 		if a.event == substrate.PushEventRequest {
 			check.Request = true
 		}
@@ -634,11 +722,9 @@ func SealRead(signer substrate.PushSigner, thread string, prints []string, now t
 }
 
 // prepare finds what a send to one device needs beside its view: its app
-// names a relay, the badge as the view counts it (once per token in one
-// delivery), and the token's signer. A non-empty outcome is why not.
-func (d *Dispatcher) prepare(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, view View,
-	badges map[string]int,
-) (string, substrate.PushSigner, int, string) {
+// names a relay, the badge as the view counts it now, and the token's
+// signer. A non-empty outcome is why not.
+func (d *Dispatcher) prepare(ctx context.Context, store substrate.PushStore, dv substrate.PushDevice, view View) (string, substrate.PushSigner, int, string) {
 	relay, err := push.Relay(ctx, d.docs, dv.Token)
 	switch {
 	case errors.Is(err, push.ErrNoRelay):
@@ -647,12 +733,9 @@ func (d *Dispatcher) prepare(ctx context.Context, store substrate.PushStore, dv 
 		d.log.Warn("substrate: a push's relay could not be read", "error", err)
 		return "", nil, 0, outcomeFailed
 	}
-	badge, counted := badges[dv.Token.ID]
-	if !counted {
-		if badge, err = push.Badge(ctx, store, view.Reads, dv.Person); err != nil {
-			return "", nil, 0, outcomeFailed
-		}
-		badges[dv.Token.ID] = badge
+	badge, err := push.Badge(ctx, store, view.Reads, dv.Person)
+	if err != nil {
+		return "", nil, 0, outcomeFailed
 	}
 	signer, err := store.PushSigner(ctx, dv.ID)
 	if err != nil {
@@ -668,7 +751,7 @@ func (d *Dispatcher) prepareRead(ctx context.Context, ds substrate.Dataset, stor
 	if err != nil {
 		return "", nil, 0, outcomeUnreadable
 	}
-	return d.prepare(ctx, store, dv, view, map[string]int{})
+	return d.prepare(ctx, store, dv, view)
 }
 
 // sendReadIDs sends the `read` events that take prints back from one

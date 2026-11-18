@@ -52,6 +52,9 @@ func (s *scopedDataset) holdQuery(ctx context.Context, q substrate.Query) (subst
 			if err := s.requireRead(ctx, kindOfPath(target)); err != nil {
 				return q, false, err
 			}
+			if s.devicesHeld(kindOfPath(target)) {
+				return q, false, fmt.Errorf("%w: a person's view names no %s as a referencing target: they read their own alone", substrate.ErrForbidden, kindDevice)
+			}
 		}
 	}
 	if err := s.holdReferencedBy(ctx, q.Filter.ReferencedBy, false); err != nil {
@@ -74,6 +77,11 @@ func (s *scopedDataset) holdReferencedBy(ctx context.Context, rb *substrate.Refe
 		return nil
 	}
 	kind := s.local(rb.Kind)
+	// Which records a person's devices point at says who has a device: a
+	// person reads their own alone, so no list is narrowed by them.
+	if s.devicesHeld(kind) {
+		return fmt.Errorf("%w: a person's view names no %s in filter.referencedBy: they read their own alone", substrate.ErrForbidden, kind)
+	}
 	whole, err := s.reads(ctx, kind)
 	if err != nil {
 		return err

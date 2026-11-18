@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1132,7 +1133,6 @@ func TestCloseIsABarrier(t *testing.T) {
 		View:      func(context.Context, substrate.Dataset, substrate.TokenInfo) (View, error) { return fakeView{}, nil },
 		Documents: docs, Sender: sender, Now: c.now,
 	})
-	d.Start(fakeDatasets{ds: store})
 	for i, id := range []string{"tok1", "tok2", "tok3", "tok4", "tok5", "tok6"} {
 		person := fmt.Sprintf("actor-%d", i)
 		store.devices[person] = []substrate.PushDevice{{
@@ -1146,6 +1146,7 @@ func TestCloseIsABarrier(t *testing.T) {
 			Status: "ok", Message: msg, At: start, TurnStarted: start,
 		})
 	}
+	d.Start(fakeDatasets{ds: store})
 	c.set(start.Add(Hold))
 	d.fire(c.now())
 	select {
@@ -1208,5 +1209,256 @@ func TestTheBadgePagesUntilItCounts999(t *testing.T) {
 	store.badge = store.badge[:1200]
 	if n, _ := push.Badge(context.Background(), store, fakeView{hidden: hidden}.Reads, testPerson); n != 650 {
 		t.Fatalf("the badge counted %d, want every readable candidate, 650", n)
+	}
+}
+
+// Everything a later device's send is held to is read again after an
+// earlier device's send: a token revoked, or a view that lost the thread,
+// meanwhile, gets nothing; the badge each carries is counted then.
+func TestEachSendReadsItsDeviceAndViewAgain(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.device(testPerson, "tok2")
+	r.device(testPerson, "tok3")
+	r.message("m1", 1)
+	r.store.badge = []*substrate.Record{
+		{Kind: vocabulary.KindLLMThread, ID: "th1"},
+		{Kind: vocabulary.KindLLMThread, ID: "th2"},
+	}
+	r.reply(0, "m1")
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.PushKey != "key-tok1" {
+			return
+		}
+		// While the first send is slow: tok2 is revoked, and tok3's person
+		// is demoted so that its view no longer reads one badge thread.
+		r.store.mu.Lock()
+		r.store.devices[testPerson] = slices.DeleteFunc(r.store.devices[testPerson], func(dv substrate.PushDevice) bool { return dv.ID == "tok2" })
+		r.store.mu.Unlock()
+		r.hidden["tok3"] = map[string]bool{"th2": true}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	if got := r.sender.to("tok2"); len(got) != 0 {
+		t.Fatalf("a token revoked during an earlier send was sent %+v", got)
+	}
+	one, three := r.sender.to("tok1"), r.sender.to("tok3")
+	if len(one) != 1 || len(three) != 1 {
+		t.Fatalf("the live devices got %d and %d pushes", len(one), len(three))
+	}
+	if one[0].req.Badge != 2 || three[0].req.Badge != 1 {
+		t.Fatalf("badges %d and %d, want each as its view counts at its send: 2 and 1", one[0].req.Badge, three[0].req.Badge)
+	}
+}
+
+// A person demoted so their view no longer reads the thread between the
+// signal and the delivery is sent nothing.
+func TestADemotedPersonIsSentNothing(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.message("m1", 1)
+	r.reply(0, "m1")
+	r.hidden["tok1"] = map[string]bool{testThread: true}
+	r.at(Hold)
+	if got := r.sender.all(); len(got) != 0 {
+		t.Fatalf("a demoted person was sent %+v", got)
+	}
+}
+
+// The settle of the turn that raised a request reaches its delivery
+// wherever it is: waiting, queued or being prepared.
+func TestASettleReachesARequestWhereverItIs(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.device(testPerson, "tok2")
+	r.raise(0, testPerson, "ap1", 1)
+	item := substrate.PushItem{Kind: vocabulary.KindLLMApproval, ID: "ap1", Version: 1}
+	r.sender.mu.Lock()
+	r.sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		if req.PushKey == "key-tok1" {
+			// The settle lands while the request is being delivered.
+			r.signal(Hold, substrate.PushSignal{Kind: substrate.PushSettled, Mode: "chat", Person: testPerson, Status: "ok", Raised: []substrate.PushItem{item}, Wrote: "m9"})
+		}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	var last substrate.PushCheck
+	r.store.mu.Lock()
+	for _, c := range r.store.checks {
+		if c.Event == substrate.PushEventRequest {
+			last = c
+		}
+	}
+	r.store.mu.Unlock()
+	if last.SettleMessage != "m9" {
+		t.Fatalf("the second device's recheck read %+v, want the settle's message", last)
+	}
+	if r.d.Holds() != 0 {
+		t.Fatal("a settle that raised a request held a reply")
+	}
+}
+
+// A take-back of an alert covered in flight carries the badge as it
+// stands after what covered it.
+func TestATakeBackCarriesAFreshBadge(t *testing.T) {
+	r := newRig(t)
+	r.device(testPerson, "tok1")
+	r.message("m1", 1)
+	r.store.badge = []*substrate.Record{{Kind: vocabulary.KindLLMThread, ID: testThread}}
+	r.reply(0, "m1")
+	read := &hold{
+		key:     holdKey{repository: testRepo, person: testPerson, thread: testThread, event: substrate.PushEventRead},
+		check:   substrate.PushCheck{Event: substrate.PushEventRead, Person: testPerson, Thread: testThread},
+		writers: map[string]bool{},
+	}
+	r.sender.mu.Lock()
+	r.sender.during = func(ctx context.Context, req pushwire.PushRequest) {
+		if req.Event != pushwire.EventReply {
+			return
+		}
+		r.store.mu.Lock()
+		r.store.recheck = func(substrate.PushCheck) string { return substrate.PushSeen }
+		r.store.badge = nil
+		r.store.mu.Unlock()
+		if err := r.d.deliver(ctx, fakeDatasets{ds: r.store}, read); err != nil {
+			t.Error(err)
+		}
+	}
+	r.sender.mu.Unlock()
+	r.at(Hold)
+	var reads []sent
+	for _, s := range r.sender.to("tok1") {
+		if s.req.Event == pushwire.EventRead {
+			reads = append(reads, s)
+		}
+	}
+	if len(reads) != 1 || reads[0].req.Badge != 0 {
+		t.Fatalf("the take-back: %+v, want one read with the fresh badge 0", reads)
+	}
+}
+
+// MaxHolds bounds waiting and queued work together: past it the oldest
+// queued work is dropped, and counted.
+func TestTheBoundCoversQueuedWork(t *testing.T) {
+	r := newRig(t)
+	dropped := outcome(substrate.PushEventRequest, outcomeDropped)
+	r.d.mu.Lock()
+	for i := range MaxHolds {
+		r.d.queue = append(r.d.queue, &hold{key: holdKey{
+			repository: testRepo, event: substrate.PushEventRequest,
+			item: substrate.PushItem{Kind: vocabulary.KindLLMApproval, ID: fmt.Sprintf("q%d", i)},
+		}})
+	}
+	r.d.mu.Unlock()
+	r.raise(0, testPerson, "ap-new", 1)
+	r.d.mu.Lock()
+	queued, held, first := len(r.d.queue), len(r.d.holds), r.d.queue[0].key.item.ID
+	r.d.mu.Unlock()
+	if queued+held != MaxHolds || first != "q1" {
+		t.Fatalf("%d queued and %d held, the oldest queued %s: want %d in all, q0 dropped", queued, held, first, MaxHolds)
+	}
+	if outcome(substrate.PushEventRequest, outcomeDropped) != dropped+1 {
+		t.Fatal("the dropped queued work was not counted")
+	}
+}
+
+// A hold that comes due while every running worker is busy starts a worker
+// of its own, while slots remain, rather than waiting for a busy one.
+func TestAnIdleSlotTakesNewWork(t *testing.T) {
+	store := newFakeStore()
+	sender := &fakeSender{answers: map[string]push.Answer{}}
+	release := make(chan struct{})
+	second := make(chan struct{})
+	sender.during = func(_ context.Context, req pushwire.PushRequest) {
+		switch req.PushKey {
+		case "key-tok0":
+			<-release
+		case "key-tok1":
+			close(second)
+		}
+	}
+	start := time.Unix(1763459123, 0).UTC()
+	c := &clock{t: start}
+	docs := &fakeDocs{doc: authority.AuthorityDocument{Authority: "example.com", Apps: []authority.AuthorityApp{
+		{ClientID: testClientID, Push: &authority.AppPush{Relay: testRelay}},
+	}}}
+	d := New(Options{
+		View:      func(context.Context, substrate.Dataset, substrate.TokenInfo) (View, error) { return fakeView{}, nil },
+		Documents: docs, Sender: sender, Now: c.now,
+	})
+	for i := range 2 {
+		person, id, msg := fmt.Sprintf("actor-%d", i), fmt.Sprintf("tok%d", i), fmt.Sprintf("m%d", i)
+		store.devices[person] = []substrate.PushDevice{{
+			ID: id, Person: person, PushKey: "key-" + id, Notifies: []string{substrate.PushNotifiesReplies},
+			Token: substrate.TokenInfo{ID: id, ClientID: testClientID, AppAuthority: "example.com"},
+		}}
+		store.messages[msg] = &substrate.Record{Kind: vocabulary.KindLLMMessage, ID: msg, Version: 1, Properties: map[string]any{"thread": testThread}}
+	}
+	d.Start(fakeDatasets{ds: store})
+	defer d.Close()
+	defer close(release)
+	for i := range 2 {
+		person, msg := fmt.Sprintf("actor-%d", i), fmt.Sprintf("m%d", i)
+		d.PushSignal(substrate.PushSignal{
+			Kind: substrate.PushSettled, Repository: testRepo, Thread: testThread, Mode: "chat", Person: person,
+			Status: "ok", Message: msg, At: start.Add(time.Duration(i) * time.Minute), TurnStarted: start,
+		})
+		c.set(start.Add(time.Duration(i)*time.Minute + Hold))
+		d.fire(c.now())
+	}
+	select {
+	case <-second:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second delivery waited for the busy worker")
+	}
+}
+
+// Every caller of Close waits for the workers, not only the first.
+func TestEveryCloseCallerWaits(t *testing.T) {
+	store := newFakeStore()
+	sender := &fakeSender{answers: map[string]push.Answer{}}
+	entered := make(chan struct{})
+	var finished atomic.Bool
+	sender.during = func(ctx context.Context, _ pushwire.PushRequest) {
+		close(entered)
+		<-ctx.Done()
+		time.Sleep(100 * time.Millisecond)
+		finished.Store(true)
+	}
+	start := time.Unix(1763459123, 0).UTC()
+	c := &clock{t: start}
+	docs := &fakeDocs{doc: authority.AuthorityDocument{Authority: "example.com", Apps: []authority.AuthorityApp{
+		{ClientID: testClientID, Push: &authority.AppPush{Relay: testRelay}},
+	}}}
+	d := New(Options{
+		View:      func(context.Context, substrate.Dataset, substrate.TokenInfo) (View, error) { return fakeView{}, nil },
+		Documents: docs, Sender: sender, Now: c.now,
+	})
+	store.devices[testPerson] = []substrate.PushDevice{{
+		ID: "tok1", Person: testPerson, PushKey: "key-tok1", Notifies: []string{substrate.PushNotifiesReplies},
+		Token: substrate.TokenInfo{ID: "tok1", ClientID: testClientID, AppAuthority: "example.com"},
+	}}
+	store.messages["m1"] = &substrate.Record{Kind: vocabulary.KindLLMMessage, ID: "m1", Version: 1, Properties: map[string]any{"thread": testThread}}
+	d.Start(fakeDatasets{ds: store})
+	d.PushSignal(substrate.PushSignal{Kind: substrate.PushSettled, Repository: testRepo, Thread: testThread, Mode: "chat", Person: testPerson, Status: "ok", Message: "m1", At: start, TurnStarted: start})
+	c.set(start.Add(Hold))
+	d.fire(c.now())
+	<-entered
+	var early atomic.Bool
+	var callers sync.WaitGroup
+	for range 3 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			d.Close()
+			if !finished.Load() {
+				early.Store(true)
+			}
+		}()
+	}
+	callers.Wait()
+	if early.Load() {
+		t.Fatal("a Close returned before the delivery in flight finished")
 	}
 }

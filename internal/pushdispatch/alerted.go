@@ -7,7 +7,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// alert is one alert sent or being sent, remembered so a `read` can take it
+// alert is one alert being prepared, sent or sent, remembered so a `read` can take it
 // back: which device, whose and on which thread, what it was about, the
 // check that says whether it is covered now, and the fingerprint of its
 // event id, which the `read` names it by (pushwire.EventFingerprint).
@@ -134,16 +134,30 @@ func (m *alertedMap) forget(seqs ...uint64) {
 	}
 }
 
-// update rewrites the check of every alert of item on thread with fn: a
-// settle naming the message its turn's requests are read at.
-func (m *alertedMap) update(repository, thread string, item substrate.PushItem, fn func(*substrate.PushCheck)) {
+// ready names the event id an alert being prepared was sealed under, by
+// its fingerprint, and the item at the version it was sealed at.
+func (m *alertedMap) ready(seq uint64, item substrate.PushItem, fingerprint string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, a := range m.byID {
-		if a.repository == repository && a.thread == thread && a.item.Kind == item.Kind && a.item.ID == item.ID {
-			fn(&a.check)
-		}
+	if a, ok := m.byID[seq]; ok {
+		a.item, a.fingerprint = item, fingerprint
 	}
+}
+
+// canceled reports whether a `read` covered alert seq before its post:
+// it is then forgotten and never posted.
+func (m *alertedMap) canceled(seq uint64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.byID[seq]
+	if !ok {
+		return true
+	}
+	if a.takeBack || a.drop {
+		delete(m.byID, seq)
+		return true
+	}
+	return false
 }
 
 // forgetDevice forgets every alert of a device that was deleted.

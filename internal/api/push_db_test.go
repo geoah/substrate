@@ -262,6 +262,21 @@ func TestThePushRoutesAnswerForTheAskingToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/push/events/"+id, phoneBearer, nil), http.StatusNotFound, codeNotFound)
+	// The phone's own `read` resolves what it takes back though the thread
+	// is one it does not read, or gone: it clears only what it was sent.
+	phoneSigner, err := env.ds.(substrate.PushStore).PushSigner(ctx, phone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := phoneSigner.SealEvent(substrate.PushEvent{Event: substrate.PushEventRead, Thread: "8f2c41d07a", Alerts: []string{"CetD8NWemKv7dBg-jASmqA"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = env.do(t, http.MethodGet, "/api/v1/push/events/"+own, phoneBearer, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.PushEventInfo](t, rec); got.Covers == nil || !slices.Equal(got.Covers.Alerts, []string{"CetD8NWemKv7dBg-jASmqA"}) {
+		t.Fatalf("a read of a thread the token does not read resolved as %+v", got)
+	}
 
 	// Discovery lists push while it is on.
 	if !discoveryLists(t, env.testEnv, "push") {

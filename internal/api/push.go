@@ -201,8 +201,9 @@ func (h *handler) getPushBadge(w http.ResponseWriter, r *http.Request) {
 // getPushEvent serves GET /api/v1/push/events/{eventId}: what an event id
 // names, for the token it was sealed for alone, through its view now. An id
 // that is another token's, past its day, that does not open, or that names
-// what the view no longer reads is not found. A request says whether the
-// token may decide it now.
+// what the view no longer reads is not found; a `read` answers what it takes
+// back without a view of its thread. A request says whether the token may
+// decide it now.
 func (h *handler) getPushEvent(w http.ResponseWriter, r *http.Request) {
 	tok, store, ok := h.pushRequest(w, r)
 	if !ok {
@@ -232,6 +233,16 @@ func (h *handler) getPushEvent(w http.ResponseWriter, r *http.Request) {
 			return nil, false
 		}
 		return rec, true
+	}
+	// A `read` names only fingerprints of alerts its own token was sent,
+	// which it may take back whatever it reads now: a device that lost the
+	// thread still clears what it holds of it.
+	if e.Event == substrate.PushEventRead {
+		writeJSON(w, http.StatusOK, substrate.PushEventInfo{
+			Event: e.Event, Thread: e.Thread,
+			Covers: &substrate.PushCovers{Alerts: append([]string{}, e.Alerts...)},
+		})
+		return
 	}
 	thread, ok := get(vocabulary.KindLLMThread, e.Thread)
 	if !ok {
@@ -276,8 +287,6 @@ func (h *handler) getPushEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out.Actions = &actions
-	case substrate.PushEventRead:
-		out.Covers = &substrate.PushCovers{Alerts: append([]string{}, e.Alerts...)}
 	default:
 		notFound()
 		return

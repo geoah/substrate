@@ -112,6 +112,11 @@ func (s *pushSigner) SealEvent(e substrate.PushEvent) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// A plaintext past the id's own bound can never seal into one, and is
+	// refused before anything is sized by it.
+	if len(plain) > pushwire.MaxEventID {
+		return "", fmt.Errorf("%w: an event of %d bytes is past %d before it is sealed", errEventTooLong, len(plain), pushwire.MaxEventID)
+	}
 	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(plain)+aead.Overhead())
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err

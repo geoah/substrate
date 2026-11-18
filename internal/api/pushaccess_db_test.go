@@ -99,6 +99,37 @@ func TestAPersonReadsTheirOwnDevicesAlone(t *testing.T) {
 	if got := list(adminBearer, kinds); len(got) != 2 {
 		t.Fatalf("the admin lists %v, want both devices", got)
 	}
+	// A list naming no kind, and a ranked search naming none, hold no other
+	// person's device: the kind is left out before anything is paged.
+	for _, l := range [][]string{list(viewer.token, `{}`)} {
+		for _, id := range l {
+			if id == admin.ID {
+				t.Fatal("a list naming no kind held another person's device")
+			}
+		}
+	}
+	rec := env.do(t, http.MethodGet, "/api/v1/records?q=iPhone&mode=lexical", viewer.token, nil)
+	wantStatus(t, rec, http.StatusOK)
+	for _, h := range decodeJSON[substrate.SearchResult](t, rec).Hits {
+		if h.Record != nil && h.Record.Kind == vocabulary.KindDevice && h.Record.ID != viewer.tokenID {
+			t.Fatalf("a search naming no kind found another person's device: %+v", h.Record)
+		}
+	}
+	// The admin's search finds it, so the viewer's missing it is the rule.
+	rec = env.do(t, http.MethodGet, "/api/v1/records?q=iPhone&mode=lexical&filter="+kinds, adminBearer, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if len(decodeJSON[substrate.SearchResult](t, rec).Hits) == 0 {
+		t.Fatal("the admin's search found no device: the viewer's case proves nothing")
+	}
+	// Which records devices point at says who has one: refused.
+	byDevice := `{"kinds":["` + vocabulary.CoreKind("actor") + `"],"referencedBy":{"kind":"` + vocabulary.KindDevice + `","property":"person"}}`
+	if rec := env.do(t, http.MethodGet, "/api/v1/records?filter="+byDevice, viewer.token, nil); rec.Code == http.StatusOK {
+		t.Fatalf("a list narrowed by devices answered %s", rec.Body.String())
+	}
+	byToken := `{"kinds":["` + vocabulary.KindDevice + `"],"referencing":{"ref":"` + vocabulary.RecordPath(vocabulary.KindDevice, admin.ID) + `"}}`
+	if rec := env.do(t, http.MethodGet, "/api/v1/records?filter="+byToken, viewer.token, nil); rec.Code == http.StatusOK {
+		t.Fatalf("a list referencing another person's device answered %s", rec.Body.String())
+	}
 }
 
 // A card's actions are offered to who may decide it now: an editor in

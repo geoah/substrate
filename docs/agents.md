@@ -1647,7 +1647,8 @@ cards on one thread are two waits. Then:
   raised it, or when the turn that raised it settled and the person's mark
   reads through the message that settle left. `archived` does not stop it:
   what waits on a person is always notified. A turn that raised a request
-  pushes that request and no reply.
+  pushes that request and no reply and no `failed`, even when the request
+  was decided before the turn settled.
 
 Who may see an alert is read when it is sent, not when it was held: each
 delivery first takes one of four slots, then reads the person's devices
