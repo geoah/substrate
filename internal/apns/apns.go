@@ -21,9 +21,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -37,6 +40,21 @@ const (
 // older than an hour, and a provider that replaces its token more often than
 // every 20 minutes.
 const TokenLifetime = 50 * time.Minute
+
+// MinMintInterval is the youngest a provider token may be and still be
+// replaced on Apple's ExpiredProviderToken. Apple answering that to a token
+// minted moments ago says the clock or the key is wrong, and minting on every
+// send would only add TooManyProviderTokenUpdates.
+const MinMintInterval = time.Minute
+
+// The HTTP/2 health check on a connection to Apple: a ping after this long
+// with no frame read, and the connection closed when the ping is not
+// answered in time, so a connection a NAT dropped while idle is found before
+// a push waits on it.
+const (
+	PingInterval = 30 * time.Second
+	PingTimeout  = 10 * time.Second
+)
 
 // Timeout bounds one send, connecting included.
 const Timeout = 10 * time.Second
@@ -71,8 +89,13 @@ func ParseKey(p8 []byte) (*ecdsa.PrivateKey, error) {
 }
 
 // NewTransport is a transport that speaks HTTP/2 alone, as Apple requires,
-// with its own pool of connections. tlsConfig is nil outside tests.
+// with its own pool of connections, each health-checked by PingInterval and
+// PingTimeout. tlsConfig is nil outside tests.
 func NewTransport(tlsConfig *tls.Config) *http.Transport {
+	return newTransport(tlsConfig, PingInterval, PingTimeout)
+}
+
+func newTransport(tlsConfig *tls.Config, pingInterval, pingTimeout time.Duration) *http.Transport {
 	t := &http.Transport{
 		Proxy:               nil,
 		TLSClientConfig:     tlsConfig,
@@ -80,10 +103,62 @@ func NewTransport(tlsConfig *tls.Config) *http.Transport {
 		TLSHandshakeTimeout: Timeout,
 		IdleConnTimeout:     time.Hour,
 		MaxIdleConnsPerHost: 4,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: pingInterval,
+			PingTimeout:     pingTimeout,
+			// A write Apple stops reading fails too, rather than waiting
+			// on the request's own timeout.
+			WriteByteTimeout: pingTimeout,
+		},
 	}
 	t.Protocols = new(http.Protocols)
 	t.Protocols.SetHTTP2(true)
 	return t
+}
+
+// NoAnswerError is a send that got no answer from Apple. Its text is a fixed
+// category and never the transport's own error, whose text carries the
+// request's URL and so the install's device token. It unwraps to the cause,
+// so errors.Is still finds context.Canceled and context.DeadlineExceeded.
+type NoAnswerError struct {
+	// Category is timeout, canceled, refused, dns, tls or connection.
+	Category string
+	cause    error
+}
+
+func (e *NoAnswerError) Error() string { return "apns: no answer from Apple: " + e.Category }
+
+func (e *NoAnswerError) Unwrap() error { return e.cause }
+
+// noAnswer turns what the HTTP client returned into a NoAnswerError,
+// unwrapping the *url.Error that names the URL.
+func noAnswer(err error) error {
+	cause := err
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		cause = ue.Err
+	}
+	var (
+		ne   net.Error
+		dns  *net.DNSError
+		cert *tls.CertificateVerificationError
+		rec  tls.RecordHeaderError
+		alrt tls.AlertError
+	)
+	category := "connection"
+	switch {
+	case errors.Is(cause, context.Canceled):
+		category = "canceled"
+	case errors.Is(cause, context.DeadlineExceeded), errors.As(cause, &ne) && ne.Timeout():
+		category = "timeout"
+	case errors.Is(cause, syscall.ECONNREFUSED):
+		category = "refused"
+	case errors.As(cause, &dns):
+		category = "dns"
+	case errors.As(cause, &cert), errors.As(cause, &rec), errors.As(cause, &alrt):
+		category = "tls"
+	}
+	return &NoAnswerError{Category: category, cause: cause}
 }
 
 // Config is one environment's.
@@ -156,15 +231,22 @@ func (c *Client) Token() (string, error) {
 }
 
 // expire drops the current provider token, but only if it is the one a
-// failing send carried: many sends refused for one token cause one mint,
-// and a refusal of an older token, answered after a new one was minted,
-// causes none.
-func (c *Client) expire(tok string) {
+// failing send carried and it is at least MinMintInterval old: many sends
+// refused for one token cause one mint, a refusal of an older token,
+// answered after a new one was minted, causes none, and a token Apple
+// refuses moments after it was minted is not replaced again. It reports
+// whether the send may go once more, with the token Token now answers.
+func (c *Client) expire(tok string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.token == tok {
-		c.token = ""
+	if c.token != tok {
+		return true
 	}
+	if c.cfg.Now().Sub(c.minted) < MinMintInterval {
+		return false
+	}
+	c.token = ""
+	return true
 }
 
 // mint signs a provider token: header {"alg":"ES256","kid":<key id>}, claims
@@ -211,9 +293,10 @@ type Response struct {
 }
 
 // Send posts n. When Apple answers 403 ExpiredProviderToken to the token the
-// send carried, that token is replaced and n is sent once more. An error is
-// a send that got no answer: a timeout, a refused connection, a broken
-// stream.
+// send carried, that token is replaced and n is sent once more, unless the
+// token is younger than MinMintInterval, when the 403 is the answer. An
+// error is a send that got no answer, a *NoAnswerError, whose text never
+// holds the device token.
 func (c *Client) Send(ctx context.Context, n Notification) (Response, error) {
 	tok, err := c.Token()
 	if err != nil {
@@ -223,17 +306,23 @@ func (c *Client) Send(ctx context.Context, n Notification) (Response, error) {
 	if err != nil || resp.Status != http.StatusForbidden || resp.Reason != ReasonExpiredProviderToken {
 		return resp, err
 	}
-	c.expire(tok)
+	if !c.expire(tok) {
+		return resp, nil
+	}
 	if tok, err = c.Token(); err != nil {
 		return Response{}, err
 	}
 	return c.send(ctx, tok, n)
 }
 
+// errRequest is a request that could not be built. Its text is fixed, since
+// the URL it would name holds the device token.
+var errRequest = errors.New("apns: the request to Apple could not be built")
+
 func (c *Client) send(ctx context.Context, tok string, n Notification) (Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/3/device/"+n.DeviceToken, bytes.NewReader(n.Payload))
 	if err != nil {
-		return Response{}, err
+		return Response{}, errRequest
 	}
 	req.Header.Set("Authorization", "bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
@@ -242,7 +331,7 @@ func (c *Client) send(ctx context.Context, tok string, n Notification) (Response
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return Response{}, err
+		return Response{}, noAnswer(err)
 	}
 	defer res.Body.Close()
 	out := Response{Status: res.StatusCode, ID: res.Header.Get("apns-id")}

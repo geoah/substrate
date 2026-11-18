@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -243,9 +244,11 @@ func TestManyExpiredAnswersToOneTokenMintOnce(t *testing.T) {
 		return http.StatusOK, ""
 	})
 	var mints atomic.Int32
-	c := a.client(t, key, "KEY0000001", nil, &mints)
+	clk := &clock{now: time.Unix(1_800_000_000, 0)}
+	c := a.client(t, key, "KEY0000001", clk.Now, &mints)
 	tok, _ := c.Token()
 	first.Store(tok)
+	clk.Add(MinMintInterval)
 
 	var wg sync.WaitGroup
 	results := make([]Response, n)
@@ -286,13 +289,158 @@ func TestAnExpiredAnswerToAnOlderTokenMintsNothing(t *testing.T) {
 	old, _ := c.Token()
 	clk.Add(TokenLifetime)
 	current, _ := c.Token()
-	c.expire(old)
+	if !c.expire(old) {
+		t.Fatal("an answer to an older token holds back the send with the current one")
+	}
 	if again, _ := c.Token(); again != current || mints.Load() != 2 {
 		t.Fatalf("an answer to the older token replaced the current one (mints %d)", mints.Load())
 	}
+	clk.Add(MinMintInterval)
 	c.expire(current)
 	if next, _ := c.Token(); next == current || mints.Load() != 3 {
 		t.Fatalf("an answer to the current token did not replace it (mints %d)", mints.Load())
+	}
+}
+
+// Apple refusing a token minted under a minute ago is not answered with
+// another mint: the send ends on the 403, and only a minute later is the
+// token replaced, once.
+func TestTwoExpiredAnswersInAMinuteMintOnce(t *testing.T) {
+	key := newKey(t)
+	a := newApple(t, key, "KEY0000001", func(string, *http.Request) (int, string) {
+		return http.StatusForbidden, ReasonExpiredProviderToken
+	})
+	clk := &clock{now: time.Unix(1_800_000_000, 0)}
+	var mints atomic.Int32
+	c := a.client(t, key, "KEY0000001", clk.Now, &mints)
+	send := func() Response {
+		t.Helper()
+		r, err := c.Send(context.Background(), note)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if r := send(); r.Status != http.StatusForbidden || mints.Load() != 1 || a.seen.Load() != 1 {
+		t.Fatalf("first: %v, %d mints, %d sends", r, mints.Load(), a.seen.Load())
+	}
+	if r := send(); r.Status != http.StatusForbidden || mints.Load() != 1 || a.seen.Load() != 2 {
+		t.Fatalf("second within the minute: %v, %d mints, %d sends", r, mints.Load(), a.seen.Load())
+	}
+	clk.Add(MinMintInterval)
+	if r := send(); r.Status != http.StatusForbidden || mints.Load() != 2 || a.seen.Load() != 4 {
+		t.Fatalf("a minute later: %v, %d mints, %d sends", r, mints.Load(), a.seen.Load())
+	}
+	if r := send(); r.Status != http.StatusForbidden || mints.Load() != 2 {
+		t.Fatalf("right after the new mint: %v, %d mints", r, mints.Load())
+	}
+}
+
+// A send that gets no answer says why in a fixed category and never with
+// the URL, which holds the device token, and still unwraps to the cause.
+func TestASendWithNoAnswerNamesNoDeviceToken(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	c, err := New(Config{BaseURL: "https://" + addr, TeamID: "TEAM000001", KeyID: "KEY0000001", Key: newKey(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Send(context.Background(), note)
+	var na *NoAnswerError
+	if !errors.As(err, &na) || na.Category != "refused" || strings.Contains(err.Error(), note.DeviceToken) || strings.Contains(err.Error(), "/3/device") {
+		t.Fatalf("Send to a closed listener = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Send(ctx, note); !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), note.DeviceToken) {
+		t.Fatalf("a canceled send = %v", err)
+	}
+}
+
+// freezer is a listener whose connections can be made to stop reading, as
+// a connection a NAT dropped does: the server sees nothing the client
+// writes, pings included.
+type freezer struct {
+	net.Listener
+	mu       sync.Mutex
+	conns    []*frozenConn
+	accepted atomic.Int32
+	release  chan struct{}
+}
+
+type frozenConn struct {
+	net.Conn
+	frozen  atomic.Bool
+	release chan struct{}
+}
+
+func (c *frozenConn) Read(p []byte) (int, error) {
+	if c.frozen.Load() {
+		<-c.release
+		return 0, io.EOF
+	}
+	return c.Conn.Read(p)
+}
+
+func (f *freezer) Accept() (net.Conn, error) {
+	c, err := f.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	f.accepted.Add(1)
+	fc := &frozenConn{Conn: c, release: f.release}
+	f.mu.Lock()
+	f.conns = append(f.conns, fc)
+	f.mu.Unlock()
+	return fc, nil
+}
+
+func (f *freezer) freezeAll() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.conns {
+		c.frozen.Store(true)
+	}
+}
+
+// A connection Apple stops reading is found by the HTTP/2 ping and closed,
+// so the next push dials a new one rather than waiting out its timeout on
+// a dead one.
+func TestAConnectionAppleStopsReadingIsReplaced(t *testing.T) {
+	key := newKey(t)
+	a := &apple{t: t, pub: &key.PublicKey, keyID: "KEY0000001", teamID: "TEAM000001"}
+	a.srv = httptest.NewUnstartedServer(http.HandlerFunc(a.serve))
+	f := &freezer{Listener: a.srv.Listener, release: make(chan struct{})}
+	a.srv.Listener = f
+	a.srv.EnableHTTP2 = true
+	a.srv.StartTLS()
+	t.Cleanup(func() { close(f.release); a.srv.Close() })
+
+	pool := x509.NewCertPool()
+	pool.AddCert(a.srv.Certificate())
+	c, err := New(Config{
+		BaseURL: a.srv.URL, TeamID: a.teamID, KeyID: a.keyID, Key: key,
+		Transport: newTransport(&tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, 100*time.Millisecond, 100*time.Millisecond),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := c.Send(context.Background(), note); err != nil || r.Status != http.StatusOK {
+		t.Fatalf("first send: %v, %v", r, err)
+	}
+	f.freezeAll()
+	time.Sleep(time.Second)
+	start := time.Now()
+	r, err := c.Send(context.Background(), note)
+	if err != nil || r.Status != http.StatusOK {
+		t.Fatalf("the send after Apple stopped reading: %v, %v", r, err)
+	}
+	if took := time.Since(start); took > 2*time.Second || f.accepted.Load() != 2 {
+		t.Fatalf("the send took %s over %d connections; want a new connection at once", took, f.accepted.Load())
 	}
 }
 
