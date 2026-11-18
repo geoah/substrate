@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,16 +137,26 @@ func check(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 // alert is the one alert check sends: a reply with the app's own fallback
-// words, a badge of 0 that leaves nothing to clear, and an event id and a
-// generation no server or install holds.
+// words and an event id and a generation no server or install holds. It
+// carries no badge, the one difference from a push: a badge iOS applies
+// before any code of the app runs, so it would set, or clear, the test
+// install's real count.
 func alert() pushwire.AppleNotification {
 	id := make([]byte, 32)
 	gen := make([]byte, pushwire.GenerationSize)
 	_, _ = rand.Read(id)
 	_, _ = rand.Read(gen)
-	return pushwire.ApplePush(pushwire.PushRequest{
-		Event: pushwire.EventReply, Thread: "check", Badge: 0, EventID: pushwire.Encode(id),
+	n := pushwire.ApplePush(pushwire.PushRequest{
+		Event: pushwire.EventReply, Thread: "check", EventID: pushwire.Encode(id),
 	}, pushwire.Encode(gen), time.Now())
+	var payload map[string]map[string]any
+	if err := json.Unmarshal(n.Payload, &payload); err == nil {
+		delete(payload["aps"], "badge")
+		if b, err := json.Marshal(payload); err == nil {
+			n.Payload = b
+		}
+	}
+	return n
 }
 
 func isHex(s string) bool {

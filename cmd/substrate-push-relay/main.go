@@ -162,10 +162,19 @@ func serve(ctx context.Context, logOut io.Writer) error {
 	if c.metricsAddress != "" {
 		mux := http.NewServeMux()
 		mux.Handle("GET /metrics", metrics.Handler())
-		metricsSrv = &http.Server{Addr: c.metricsAddress, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		metricsSrv = &http.Server{
+			Addr: c.metricsAddress, Handler: mux,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+			WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10,
+		}
 		go func() { errs <- metricsSrv.ListenAndServe() }()
 	}
 
+	if c.unproxied() {
+		log.Warn("substrate-push-relay listens beyond loopback and SUBSTRATE_TRUSTED_PROXIES is not set: " +
+			"behind a TLS terminator every caller is the terminator, and the per-caller limits hold them all as one. " +
+			"Set it to the address the terminator connects from (docs/operations.md, \"Running the push relay\")")
+	}
 	log.Info("substrate-push-relay listening",
 		"version", build.Version(), "address", ln.Addr().String(), "environments", envs, "topics", c.topics,
 		"previous_seal_key", c.sealPrevious != nil, "metrics_address", c.metricsAddress)

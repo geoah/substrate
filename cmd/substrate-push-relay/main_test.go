@@ -52,7 +52,9 @@ func baseEnv(t *testing.T) map[string]string {
 		"SUBSTRATE_PUSH_RELAY_APNS_DEVELOPMENT_KEY_ID":   "KEY0000001",
 		"SUBSTRATE_PUSH_RELAY_APNS_TOPICS":               "dev.example.chat, dev.example.tasks",
 		"SUBSTRATE_PUSH_RELAY_SEAL_KEY":                  base64.StdEncoding.EncodeToString(seal),
+		"SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE":             "",
 		"SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS":         "",
+		"SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS_FILE":    "",
 		"SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS":           "",
 		"SUBSTRATE_PUSH_RELAY_LIMIT_INSTALL":             "20",
 		"SUBSTRATE_PUSH_RELAY_LIMIT_CALLER":              "600",
@@ -73,6 +75,56 @@ func setEnv(t *testing.T, env map[string]string) {
 	t.Helper()
 	for k, v := range env {
 		t.Setenv(k, v)
+	}
+}
+
+// sealFile writes a seal key to a file, as a deployment mounts a secret.
+func sealFile(t *testing.T, value string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "seal")
+	if err := os.WriteFile(path, []byte(value+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The seal keys may come from files, which a deployment mounts.
+func TestTheSealKeysMayBeFiles(t *testing.T) {
+	env := baseEnv(t)
+	current, previous := make([]byte, 32), make([]byte, 32)
+	_, _ = rand.Read(current)
+	_, _ = rand.Read(previous)
+	env["SUBSTRATE_PUSH_RELAY_SEAL_KEY"] = ""
+	env["SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE"] = sealFile(t, base64.StdEncoding.EncodeToString(current))
+	env["SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS_FILE"] = sealFile(t, base64.StdEncoding.EncodeToString(previous))
+	setEnv(t, env)
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(c.sealKey, current) || !bytes.Equal(c.sealPrevious, previous) {
+		t.Fatal("the files' keys were not read")
+	}
+}
+
+// A relay that listens beyond loopback with no trusted proxy is warned
+// about at boot.
+func TestABindBeyondLoopbackWithNoProxyIsWarnedAbout(t *testing.T) {
+	for _, tc := range []struct {
+		bind, proxies string
+		warn          bool
+	}{
+		{"127.0.0.1", "", false},
+		{"0.0.0.0", "", true},
+		{"0.0.0.0", "172.17.0.1", false},
+	} {
+		env := baseEnv(t)
+		env["SUBSTRATE_BIND_ADDRESS"], env["SUBSTRATE_INSECURE_ALLOW_CLEARTEXT"], env["SUBSTRATE_TRUSTED_PROXIES"] = tc.bind, "true", tc.proxies
+		setEnv(t, env)
+		c, err := loadConfig()
+		if err != nil || c.unproxied() != tc.warn {
+			t.Errorf("%s with proxies %q: unproxied = %v, %v", tc.bind, tc.proxies, c.unproxied(), err)
+		}
 	}
 }
 
@@ -110,6 +162,8 @@ func TestItRefusesToStartWithoutWhatItNeeds(t *testing.T) {
 		{"a seal key of 16 bytes", "SUBSTRATE_PUSH_RELAY_SEAL_KEY", base64.StdEncoding.EncodeToString(make([]byte, 16)), "SEAL_KEY"},
 		{"a previous seal key of 31 bytes", "SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS", base64.StdEncoding.EncodeToString(make([]byte, 31)), "SEAL_KEY_PREVIOUS"},
 		{"a limit of 0", "SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL", "0", "LIMIT_TOTAL"},
+		{"a total the replay window cannot hold", "SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL", "18182", "LIMIT_TOTAL"},
+		{"a seal key file that is not there", "SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE", "/nonexistent/seal", "SEAL_KEY_FILE"},
 		{"every interface without the cleartext switch", "SUBSTRATE_BIND_ADDRESS", "0.0.0.0", "SUBSTRATE_INSECURE_ALLOW_CLEARTEXT"},
 		{"a public address without the cleartext switch", "SUBSTRATE_BIND_ADDRESS", "203.0.113.1", "SUBSTRATE_INSECURE_ALLOW_CLEARTEXT"},
 		{"no port", "PORT", "0", "PORT"},
@@ -143,6 +197,22 @@ func TestItRefusesToStartWithoutWhatItNeeds(t *testing.T) {
 		env["SUBSTRATE_PUSH_RELAY_APNS_PRODUCTION_KEY_FILE"] = bad
 		setEnv(t, env)
 		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "PRODUCTION_KEY_FILE") {
+			t.Fatalf("loadConfig = %v", err)
+		}
+	})
+	t.Run("a seal key and its file both", func(t *testing.T) {
+		env := baseEnv(t)
+		env["SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE"] = sealFile(t, env["SUBSTRATE_PUSH_RELAY_SEAL_KEY"])
+		setEnv(t, env)
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "both set") {
+			t.Fatalf("loadConfig = %v", err)
+		}
+	})
+	t.Run("a previous seal key that is the current one", func(t *testing.T) {
+		env := baseEnv(t)
+		env["SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS"] = env["SUBSTRATE_PUSH_RELAY_SEAL_KEY"]
+		setEnv(t, env)
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "SEAL_KEY_PREVIOUS is the current seal key") {
 			t.Fatalf("loadConfig = %v", err)
 		}
 	})
@@ -223,15 +293,16 @@ func TestCheckSendsOneAlertPerEnvironmentToNoInstall(t *testing.T) {
 		t.Fatalf("Apple got %d and %d", len(prod.paths), len(dev.paths))
 	}
 	var payload struct {
-		APS struct {
-			Alert struct {
-				LocKey string `json:"loc-key"`
-			} `json:"alert"`
-			Badge int `json:"badge"`
-		} `json:"aps"`
+		APS map[string]any `json:"aps"`
 	}
-	if err := json.Unmarshal(prod.bodies[0], &payload); err != nil || payload.APS.Alert.LocKey != "SUBSTRATE_PUSH_REPLY" || payload.APS.Badge != 0 {
+	if err := json.Unmarshal(prod.bodies[0], &payload); err != nil || payload.APS["alert"] == nil {
 		t.Fatalf("the alert: %s", prod.bodies[0])
+	}
+	if alert, _ := payload.APS["alert"].(map[string]any); alert["loc-key"] != "SUBSTRATE_PUSH_REPLY" {
+		t.Fatalf("the alert's words: %s", prod.bodies[0])
+	}
+	if _, ok := payload.APS["badge"]; ok {
+		t.Fatalf("check sent a badge, which iOS applies to the test install: %s", prod.bodies[0])
 	}
 }
 
@@ -274,6 +345,26 @@ func TestCheckWithADeviceTokenSendsToThatInstallAlone(t *testing.T) {
 		if code, out := runCheck(t, args...); code != 2 {
 			t.Errorf("check %v = %d\n%s", args, code, out)
 		}
+	}
+}
+
+// When Apple does not answer, check says so without the device token,
+// which the request's URL holds, through the real client.
+func TestCheckWithNoAnswerPrintsNoDeviceToken(t *testing.T) {
+	setEnv(t, baseEnv(t))
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	oldHosts := appleHosts
+	appleHosts = map[string]string{"production": "https://" + addr, "development": "https://" + addr}
+	t.Cleanup(func() { appleHosts = oldHosts })
+	token := strings.Repeat("feed", 16)
+	code, out := runCheck(t, "--device-token", token, "--environment", "development")
+	if code != 1 || strings.Contains(out, token) || strings.Contains(out, "/3/device") || !strings.Contains(out, "no answer from Apple: refused") {
+		t.Fatalf("check = %d\n%s", code, out)
 	}
 }
 

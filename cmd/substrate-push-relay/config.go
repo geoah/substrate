@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"errors"
@@ -22,7 +23,8 @@ import (
 
 // env is the relay's configuration, from the environment alone
 // (docs/operations.md, "Running the push relay"). The Apple keys are files,
-// so their bytes never sit in an environment a process listing shows.
+// and each seal key may be one too (its _FILE twin), for a deployment that
+// mounts its secrets as files rather than putting them in the environment.
 type env struct {
 	TeamID string `envconfig:"SUBSTRATE_PUSH_RELAY_APNS_TEAM_ID"`
 
@@ -33,8 +35,10 @@ type env struct {
 
 	Topics string `envconfig:"SUBSTRATE_PUSH_RELAY_APNS_TOPICS"`
 
-	SealKey         string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY"`
-	SealKeyPrevious string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS"`
+	SealKey             string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY"`
+	SealKeyFile         string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE"`
+	SealKeyPrevious     string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS"`
+	SealKeyPreviousFile string `envconfig:"SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS_FILE"`
 
 	MetricsAddress string `envconfig:"SUBSTRATE_PUSH_RELAY_METRICS_ADDRESS"`
 
@@ -72,9 +76,12 @@ type config struct {
 	metricsAddress string
 	limits         pushrelay.Limits
 	listen         string
-	trusted        []netip.Prefix
-	logLevel       slog.Level
-	logJSON        bool
+	// loopback is a listener on a loopback address, which nothing but this
+	// machine reaches.
+	loopback bool
+	trusted  []netip.Prefix
+	logLevel slog.Level
+	logJSON  bool
 }
 
 // loadConfig reads the environment and refuses, naming the variable, what
@@ -128,14 +135,17 @@ func loadConfig() (config, error) {
 	if len(c.topics) == 0 {
 		return config{}, errors.New("SUBSTRATE_PUSH_RELAY_APNS_TOPICS is not set to the bundle ids the relay pushes to, comma separated")
 	}
-	if c.sealKey, err = sealKey("SUBSTRATE_PUSH_RELAY_SEAL_KEY", e.SealKey); err != nil {
+	if c.sealKey, err = sealKey("SUBSTRATE_PUSH_RELAY_SEAL_KEY", e.SealKey, e.SealKeyFile); err != nil {
 		return config{}, err
 	}
 	if c.sealKey == nil {
-		return config{}, errors.New("SUBSTRATE_PUSH_RELAY_SEAL_KEY is not set: it is the base64 of 32 random bytes (openssl rand -base64 32)")
+		return config{}, errors.New("SUBSTRATE_PUSH_RELAY_SEAL_KEY (or SUBSTRATE_PUSH_RELAY_SEAL_KEY_FILE) is not set: it is the base64 of 32 random bytes (openssl rand -base64 32)")
 	}
-	if c.sealPrevious, err = sealKey("SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS", e.SealKeyPrevious); err != nil {
+	if c.sealPrevious, err = sealKey("SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS", e.SealKeyPrevious, e.SealKeyPreviousFile); err != nil {
 		return config{}, err
+	}
+	if c.sealPrevious != nil && bytes.Equal(c.sealPrevious, c.sealKey) {
+		return config{}, errors.New("SUBSTRATE_PUSH_RELAY_SEAL_KEY_PREVIOUS is the current seal key: a rotation sets the old key as previous and a new one as current")
 	}
 	c.limits = pushrelay.Limits{
 		Install: e.LimitInstall, Caller: e.LimitCaller, Register: e.LimitRegister,
@@ -149,7 +159,11 @@ func loadConfig() (config, error) {
 			return config{}, fmt.Errorf("SUBSTRATE_PUSH_RELAY_LIMIT_%s is %d: a limit is at least 1 a minute", name, v)
 		}
 	}
-	if c.listen, err = listenAddress(e.BindAddress, e.Port, e.InsecureAllowCleartext); err != nil {
+	if e.LimitTotal > pushrelay.MaxTotal {
+		return config{}, fmt.Errorf("SUBSTRATE_PUSH_RELAY_LIMIT_TOTAL is %d: the replay window holds %d signatures, which bounds the pushes in all to %d a minute",
+			e.LimitTotal, pushrelay.MaxReplays, pushrelay.MaxTotal)
+	}
+	if c.listen, c.loopback, err = listenAddress(e.BindAddress, e.Port, e.InsecureAllowCleartext); err != nil {
 		return config{}, err
 	}
 	c.metricsAddress = strings.TrimSpace(e.MetricsAddress)
@@ -174,6 +188,11 @@ func loadConfig() (config, error) {
 	return c, nil
 }
 
+// unproxied is a relay that listens beyond loopback with no trusted proxy:
+// behind a TLS terminator, which the image's every-interface bind expects,
+// every caller would be the terminator.
+func (c config) unproxied() bool { return !c.loopback && len(c.trusted) == 0 }
+
 // appleID holds a team id or a key id to Apple's alphabet, so neither can
 // break a provider token's header or a log line.
 func appleID(s string) bool {
@@ -188,10 +207,22 @@ func appleID(s string) bool {
 	return true
 }
 
-// sealKey reads a seal key: standard base64 of exactly 32 bytes, nil when
-// unset. A passphrase is refused rather than stretched.
-func sealKey(name, raw string) ([]byte, error) {
-	raw = strings.TrimSpace(raw)
+// sealKey reads a seal key from name or from the file name_FILE names, not
+// both: standard base64 of exactly 32 bytes, nil when neither is set. A
+// passphrase is refused rather than stretched.
+func sealKey(name, raw, file string) ([]byte, error) {
+	raw, file = strings.TrimSpace(raw), strings.TrimSpace(file)
+	switch {
+	case raw != "" && file != "":
+		return nil, fmt.Errorf("%s and %s_FILE are both set: set one", name, name)
+	case file != "":
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("%s_FILE: %w", name, err)
+		}
+		raw = strings.TrimSpace(string(b))
+		name += "_FILE's file"
+	}
 	if raw == "" {
 		return nil, nil
 	}
@@ -206,23 +237,25 @@ func sealKey(name, raw string) ([]byte, error) {
 // loopback address needs nothing more, any other needs
 // SUBSTRATE_INSECURE_ALLOW_CLEARTEXT, because the relay speaks plain HTTP
 // and a TLS terminator belongs in front of it.
-func listenAddress(bind, port string, allowCleartext bool) (string, error) {
+func listenAddress(bind, port string, allowCleartext bool) (string, bool, error) {
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(bind), "["), "]")
 	if strings.EqualFold(host, "localhost") {
 		host = "127.0.0.1"
 	}
 	if p, err := strconv.ParseUint(port, 10, 16); err != nil || p == 0 {
-		return "", fmt.Errorf("PORT is %q: it is a port from 1 to 65535", port)
+		return "", false, fmt.Errorf("PORT is %q: it is a port from 1 to 65535", port)
 	}
 	addr := net.JoinHostPort(host, port)
-	if ip := net.ParseIP(host); (ip != nil && ip.IsLoopback()) || allowCleartext {
-		return addr, nil
+	ip := net.ParseIP(host)
+	loopback := ip != nil && ip.IsLoopback()
+	if loopback || allowCleartext {
+		return addr, loopback, nil
 	}
 	shown := strconv.Quote(host)
 	if host == "" {
 		shown += " (every interface)"
 	}
-	return "", fmt.Errorf("SUBSTRATE_BIND_ADDRESS is %s, so the relay would listen on %s, which is not loopback, and it speaks plain HTTP. "+
+	return "", false, fmt.Errorf("SUBSTRATE_BIND_ADDRESS is %s, so the relay would listen on %s, which is not loopback, and it speaks plain HTTP. "+
 		"Bind 127.0.0.1 and put a TLS terminator in front, or, when only a TLS terminator or a loopback port mapping reaches this address, "+
 		"set SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true", shown, addr)
 }
