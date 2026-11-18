@@ -151,6 +151,9 @@ const (
 type PushStore interface {
 	// PushSigner is the signer of one token's pushes.
 	PushSigner(ctx context.Context, tokenID string) (PushSigner, error)
+	// PushPerson is the id of the actor record of the person a request's
+	// ctx acts for, "" for none.
+	PushPerson(ctx context.Context) (string, error)
 	// PushDevices are the live devices of the person whose actor record is
 	// person, whose token is live and not expired.
 	PushDevices(ctx context.Context, person string) ([]PushDevice, error)

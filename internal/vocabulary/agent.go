@@ -111,6 +111,9 @@ const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
 const KindLLMThread = "substrate.reamde.dev/llm/thread"
 
+// KindLLMMessage is one message of a thread: what a reply push names.
+const KindLLMMessage = "substrate.reamde.dev/llm/message"
+
 // KindLLMThreadMark is how far one person has read one thread (decision
 // record 0313): the one kind the shipped `viewer` role writes.
 const KindLLMThreadMark = "substrate.reamde.dev/llm/threadmark"

@@ -96,6 +96,8 @@ export type ErrorReason =
   | "provider_rejected"
   | "model_unavailable"
   | "context_too_long"
+  | "no_relay"
+  | "push_off"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`
@@ -1097,6 +1099,42 @@ export type OperatorDefaultReadiness =
 export interface OperatorDefaults {
   operator?: OperatorInfo
   items: OperatorDefault[]
+}
+
+/** GET /api/v1/push/key: the asking token's public key, and the relay the
+ * server sends its pushes to. The console takes no pushes; the shape is
+ * mirrored so the wire guard holds it for the apps that do. */
+export interface PushKey {
+  publicKey: string
+  relay: string
+}
+
+/** GET /api/v1/push/badge: the asking token's unread count. */
+export interface PushBadge {
+  badge: number
+}
+
+/** GET /api/v1/push/events/{eventId}: what a push's event id names. A
+ * reply, a failure and a request carry their item; a request says whether
+ * the token may decide it now; a read says which alerts it takes back. */
+export interface PushEventInfo {
+  event: "reply" | "failed" | "request" | "read"
+  thread: string
+  item?: PushItem
+  actions?: boolean
+  covers?: PushCovers
+}
+
+/** The exact record a push is about, at its version. */
+export interface PushItem {
+  kind: string
+  id: string
+  version: number
+}
+
+/** The fingerprints of the event ids of the alerts a read takes back. */
+export interface PushCovers {
+  alerts: string[]
 }
 
 /** The operator as the person sees it: the site's name and today's

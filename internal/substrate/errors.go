@@ -256,6 +256,15 @@ const (
 	ReasonContextTooLong      = "context_too_long"
 )
 
+// ReasonNoRelay and ReasonPushOff are the `forbidden` reasons of the push
+// routes (docs/plans/push.md): the asking token's app names no push relay
+// (no app at all, an unverified or a local one, or a document that names
+// none for it), and the operator turned push off (SUBSTRATE_PUSH=false).
+const (
+	ReasonNoRelay = "no_relay"
+	ReasonPushOff = "push_off"
+)
+
 // reasoned carries an ErrorPayload reason on an error whose words and
 // sentinels stay as they are.
 type reasoned struct {
@@ -298,6 +307,7 @@ var ErrorReasons = []string{
 	ReasonKeyRefused,
 	ReasonMessageIDTaken,
 	ReasonModelUnavailable,
+	ReasonNoRelay,
 	ReasonNotPermitted,
 	ReasonNothingToContinue,
 	ReasonObservedRederiving,
@@ -307,6 +317,7 @@ var ErrorReasons = []string{
 	ReasonProviderRateLimited,
 	ReasonProviderRejected,
 	ReasonProviderUnavailable,
+	ReasonPushOff,
 	ReasonQuota,
 	ReasonRepositoryRequired,
 	ReasonSetAside,

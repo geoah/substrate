@@ -124,6 +124,11 @@ import type {
   OperatorAllowance,
   OperatorSpend,
   OperatorDefault,
+  PushKey,
+  PushBadge,
+  PushEventInfo,
+  PushItem,
+  PushCovers,
   BundleClosure,
   BundlePurged,
   BundleFeature,
@@ -493,6 +498,33 @@ const siteInfo: Shape<SiteInfo> = {
 const operatorDefaults: Shape<OperatorDefaults> = {
   operator: false,
   items: true,
+}
+
+const pushKey: Shape<PushKey> = {
+  publicKey: true,
+  relay: true,
+}
+
+const pushBadge: Shape<PushBadge> = {
+  badge: true,
+}
+
+const pushEventInfo: Shape<PushEventInfo> = {
+  event: true,
+  thread: true,
+  item: false,
+  actions: false,
+  covers: false,
+}
+
+const pushItem: Shape<PushItem> = {
+  kind: true,
+  id: true,
+  version: true,
+}
+
+const pushCovers: Shape<PushCovers> = {
+  alerts: true,
 }
 
 const operatorInfo: Shape<OperatorInfo> = {
@@ -1623,6 +1655,11 @@ const mirrors: Record<string, Record<string, boolean>> = {
   OperatorAllowance: operatorAllowance,
   OperatorSpend: operatorSpend,
   OperatorDefault: operatorDefault,
+  PushKey: pushKey,
+  PushBadge: pushBadge,
+  PushEventInfo: pushEventInfo,
+  PushItem: pushItem,
+  PushCovers: pushCovers,
   Change: change,
   AffectedRecord: affectedRecord,
   PropertyChange: propertyChange,

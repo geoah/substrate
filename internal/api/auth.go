@@ -30,7 +30,16 @@ const (
 	// for an admin alone refuse it, and the rest are held to their roles by
 	// the person's view (decision 0294).
 	ctxKeyHeld
+	// ctxKeyToken is the token record the bearer check read, which the push
+	// routes read the token's app from.
+	ctxKeyToken
 )
+
+// tokenFrom is the token record the bearer check read, false when none.
+func tokenFrom(ctx context.Context) (substrate.TokenInfo, bool) {
+	tok, ok := ctx.Value(ctxKeyToken).(substrate.TokenInfo)
+	return tok, ok
+}
 
 // heldToRoles reports whether the request's person is held to their roles.
 func heldToRoles(ctx context.Context) bool {
@@ -86,6 +95,7 @@ func onMCPDoor(ctx context.Context) bool {
 // it starts records as its `onBehalfOf` (decision 0270).
 func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo, actor substrate.Actor) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
+	ctx = context.WithValue(ctx, ctxKeyToken, tok)
 	ctx = substrate.WithPrincipal(ctx, tok.ID)
 	ctx = substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
 	ctx = substrate.WithIdentity(ctx, tok.Identity)
@@ -152,10 +162,17 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	ctx = r.Context()
+	if scope.IsMCP(tok.Scopes) && !onMCPDoor(ctx) {
+		return nil, http.StatusForbidden, codeForbidden,
+			"an assistant's token works at " + h.issuerOf(r) + mcpPath + " alone", nil
+	}
 	// Every token acts for its person, and is held to that person's roles:
 	// an app's, an assistant's and the person's own.
 	whole := ds
-	ds, held, opened, err := personView(ctx, ds, tok)
+	ctx, opened, err := tokenView(ctx, ds, tok)
+	if errors.Is(err, errTokenGrant) {
+		return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
+	}
 	if err != nil {
 		return nil, http.StatusServiceUnavailable, codeUnavailable, "repository temporarily unavailable", err
 	}
@@ -184,7 +201,27 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		}
 		return nil
 	}}
-	ctx = withTokenLease(ctx, lease)
+	return withTokenLease(ctx, lease), 0, "", "", nil
+}
+
+// errTokenGrant is a scoped token whose grant does not parse. It fails
+// closed: read as absent it would be full access.
+var errTokenGrant = errors.New("the token's grant does not parse")
+
+// tokenView builds the view an API request with tok gets over whole, the
+// repository's own dataset, and binds it to ctx with the request's
+// authenticated write context (withRequestAuth): the person's view, held to
+// their roles unless they are an admin, and over it the assistant's dataset
+// for an assistant's token or the scoped one for an app's. It is the one
+// definition of what a token may see: the bearer check builds every
+// request's view with it, and push reads through it (TokenView). It
+// answers the roles' print the view was built on, which a stream's lease
+// compares.
+func tokenView(ctx context.Context, whole substrate.Dataset, tok substrate.TokenInfo) (context.Context, string, error) {
+	ds, held, opened, err := personView(ctx, whole, tok)
+	if err != nil {
+		return nil, "", err
+	}
 	if held {
 		ctx = context.WithValue(ctx, ctxKeyHeld, true)
 	}
@@ -193,10 +230,6 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		// mark, at the MCP door alone, on the dataset that keeps the auth
 		// material out of its writes. Its writes are its app's derived
 		// actor whatever actor it names, as an app's are.
-		if !onMCPDoor(ctx) {
-			return nil, http.StatusForbidden, codeForbidden,
-				"an assistant's token works at " + h.issuerOf(r) + mcpPath + " alone", nil
-		}
 		actor := appActorOf(tok)
 		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
@@ -205,18 +238,16 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		// (installing, importing, the owner's label keys), under the
 		// assistant's own actor.
 		ctx = substrate.WithAssistant(ctx)
-		return withRequestAuth(ctx, newAssistantDataset(ds), tok, actor), 0, "", "", nil
+		return withRequestAuth(ctx, newAssistantDataset(ds), tok, actor), opened, nil
 	}
 	if tok.Scoped() {
 		// An app's token: the dataset it gets is held to its scopes, the
 		// engine's owner-only gates see the mark, and its writes are its own
 		// derived `app:<host>` actor whatever actor it names, since an actor
-		// resolves a tier and a manager hand and an app picks neither. A
-		// grant that does not parse fails closed: read as absent it would be
-		// full access.
+		// resolves a tier and a manager hand and an app picks neither.
 		grant, gerr := scope.NewGrant(tok.Scopes)
 		if gerr != nil {
-			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
+			return nil, "", errTokenGrant
 		}
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
 		actor := appActorOf(tok)
@@ -226,11 +257,11 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
-		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
+		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), opened, nil
 	}
 	// A full-access token is the person's. No request names its actor: a
 	// header an older client still sends is not read.
-	return withRequestAuth(ctx, ds, tok, substrate.ActorPerson), 0, "", "", nil
+	return withRequestAuth(ctx, ds, tok, substrate.ActorPerson), opened, nil
 }
 
 // appActorOf is the actor an app's token writes under, from what its

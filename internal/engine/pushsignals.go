@@ -407,4 +407,14 @@ func (ds *dataset) PushAdmins(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// PushPerson is the id of the actor record of the person ctx acts for, ""
+// for none.
+func (ds *dataset) PushPerson(ctx context.Context) (string, error) {
+	person, ok := ds.actingPerson(ctx)
+	if !ok {
+		return "", nil
+	}
+	return actorID(person), nil
+}
+
 var _ substrate.PushStore = (*dataset)(nil)

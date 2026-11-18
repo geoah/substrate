@@ -27,7 +27,7 @@
   {
     "name": "errors",
     "stability": "stable",
-    "revision": 7,
+    "revision": 8,
     "routes": []
   },
   {
@@ -270,6 +270,16 @@
     "revision": 1,
     "routes": [
       "GET /api/v1/operator/defaults"
+    ]
+  },
+  {
+    "name": "push",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/push/badge",
+      "GET /api/v1/push/events/{eventId}",
+      "GET /api/v1/push/key"
     ]
   },
   {

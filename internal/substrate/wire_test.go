@@ -104,6 +104,15 @@ var wireTypes = map[string]any{
 	"OperatorSpend":     OperatorSpend{},
 	"OperatorDefault":   OperatorDefault{},
 
+	// Push (docs/plans/push.md): what an install asks before it registers,
+	// the badge a push sets and what an event id names. The chat app reads
+	// them; the console mirrors them so the guard holds their shape.
+	"PushKey":       PushKey{},
+	"PushBadge":     PushBadge{},
+	"PushEventInfo": PushEventInfo{},
+	"PushItem":      PushItem{},
+	"PushCovers":    PushCovers{},
+
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and
 	// the watch stream serialize; a field that moves here moves the console's

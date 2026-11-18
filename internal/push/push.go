@@ -189,3 +189,26 @@ func classify(status int, raw []byte) Answer {
 	}
 	return a
 }
+
+// Badge counts the person's unread `chat` threads that reads keeps, to
+// substrate.PushBadgeMax: the one rule a push and GET /api/v1/push/badge
+// both count by. reads is the asking token's view.
+func Badge(ctx context.Context, store substrate.PushStore, reads func(context.Context, *substrate.Record) (bool, error), person string) (int, error) {
+	threads, err := store.PushBadgeThreads(ctx, person)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, th := range threads {
+		ok, err := reads(ctx, th)
+		if err != nil {
+			return 0, err
+		}
+		if ok {
+			if n++; n == substrate.PushBadgeMax {
+				break
+			}
+		}
+	}
+	return n, nil
+}

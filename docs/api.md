@@ -1253,6 +1253,7 @@ them:
 | `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
 | `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
 | `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
+| `push` | `experimental` | `GET /api/v1/push/key`, `GET /api/v1/push/badge` and `GET /api/v1/push/events/{eventId}`, the `core/device` kind, and pushes for `reply`, `failed`, `request` and `read` ([push](#push)). Listed only while the operator leaves push on. |
 | `publishing` | `experimental` | Publishing one of the repository's own packages under an authority it proved: `POST /api/v1/packages/publish`, `POST /api/v1/packages/release` (a package's next release, not a record's `…/release`, which is the marks'), `GET /api/v1/packages/releases`, and the document and closures another server installs from under `/published/` ([publishing](publishing.md)). |
 
 Every entry lists the `rest` surface but two: `mcp` lists `mcp`, and
@@ -2912,11 +2913,11 @@ reason acts on the code.
 
 The closed set of reasons: `context_too_long`, `first_attempt_landed`,
 `first_attempt_running`, `in_doubt`, `key_refused`, `message_id_taken`,
-`model_unavailable`, `not_permitted`, `nothing_to_continue`,
+`model_unavailable`, `no_relay`, `not_permitted`, `nothing_to_continue`,
 `observed_rederiving`, `provider_billing`, `provider_key_missing`,
 `provider_overloaded`, `provider_rate_limited`, `provider_rejected`,
-`provider_unavailable`, `quota`, `repository_required`, `set_aside`,
-`spend_cap`, `stale_revision`, `thread_busy`, `turn_cap`.
+`provider_unavailable`, `push_off`, `quota`, `repository_required`,
+`set_aside`, `spend_cap`, `stale_revision`, `thread_busy`, `turn_cap`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

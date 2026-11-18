@@ -150,8 +150,9 @@ var featureTable = []feature{
 	// a message or a continue a thread's state refuses (decision 0312).
 	// Revision 7: the reasons of an agent run refused before it started
 	// (`turn_cap`, `spend_cap`, `provider_key_missing`) and of an agent call
-	// a provider failed (decision 0315).
-	{name: "errors", stability: substrate.StabilityStable, revision: 7, surfaces: []string{surfaceREST}},
+	// a provider failed (decision 0315). Revision 8: the reasons `no_relay`
+	// and `push_off`, a push route's refusals.
+	{name: "errors", stability: substrate.StabilityStable, revision: 8, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
 	// change links the actor record that wrote it, the one it acted for
@@ -381,6 +382,20 @@ var featureTable = []feature{
 		name: "operatorDefaults", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST},
 		routes: []string{"GET /api/v1/operator/defaults"},
 		listed: func(h *handler) bool { return h.operatorDefaults },
+	},
+	// Push to a closed device through the publisher's relay
+	// (docs/plans/push.md): what an install asks before it registers, the
+	// badge a push sets and what an event id names, beside the
+	// `core/device` kind and the pushes for `reply`, `failed`, `request` and
+	// `read`. Listed only while the operator leaves push on.
+	{
+		name: "push", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST},
+		routes: []string{
+			"GET /api/v1/push/key",
+			"GET /api/v1/push/badge",
+			"GET /api/v1/push/events/{eventId}",
+		},
+		listed: func(h *handler) bool { return !h.pushOff },
 	},
 	// Publishing a package of the repository's own under an authority it
 	// proved, its releases, and the document and closures another server
