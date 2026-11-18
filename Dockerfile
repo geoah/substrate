@@ -169,6 +169,49 @@ EXPOSE 8080
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/slack-socket"]
 
+# ---- push-relay ---------------------------------------------------------
+# The publisher's push relay (cmd/substrate-push-relay), a third image built
+# from this file: `docker build --target push-relay .`. It faces the internet
+# and holds the publisher's Apple keys, so it carries the relay alone: no
+# server, no CLI, no console, no python, no uv, and a test holds the binary to
+# linking none of the server's packages. Its own build stage on the same
+# pinned Go, the same pinned alpine and the same unprivileged uid as the
+# server; VERSION and COMMIT are handed in as for `build`.
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS push-relay-build
+ARG TARGETOS TARGETARCH
+ARG VERSION=""
+ARG COMMIT=""
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w \
+      -X github.com/geoah/substrate/internal/build.version=${VERSION} \
+      -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
+      -o /out/substrate-push-relay ./cmd/substrate-push-relay
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS push-relay
+# ca-certificates for Apple's TLS.
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
+COPY --from=push-relay-build /out/substrate-push-relay /usr/local/bin/substrate-push-relay
+# Every interface of the container, as the server image binds, for the same
+# reason: a container's loopback is unreachable from the port mapping, and a
+# TLS terminator belongs in front (docs/operations.md, "Running the push
+# relay").
+ENV PORT=8080 \
+    SUBSTRATE_BIND_ADDRESS=0.0.0.0 \
+    SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true
+EXPOSE 8080
+# The server's probe: a PORT or SUBSTRATE_BIND_ADDRESS override is what is
+# probed. /healthz never calls Apple, so an outage there restarts nothing.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD host="${SUBSTRATE_BIND_ADDRESS#[}"; host="${host%]}"; \
+        case "$host" in ""|0.0.0.0|::|localhost) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac; \
+        wget -q -O /dev/null "http://${host}:${PORT}/healthz" || exit 1
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/substrate-push-relay"]
+
 # ---- runtime ------------------------------------------------------------
 # The shared function runner executes inline bundle code as child processes, so
 # the image must carry the language it runs: python3, the host every function

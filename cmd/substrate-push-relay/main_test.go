@@ -278,9 +278,13 @@ func TestCheckWithADeviceTokenSendsToThatInstallAlone(t *testing.T) {
 }
 
 func TestCheckHelp(t *testing.T) {
-	code, out := runCheck(t, "--help")
-	if code != 0 || !strings.Contains(out, "--device-token") || !strings.Contains(out, "BadDeviceToken") {
-		t.Fatalf("check --help = %d\n%s", code, out)
+	var out, errOut bytes.Buffer
+	code := run(context.Background(), []string{"check", "--help"}, &out, &errOut)
+	if code != 0 || !strings.Contains(out.String(), "-device-token") || strings.Count(out.String(), "Flags:") != 1 || errOut.Len() != 0 {
+		t.Fatalf("check --help = %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errOut.String())
+	}
+	if code, msg := runCheck(t, "--nonsense"); code != 2 || !strings.Contains(msg, "flag provided but not defined") {
+		t.Fatalf("check --nonsense = %d\n%s", code, msg)
 	}
 }
 

@@ -37,7 +37,9 @@ Flags:
 // check is the `check` command. It answers the exit status.
 func check(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	// Parse would print the usage itself; it is printed once, below, to
+	// stdout when asked for and to stderr beside a mistake.
+	fs.SetOutput(io.Discard)
 	deviceToken := fs.String("device-token", "", "Apple's token of a consenting test install, in hex")
 	environment := fs.String("environment", "", "the environment that issued --device-token: production or development")
 	topic := fs.String("topic", "", "the topic to send to (default: the first in SUBSTRATE_PUSH_RELAY_APNS_TOPICS)")
@@ -51,6 +53,9 @@ func check(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fs.Usage()
 			return 0
 		}
+		_, _ = fmt.Fprintf(stderr, "check: %v\n\n", err)
+		fs.SetOutput(stderr)
+		fs.Usage()
 		return 2
 	}
 	if fs.NArg() > 0 {
