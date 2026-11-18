@@ -610,8 +610,15 @@ data:
 		t.Fatalf("a decided card still offers actions: %+v", again)
 	}
 
-	// The device's token revoked: nothing more is sent to it.
+	// The device's token revoked: nothing more is sent to it. The answer
+	// resumed the thread, so the next message waits for that turn to settle.
 	wantStatus(t, env.do(t, http.MethodDelete, "/api/v1/"+vocabulary.CoreKind("token")+"/"+phone.ID, env.token, nil), http.StatusOK)
+	for deadline := time.Now().Add(30 * time.Second); env.get(t, vocabulary.KindLLMThread, thread).Properties["status"] == "running"; {
+		if time.Now().After(deadline) {
+			t.Fatal("the turn the answer resumed never settled")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	chat(thread, "one more")
 	sent(0)
 }
