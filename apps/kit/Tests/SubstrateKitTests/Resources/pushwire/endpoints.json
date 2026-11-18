@@ -102,6 +102,18 @@
     "refused": true
   },
   {
+    "relay": "https://[fe80::1%25en0]",
+    "refused": true
+  },
+  {
+    "relay": "https://[fe80::1%25en0]:8443/push",
+    "refused": true
+  },
+  {
+    "relay": "https://ex%25ample.com",
+    "refused": true
+  },
+  {
     "relay": "https:push.example.com",
     "refused": true
   },

@@ -10,7 +10,8 @@
 # push_relay_valid <relay>: 0 where it is an https URL with a host and a
 # port, if any, from 1 to 65535, an optional path, and no user info, query
 # or fragment, of printable ASCII and at most 2,048 characters, each `%`
-# starting two hex digits (and, in the host, a byte past ASCII).
+# starting two hex digits (and, in the host, a byte past ASCII, so no IPv6
+# zone: `%25` names an interface of one machine, which no relay needs).
 push_relay_valid() {
 	local LC_ALL=C relay="${1-}" rest authority host port="" tail
 	[ -n "$relay" ] && [ "${#relay}" -le 2048 ] || return 1

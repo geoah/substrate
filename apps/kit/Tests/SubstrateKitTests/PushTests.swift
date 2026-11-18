@@ -212,6 +212,22 @@ final class Box<T>: @unchecked Sendable {
     var value: T?
 }
 
+/// A count a test's concurrent work keeps.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var counted = 0
+
+    @discardableResult
+    func next() -> Int {
+        lock.withLock {
+            counted += 1
+            return counted
+        }
+    }
+
+    var count: Int { lock.withLock { counted } }
+}
+
 /// A transport that runs `hook` before each request reaches the stub.
 final class HookTransport: HTTPTransport, @unchecked Sendable {
     let inner: StubTransport
@@ -751,6 +767,124 @@ struct PushRegistrarTests {
         box.value = racing
         _ = await racing.sync(PushWorld.ask)
         #expect(world.sent("PUT", PushWorld.devicePath).count == puts)
+    }
+
+    /// An attempt that stalls is waited for at most the queue's bound: the
+    /// next one registers, and the one let go writes nothing when it wakes.
+    @Test func aStalledAttemptIsLetGoAfterTheBoundAndWritesNothingWhenItWakes() async throws {
+        let world = PushWorld()
+        let registers = Counter()
+        let stalling = HookTransport(world.transport) { request in
+            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 3) }
+        }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        registrar.control.wait = .milliseconds(300)
+        let stalled = Task { await registrar.sync(PushWorld.ask) }
+        while registers.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        let started = ContinuousClock.now
+        let next = await registrar.sync(PushWorld.ask)
+        #expect(next.standing == .registered && ContinuousClock.now - started < .seconds(2))
+        let kept = try #require(world.storage.stored(account: registrar.account))
+        let woke = await stalled.value
+        #expect(woke.standing != .registered)
+        #expect(world.storage.stored(account: registrar.account) == kept)
+        #expect(world.sent("PUT", PushWorld.devicePath).count == 1)
+    }
+
+    /// A sign-out lets a stalled attempt go: the next sign-in registers at
+    /// once, and what the stalled one would write when it wakes is refused.
+    @Test func aSignOutLetsAStalledAttemptGoAndTheNextSignInRegistersAtOnce() async throws {
+        let world = PushWorld()
+        let registers = Counter()
+        let stalling = HookTransport(world.transport) { request in
+            if request.url.map(StubTransport.path) == "/v1/register", registers.next() == 1 { await Self.uncancellable(seconds: 8) }
+        }
+        let registrar = PushRegistrar(
+            sessions: world.sessions, device: world.device, transport: stalling, buildRelay: "https://push.example.com", clientID: PushWorld.client)
+        let stalled = Task { await registrar.sync(PushWorld.ask) }
+        while registers.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        await registrar.signOut(try #require(await world.sessions.load()))
+        // The next sign-in, with a token of its own.
+        var signedIn = try #require(await world.sessions.load())
+        signedIn.tokenID = "0b5e1a7c33"
+        signedIn.secret = "another"
+        try await world.sessions.save(signedIn)
+        let device = "/api/v1/substrate.reamde.dev/core/device/0b5e1a7c33"
+        let record = PushWorld.record.replacingOccurrences(of: PushWorld.tokenID, with: "0b5e1a7c33")
+        world.transport.on("PUT", device, status: 201, json: record)
+        world.transport.on("GET", device, json: record)
+        let started = ContinuousClock.now
+        let facts = await registrar.sync(PushWorld.ask)
+        #expect(facts.standing == .registered && ContinuousClock.now - started < .seconds(3))
+        #expect(await registrar.state()?.tokenID == "0b5e1a7c33")
+        let kept = try #require(world.storage.stored(account: registrar.account))
+        _ = await stalled.value
+        #expect(world.storage.stored(account: registrar.account) == kept)
+        #expect(world.sent("PUT", PushWorld.devicePath).isEmpty)
+    }
+
+    /// A deadline already passed, or a caller already cancelled, starts no
+    /// work at all.
+    @Test func aDeadlinePassedOrACallerCancelledStartsNothing() async throws {
+        let started = Counter()
+        let late = await Deadline.race(until: .now - .seconds(1), or: "fallback") {
+            started.next()
+            return "ran"
+        }
+        #expect(late == "fallback")
+        let caller = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await Deadline.race(until: .now + .seconds(30), or: "fallback") {
+                started.next()
+                return "ran"
+            }
+        }
+        let cancelled = await caller.value
+        #expect(cancelled == "fallback")
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(started.count == 0)
+    }
+
+    /// A cancellation handler that takes its time holds neither the
+    /// deadline's answer nor a cancelled caller's: the fallback comes first.
+    @Test func aCancellationHandlerThatStallsHoldsNoCaller() async throws {
+        let stalling: @Sendable () async -> String = {
+            await withTaskCancellationHandler {
+                await Self.uncancellable(seconds: 3)
+                return "late"
+            } onCancel: {
+                Thread.sleep(forTimeInterval: 2)
+            }
+        }
+        var started = ContinuousClock.now
+        let timed = await Deadline.race(until: .now + .milliseconds(200), or: "fallback", stalling)
+        #expect(timed == "fallback" && ContinuousClock.now - started < .seconds(1))
+        let caller = Task { await Deadline.race(until: .now + .seconds(30), or: "fallback", stalling) }
+        try await Task.sleep(for: .milliseconds(100))
+        started = ContinuousClock.now
+        caller.cancel()
+        let cancelled = await caller.value
+        #expect(cancelled == "fallback" && ContinuousClock.now - started < .seconds(1))
+    }
+
+    /// Work that finishes after the answer was given acts on nothing: what
+    /// it would publish it checks against `Race.live`.
+    @Test func workThatFinishesAfterTheAnswerPublishesNothing() async throws {
+        let published = Counter()
+        let late = await Deadline.race(until: .now + .milliseconds(200), or: "fallback") { race in
+            await Self.uncancellable(seconds: 1)
+            if race.live { published.next() }
+            return "late"
+        }
+        #expect(late == "fallback")
+        let early = await Deadline.race(until: .now + .seconds(30), or: "fallback") { race in
+            if race.live { published.next() }
+            return "done"
+        }
+        #expect(early == "done")
+        try await Task.sleep(for: .seconds(1.5))
+        #expect(published.count == 1)
     }
 
     static func uncancellable(seconds: Double) async {

@@ -472,8 +472,9 @@ public struct PushRegistrar: Sendable {
         _ made: PushState.Registration, _ next: inout PushState, device: any PushRegistration, client: SubstrateClient
     ) async -> PushFacts {
         guard let pushKey = made.pushKey else { return facts(.unavailable, next) }
-        // A sign-out under way: its delete is not to be undone by a put.
-        guard !control.isLeaving(next.tokenID) else { return PushFacts(standing: .unknown) }
+        // A sign-out under way: its delete is not to be undone by a put. Nor
+        // is what a later attempt put, by one let go before it.
+        guard !control.isLeaving(next.tokenID), writes else { return PushFacts(standing: .unknown) }
         do {
             try await client.putDevice(tokenID: next.tokenID, name: device.deviceName, platform: device.platform, pushKey: pushKey, notifies: made.notifies)
         } catch let refused as ServerError where refused.isPermanent {
@@ -503,12 +504,18 @@ public struct PushRegistrar: Sendable {
     // MARK: Giving up
 
     /// Signing out: the sign-in is marked as leaving, so no attempt starts or
-    /// saves for it, and the attempt in flight is cancelled rather than
-    /// waited for; the device record is deleted while the token can still
-    /// delete it; then every registration of the sign-in is forgotten, the
-    /// current, the pending and the retired alike, so every push already
-    /// delivered or still queued for it no longer matches. A delete that
-    /// fails is left to the server, which deletes the device with its token.
+    /// saves for it, and the attempt in flight is cancelled and let go
+    /// rather than waited for; the device record is deleted while the token
+    /// can still delete it; then every registration of the sign-in is
+    /// forgotten, the current, the pending and the retired alike, so every
+    /// push already delivered or still queued for it no longer matches.
+    ///
+    /// The caller revokes the token after this (`LinkController.signOut`),
+    /// and the server deletes a token's device with it. That covers what no
+    /// order here can: a delete that fails, and a put already on the wire
+    /// when the sign-out began, which may land after the delete. Once the
+    /// revocation goes through no device is left; where it fails the token
+    /// is still live, and so is a device it put.
     public func signOut(_ session: Session) async {
         control.leave(session.tokenID)
         await control.settle(within: .seconds(2))
@@ -535,7 +542,8 @@ public struct PushRegistrar: Sendable {
     /// the registration stays held, since the server may still push to it,
     /// and the next attempt deletes it.
     private func giveUp(_ standing: PushFacts.Standing, _ state: PushState?, _ client: SubstrateClient) async -> PushFacts {
-        guard var state else { return PushFacts(standing: standing) }
+        // An attempt let go deletes nothing a later one may have put.
+        guard var state, writes else { return PushFacts(standing: standing) }
         if state.held {
             do {
                 try await client.delete(SubstrateClient.deviceKind, state.tokenID)
@@ -557,10 +565,15 @@ public struct PushRegistrar: Sendable {
             deviceToken: latest.environment == .development ? latest.deviceToken : nil)
     }
 
-    /// Saves unless the sign-in is being signed out: a save after the
-    /// sign-out forgot the registrations would bring one back.
+    /// Whether what this attempt writes counts: not where a later attempt
+    /// or a sign-out let it go (`PushControl.counts`).
+    private var writes: Bool { control.counts(PushControl.attempt) }
+
+    /// Saves unless the sign-in is being signed out, or the attempt was let
+    /// go: a save after the sign-out forgot the registrations would bring
+    /// one back, and one after a later attempt would undo it.
     private func save(_ state: PushState, for tokenID: String) async -> Bool {
-        guard !control.isLeaving(tokenID), let data = try? JSONEncoder().encode(state) else { return false }
+        guard !control.isLeaving(tokenID), writes, let data = try? JSONEncoder().encode(state) else { return false }
         do {
             try await sessions.write(data, account: account)
             return true
@@ -570,31 +583,62 @@ public struct PushRegistrar: Sendable {
     }
 
     private func clear() async throws {
+        guard writes else { return }
         try await sessions.delete(account: account)
     }
 }
 
 /// The registrar's attempts, one at a time, and the sign-ins being signed
 /// out: shared by every copy of one registrar.
+///
+/// An attempt waits for the one before it at most `wait`; one that has not
+/// ended by then is cancelled and let go. Only the attempt that runs last
+/// may write (`counts`), so one let go that wakes later writes nothing over
+/// what came after it. A sign-out lets every attempt go at once: the next,
+/// the next sign-in's included, waits for none of them.
 final class PushControl: @unchecked Sendable {
+    /// How long an attempt waits for the one before it: longer than a
+    /// registration that is answered at all takes.
+    static let queueWait: Duration = .seconds(90)
+
     private let lock = NSLock()
-    private var tail: Task<Void, Never>?
+    private var tail: Task<PushFacts, Never>?
     private var running: [UUID: Task<PushFacts, Never>] = [:]
     private var leaving: Set<String> = []
+    private var writer: UUID?
+    /// Moved on by every sign-out: an attempt queued before it never starts.
+    private var queue = 0
+    private var waitLimit = PushControl.queueWait
 
-    /// Runs `operation` after the ones before it; cancelled with its caller,
-    /// or by a sign-out.
+    /// The attempt a write is made by, inside `serial`.
+    @TaskLocal static var attempt: UUID?
+
+    var wait: Duration {
+        get { lock.withLock { waitLimit } }
+        set { lock.withLock { waitLimit = newValue } }
+    }
+
+    /// Runs `operation` after the ones before it, waiting for them at most
+    /// `wait`; cancelled with its caller, or by a sign-out.
     func serial(_ operation: @escaping @Sendable () async -> PushFacts) async -> PushFacts {
         let id = UUID()
         let task: Task<PushFacts, Never> = lock.withLock {
             let previous = tail
+            let limit = waitLimit
+            let queued = queue
             let task = Task<PushFacts, Never> {
-                await previous?.value
-                if Task.isCancelled { return PushFacts(standing: .unavailable) }
-                return await operation()
+                if let previous {
+                    let ended = await Deadline.race(until: .now + limit, or: false) {
+                        _ = await previous.value
+                        return true
+                    }
+                    if !ended { previous.cancel() }
+                }
+                guard !Task.isCancelled, self.take(id, queued: queued) else { return PushFacts(standing: .unavailable) }
+                return await PushControl.$attempt.withValue(id) { await operation() }
             }
             running[id] = task
-            tail = Task { _ = await task.value }
+            tail = task
             return task
         }
         let out = await withTaskCancellationHandler {
@@ -606,13 +650,35 @@ final class PushControl: @unchecked Sendable {
         return out
     }
 
+    /// The attempt `id` starts: from now on its writes count, and those of
+    /// any before it do not. False where a sign-out let it go before it
+    /// started.
+    private func take(_ id: UUID, queued: Int) -> Bool {
+        lock.withLock {
+            guard queued == queue else { return false }
+            writer = id
+            return true
+        }
+    }
+
+    /// Whether a write made by `attempt` counts: made outside any attempt,
+    /// or by the one that started last and was not let go since.
+    func counts(_ attempt: UUID?) -> Bool {
+        guard let attempt else { return true }
+        return lock.withLock { writer == attempt }
+    }
+
     /// The sign-in of `tokenID` is being signed out: every attempt in flight
-    /// is cancelled, and none starts, saves or puts for it again. Without
-    /// `cancelling`, an attempt that would not stop for its cancellation is
-    /// stood in for, so a test reaches what still refuses it.
+    /// is cancelled and let go, none starts, saves or puts for it again, and
+    /// the next attempt waits for none before it. Without `cancelling`, an
+    /// attempt that would not stop for its cancellation is stood in for, so
+    /// a test reaches what still refuses it.
     func leave(_ tokenID: String?, cancelling: Bool = true) {
         let tasks = lock.withLock {
             if let tokenID { leaving.insert(tokenID) }
+            tail = nil
+            writer = nil
+            queue += 1
             return Array(running.values)
         }
         if cancelling { for task in tasks { task.cancel() } }
@@ -629,55 +695,20 @@ final class PushControl: @unchecked Sendable {
         return lock.withLock { leaving.contains(tokenID) }
     }
 
-    /// Waits for the cancelled attempts to end, at most `limit`: one that
-    /// does not still saves nothing for a sign-in that is leaving.
+    /// Waits for the attempts let go to end, at most `limit`: one that does
+    /// not still writes nothing.
     func settle(within limit: Duration) async {
-        let tail = lock.withLock { self.tail }
-        _ = await Self.within(limit) { await tail?.value }
+        let tasks = lock.withLock { Array(running.values) }
+        _ = await Self.within(limit) {
+            for task in tasks { _ = await task.value }
+        }
     }
 
-    /// `work`, given up after `limit`: true where it finished in time. It
-    /// answers at the limit whatever `work` does, cancelled or not: a child
-    /// that ignores its cancellation runs on, and is waited for by nobody.
+    /// `work`, given up after `limit`: true where it finished in time.
     static func within(_ limit: Duration, _ work: @escaping @Sendable () async -> Void) async -> Bool {
-        let answer = AnswerOnce<Bool>()
-        return await withCheckedContinuation { continuation in
-            answer.set(continuation)
-            let task = Task {
-                await work()
-                answer.resume(true)
-            }
-            Task {
-                try? await Task.sleep(for: limit)
-                task.cancel()
-                answer.resume(false)
-            }
+        await Deadline.race(until: .now + limit, or: false) {
+            await work()
+            return true
         }
-    }
-}
-
-/// A continuation resumed once, by whichever of two racers comes first.
-final class AnswerOnce<T: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<T, Never>?
-    private var early: T?
-
-    func set(_ continuation: CheckedContinuation<T, Never>) {
-        let ready = lock.withLock { () -> T? in
-            if let early { return early }
-            self.continuation = continuation
-            return nil
-        }
-        if let ready { continuation.resume(returning: ready) }
-    }
-
-    func resume(_ value: T) {
-        let waiting = lock.withLock { () -> CheckedContinuation<T, Never>? in
-            guard early == nil else { return nil }
-            early = value
-            defer { continuation = nil }
-            return continuation
-        }
-        waiting?.resume(returning: value)
     }
 }

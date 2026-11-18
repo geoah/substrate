@@ -36,7 +36,8 @@ public enum PushRelay {
         let authority = relay.dropFirst(scheme.count).prefix { $0 != "/" }
         guard !authority.isEmpty, !authority.contains("@") else { return nil }
         // A `%` starts two hex digits, and in the host only a byte past
-        // ASCII may be written so, as Go's URL parser holds it.
+        // ASCII may be written so, as Go's `pushwire.Endpoint` holds it: no
+        // IPv6 zone (`%25`), which no publisher's relay needs.
         guard validEscapes(relay.utf8, host: false), validEscapes(authority.utf8, host: true) else { return nil }
         var host = Substring(authority)
         var port: Substring?
