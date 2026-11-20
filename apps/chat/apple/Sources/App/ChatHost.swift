@@ -66,10 +66,14 @@ final class ChatHost {
     /// The provider whose key was saved since the last `addKey`: its sheet
     /// closes.
     private(set) var savedKey: String?
+    /// A session is in the Keychain: until the link has read it, the first
+    /// screen is the chats coming, never the sign-in page (`AppShell.stored`).
+    private(set) var stored: Bool
 
     init(_ parts: Parts) {
         let store = parts.sessions
         sessions = store
+        stored = store.load() != nil
         let transport = parts.transport
         let folders = parts.folders
         // No `environment.folder`: the link has one, and Chat's folder is the
@@ -113,6 +117,13 @@ final class ChatHost {
                 model.send(.signedIn)
             }
         }
+    }
+
+    /// The link's phase moved: signed out, the sign-in page is the one to
+    /// show.
+    func refreshStored() {
+        let now = sessions.load() != nil
+        if now != stored { stored = now }
     }
 
     // What a view reads, each a part of the tree of its own (the kit's

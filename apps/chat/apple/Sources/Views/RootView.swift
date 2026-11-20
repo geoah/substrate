@@ -21,11 +21,16 @@ struct RootView: View {
                 ChatSplitView()
                     .recordViewer(host.recordDirectory())
                     .id(host.chats?.host)
+            } else if host.stored {
+                // The Keychain holds a session the link has not read yet.
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 SignInView()
             }
         }
         .motion(.place, value: signedIn)
+        .onChange(of: link.snapshot.phase) { _, _ in host.refreshStored() }
         .alert("Couldn't sign out", isPresented: Binding(get: { link.signOutProblem != nil }, set: { _ in })) {
             if let fix = link.signOutProblem?.fix { Button(fix.title) { host.signOut() } }
             Button("OK", role: .cancel) {}

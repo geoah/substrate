@@ -293,8 +293,10 @@ extension ChatApp {
             if next.cards[row.recordID] != nil, let reference = CardReference(kind: row.kind, id: row.recordID) {
                 next.asks.append(.readCard(reference, target: false))
             }
-            // Only the wait restarts, never a batch being read.
-            next.asks.append(.feedWait(seconds: 0.3))
+            // Only the wait restarts, never a batch being read; and only for
+            // the first rows of a batch, so a turn writing row after row
+            // still has the list read while it runs, its row "Working…".
+            if next.feedBatch.count <= Self.feedRestarts { next.asks.append(.feedWait(seconds: 0.3)) }
         case let .watchRelist(at):
             next.watching = false
             guard WatchFollower.recovers(at: at, after: state.recoveryStarted) else {
@@ -719,6 +721,11 @@ extension ChatApp {
             guard state.session != nil else { break }
             retryMarks(&state)
             refresh(&state)
+            // The refresh reads the marks of the first page and the chats
+            // beside it. One further down that was archived or pinned on
+            // another device while this one was away is read too: the
+            // watch that would have said so was paused, or relists.
+            if state.marks != nil { askMarks(&state) }
             for key in state.conversations.keys { state.conversations[key]?.resumeNudge += 1 }
             // Another device may have read what this one never paged in:
             // only the server's count says so.
@@ -992,6 +999,10 @@ extension ChatApp {
     /// last of them. Batches apply one at a time; what failed to re-read is
     /// kept for the next, and the record cache keeps the rows not yet read
     /// again, so a relaunch never skips one.
+    /// How many rows of one batch restart its wait: past them, the batch
+    /// is read when the wait the last of them started ends.
+    static let feedRestarts = 8
+
     private func drain(_ state: inout State) {
         guard state.feedApplying == nil, !state.feedBatch.isEmpty, state.session != nil else { return }
         let batch = state.feedBatch
