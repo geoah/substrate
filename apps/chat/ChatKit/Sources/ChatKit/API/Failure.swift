@@ -215,6 +215,12 @@ struct Failure: Codable, Hashable, Sendable {
         return nil
     }
 
+    /// The agent the chat is with is installed no more: the server answers
+    /// the chat route for it as an unknown agent. No retry reaches it.
+    var agentGone: Bool {
+        status == 404 && said?.contains("unknown agent") == true
+    }
+
     /// The request provably never reached the server, so repeating it
     /// cannot run anything twice.
     var neverSent: Bool {
