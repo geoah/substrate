@@ -1,7 +1,7 @@
 {
   "name": "@substrate/client",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "The Substrate REST API from a browser: records, the change feed, discovery, ids and positions. No framework.",
   "repository": {
     "type": "git",
