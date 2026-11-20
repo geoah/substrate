@@ -28,6 +28,12 @@ import Testing
                 == "Booked for [LA \\[2026\\]](substrate://~/trips/trip/01m7). See `~/trips/trip/kept` and [it](~/trips/trip/linked).")
     }
 
+    @Test func aLinksLabelAndALongerCodeSpanAreLeftAsWritten() {
+        let text = "[~/tasks/task/abc](https://example.com) and ``~/tasks/task/code`` and <https://x.example/~/a/b/c> but ~/tasks/task/yes"
+        #expect(RecordPaths.bare(in: text).map(\.path) == ["~/tasks/task/yes"])
+        #expect(RecordPaths.linking("a ` b ~/tasks/task/open") { _ in "T" } == "a ` b [T](substrate://~/tasks/task/open)")
+    }
+
     @Test func anAddressOrAPathIsNoRecord() {
         #expect(RecordPaths.bare(in: "https://example.com/~/trips/trip/x and a/b/c/d and mail@a.b/c/d/e").isEmpty)
         #expect(RecordPaths.bare(in: "(substrate.reamde.dev/core/contact/01m6)").map(\.kind) == ["substrate.reamde.dev/core/contact"])
