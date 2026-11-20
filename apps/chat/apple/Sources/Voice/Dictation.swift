@@ -64,6 +64,13 @@ final class Dictation {
             guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module.speech]) else {
                 throw Problem(text: "This device has no audio format the speech model reads.")
             }
+            // Stopped while it was being asked (a hold let go at once):
+            // nothing is listening yet, and nothing will. The session is
+            // let go unless a newer start holds it.
+            guard generation == self.generation else {
+                if state == .idle { await teardown() }
+                return
+            }
             let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
             let analyzer = SpeechAnalyzer(modules: [module.speech])
             let engine = AVAudioEngine()
@@ -89,6 +96,17 @@ final class Dictation {
             engine.prepare()
             try engine.start()
             try await analyzer.start(inputSequence: stream)
+            // Stopped while the analyzer started: what this start built is
+            // let go, never left listening after the stop answered, and
+            // never put in the place of a newer start's.
+            guard generation == self.generation else {
+                node.removeTap(onBus: 0)
+                engine.stop()
+                continuation.finish()
+                await analyzer.cancelAndFinishNow()
+                if state == .idle { await teardown() }
+                return
+            }
             self.engine = engine
             self.analyzer = analyzer
             input = continuation

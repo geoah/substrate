@@ -27,9 +27,8 @@ public extension RecordReference {
 public enum RecordPaths {
     private static let grammar =
         #"(~|[a-z0-9-]+(?:\.[a-z0-9-]+)+)/([a-z][a-z0-9]*)/([a-z][a-z0-9]*)/([A-Za-z0-9][A-Za-z0-9_~.-]*)"#
-    /// One in running text: not inside a word, an address, a path or a
-    /// Markdown link's target.
-    nonisolated(unsafe) private static let inText = try! NSRegularExpression(pattern: #"(?<![\w/.:@\-])(?<!\]\()"# + grammar)
+    /// One in running text: not inside a word, an address or a path.
+    nonisolated(unsafe) private static let inText = try! NSRegularExpression(pattern: #"(?<![\w/.:@\-])"# + grammar)
     nonisolated(unsafe) private static let whole = try! NSRegularExpression(pattern: "^" + grammar + "$")
 
     /// Whether the whole string is one record path.
@@ -56,19 +55,70 @@ public enum RecordPaths {
         }
     }
 
+    /// Rewrites the bare paths of the text's plain stretches: code spans
+    /// (a run of backticks to the next run of as many), links (`[…](…)`,
+    /// label and target alike) and autolinks (`<…>`) are kept as written.
     private static func rewrite(_ text: String, _ replace: (RecordReference, String) -> String) -> String {
         guard text.contains("/") else { return text }
         var out = ""
-        // Odd pieces between backticks are code spans, kept as written.
-        for (index, piece) in text.components(separatedBy: "`").enumerated() {
-            if index > 0 { out += "`" }
-            guard index % 2 == 0 else {
-                out += piece
+        var plain = ""
+        func flush() {
+            out += rewritePlain(plain, replace)
+            plain = ""
+        }
+        var at = text.startIndex
+        while at < text.endIndex {
+            let c = text[at]
+            if c == "`" {
+                let runEnd = text[at...].firstIndex { $0 != "`" } ?? text.endIndex
+                if let close = closingRun(text.distance(from: at, to: runEnd), in: text, from: runEnd) {
+                    flush()
+                    out += text[at ..< close]
+                    at = close
+                } else {
+                    plain += text[at ..< runEnd]
+                    at = runEnd
+                }
                 continue
             }
-            out += rewritePlain(piece, replace)
+            if c == "[", let end = linkEnd(in: text, from: at) {
+                flush()
+                out += text[at ..< end]
+                at = end
+                continue
+            }
+            if c == "<", let close = text[at...].firstIndex(of: ">"), !text[at ..< close].contains(where: \.isWhitespace) {
+                flush()
+                out += text[at ... close]
+                at = text.index(after: close)
+                continue
+            }
+            plain.append(c)
+            at = text.index(after: at)
         }
+        flush()
         return out
+    }
+
+    /// Where a code span opened by `count` backticks ends: after the next
+    /// run of exactly as many; nil where none closes it.
+    private static func closingRun(_ count: Int, in text: String, from start: String.Index) -> String.Index? {
+        var at = start
+        while let open = text[at...].firstIndex(of: "`") {
+            let end = text[open...].firstIndex { $0 != "`" } ?? text.endIndex
+            if text.distance(from: open, to: end) == count { return end }
+            at = end
+        }
+        return nil
+    }
+
+    /// Where an inline link that starts at `start` (its `[`) ends: after
+    /// the `)` of its target; nil where it is no link.
+    private static func linkEnd(in text: String, from start: String.Index) -> String.Index? {
+        guard let label = text[text.index(after: start)...].firstIndex(of: "]") else { return nil }
+        let open = text.index(after: label)
+        guard open < text.endIndex, text[open] == "(", let close = text[open...].firstIndex(of: ")") else { return nil }
+        return text.index(after: close)
     }
 
     private static func rewritePlain(_ text: String, _ replace: (RecordReference, String) -> String) -> String {
@@ -77,7 +127,9 @@ public enum RecordPaths {
         var at = 0
         for match in inText.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             var path = ns.substring(with: match.range)
-            // A sentence's full stop is not part of the id.
+            // A sentence's full stop is not part of the id, as the
+            // console reads it (`chat-text.ts`): an id that ends in a dot
+            // is linked, not named bare.
             while path.hasSuffix(".") { path.removeLast() }
             guard let reference = RecordReference(path: path) else { continue }
             out += ns.substring(with: NSRange(location: at, length: match.range.location - at))
