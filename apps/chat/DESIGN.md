@@ -933,10 +933,25 @@ falling back to `DictationTranscriber` where the transcriber is unavailable.
   activated before the engine and deactivated after; an interruption or a
   route change stops cleanly and keeps the words. The tap's buffers go
   through an `AVAudioConverter` to `bestAvailableAudioFormat`.
-- **Words**: tap the microphone and listen; finalized words in the primary
-  colour, volatile ones dimmed, inserted at the cursor with a space, never
-  replacing typed text. Tap again to stop (`finalizeAndFinishThroughEndOfInput`,
-  1 s at most); Send stops, finalizes and sends what was heard.
+- **Words**: finalized words in the primary colour, volatile ones dimmed,
+  joined after what is typed with a space, never replacing it. Stopping
+  finalizes (`finalizeAndFinishThroughEndOfInput`, 1 s at most); Send stops,
+  finalizes and sends what was heard.
+- **Tap and hold**, as Settings → Voice says. A tap listens and the round
+  button becomes the way to end it: **Dictate** (the default) puts the words
+  in the message with the keyboard left down, so the microphone can be
+  tapped again before anything is typed or sent; **Talk and Send** sends them
+  at the button, which reads Send. A hold (300 ms) listens until it is let go:
+  **Talk and Send** (the default) sends what was heard, **Dictate** puts it
+  in the message, **Nothing** makes a hold a tap. The hold is on the round
+  button of an empty field, one view for the whole press so it hears its
+  own release; the small microphone in a field that holds words is a tap.
+- **From the chat list**: a microphone between search and New Chat. A tap
+  opens a new chat listening, ending as a tap does; a hold listens on the
+  list itself, its words in a bar over the bottom bar, and opens the new
+  chat with them once let go, sent where a hold talks. The chat opens after
+  the release, never during it, since a push under the finger cancels the
+  press.
 - **Permissions** are asked at the first tap; a refusal says where to change
   it. Leaving the app stops listening. The keyboard's own dictation still
   works in the field.
@@ -1789,6 +1804,9 @@ them without a Shortcuts workflow:
   (an `AppEntity` over the offered agents, from the cache), optional **Start
   Listening**. Opens a new chat with that assistant (else the default), and
   with Start Listening on, the microphone is already on.
+- **Talk to an Assistant**: a new chat with the microphone on, and **Send
+  When Done** (on by default): the listening ends in a send at Send, as a
+  Talk and Send tap does.
 - **Open Chats**: opens the app on the list.
 - Siri phrases "New chat in Substrate Chat", "Ask <assistant> in Substrate
   Chat".
