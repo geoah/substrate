@@ -245,8 +245,11 @@ struct CollectionsTests {
         #expect(line.message == "Substrate Tasks needs your approval to change your Chores.")
         #expect(line.approve == "Approve")
         #expect(line.scopes == ["write:\(chore)"])
-        // Areas are out of reach: never the reference's label.
-        #expect(page.details.first { $0.label == "Area" }?.value == "Out of reach")
+        // Areas are out of reach: never the reference's label, its kind
+        // alone, and the record to open where it may be read.
+        let area = page.details.first { $0.label == "Area" }
+        #expect(area?.value == "Area")
+        #expect(area?.records.count == 1)
         await harness.send(.open(task: c("gutters")))
         #expect(await harness.presentation.detail?.approval == line)
         await harness.send(.showSettings(.collection(chore)))

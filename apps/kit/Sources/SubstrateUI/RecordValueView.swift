@@ -35,8 +35,12 @@ public struct RecordValueView: View {
         case let .words(s):
             styled(Text(s))
         case let .text(s), let .longText(s):
-            // Prose may carry inline Markdown; plain text reads the same.
-            styled(Text(markdown(s)))
+            // Prose may carry inline Markdown and link records; plain text
+            // reads the same.
+            RecordMarkdownText(s)
+                .strikethrough(struck)
+                .foregroundStyle(struck ? .secondary : .primary)
+                .textSelection(.enabled)
         case let .link(url):
             Link(url.absoluteString, destination: url).lineLimit(2)
         case let .date(date, time):
@@ -51,10 +55,6 @@ public struct RecordValueView: View {
             .strikethrough(struck)
             .foregroundStyle(struck ? .secondary : .primary)
             .textSelection(.enabled)
-    }
-
-    private func markdown(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
     }
 }
 #endif

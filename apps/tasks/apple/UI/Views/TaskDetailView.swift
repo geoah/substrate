@@ -1,4 +1,6 @@
+import SubstrateCore
 import SubstrateScreens
+import SubstrateUI
 import SwiftUI
 import TasksCore
 
@@ -59,7 +61,7 @@ struct TaskDetailView: View {
             }
             if let notes = detail.fields.first(where: { $0.field == .notes }) {
                 Section(notes.label) {
-                    Text(notes.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    RecordMarkdownText(notes.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             if let link = detail.fields.first(where: { $0.field == .link }), let url = link.url.flatMap(URL.init(string:)) {
@@ -107,9 +109,11 @@ struct TaskDetailView: View {
         detail.fields.filter { ![.status, .notes, .link].contains($0.field) }
     }
 
+    /// A value with no picker, in a picker's colour, so the rows read as
+    /// one list.
     private func value(_ field: DetailField) -> some View {
         Text(field.value)
-            .foregroundStyle(field.tone == .overdue ? Color.red : Color.primary)
+            .foregroundStyle(field.tone == .overdue ? Color.red : Color.secondary)
             .multilineTextAlignment(.leading)
     }
 
@@ -131,10 +135,20 @@ struct TaskDetailView: View {
 struct DetailFactRow: View {
     let fact: DetailFact
 
+    private var records: [RecordReference] { fact.records.compactMap(RecordReference.init(path:)) }
+
     var body: some View {
         LabeledContent(fact.label) {
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fact.value).multilineTextAlignment(.trailing)
+                if !records.isEmpty {
+                    // Each record its pill, opening it, or its page in
+                    // Substrate where the app may not read it.
+                    WrapLayout(spacing: 6) {
+                        ForEach(records, id: \.self) { RecordPill($0) }
+                    }
+                } else {
+                    Text(fact.value).multilineTextAlignment(.trailing)
+                }
                 if let note = fact.note {
                     Text(note).font(.caption.monospaced()).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }

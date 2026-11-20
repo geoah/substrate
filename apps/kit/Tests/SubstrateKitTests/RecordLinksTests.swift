@@ -56,3 +56,14 @@ import Testing
                 == "https://substrate.example.com/data/~/trips/trip/01m7")
     }
 }
+
+@Suite struct PlainMarkdown {
+    @Test func aPreviewReadsAsWordsNotMarks() {
+        #expect(plainMarkdown("**Note:** User asked to `create` a _high_ task") == "Note: User asked to create a high task")
+        #expect(
+            plainMarkdown("[Colleague](substrate.reamde.dev/core/contact/01m6) proposed it")
+                == "Colleague proposed it")
+        #expect(plainMarkdown("- one\n2. two\n# Head") == "one\ntwo\nHead")
+        #expect(plainMarkdown("snake_case_name and 2*3*4") == "snake_case_name and 2*3*4")
+    }
+}

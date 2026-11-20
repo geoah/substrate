@@ -11,6 +11,7 @@ public struct RootView: View {
         AppShellRoot<TasksApp, AppView>(tagline: "Your to-do list, kept in your substrate.", icon: Image("AppMark")) { link, app in
             AppView(link: link, app: app)
         }
+        .recordViewer(Tasks.recordDirectory())
         .environment(Tasks.shell)
     }
 }

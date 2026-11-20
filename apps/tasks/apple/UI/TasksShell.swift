@@ -1,3 +1,4 @@
+import SubstrateAPI
 import SubstrateRuntime
 import SubstrateScreens
 import SubstrateUI
@@ -18,6 +19,24 @@ public enum Tasks {
     /// called from the app's initialiser, before the app finishes
     /// launching, so the tap that launched it is not lost.
     @MainActor public static func start() { _ = shell }
+
+    /// The record views' reader, one per signed-in identity: a pill in a
+    /// task's notes or details opens its record, or its page in Substrate
+    /// where the app may not read it.
+    @MainActor private static var records: (identity: String?, directory: RecordDirectory)?
+
+    @MainActor public static func recordDirectory() -> RecordDirectory {
+        let session = shell.sessions.load()
+        if let held = records, held.identity == session?.identity { return held.directory }
+        let directory = RecordDirectory(
+            reader: session.map {
+                HTTPRecordReader(
+                    client: SubstrateClient(server: $0.server, token: $0.secret),
+                    deniedHint: "Substrate Tasks isn't allowed to read it. Open it in Substrate to see it.")
+            })
+        records = (session?.identity, directory)
+        return directory
+    }
 
     /// The app came to the front.
     @MainActor public static func cameForward() { shell.cameForward() }

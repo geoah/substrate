@@ -4956,12 +4956,14 @@
           {
             "id": "effort",
             "label": "Effort",
+            "records": [],
             "value": "An hour"
           },
           {
             "id": "collection",
             "label": "Collection",
             "note": "ada.example.com/work/chore",
+            "records": [],
             "value": "Chores"
           }
         ],
@@ -11198,6 +11200,7 @@
         "description": {
           "id": "notes",
           "label": "Notes",
+          "records": [],
           "value": "Two panels blew down in the storm."
         },
         "details": [
@@ -11205,6 +11208,7 @@
             "id": "collection",
             "label": "Collection",
             "note": "ada.example.com/work/chore",
+            "records": [],
             "value": "Chores"
           }
         ],

@@ -421,10 +421,16 @@ public enum TasksPresenter {
         return formatter.string(from: day.start(in: words.calendar, hour: 12))
     }
 
-    /// Notes as a row shows them: their words on one line, at most 160
-    /// characters, ending in "…" where they go on.
+    /// The records a reference property's value names: one, or a list.
+    static func references(_ value: JSONValue) -> [RecordReference] {
+        if let one = RecordReference(value) { return [one] }
+        return value.array?.compactMap { RecordReference($0) } ?? []
+    }
+
+    /// Notes as a row shows them: their words on one line, Markdown's marks
+    /// gone, at most 160 characters, ending in "…" where they go on.
     static func preview(_ notes: String) -> String {
-        let words = notes.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let words = plainMarkdown(notes).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return words.count > 160 ? String(words.prefix(159)) + "…" : words
     }
 
@@ -552,21 +558,28 @@ public enum TasksPresenter {
                 continue
             }
             let words: String
-            if let reference = RecordReference(value), collection.declaration.type(of: name) == "reference" {
-                // A kind the grant does not read is out of reach, never its
-                // label; one it reads and holds no record of is missing.
-                let target = collection.declaration.property(name)?["kind"]?.text ?? reference.kind
-                if !model.grant.reads(target) {
-                    words = "Out of reach"
-                } else {
-                    words = model.groups[reference.path]?.name ?? state.records[reference.path]?["title"]?.text ?? "Missing"
-                }
+            var records: [String] = []
+            let references = collection.declaration.type(of: name) == "reference" ? Self.references(value) : []
+            if !references.isEmpty {
+                // Each by its name where the app holds it, else by its kind:
+                // the pill reads the rest where the app may, and opens it in
+                // the console where it may not.
+                records = references.map(\.path)
+                let declared = collection.declaration.property(name)?["kind"]?.text
+                words = references.map { reference in
+                    // A kind the grant does not read is never named by what
+                    // the app may hold of it: by its kind alone.
+                    let target = declared.flatMap { $0 == "any" ? nil : $0 } ?? reference.kind
+                    guard model.grant.reads(target) else { return kindDisplayName(reference.kind) }
+                    let held = model.groups[reference.path]?.name ?? state.records[reference.path].flatMap { recordTitle(.object(JSONObject($0.properties))) }
+                    return held ?? fallbackName(reference)
+                }.joined(separator: ", ")
             } else if collection.declaration.type(of: name) == "enum" || collection.declaration.type(of: name) == "state", let text = value.text {
                 words = collection.declaration.label(of: text, in: name)
             } else {
                 words = valueWords(value)
             }
-            out.append(DetailFact(id: name, label: propertyLabel(name), value: words, note: nil))
+            out.append(DetailFact(id: name, label: propertyLabel(name), value: words, note: nil, records: records))
         }
         out.append(DetailFact(id: "collection", label: "Collection", value: collection.label, note: collection.kind))
         return out
@@ -612,7 +625,8 @@ public enum TasksPresenter {
             fields.append(
                 DetailField(
                     field: .due, label: TaskField.due.label, value: DueWords.full(due, calendar: words.calendar, locale: words.locale),
-                    tone: badge.tone))
+                    // A task that is done or dropped is late no more.
+                    tone: task.standing == .open ? badge.tone : nil))
         } else if collection?.due != nil || collection?.dueDay != nil {
             fields.append(DetailField(field: .due, label: TaskField.due.label, value: "No due date"))
         }

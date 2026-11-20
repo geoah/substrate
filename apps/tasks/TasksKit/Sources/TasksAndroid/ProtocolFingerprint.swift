@@ -3,5 +3,5 @@
 /// The SHA-256 of bridge.golden.json: the Kotlin kit-core was generated
 /// from must be what this library was built from, which `start` checks.
 public enum ProtocolFingerprint {
-    public static let value = "6b26ce1a9d0d6bd4fad0de2ccfb6815e26c54b50491735fa319bff5bc3cc0bba"
+    public static let value = "ccce3cf181e4f43cbcaf1a210309acadc56357e4f263547c859020070d6d6586"
 }
