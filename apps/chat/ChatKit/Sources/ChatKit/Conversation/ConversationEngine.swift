@@ -934,8 +934,17 @@ extension Conversation {
     /// read.
     private func ended(_ result: AgentResult?, at: Date) -> Failure? {
         guard let result, ["error", "overbudget", "stopped"].contains(result.status) else { return nil }
-        return Failure(.reply, .run(status: result.status, cause: result.cause), said: result.reason, retryAfter: result.retryAfter, at: at)
+        let wait = result.retryAfter ?? result.cause.flatMap { Self.passingCauses[$0] }
+        return Failure(.reply, .run(status: result.status, cause: result.cause), said: result.reason, retryAfter: wait, at: at)
     }
+
+    /// The causes a moment's wait may clear, and that wait in seconds,
+    /// where the server named none: the run is continued once on its own
+    /// when it is up, as a rate limit's is (`countdownDue`).
+    static let passingCauses: [String: Int] = [
+        RunCause.providerOverloaded.rawValue: 8, RunCause.providerUnavailable.rawValue: 8,
+        RunCause.interrupted.rawValue: 5, RunCause.shutdown.rawValue: 5,
+    ]
 
     private func ended(_ state: inout State, failure: Failure?, outcome: UUID) {
         // A run that said it failed reads nothing more.
@@ -1036,6 +1045,13 @@ extension Conversation {
     private func resumeEnded(_ state: inout State, _ run: State.Send, failure: Failure?, outcome: UUID) {
         guard let failure else { return reattach(&state, attempt: 0) }
         state.failure = failure
+        if failure.agentGone {
+            // Neither route reaches an agent that is gone: the card says so
+            // and offers a new chat.
+            end(&state, run, unknown: nil, outcome: outcome)
+            state.turnFailure = failure.attempting(.resume)
+            return
+        }
         if failure.status == 404 || failure.status == 405 {
             // The router's own answer for a path it does not serve; a 404
             // in other words is a thread that is gone, which the send's own

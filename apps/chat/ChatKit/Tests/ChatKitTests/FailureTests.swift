@@ -32,7 +32,7 @@ private let agentPage = FailureAction.open("https://s.example.com/agents/substra
 struct FailureSentences {
     /// The table of the plan's 8c, a row per cause of the closed set.
     static let causes: [RunCause: (sentence: String, note: String?, button: String, action: FailureAction)] = [
-        .providerKeyRefused: ("Anthropic refused the API key.", nil, "Replace Key", providerPage),
+        .providerKeyRefused: ("Anthropic refused the API key.", "The key may have expired or been revoked.", "Replace Key", providerPage),
         .providerRateLimited: ("Anthropic is limiting requests.", nil, "Try Again", .resume),
         .providerBilling: ("The Anthropic account is out of credit.", nil, "Try Again", .resume),
         .providerOverloaded: ("Anthropic is having trouble.", nil, "Try Again", .resume),
@@ -247,6 +247,23 @@ struct FailureSentences {
         // A refused key has a key: no sheet adds one, so the console's page.
         let refused = FailurePresenter.present(run("provider_key_refused"), context { $0.keySheet = true })
         #expect(refused.button == FailureButton(title: "Replace Key", action: providerPage, external: true))
+    }
+
+    @Test func aChatWhoseAgentIsGoneOffersANewChatNeverTryAgain() {
+        for attempt: Failure.Attempt in [.resume, .send] {
+            let gone = Failure(attempt, .http(status: 404, code: "not_found", reason: nil), said: #"substrate: not found: unknown agent "~/llm/substrate""#)
+            #expect(gone.agentGone)
+            let card = FailurePresenter.present(gone, context())
+            #expect(card.sentence == "Moss isn't available any more.")
+            #expect(card.button == FailureButton(title: "New Chat", action: .newChat(agent: nil)))
+            #expect(card.details == nil)
+        }
+        #expect(!Failure(.resume, .http(status: 404, code: "not_found", reason: nil), said: "no such thread").agentGone)
+    }
+
+    @Test func aPassingCauseIsContinuedOnItsOwnAfterAMoment() {
+        #expect(Conversation.passingCauses["provider_overloaded"] == 8)
+        #expect(Conversation.passingCauses["provider_key_refused"] == nil)
     }
 
     @Test func whatMossWroteIsSaidKeptOnlyWhereItIs() {

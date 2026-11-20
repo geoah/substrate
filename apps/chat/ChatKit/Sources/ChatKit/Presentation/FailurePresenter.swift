@@ -155,6 +155,12 @@ enum FailurePresenter {
             // assistant read it. An older one is said, and that is all.
             return Words(tone: .quiet, sentence: "\(c.agent) didn't answer this message.", button: resume("Continue", c), whole: true)
         case let .http(status, _, reason):
+            if failure.agentGone {
+                return Words(
+                    tone: .warn, sentence: "\(c.agent) isn't available any more.",
+                    note: "It was removed from your substrate. Start a new chat to carry on.",
+                    button: FailureButton(title: "New Chat", action: .newChat(agent: nil)), whole: true)
+            }
             switch reason.flatMap(RefusalReason.init(rawValue:)) {
             case .threadBusy?:
                 return Words(tone: .warn, sentence: "\(c.agent) is still answering in this chat.", note: boxNote(failure), button: retry(failure, c))
@@ -194,7 +200,9 @@ enum FailurePresenter {
         let again = (failure.attempt == .send || failure.attempt == .message ? retry(failure, c) : nil) ?? resume("Try Again", c)
         switch cause {
         case .providerKeyRefused?:
-            return Words(tone: .bad, sentence: "\(provider(c)) refused the API key.", button: page("Replace Key", c.providerPage) ?? again, again: again)
+            return Words(
+                tone: .bad, sentence: "\(provider(c)) refused the API key.", note: "The key may have expired or been revoked.",
+                button: page("Replace Key", c.providerPage) ?? again, again: again)
         case .providerRateLimited?:
             let wait = failure.retryAfter.flatMap { $0 > 0 ? " Try again in \(span($0))." : nil } ?? ""
             return Words(
