@@ -1,7 +1,7 @@
 {
   "name": "@substrate/testing",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "The web kit's test doubles: a fake substrate over fetch. Tests only.",
   "repository": {
     "type": "git",
