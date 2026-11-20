@@ -153,10 +153,31 @@ struct SettingsView: View {
                         .tag(locale.identifier)
                 }
             }
+            Picker(
+                "Tap the Microphone",
+                selection: Binding(
+                    get: { settings.micTap },
+                    set: { host.send(.settings(.choose(row: .app("micTap"), option: $0.rawValue))) })
+            ) {
+                Text("Dictate").tag(MicAction.dictate)
+                Text("Talk and Send").tag(MicAction.talk)
+            }
+            Picker(
+                "Hold the Microphone",
+                selection: Binding(
+                    get: { settings.micHold },
+                    set: { host.send(.settings(.choose(row: .app("micHold"), option: $0.rawValue))) })
+            ) {
+                Text("Talk and Send").tag(MicAction.talk)
+                Text("Dictate").tag(MicAction.dictate)
+                Text("Nothing").tag(MicAction.off)
+            }
         } header: {
             Text("Voice")
         } footer: {
-            Text("Speech is turned into text on this device. A language is downloaded the first time you use it.")
+            Text(
+                "Dictate puts what you say in the message, to change before you send it. Talk and Send sends it when you tap Send or let go. "
+                    + "Speech is turned into text on this device. A language is downloaded the first time you use it.")
         }
     }
 

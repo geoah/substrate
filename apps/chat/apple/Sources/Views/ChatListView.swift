@@ -11,6 +11,8 @@ struct ChatListView: View {
     @State private var reviewing = false
     @State private var renaming: ThreadRow?
     @State private var newTitle = ""
+    /// The microphone held in the list: the new chat opens once it is let go.
+    @State private var dictation = Dictation()
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -139,8 +141,18 @@ struct ChatListView: View {
         }
         // The chat archived a moment ago, and Undo, for a few seconds.
         .safeAreaInset(edge: .bottom) {
-            if let undo = list?.undo { UndoBar(undo: undo) }
+            VStack(spacing: ChatSpace.items) {
+                if dictation.active || dictation.problem != nil {
+                    // A problem stands until it is tapped away, or the
+                    // microphone is tried again.
+                    ListeningBar(dictation: dictation)
+                        .onTapGesture { if !dictation.active { dictation.problem = nil } }
+                        .arrives()
+                }
+                if let undo = list?.undo { UndoBar(undo: undo) }
+            }
         }
+        .onDisappear { dictation.cancel() }
         .motion(.arrive, value: list?.undo)
         .searchable(text: $query, prompt: list?.searchPrompt ?? "Search chats")
         .onChange(of: query) { _, query in host.send(.search(scene: scene, query: query)) }
@@ -187,13 +199,16 @@ struct ChatListView: View {
                 // Chat beside it, under the thumb.
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) { microphone }
                 ToolbarItem(placement: .bottomBar) { newChat }
             } else {
                 ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) { microphone }
                 ToolbarItem(placement: .primaryAction) { newChat }
             }
             #else
             ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) { microphone }
             ToolbarItem(placement: .primaryAction) { newChat }
             #endif
         }
@@ -203,6 +218,36 @@ struct ChatListView: View {
             Button("Cancel", role: .cancel) { renaming = nil }
             Button("Rename") { commitRename() }
         }
+    }
+
+    /// Talk to the assistant from the list: a tap opens a new chat
+    /// listening, a hold listens here and opens it with what was heard
+    /// once let go, sent where Settings says a hold talks.
+    private var microphone: some View {
+        let settings = chats?.settings
+        let hold = settings?.micHold ?? .talk
+        return Image(systemName: dictation.active ? "waveform" : "mic")
+            .frame(width: ChatSize.target, height: ChatSize.target)
+            .tapOrHold(
+                holds: hold != .off,
+                tap: {
+                    host.voice.talks = settings?.micTap == .talk
+                    host.send(.newChat(agent: nil, listen: true, scene: scene))
+                },
+                holdBegan: { Task { await dictation.start(localeID: settings?.voiceLocale) } },
+                holdEnded: { Task { await released(sends: hold == .talk) } }
+            )
+            .accessibilityLabel("Talk")
+            .accessibilityHint(hold == .off ? "Starts a new chat, listening" : "Hold to talk, and let go to send")
+    }
+
+    /// The held microphone let go: a new chat opens with what was heard.
+    private func released(sends: Bool) async {
+        let heard = await dictation.stop()
+        guard !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        host.voice.heard = heard
+        host.voice.sends = sends
+        host.send(.newChat(agent: nil, listen: false, scene: scene))
     }
 
     private var newChat: some View {
@@ -432,4 +477,33 @@ func copyToPasteboard(_ text: String) {
     #else
     UIPasteboard.general.string = text
     #endif
+}
+
+/// What the list's held microphone is hearing, over the bottom bar.
+private struct ListeningBar: View {
+    let dictation: Dictation
+    @Scaled(.control) private var control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: ChatSpace.apart) {
+            LevelMeter(level: dictation.level)
+            Group {
+                if !dictation.active, let problem = dictation.problem {
+                    Text(problem).ink(.tone(.critical), on: .field)
+                } else if dictation.heard.isEmpty {
+                    Text("Listening…").ink(.quiet, on: .field)
+                } else {
+                    Text("\(Text(dictation.finalized))\(Text(dictation.volatile).ink(.quiet, on: .field))")
+                }
+            }
+            .lineLimit(1 ... 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, ChatSpace.edge)
+        .frame(minHeight: control)
+        .glassEffect(.regular, in: .rect(cornerRadius: ChatRadius.bubble))
+        .padding(.horizontal, ChatSpace.screen)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
 }

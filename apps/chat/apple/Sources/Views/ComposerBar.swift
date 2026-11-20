@@ -40,6 +40,8 @@ struct ComposerBar: View {
     @Environment(\.dynamicTypeSize) private var size
     /// How tall the lines over the field are, where they may scroll.
     @State private var tall: CGFloat?
+    /// The listening under way ends in a send, not in the field.
+    @State private var talking = false
 
     private var composer: ComposerPresentation { screen.composer }
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -150,8 +152,17 @@ struct ComposerBar: View {
             host.send(.keepDraft(key: key, thread: screen.thread, text: text))
         }
         .task {
-            if composer.listenOnOpen {
+            if screen.thread == nil, let heard = host.voice.heard {
+                // Heard while the chat list's microphone was held.
+                let sends = host.voice.sends
+                host.voice.heard = nil
+                text = joined(text, heard)
+                if sends { send() } else { focused = true }
+            } else if composer.listenOnOpen {
                 host.send(.listened, to: key)
+                // The chat list's microphone says how this listening ends.
+                talking = host.voice.talks
+                host.voice.talks = false
                 await dictation.start(localeID: host.chats?.settings.voiceLocale)
             } else if screen.thread == nil {
                 focused = true
@@ -280,9 +291,11 @@ struct ComposerBar: View {
         }
     }
 
+    /// The microphone in a field that holds words: a tap only, since the
+    /// field gives way to what is heard and the press would lose its view.
     private var micButton: some View {
         Button {
-            Task { await toggleListening() }
+            Task { await micTapped() }
         } label: {
             Image(systemName: "mic")
                 .font(ChatType.body)
@@ -292,8 +305,14 @@ struct ComposerBar: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Dictate")
+        .accessibilityLabel(micLabel)
     }
+
+    private var micSettings: (tap: MicAction, hold: MicAction) {
+        (host.chats?.settings.micTap ?? .dictate, host.chats?.settings.micHold ?? .talk)
+    }
+
+    private var micLabel: String { micSettings.tap == .talk ? "Talk" : "Dictate" }
 
     // MARK: The trailing button
 
@@ -314,13 +333,10 @@ struct ComposerBar: View {
             }
             .disabled(screen.stopping)
             .accessibilityHint(composer.queued ?? "")
-        } else if dictation.active {
-            round("checkmark", tint: .accentFill, label: "Done Listening") {
-                Task { await toggleListening() }
-            }
-        } else if empty {
-            round("mic.fill", tint: nil, label: "Dictate") { Task { await toggleListening() } }
-                .disabled(screen.agent == nil)
+        } else if dictation.active || empty {
+            // One view while the field is empty or heard into, so a hold
+            // that starts listening still hears its own release.
+            microphone
         } else {
             // ⌘Return is the field's own key handling; the button says so.
             round("arrow.up", tint: .accentFill, label: "Send") { send() }
@@ -331,17 +347,47 @@ struct ComposerBar: View {
 
     private func round(_ symbol: String, tint: Color?, label: String, id: String = "action", action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(ChatType.control)
-                .ink(tint == nil ? .label : .onFill, on: tint == nil ? .field : .fill)
-                .growing(to: .control)
-                .frame(width: control, height: control)
-                .changes(.mark)
+            roundFace(symbol, tint: tint)
         }
         .buttonStyle(.plain)
         .glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? .regular.interactive(), in: .circle)
         .glassEffectID(id, in: glass)
         .accessibilityLabel(label)
+    }
+
+    private func roundFace(_ symbol: String, tint: Color?) -> some View {
+        Image(systemName: symbol)
+            .font(ChatType.control)
+            .ink(tint == nil ? .label : .onFill, on: tint == nil ? .field : .fill)
+            .growing(to: .control)
+            .frame(width: control, height: control)
+            .changes(.mark)
+    }
+
+    /// The microphone, and while it listens, the way to end it: Send where
+    /// the listening ends in a send, Done where the words go into the field.
+    /// A tap does what Settings says a tap does, a hold talks until it is
+    /// let go.
+    private var microphone: some View {
+        let listening = dictation.active
+        let symbol = listening ? (talking ? "arrow.up" : "checkmark") : "mic.fill"
+        let tint: Color? = listening ? .accentFill : nil
+        let label = listening ? (talking ? "Send" : "Done Listening") : micLabel
+        return roundFace(symbol, tint: tint)
+            .glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? .regular.interactive(), in: .circle)
+            .glassEffectID("action", in: glass)
+            .tapOrHold(
+                holds: !listening && micSettings.hold != .off,
+                tap: { Task { await micTapped() } },
+                holdBegan: {
+                    talking = micSettings.hold == .talk
+                    Task { await startListening() }
+                },
+                holdEnded: { Task { await finishListening() } }
+            )
+            .disabled(screen.agent == nil)
+            .accessibilityLabel(label)
+            .accessibilityHint(listening || micSettings.hold == .off ? "" : "Hold to talk, and let go to send")
     }
 
     // MARK: Actions
@@ -363,7 +409,10 @@ struct ComposerBar: View {
 
     private func send() {
         Task {
-            if dictation.active { await toggleListening() }
+            if dictation.active {
+                talking = false
+                text = joined(text, await dictation.stop())
+            }
             guard composer.canSend, !empty else { return }
             // The conversation sends what it holds: everything typed first.
             host.send(draft.reports.tell(text), to: key)
@@ -380,14 +429,32 @@ struct ComposerBar: View {
         return command
     }
 
-    private func toggleListening() async {
+    /// A tap on the microphone: listening starts, as Settings says a tap
+    /// listens, or the listening under way ends.
+    private func micTapped() async {
         if dictation.active {
-            let heard = await dictation.stop()
-            text = joined(text, heard)
-            focused = true
+            await finishListening()
         } else {
-            focused = false
-            await dictation.start(localeID: host.chats?.settings.voiceLocale)
+            talking = micSettings.tap == .talk
+            await startListening()
+        }
+    }
+
+    private func startListening() async {
+        focused = false
+        await dictation.start(localeID: host.chats?.settings.voiceLocale)
+    }
+
+    /// The listening ends: what was heard joins the field, and is sent
+    /// where the listening was talk. The keyboard stays down, so the
+    /// microphone can be tapped again for more.
+    private func finishListening() async {
+        guard dictation.active else { return }
+        let heard = await dictation.stop()
+        text = joined(text, heard)
+        if talking {
+            talking = false
+            send()
         }
     }
 }
@@ -539,7 +606,7 @@ struct KeylessCalloutView: View {
 }
 
 /// The microphone's loudness as five bars.
-private struct LevelMeter: View {
+struct LevelMeter: View {
     let level: Float
     @Scaled(.meter) private var height
 

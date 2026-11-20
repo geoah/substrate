@@ -33,6 +33,8 @@ public final class DefaultsPreferenceStore: PreferenceStore, @unchecked Sendable
         out.notifyReplies = defaults.object(forKey: p + "notifyReplies") as? Bool ?? true
         out.notifyAttention = defaults.object(forKey: p + "notifyAttention") as? Bool ?? true
         out.voiceLocale = defaults.string(forKey: p + "voiceLocale")
+        out.micTap = defaults.string(forKey: p + "micTap").flatMap(MicAction.init(rawValue:)) ?? out.micTap
+        out.micHold = defaults.string(forKey: p + "micHold").flatMap(MicAction.init(rawValue:)) ?? out.micHold
         out.askedNotifications = defaults.object(forKey: p + "askedNotifications") as? Bool ?? false
         return out
     }
@@ -52,6 +54,8 @@ public final class DefaultsPreferenceStore: PreferenceStore, @unchecked Sendable
         set("notifyReplies", preferences.notifyReplies)
         set("notifyAttention", preferences.notifyAttention)
         set("voiceLocale", preferences.voiceLocale)
+        set("micTap", preferences.micTap.rawValue)
+        set("micHold", preferences.micHold.rawValue)
         set("askedNotifications", preferences.askedNotifications)
     }
 

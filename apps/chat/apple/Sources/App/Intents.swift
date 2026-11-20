@@ -77,12 +77,18 @@ struct TalkIntent: AppIntent {
     @Parameter(title: "Assistant", description: "Who the chat is with. Empty is your default assistant.")
     var assistant: AgentEntity?
 
+    @Parameter(
+        title: "Send When Done", description: "Send what you said as soon as you tap Send, rather than putting it in the message to edit.",
+        default: true)
+    var sends: Bool
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Talk to \(\.$assistant)")
+        Summary("Talk to \(\.$assistant)") { \.$sends }
     }
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        ChatHost.shared.voice.talks = sends
         ChatHost.shared.route(.newChat(agent: assistant?.id, listen: true))
         return .result()
     }
