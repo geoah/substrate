@@ -11,6 +11,7 @@ import SwiftUI
 /// Markdown gave it.
 struct TableBlockView: View {
     @Environment(\.missingRecords) private var missing
+    @Environment(\.recordDirectory) private var directory
     @Environment(\.dynamicTypeSize) private var size
     @Environment(\.spill) private var spill
     let header: [String]
@@ -83,7 +84,7 @@ struct TableBlockView: View {
     /// One cell, filling its place in the grid.
     private func cell(_ text: String, column: Int, row: Int) -> some View {
         let first = column == 0
-        return inline(text, missing: missing)
+        return inline(text, missing: missing, directory: directory)
             .multilineTextAlignment(textAlignment(column))
             // A cell's words from its edges, and the first and last
             // column's from the table's.
@@ -138,13 +139,13 @@ struct TableBlockView: View {
             ForEach(Array((rows.isEmpty ? [[]] : rows).enumerated()), id: \.offset) { _, cells in
                 TableGrid(columns: 2, room: 0, metrics: metrics, shares: true) {
                     ForEach(Array(header.enumerated()), id: \.offset) { column, name in
-                        inline(name, missing: missing)
+                        inline(name, missing: missing, directory: directory)
                             .font(ChatType.heading)
                             .ink(.quiet, on: .table)
                             .padding(.trailing, ChatSpace.inner)
                             .padding(.vertical, ChatSpace.lines / 2)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        inline(column < cells.count ? cells[column] : "", missing: missing)
+                        inline(column < cells.count ? cells[column] : "", missing: missing, directory: directory)
                             .font(ChatType.detail)
                             .padding(.vertical, ChatSpace.lines / 2)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
