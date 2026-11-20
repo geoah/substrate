@@ -96,7 +96,16 @@ extension ChatAppState {
         state.agents = []
         state.lastAgent = nil
         state.transcripts = [:]
-        state.conversations = [:]
+        // Of the conversations, which threads one is sending to or
+        // streaming: the row says "Working…" (`ListRowReads.working`).
+        var working: [ChildKey: Entry] = [:]
+        for thread in Set(conversations.values.filter(\.active).compactMap(\.thread)) {
+            var entry = Entry(seed: Conversation.Seed(thread: thread, agent: nil, draft: "", listen: false))
+            entry.thread = thread
+            entry.active = true
+            working[ChildKey(thread)] = entry
+        }
+        state.conversations = working
         state.scenes = [:]
         state.cards = [:]
         state.guidance = Guidance()

@@ -33,6 +33,9 @@ extension ChatApp {
         var attention: Int
         var pinned: Bool
         var archived: Bool
+        /// A conversation on this device is sending to the thread or
+        /// streaming its turn: the row says so before the server's row does.
+        var working = false
         var locale: Locale
         var timeZone: TimeZone
     }
@@ -196,12 +199,14 @@ extension ChatApp {
         let midnight = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
         var until = midnight
         var made: [String: ThreadRow] = [:]
+        let working = Set(state.conversations.values.filter(\.active).compactMap(\.thread))
         func row(_ thread: ChatThread) -> ThreadRow {
             if let row = made[thread.id] { return row }
             let waits = state.marks != nil ? thread.waiting : state.attention(thread.id)
             let reads = ListRowReads(
                 record: thread.record, opening: state.openings[thread.id], unread: state.unread(thread), attention: waits,
-                pinned: standing.pinned(thread.id), archived: standing.archived(thread.id), locale: input.locale, timeZone: input.timeZone)
+                pinned: standing.pinned(thread.id), archived: standing.archived(thread.id), working: working.contains(thread.id),
+                locale: input.locale, timeZone: input.timeZone)
             let part = kept.timed("row/\(thread.id)", reading: reads, at: input.now) {
                 var edge = midnight
                 for age: TimeInterval in [60, 6 * 86400] {
@@ -346,11 +351,12 @@ extension ChatApp {
     static func row(_ reads: ListRowReads, _ thread: ChatThread, agent: String, _ input: PresenterInput<ChatApp>) -> ThreadRow {
         let title = thread.title(opening: reads.opening)
         let mark: ThreadRow.Mark? = reads.attention > 0 ? .attention : reads.unread ? .unread : nil
+        let running = thread.running || reads.working
         return ThreadRow(
             id: thread.id, title: title, subject: thread.subject ?? title,
             stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agent,
-            preview: thread.running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
-            unread: reads.unread, mark: mark, unfinished: Self.unfinished(thread), running: thread.running, pinned: reads.pinned,
+            preview: running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
+            unread: reads.unread, mark: mark, unfinished: running ? nil : Self.unfinished(thread), running: running, pinned: reads.pinned,
             archived: reads.archived)
     }
 

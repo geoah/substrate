@@ -209,6 +209,24 @@ struct WhenAChatHappened {
         #expect(Array(stamps.prefix(4)) == ["now", "Yesterday", "Sat", "11 Oct"])
     }
 
+    @Test func aChatThisDeviceIsSendingToIsWorkingBeforeTheServersRowSaysSo() {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: false)
+        var state = ChatAppState()
+        state.loaded = true
+        state.chats = Self.chats
+        let sent = "01m7aaaaaaaaaaaaaaaaaaaaaa"
+        var entry = ChatAppState.Entry(seed: Conversation.Seed(thread: sent, agent: nil, draft: "", listen: false))
+        entry.thread = sent
+        entry.active = true
+        state.conversations[ChildKey("c1")] = entry
+        let now = Timestamp.parse("2026-11-18T18:00:00Z")!
+        let rows = app.present(PresenterInput(state: state, now: now, locale: Locale(identifier: "en_GB"))).list.sections.flatMap(\.rows)
+        let row = rows.first { $0.id == sent }
+        #expect(row?.running == true)
+        #expect(row?.preview == "Working…")
+        #expect(rows.first { $0.id == "zoldchatone1" }?.running == false)
+    }
+
     @Test func whereTheWindowReadSoFarEndsIsTheRowsLastWriteTheOrderTheServerListsBy() {
         var state = ChatAppState()
         state.recordsRevision = 9
