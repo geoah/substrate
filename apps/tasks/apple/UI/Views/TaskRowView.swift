@@ -89,7 +89,7 @@ struct TaskRowView: View {
                 if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 6) { chips }
                 } else {
-                    ChipsFlow(spacing: 6, lineSpacing: 6) { chips }
+                    ChipsFlow(spacing: 0, lineSpacing: 6) { chips }
                 }
             }
         }
@@ -253,7 +253,7 @@ struct TaskRowView: View {
                     if typeSize.isAccessibilitySize {
                         VStack(alignment: .leading, spacing: 6) { chips }
                     } else {
-                        ChipsFlow(spacing: 6, lineSpacing: 6) { chips }
+                        ChipsFlow(spacing: 0, lineSpacing: 6) { chips }
                     }
                 }
                 .padding(.top, 2)
@@ -364,7 +364,10 @@ private struct Chip: View {
             .labelStyle(TightLabelStyle(spacing: 4))
             .font(.caption.weight(emphasis ? .semibold : .medium))
             .foregroundStyle(color)
-            .padding(.horizontal, emphasis ? 6 : 0)
+            // Every chip keeps the same inset, tinted or not, so the
+            // first stands where it would on any card and its glyph clear
+            // of the card's edge.
+            .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(color.opacity(emphasis ? 0.08 : 0), in: .capsule)
     }

@@ -74,9 +74,9 @@ struct SuggestionsView: View {
                     Spacer()
                     if let dismiss = queue.dismissPicked, let accept = queue.acceptPicked {
                         Button(dismiss) { shell.send(.dismissPicked) }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.glass)
                         Button(accept) { shell.send(.acceptPicked) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.glassProminent)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -152,7 +152,7 @@ struct SuggestionView: View {
             }
             if let description = suggestion.description {
                 Section(description.label) {
-                    Text(description.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    RecordMarkdownText(description.value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Section(suggestion.detailsTitle) {
@@ -167,7 +167,10 @@ struct SuggestionView: View {
         #endif
         .toolbar {
             if let place = suggestion.place {
-                ToolbarItem(placement: .primaryAction) { Text(place).foregroundStyle(.secondary) }
+                // Where it is among the suggestions: words, not a control,
+                // so no glass behind them.
+                ToolbarItem(placement: .primaryAction) { Text(place).font(.subheadline).foregroundStyle(.secondary).monospacedDigit() }
+                    .sharedBackgroundVisibility(.hidden)
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -179,22 +182,24 @@ struct SuggestionView: View {
                         } label: {
                             Text(action.title).frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                     } else {
                         Button {
                             shell.perform(action.action, on: suggestion.id)
                         } label: {
                             Text(action.title).frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                     }
                 }
             }
             .font(.body.weight(.semibold))
             .controlSize(.large)
             .buttonBorderShape(.capsule)
+            // Glass over what scrolls under it, clear of the tab bar.
             .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 

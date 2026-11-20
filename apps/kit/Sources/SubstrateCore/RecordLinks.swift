@@ -102,3 +102,26 @@ public enum RecordPaths {
         id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "()"))) ?? id
     }
 }
+
+/// Inline Markdown as the words it reads as, for a line too short for its
+/// marks: a preview, a notification. A link keeps its words and loses its
+/// address, emphasis and code lose their marks, and a block's leading mark
+/// (a heading's, a quote's, a list item's) goes.
+public func plainMarkdown(_ markdown: String) -> String {
+    var text = markdown
+    let rules: [(String, String)] = [
+        (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),
+        (#"<((?:https?|mailto):[^>]+)>"#, "$1"),
+        (#"(?m)^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)"#, ""),
+        (#"(\*\*|__)(.+?)\1"#, "$2"),
+        (#"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?!\w)"#, "$1"),
+        (#"(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w])"#, "$1"),
+        (#"~~(.+?)~~"#, "$1"),
+        (#"`+([^`]+)`+"#, "$1"),
+    ]
+    for (pattern, template) in rules {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
+    }
+    return text
+}

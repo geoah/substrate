@@ -332,6 +332,9 @@ public struct DetailFact: Bridged, Hashable, Sendable, Identifiable {
     public var label: String
     public var value: String
     public var note: String?
+    /// The records the value names, by `kind/id` path, in order: drawn as
+    /// their pills where a platform can open one, `value` elsewhere.
+    public var records: [String] = []
 }
 
 /// What the owner can do to a task.

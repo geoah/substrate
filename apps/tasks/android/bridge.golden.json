@@ -125,7 +125,8 @@
         {"name": "id", "type": "String"},
         {"name": "label", "type": "String"},
         {"name": "value", "type": "String"},
-        {"name": "note", "type": "String?"}
+        {"name": "note", "type": "String?"},
+        {"name": "records", "type": "[String]"}
       ]
     },
     {
