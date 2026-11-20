@@ -80,7 +80,7 @@ extension ChatApp {
         }
         return ChatSettingsPresentation(
             assistants: assistants, guidance: guidance(state), sections: sections, notificationsDenied: denied,
-            voiceLocale: prefs.voiceLocale)
+            voiceLocale: prefs.voiceLocale, micTap: prefs.micTap, micHold: prefs.micHold)
     }
 
     /// How a reply or a question reaches the person while the app is not

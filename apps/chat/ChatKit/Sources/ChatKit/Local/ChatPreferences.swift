@@ -1,3 +1,14 @@
+/// What the microphone does when it is tapped, or held.
+public enum MicAction: String, Codable, Sendable, CaseIterable {
+    /// The words go into the message, to be read, changed and sent.
+    case dictate
+    /// The message is sent when the listening ends: a tap on Send, or
+    /// letting go of the held microphone.
+    case talk
+    /// Nothing: a hold is only a long tap.
+    case off
+}
+
 /// The owner's choices for one signed-in repository.
 public struct ChatPreferences: Codable, Equatable, Sendable {
     /// The agents the owner turned off, and those they turned on that are
@@ -15,6 +26,9 @@ public struct ChatPreferences: Codable, Equatable, Sendable {
     public var notifyAttention = true
     /// A locale identifier, or nil for the device's.
     public var voiceLocale: String?
+    /// What a tap on the microphone does, and what holding it does.
+    public var micTap: MicAction = .dictate
+    public var micHold: MicAction = .talk
     /// Whether the notification permission was asked after a first send.
     public var askedNotifications = false
 

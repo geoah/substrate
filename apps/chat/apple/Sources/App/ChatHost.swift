@@ -66,6 +66,18 @@ final class ChatHost {
     /// The provider whose key was saved since the last `addKey`: its sheet
     /// closes.
     private(set) var savedKey: String?
+    /// What the chat list's microphone hands the new chat it opens.
+    var voice = ListVoice()
+
+    struct ListVoice: Equatable {
+        /// A tap opened it listening, and the listening ends in a send.
+        var talks = false
+        /// A hold heard these words before it opened: they go into the
+        /// field, and are sent where `sends`.
+        var heard: String?
+        var sends = false
+    }
+
     /// A session is in the Keychain: until the link has read it, the first
     /// screen is the chats coming, never the sign-in page (`AppShell.stored`).
     private(set) var stored: Bool

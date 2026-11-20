@@ -1376,6 +1376,10 @@ extension ChatApp {
             syncPush(&state)
         case let ("defaultAgent", _, option?): state.preferences.defaultAgent = option.isEmpty ? nil : option
         case let ("voiceLocale", _, option?): state.preferences.voiceLocale = option.isEmpty ? nil : option
+        case let ("micTap", _, option?):
+            // A tap always does something: it is the microphone's one way in.
+            if let action = MicAction(rawValue: option), action != .off { state.preferences.micTap = action }
+        case let ("micHold", _, option?): state.preferences.micHold = MicAction(rawValue: option) ?? state.preferences.micHold
         case let (row, on?, _) where row.hasPrefix("agent:"):
             state.preferences.setOffered(String(row.dropFirst("agent:".count)), on, defaults: defaults)
         default:
