@@ -7,6 +7,8 @@ import SwiftUI
 enum MarkdownCache {
     private static var rows: [String: [MarkdownRow]] = [:]
     static var inlines: [String: InlineLine] = [:]
+    /// The records each text names by a bare path (`RecordPaths.bare`).
+    static var bare: [String: [RecordReference]] = [:]
     private static var order: [String] = []
 
     static func parse(_ text: String) -> [MarkdownRow] {
@@ -110,12 +112,17 @@ func consolePath(_ url: URL) -> String? {
 /// console paths and record links, each that leaves the app marked; memoized, since every
 /// visible paragraph asks again on each redraw.
 @MainActor
-func inline(_ text: String, missing: Set<String> = []) -> InlineLine {
+func inline(_ text: String, missing: Set<String> = [], directory: RecordDirectory? = nil) -> InlineLine {
+    // A record named by its bare path is a link to it, named by its title
+    // once the directory has read it: a model writes `~/trips/trip/<id>` as
+    // often as the link it was asked for.
+    let bare = bareRecords(text)
+    let text = bare.isEmpty ? text : RecordPaths.linking(text) { directory?.title(for: $0) ?? fallbackName($0) }
     let key = missing.isEmpty ? text : text + "\u{0}" + missing.sorted().joined(separator: "\u{0}")
     if let hit = MarkdownCache.inlines[key] { return hit }
     let out = Meter.shared.time(.inline) {
         let pieces = inlinePieces(parseInline(text, missing: missing))
-        return InlineLine(text: marked(pieces), pills: pieces.contains { if case .record = $0 { true } else { false } })
+        return InlineLine(text: marked(pieces), pills: pieces.contains { if case .record = $0 { true } else { false } }, bare: bare)
     }
     MarkdownCache.inlines[key] = out
     if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
@@ -130,12 +137,43 @@ func inline(_ text: String, missing: Set<String> = []) -> InlineLine {
 struct InlineLine: View {
     let text: Text
     let pills: Bool
+    /// The records the line names by a bare path, read for their titles.
+    var bare: [RecordReference] = []
 
     var body: some View {
         if pills {
-            text.recordPillText()
+            text.recordPillText().modifier(ResolvesRecords(records: bare))
         } else {
             text
+        }
+    }
+}
+
+/// The records a text names by a bare path, memoized: most texts name none.
+@MainActor
+private func bareRecords(_ text: String) -> [RecordReference] {
+    guard text.contains("/") else { return [] }
+    if let hit = MarkdownCache.bare[text] { return hit }
+    let found = RecordPaths.bare(in: text)
+    MarkdownCache.bare[text] = found
+    if MarkdownCache.bare.count > 2000 { MarkdownCache.bare.removeAll(keepingCapacity: true) }
+    return found
+}
+
+/// Reads each record for its title, where the directory has not.
+private struct ResolvesRecords: ViewModifier {
+    @Environment(\.recordDirectory) private var directory
+    let records: [RecordReference]
+
+    func body(content: Content) -> some View {
+        if records.isEmpty {
+            content
+        } else {
+            content.task(id: records) {
+                for record in records where directory?.title(for: record) == nil {
+                    await directory?.resolve(record)
+                }
+            }
         }
     }
 }
@@ -241,6 +279,7 @@ func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString 
 
 private struct BlockView: View {
     @Environment(\.missingRecords) private var missing
+    @Environment(\.recordDirectory) private var directory
     let block: MarkdownBlock
     /// The colours of the code blocks in this block, in the order they
     /// stand (`MarkdownRow.code`).
@@ -268,10 +307,10 @@ private struct BlockView: View {
         let _ = Meter.shared.count(.body, "MarkdownBlock")
         switch block {
         case let .paragraph(text):
-            inline(text, missing: missing)
+            inline(text, missing: missing, directory: directory)
                 .fixedSize(horizontal: false, vertical: true)
         case let .heading(level, text):
-            inline(text, missing: missing)
+            inline(text, missing: missing, directory: directory)
                 .font(ChatType.heading(level: level))
                 .padding(.top, level <= 2 ? ChatSpace.lines : ChatSpace.pair)
                 .accessibilityAddTraits(.isHeader)

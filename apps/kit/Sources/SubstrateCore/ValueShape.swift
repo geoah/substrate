@@ -21,6 +21,10 @@ public enum ValueShape: Equatable, Sendable {
             let type = declared?.type
             if s.isEmpty {
                 self = .empty
+            } else if let reference = ValueShape.reference(s, declared: declared) {
+                // A reference as a writer spelled it, before the server
+                // stored it as `{ref:}`: a tool call's input, a draft.
+                self = .reference(reference)
             } else if type == "url" || type == nil && (s.hasPrefix("https://") || s.hasPrefix("http://")), let url = URL(string: s) {
                 self = .link(url)
             } else if type == "date" || type == "datetime" || type == nil, let (date, time) = ValueShape.date(s) {
@@ -57,6 +61,18 @@ public enum ValueShape: Equatable, Sendable {
         default:
             self = .words(valueWords(value))
         }
+    }
+
+    /// A string that names a record: a whole record path, or a bare id
+    /// where the declaration says which kind it points at.
+    static func reference(_ s: String, declared: PropertyDeclaration?) -> RecordReference? {
+        let type = declared?.type
+        guard type == nil || type == "reference" else { return nil }
+        if RecordPaths.isWhole(s) { return RecordReference(path: s) }
+        guard type == "reference", let target = declared?.target, target != "any", KindReference(target) != nil,
+            !s.contains("/"), !s.contains(" ")
+        else { return nil }
+        return RecordReference(kind: target, id: s)
     }
 
     /// `utility`, `inProgress`: a lowercase word, camel-cased at most.

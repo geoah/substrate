@@ -130,7 +130,7 @@ enum CardPresenter {
             op: op, kind: kind, id: targetID, title: recordTitle(target.map { .object(JSONObject($0.properties)) }),
             values: values)
         let rationale = held?["rationale"]?.text ?? asked?.rationale
-        let lines = values.keys.sorted().map { key in
+        let lines = values.keys.sorted { propertyOrder($0, values[$0], before: $1, values[$1]) }.map { key in
             ValueLine(key: key, label: propertyLabel(key), value: values[key] ?? .null, before: op == "patch" ? target?[key] : nil)
         }
         let canDecide = session?.canDecide ?? true

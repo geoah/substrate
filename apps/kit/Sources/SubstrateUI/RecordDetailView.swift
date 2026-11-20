@@ -73,21 +73,31 @@ public struct RecordDetailView: View {
             } else {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             }
+            if let url = directory?.reader?.webURL(for: reference) {
+                Section {
+                    Link(destination: url) {
+                        Label("Open in Substrate", systemImage: "arrow.up.right.square")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } footer: {
+                    if let description = declaration?.description { Text(description) }
+                }
+            }
+            // What identifies it is for whoever needs it, folded away.
             Section {
-                LabeledContent("Kind") {
-                    Text(reference.kind).font(.caption.monospaced()).textSelection(.enabled)
-                }
-                LabeledContent("ID") {
-                    Text(reference.recordID).font(.caption.monospaced()).textSelection(.enabled)
-                }
-                if let record, let updated = Timestamp.parse(record.updatedAt) {
-                    LabeledContent("Changed", value: updated.formatted(date: .abbreviated, time: .shortened))
-                }
-                if let url = directory?.reader?.webURL(for: reference) {
-                    Link(destination: url) { Label("Open in the Console", systemImage: "arrow.up.right.square") }
+                DisclosureGroup("Technical details") {
+                    LabeledContent("Kind") {
+                        Text(reference.kind).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                    LabeledContent("ID") {
+                        Text(reference.recordID).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                    if let record, let updated = Timestamp.parse(record.updatedAt) {
+                        LabeledContent("Changed", value: updated.formatted(date: .abbreviated, time: .shortened))
+                    }
                 }
             } footer: {
-                if let description = declaration?.description { Text(description) }
+                if directory?.reader?.webURL(for: reference) == nil, let description = declaration?.description { Text(description) }
             }
         }
         #if os(iOS)
@@ -149,19 +159,7 @@ public struct RecordDetailView: View {
             if key == "title" { return false }
             return !(value.text != nil && value.text == heading && ["name", "summary", "subject"].contains(key))
         }
-        .sorted { a, b in
-            let (ra, rb) = (rank(record[a]), rank(record[b]))
-            return ra == rb ? a < b : ra < rb
-        }
-    }
-
-    private func rank(_ value: JSONValue?) -> Int {
-        switch ValueShape(value ?? .null) {
-        case .longText: 3
-        case .references: 2
-        case .raw: 4
-        default: 1
-        }
+        .sorted { a, b in propertyOrder(a, record[a], before: b, record[b]) }
     }
 }
 #endif

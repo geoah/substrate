@@ -69,6 +69,11 @@ public struct HTTPRecordReader: RecordReader {
     public func declaration(of kind: String) async throws -> KindDeclaration? {
         try await record(RecordReference(kind: KindDeclaration.kind, id: kind)).flatMap(KindDeclaration.init(record:))
     }
+
+    /// The record's page in the server's console (`/data/<kind>/<id>`).
+    public func webURL(for reference: RecordReference) -> URL? {
+        ServerAddress.page(server, path: "/data/\(reference.kind)/\(segment(reference.recordID))")
+    }
 }
 
 /// The records and declarations the views have read, shared by every pill

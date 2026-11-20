@@ -458,7 +458,7 @@ enum TurnPresenter {
     ) -> ChangePanelPresentation {
         let change = change.titled(titles)
         // The heading already names the record.
-        let keys = change.values.keys.sorted().filter { key in
+        let keys = change.values.keys.sorted { propertyOrder($0, change.values[$0], before: $1, change.values[$1]) }.filter { key in
             !(["name", "title", "summary", "subject"].contains(key) && change.values[key]?.text == change.title && change.title != nil)
         }
         return ChangePanelPresentation(
