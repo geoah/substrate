@@ -35,17 +35,21 @@ export { useConnection, useSubstrate } from "./context"
 export type { Connection, SubstrateContextValue } from "./context"
 export {
   useAppStatus,
+  useInvalidate,
   useKindRecords,
   useLinkedStatus,
   useListed,
   useOutbox,
   useParkedWrites,
+  useRead,
   useRecord,
   useRecords,
   useStatusSentence,
   useWriteState,
 } from "./hooks"
 export type { RecordRead } from "./hooks"
+export { sampleKinds } from "./reads"
+export type { Read, ReadCache, ReadOptions, ReadState } from "./reads"
 export { useKindWrites, useWrites } from "./writes"
 export type { KindWrites, WriteOptions, WriteResult, Writes } from "./writes"
 export { ConnectScreen } from "./ConnectScreen"

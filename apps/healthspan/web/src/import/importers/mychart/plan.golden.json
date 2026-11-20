@@ -1,0 +1,1266 @@
+{
+  "importer": "mychart",
+  "name": "example-export",
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/observations/source",
+      "namespace": "source",
+      "key": "mychart/mychart.example-hospital.nhs.uk",
+      "mode": "create",
+      "properties": {
+        "name": "Example Hospitals NHS Foundation Trust",
+        "class": "service"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "ods",
+      "key": "RX1",
+      "mode": "merge",
+      "properties": {
+        "name": "Example Hospitals NHS Foundation Trust",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/ods-organization-code",
+            "value": "RX1",
+            "label": "ODS code"
+          },
+          {
+            "value": "EXAMPLE-ORG-1",
+            "label": "Epic Care Everywhere id"
+          }
+        ],
+        "type": "hospital",
+        "address": {
+          "lines": ["2 Example Street"],
+          "city": "London",
+          "postalCode": "AB1 3CD",
+          "country": "GB"
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "pharmacy/PH-1",
+      "mode": "merge",
+      "properties": {
+        "name": "Example Pharmacy",
+        "type": "pharmacy",
+        "address": {
+          "lines": ["Unit 1", "3 Example Lane"],
+          "city": "London",
+          "postalCode": "AB1 4CD"
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-0",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Example Hospitals NHS Foundation Trust",
+        "accession": "THYROID PROFILE",
+        "at": "2026-03-02T09:30:00+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-03-29T01:30:00+00:00",
+        "status": "Final",
+        "file": {
+          "$doc": "blob-sha256-50718e26e7a9f961e91f1e158a18e978ccc9c822f95fc9e0e53dbacac44ecd41"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-0/C-TSH",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/tsh",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "RES-0"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-02T09:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "2.10",
+          "unit": "m[IU]/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "0.27",
+              "unit": "m[IU]/L"
+            },
+            "high": {
+              "value": "4.20",
+              "unit": "m[IU]/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "epic",
+          "code": "TSH",
+          "display": "Thyroid stimulating hormone"
+        },
+        "upstreamId": "RES-0/C-TSH",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-A",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Example Pathology",
+        "accession": "FULL BLOOD COUNT",
+        "at": "2026-03-02T09:30:00+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-03-02T14:05:00+00:00",
+        "status": "Final",
+        "file": {
+          "$doc": "blob-sha256-6c51ec68add539e541aa7353a34d8275c1870aa53434ef95bcb407c1b59afc24"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-A/C-HB",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/haemoglobin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "RES-A"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-02T09:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "175",
+          "unit": "g/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "130",
+              "unit": "g/L"
+            },
+            "high": {
+              "value": "170",
+              "unit": "g/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "High"
+          }
+        ],
+        "coding": {
+          "system": "epic",
+          "code": "HB",
+          "display": "Haemoglobin (g/L)"
+        },
+        "upstreamId": "RES-A/C-HB",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-03-02T09:30:00+00:00"
+        },
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-A/C-reactive protein",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/crp",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "RES-A"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-02T09:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "5",
+          "unit": "mg/L",
+          "comparator": "<"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "5",
+              "unit": "mg/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": null,
+        "coding": {
+          "system": "epic",
+          "code": "CRP",
+          "display": "C-reactive protein"
+        },
+        "upstreamId": "RES-A/C-reactive protein",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-03-02T09:30:00+00:00"
+        },
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-A/C-AKI",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/aki_warning_stage",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "RES-A"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-02T09:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": null,
+        "codedValue": null,
+        "text": "No AKI alert",
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "epic",
+          "code": "Acute Kidney Injury Warning",
+          "display": "Acute Kidney Injury Warning"
+        },
+        "upstreamId": "RES-A/C-AKI",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-03-02T09:30:00+00:00"
+        },
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-A/C-RATIO",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/cholesterol_hdl_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "mychart/mychart.example-hospital.nhs.uk"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "RES-A"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-02T09:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "3.2",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "epic",
+          "code": "CHOL/HDL",
+          "display": "Cholesterol:HDL ratio"
+        },
+        "upstreamId": "RES-A/C-RATIO",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-03-02T09:30:00+00:00"
+        },
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/patient",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "patient",
+      "mode": "maintain",
+      "properties": {
+        "service": "Example Hospitals NHS Foundation Trust",
+        "name": "Ada Example",
+        "identifiers": [
+          {
+            "value": "1234567",
+            "label": "Hospital number"
+          },
+          {
+            "system": "https://fhir.nhs.uk/Id/nhs-number",
+            "value": "9999999999",
+            "label": "NHS number"
+          }
+        ],
+        "birthDate": "1980-01-01",
+        "gender": "female",
+        "address": {
+          "lines": ["4 Example Way"],
+          "city": "London",
+          "postalCode": "AB1 5CD"
+        },
+        "phone": "07000 000000",
+        "email": "ada@example.com",
+        "practice": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "about": "substrate.reamde.dev/core/contact/c1"
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Clinic/Practice Visit with Dr Ada Example",
+        "type": "Clinic/Practice Visit",
+        "status": "fulfilled",
+        "channel": "telephone",
+        "service": "Example Clinic",
+        "specialty": "Medicine - Example",
+        "location": "1 Example Road, London, AB1 2CD",
+        "phone": "020 0000 0000",
+        "participants": [
+          {
+            "name": "Dr Ada Example"
+          }
+        ],
+        "reason": null,
+        "at": "2026-03-02T09:00:00+00:00",
+        "endsAt": "2026-03-02T09:20:00+00:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-2",
+      "mode": "maintain",
+      "properties": {
+        "name": "Hospital Outpatient Visit at Example Imaging",
+        "type": "Hospital Outpatient Visit",
+        "status": "fulfilled",
+        "channel": "inperson",
+        "service": "Example Imaging",
+        "specialty": "",
+        "location": "1 Example Road, London, AB1 2CD",
+        "phone": "020 0000 0000",
+        "participants": null,
+        "reason": null,
+        "at": "2026-03-05T10:00:00+00:00",
+        "endsAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-4",
+      "mode": "maintain",
+      "properties": {
+        "name": "Telephone Follow Up Visit with Dr Chris Example",
+        "type": "Telephone Follow Up Visit",
+        "status": "booked",
+        "channel": "telephone",
+        "service": "Example Clinic",
+        "specialty": "Medicine - Example",
+        "location": "1 Example Road, London, AB1 2CD",
+        "phone": "020 0000 0000",
+        "participants": [
+          {
+            "name": "Dr Chris Example"
+          }
+        ],
+        "reason": null,
+        "at": "2026-07-01T09:30:00+01:00",
+        "endsAt": "2026-07-01T09:45:00+01:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-5",
+      "mode": "maintain",
+      "properties": {
+        "name": "Video Visit at Example Clinic",
+        "type": "Video Visit",
+        "status": "cancelled",
+        "channel": "video",
+        "service": "Example Clinic",
+        "specialty": "Medicine - Example",
+        "location": "1 Example Road, London, AB1 2CD",
+        "phone": "020 0000 0000",
+        "participants": null,
+        "reason": null,
+        "at": "2026-01-10T10:00:00+00:00",
+        "endsAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-1",
+      "mode": "maintain",
+      "properties": {
+        "summary": "Clinic/Practice Visit, Medicine - Example",
+        "type": "Clinic/Practice Visit",
+        "class": "telephone",
+        "status": "finished",
+        "at": "2026-03-02T09:00:00+00:00",
+        "endsAt": "2026-03-02T09:20:00+00:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "location": "Example Clinic",
+        "participants": [
+          {
+            "name": "Dr Ada Example"
+          }
+        ],
+        "reason": null,
+        "appointment": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/appointment",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-1"
+          }
+        },
+        "reports": [
+          {
+            "$ref": {
+              "kind": "substrate.reamde.dev/labs/labreport",
+              "namespace": "mychart/mychart.example-hospital.nhs.uk",
+              "key": "RES-A"
+            }
+          }
+        ],
+        "text": "**Clinic/Practice Visit**\nDepartment: Example Clinic\nSpecialty: Medicine - Example\nSeen by: Dr Ada Example\n\nDocuments:\n- After Visit Summary\n- Clinic letter, Medicine - Example\n- Progress Note"
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-2",
+      "mode": "maintain",
+      "properties": {
+        "summary": "Hospital Outpatient Visit, Example Imaging",
+        "type": "Hospital Outpatient Visit",
+        "class": "inperson",
+        "status": "finished",
+        "at": "2026-03-05T10:00:00+00:00",
+        "endsAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "location": "Example Imaging",
+        "participants": null,
+        "reason": null,
+        "appointment": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/appointment",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-2"
+          }
+        },
+        "reports": null,
+        "text": "**Hospital Outpatient Visit**\nDepartment: Example Imaging\n\nDocuments:\n- XR CHEST\n- XR CHEST, scan 2"
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "CSN-3",
+      "mode": "maintain",
+      "properties": {
+        "summary": "Emergency, Medicine - Example",
+        "type": "Emergency",
+        "class": "emergency",
+        "status": "finished",
+        "at": "2026-02-01T23:30:00+00:00",
+        "endsAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "location": "Emergency Department",
+        "participants": null,
+        "reason": null,
+        "appointment": null,
+        "reports": null,
+        "text": "**Emergency**\nDepartment: Emergency Department\nSpecialty: Medicine - Example\n\nDocuments:\n- ED Discharge Summary"
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "AVS-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "After Visit Summary",
+        "type": "After Visit Summary",
+        "at": "2026-03-02T09:00:00+00:00",
+        "precision": null,
+        "author": null,
+        "notes": null,
+        "text": "After Visit Summary\nYou spoke with us on 2 March 2026.",
+        "file": {
+          "$doc": "blob-sha256-9b67b2ed56e86bcd2835a1ec744c111f31daa750d567bc1e102eb80711825fa1"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-1"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "AVS-3",
+      "mode": "maintain",
+      "properties": {
+        "name": "ED Discharge Summary",
+        "type": "ED Discharge Summary",
+        "at": "2026-02-01T23:30:00+00:00",
+        "precision": null,
+        "author": null,
+        "notes": null,
+        "text": "You saw Dr Robin Example.",
+        "file": {
+          "$doc": "blob-sha256-01aed3c990a6e0f3951681538ddfe748e2622bfd006a82938a1eaf87fcf8590d"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-3"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "LET-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Clinic letter, Medicine - Example",
+        "type": "Letter",
+        "at": "2026-03-03T00:00:00Z",
+        "precision": "day",
+        "author": "Dr Ada Example",
+        "notes": null,
+        "text": "Example Hospital\n\nHospital No: 1234567 | NHS No: 999 999 9999\n\nPatient Name: Ada Example\n\nGP practice identifier | A12345\n\n**Diagnosis**\n\n- First item\n\n- Nested words\n\n\nYours & sincerely,\nDr Chris Example",
+        "file": {
+          "$doc": "blob-sha256-531297b0c62241a09947acc0cd99419f46875de71b5d16f26cade4584525d727"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-1"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "NOTE-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Progress Note",
+        "type": "Clinical note",
+        "at": "2026-03-02T10:15:00+00:00",
+        "precision": null,
+        "author": "Dr Ada Example",
+        "notes": "An addendum",
+        "text": "Doing well.\n\nReview in a year.",
+        "file": {
+          "$doc": "blob-sha256-cf1f1ab23589907070fbb2004de32fc6a7f79f64f1e4a23bca41c160f6d5cf45"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-1"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "RES-IMG",
+      "mode": "maintain",
+      "properties": {
+        "name": "XR CHEST",
+        "type": "Imaging result",
+        "at": "2026-03-05T11:00:00+00:00",
+        "precision": null,
+        "author": "Dr Robin Example",
+        "notes": null,
+        "text": "**Report**\n\nNo acute change.",
+        "file": {
+          "$doc": "blob-sha256-c8a364590954f5ca21b11436ba4e689284dfdedc4c8486083170963461cf9e60"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-2"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "SCAN-2",
+      "mode": "maintain",
+      "properties": {
+        "name": "XR CHEST, scan 2",
+        "type": "Imaging result",
+        "at": "2026-03-05T11:00:00+00:00",
+        "precision": null,
+        "author": "Dr Robin Example",
+        "notes": null,
+        "text": null,
+        "file": {
+          "$doc": "blob-sha256-301719c15771aa2c23c572c8a6dd768a2e875f2bf5654e30f70331698d6a1607"
+        },
+        "encounter": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/encounter",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "CSN-2"
+          }
+        },
+        "status": "current",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/condition",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "ISSUE-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Example condition",
+        "category": "problemlistitem",
+        "clinicalStatus": "active",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/allergy",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "ALLERGY-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Examplecillin",
+        "reactions": [
+          {
+            "manifestation": "Rash"
+          }
+        ],
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MED-1",
+      "mode": "maintain",
+      "properties": {
+        "medication": "exampleol 10mg tablets",
+        "dosage": "Take ONE tablet daily",
+        "quantity": "28 tablet",
+        "course": "acute",
+        "intent": "order",
+        "status": "completed",
+        "at": "2026-03-02T00:00:00Z",
+        "precision": "day",
+        "prescriber": "Dr Ada Example",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "notes": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationdispense",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MED-1/2026-03-03",
+      "mode": "maintain",
+      "properties": {
+        "medication": "exampleol 10mg tablets",
+        "quantity": "28 tablet",
+        "status": "completed",
+        "at": "2026-03-03T00:00:00Z",
+        "issuedAt": "2026-03-02T00:00:00Z",
+        "prescription": "RX-1",
+        "request": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/medicationrequest",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "MED-1"
+          }
+        },
+        "pharmacy": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "mychart/mychart.example-hospital.nhs.uk",
+            "key": "pharmacy/PH-1"
+          }
+        },
+        "prescriber": "Dr Ada Example",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        }
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MED-2",
+      "mode": "maintain",
+      "properties": {
+        "medication": "examplamide cream",
+        "dosage": null,
+        "quantity": null,
+        "course": "acute",
+        "intent": "order",
+        "status": "active",
+        "at": "2026-03-09T00:00:00Z",
+        "precision": "day",
+        "prescriber": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "notes": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "otherol 5mg",
+      "mode": "maintain",
+      "properties": {
+        "medication": "otherol 5mg",
+        "dosage": "One at night",
+        "quantity": null,
+        "course": null,
+        "intent": null,
+        "status": "active",
+        "at": null,
+        "precision": null,
+        "prescriber": null,
+        "organization": null,
+        "notes": "On the hospital's medication list as a medicine prescribed elsewhere; the hospital did not prescribe it."
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MSG-1",
+      "mode": "maintain",
+      "properties": {
+        "sender": "Dr Ada Example",
+        "topic": "Your appointment on 2/3/2026",
+        "body": "See you soon.",
+        "at": "2026-02-20T09:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "attachments": [
+          {
+            "$doc": "blob-sha256-aaf33e75340d3d6c66dd7491a7a3daf297e7bd21a1cb58a4ee8a868809c0e3a8"
+          }
+        ]
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MSG-2",
+      "mode": "maintain",
+      "properties": {
+        "sender": "Example Team",
+        "topic": "Your appointment on 2/3/2026",
+        "body": "The map:",
+        "at": "2026-02-21T09:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "attachments": [
+          {
+            "$doc": "blob-sha256-f200195560866775aa3e6b4cddc3530279df096d0da9df26ba49ef84b9793f7c"
+          }
+        ]
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MSG-3",
+      "mode": "maintain",
+      "properties": {
+        "sender": "Example Hospitals NHS Foundation Trust",
+        "topic": "Your appointment on 5/3/2026",
+        "body": "Booked.",
+        "at": "2026-02-22T09:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "attachments": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MSG-4",
+      "mode": "maintain",
+      "properties": {
+        "sender": "Example Hospitals NHS Foundation Trust",
+        "topic": "Your appointment on 1/7/2026",
+        "body": "Booked.",
+        "at": "2026-06-01T09:00:00+01:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "attachments": null
+      },
+      "revision": 1773133200
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "mychart/mychart.example-hospital.nhs.uk",
+      "key": "MSG-5",
+      "mode": "maintain",
+      "properties": {
+        "sender": "Example Hospitals NHS Foundation Trust",
+        "topic": "Your appointment on 10/1/2026",
+        "body": "Booked.",
+        "at": "2026-01-02T09:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RX1"
+          }
+        },
+        "attachments": null
+      },
+      "revision": 1773133200
+    }
+  ],
+  "documents": [
+    {
+      "digest": "blob-sha256-50718e26e7a9f961e91f1e158a18e978ccc9c822f95fc9e0e53dbacac44ecd41",
+      "name": "MyChart lab report 2026-03-02.json",
+      "mediaType": "application/json",
+      "size": 834
+    },
+    {
+      "digest": "blob-sha256-6c51ec68add539e541aa7353a34d8275c1870aa53434ef95bcb407c1b59afc24",
+      "name": "MyChart lab report 2026-03-02.json",
+      "mediaType": "application/json",
+      "size": 2500
+    },
+    {
+      "digest": "blob-sha256-9b67b2ed56e86bcd2835a1ec744c111f31daa750d567bc1e102eb80711825fa1",
+      "name": "MyChart visit document 2026-03-02.pdf",
+      "mediaType": "application/pdf",
+      "size": 1090
+    },
+    {
+      "digest": "blob-sha256-01aed3c990a6e0f3951681538ddfe748e2622bfd006a82938a1eaf87fcf8590d",
+      "name": "MyChart visit document 2026-02-01.pdf",
+      "mediaType": "application/pdf",
+      "size": 1029
+    },
+    {
+      "digest": "blob-sha256-531297b0c62241a09947acc0cd99419f46875de71b5d16f26cade4584525d727",
+      "name": "MyChart letter 2026-03-03.html",
+      "mediaType": "text/html",
+      "size": 471
+    },
+    {
+      "digest": "blob-sha256-cf1f1ab23589907070fbb2004de32fc6a7f79f64f1e4a23bca41c160f6d5cf45",
+      "name": "MyChart clinical note 2026-03-02.html",
+      "mediaType": "text/html",
+      "size": 49
+    },
+    {
+      "digest": "blob-sha256-c8a364590954f5ca21b11436ba4e689284dfdedc4c8486083170963461cf9e60",
+      "name": "MyChart imaging 2026-03-05.pdf",
+      "mediaType": "application/pdf",
+      "size": 1012
+    },
+    {
+      "digest": "blob-sha256-301719c15771aa2c23c572c8a6dd768a2e875f2bf5654e30f70331698d6a1607",
+      "name": "MyChart imaging 2026-03-05.jpg",
+      "mediaType": "image/jpeg",
+      "size": 6
+    },
+    {
+      "digest": "blob-sha256-aaf33e75340d3d6c66dd7491a7a3daf297e7bd21a1cb58a4ee8a868809c0e3a8",
+      "name": "MyChart message image 2026-02-20.png",
+      "mediaType": "image/png",
+      "size": 40
+    },
+    {
+      "digest": "blob-sha256-f200195560866775aa3e6b4cddc3530279df096d0da9df26ba49ef84b9793f7c",
+      "name": "MyChart message image 2026-02-21.png",
+      "mediaType": "image/png",
+      "size": 40
+    }
+  ],
+  "left": [
+    {
+      "what": "MyChart's Mystery marker",
+      "why": "no metric for it (1 value)"
+    },
+    {
+      "what": "the lab's comments on 1 value",
+      "why": "a lab result has no property for them; they stay in each report's attached JSON"
+    },
+    {
+      "what": "1 value MyChart files under a second order",
+      "why": "kept once, in the first"
+    },
+    {
+      "what": "1 lab order filed at a visit",
+      "why": "no value of the order is written, so neither is its report, and the visit's encounter does not name it"
+    },
+    {
+      "what": "Patient Instructions of visit CSN-1",
+      "why": "its file is not in the export"
+    },
+    {
+      "what": "the logos, footers and signatures embedded in 1 letter (files/letters/)",
+      "why": "each letter's HTML is kept as its file, and its words as its text"
+    },
+    {
+      "what": "1 message the owner sent",
+      "why": "the communication kind holds what a provider sent"
+    },
+    {
+      "what": "4 images embedded in messages",
+      "why": "banners, logos and QR codes: an image repeated across most messages, or shaped like a logo"
+    },
+    {
+      "what": "1 emergency contact (lists/personal-relationships.json)",
+      "why": "the patient kind has no field for one"
+    },
+    {
+      "what": "lists/histories.json",
+      "why": "no kind holds it"
+    },
+    {
+      "what": "the health summary's height and weight",
+      "why": "measurements, not clinical records"
+    }
+  ],
+  "source": {
+    "kind": "substrate.reamde.dev/observations/source",
+    "namespace": "source",
+    "key": "mychart/mychart.example-hospital.nhs.uk"
+  }
+}

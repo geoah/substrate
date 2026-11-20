@@ -1,0 +1,25 @@
+# The unit a body scan reports that the repository is not seeded with, as
+# DATA: a record of core's `unit` kind (decision record 0186) that this
+# package adds to the repository's unit graph. A DXA scanner prints bone
+# mineral density in grams per square centimetre, which
+# `health/bone_mineral_density` is written in.
+#
+# No conversion joins it to the seeded kg/m2, although the dimension is the
+# same: a bone density is not a body mass index, and a conversion would let
+# either metric take the other's values.
+#
+# The id is the unit's plain spelling, the one a repository that added the
+# unit itself most likely chose: the install leaves a record another hand
+# wrote as that hand wrote it, while the same `code` under a second id would
+# answer one spelling twice, which the write path refuses.
+#
+# The file sorts before metrics.yaml on purpose: the install puts a
+# package's data records in file order, and a metric's `unit` must exist.
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: g/cm2
+data:
+  properties:
+    name: gram per square centimeter
+    symbol: g/cm²
+    code: g/cm2

@@ -1,0 +1,75 @@
+# profile: what the age score, the lab targets and the session reads need
+# about the owner that no other record holds. One per repository, under the
+# id `owner`, which the app creates with a PUT at `ifVersion: 0` and a
+# compare on 409 (docs/plans/healthspan.md, The package). Its ids are
+# `named` (decision 0228): every device names the one row, which a minted
+# id cannot. The birth date is
+# the owner's contact's first (core/contact `dates.birthday`); this one is
+# written only where the contact has no whole birthday. `sex` is the
+# reference basis the owner chose, never copied unasked from a patient
+# record's administrative gender.
+#
+# The night and workout orders live here because a read of session records
+# under the priority policy must name its order and reads neither a source's
+# `priorities` nor a `sourcelink` (internal/engine/aggregaterecords.go).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/healthspan/profile
+data:
+  authority: substrate.reamde.dev
+  package: healthspan
+  description: >-
+    What Substrate Healthspan needs to know about you that no other record
+    holds: which reference curves and lab targets apply, your birth date where
+    your contact has none, and the order your nights and workouts are read
+    in.
+  purpose: primary
+  ids:
+    type: named
+  names:
+    singular: profile
+  label:
+    singular: Healthspan profile
+    plural: Healthspan profiles
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the profile's title, such as Healthspan profile
+    contact:
+      type: reference
+      kind: substrate.reamde.dev/core/contact
+      description: whose profile it is; the owner's own contact when there
+        was one
+    birthDate:
+      type: date
+      description: the birth date, written only where the contact gives no
+        whole birthday
+    sex:
+      type: enum
+      description: the reference basis, which sex's curves the age score and
+        which targets the labs use; the owner's choice, not a statement of
+        identity
+      values:
+        - female
+        - male
+    nightSources:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      repeated: true
+      description: the order nights are read in, first highest; a source not
+        named comes after these
+    workoutSources:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      repeated: true
+      description: the order workouts are read in, first highest; a source
+        not named comes after these
+    startedAt:
+      type: datetime
+      description: when getting started was finished or skipped
+    recordSeenAt:
+      type: datetime
+      description: when the owner last marked the clinical record read; a
+        document or message after it is new

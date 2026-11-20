@@ -366,3 +366,377 @@ data:
           slope: "10.929"
           intercept: "2.15"
         version: "1"
+---
+# urea and urea_mass: 60.06 g/mol, urea, CH4N2O.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/urea
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/urea
+    loincParts:
+      component: "Urea"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "60.06"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/urea_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/urea_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/urea_mass
+    loincParts:
+      component: "Urea"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "60.06"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/urea
+        formula: molar-mass
+        version: "1"
+---
+# testosterone and testosterone_mass: 288.42 g/mol, testosterone, C19H28O2.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/testosterone
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/testosterone
+    loincParts:
+      component: "Testosterone"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "288.42"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/testosterone_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/testosterone_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/testosterone_mass
+    loincParts:
+      component: "Testosterone"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "288.42"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/testosterone
+        formula: molar-mass
+        version: "1"
+---
+# vitamin_b12 and vitamin_b12_mass: 1355.37 g/mol, cyanocobalamin,
+# C63H88CoN14O14P, which the usual 0.738 pmol/L per pg/mL takes for every
+# cobalamin.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/vitamin_b12
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/vitamin_b12
+    loincParts:
+      component: "Cobalamins"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "1355.37"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/vitamin_b12_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/vitamin_b12_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/vitamin_b12_mass
+    loincParts:
+      component: "Cobalamins"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "1355.37"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/vitamin_b12
+        formula: molar-mass
+        version: "1"
+---
+# folate and folate_mass: 441.4 g/mol, folic acid, C19H19N7O6, which the
+# usual 2.266 nmol/L per ng/mL takes for every folate.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/folate
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/folate
+    loincParts:
+      component: "Folate"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "441.4"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/folate_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/folate_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/folate_mass
+    loincParts:
+      component: "Folate"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "441.4"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/folate
+        formula: molar-mass
+        version: "1"
+---
+# magnesium and magnesium_mass: 24.305 g/mol, magnesium, Mg.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/magnesium
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/magnesium
+    loincParts:
+      component: "Magnesium"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "24.305"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/magnesium_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/magnesium_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/magnesium_mass
+    loincParts:
+      component: "Magnesium"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "24.305"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/magnesium
+        formula: molar-mass
+        version: "1"
+---
+# iron and iron_mass: 55.845 g/mol, iron, Fe.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/iron
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/iron
+    loincParts:
+      component: "Iron"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "55.845"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/iron_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/iron_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/iron_mass
+    loincParts:
+      component: "Iron"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "55.845"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/iron
+        formula: molar-mass
+        version: "1"
+---
+# calcium and calcium_mass: 40.078 g/mol, calcium, Ca.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/calcium
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/calcium
+    loincParts:
+      component: "Calcium"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "40.078"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/calcium_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/calcium_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/calcium_mass
+    loincParts:
+      component: "Calcium"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "40.078"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/calcium
+        formula: molar-mass
+        version: "1"
+---
+# phosphate and phosphate_mass: 30.974 g/mol, phosphorus, the clinical
+# convention of 0.3229 mmol/L per mg/dL: a lab weighs phosphate by the
+# phosphorus it carries.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/phosphate
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/phosphate
+    loincParts:
+      component: "Phosphate"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "30.974"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/phosphate_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/phosphate_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/phosphate_mass
+    loincParts:
+      component: "Phosphate"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "30.974"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/phosphate
+        formula: molar-mass
+        version: "1"
+---
+# uric_acid and uric_acid_mass: 168.11 g/mol, uric acid, C5H4N4O3.
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/uric_acid
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/uric_acid
+    loincParts:
+      component: "Urate"
+      property: SCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "168.11"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/uric_acid_mass
+        formula: molar-mass
+        version: "1"
+---
+kind: substrate.reamde.dev/labs/analyte
+metadata:
+  id: labs/uric_acid_mass
+data:
+  properties:
+    metric:
+      ref: substrate.reamde.dev/observations/metric/labs/uric_acid_mass
+    loincParts:
+      component: "Urate"
+      property: MCnc
+      timing: Pt
+      system: Ser/Plas
+      scale: Qn
+    molarMass: "168.11"
+    conversions:
+      - target:
+          ref: substrate.reamde.dev/observations/metric/labs/uric_acid
+        formula: molar-mass
+        version: "1"
