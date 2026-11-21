@@ -150,6 +150,8 @@ struct WindowControlsRoom: View {
             .groundBar(clear < whole - 1)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        #else
+        Color.clear.frame(height: 0)
         #endif
     }
 }
