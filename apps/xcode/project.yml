@@ -107,3 +107,4 @@ include:
   - ../workouts/apple/targets.yml
   - ../tasks/apple/targets.yml
   - ../template/apple/targets.yml
+  - ../today/apple/targets.yml
