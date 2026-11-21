@@ -277,7 +277,7 @@ assert prepare.main(fire("2026-11-21T06:30:00Z"), host) == {"output": {"asked": 
 kind, id, props, how = host.effects.staged[0][1:]
 assert (kind, id, how) == (PREPARATION, "d20261121", {"if_absent": True}), host.effects.staged
 assert props["day"] == "2026-11-21" and props["reason"] == "morning"
-assert "2026-11-21T00:00:00Z to 2026-11-22T00:00:00Z" in props["ask"], props["ask"]
+assert "2026-11-21T00:00:00Z to 2026-11-22T00:00:00Z" in props["ask"] and "it is now 2026-11-21T06:30:00Z" in props["ask"], props["ask"]
 # 06:00 UTC is 15:00 in Tokyo, and the day there began at 15:00 UTC the day before.
 host = Host(day({"timezone": "Asia/Tokyo", "prepareAt": "06:30"}))
 assert prepare.main(fire("2026-11-21T06:00:00Z"), host) == {"output": {"asked": ["d20261121"]}}
@@ -411,6 +411,9 @@ out = stampurgent.main(delivery(check("canwait", "  It is due  on Friday.\n")), 
 assert out == {"output": {"stamped": ["urgentHeldAt", "urgentHeldReason"]}}, out
 props = host.effects.staged[0][3]
 assert set(props) == {"urgentHeldAt", "urgentHeldReason"} and props["urgentHeldReason"] == "It is due on Friday.", props
+# A reason that runs on is cut at a word, never in the middle of one.
+long = stampurgent.sentence("word " * 80)
+assert len(long) <= stampurgent.REASON + 1 and long.endswith("word…"), long
 # Nothing is written for a mark the owner took off, a mark the owner or the
 # assistant set, a task already stamped, a record that is not a task, a task
 # that is gone, or a verdict nobody declared; and never anything but stamps.

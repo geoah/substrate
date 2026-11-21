@@ -70,7 +70,7 @@ assistant_off() {
 		curl -fsS -o /dev/null -X PATCH \
 			-H "Authorization: Bearer $(token "$config")" -H "Content-Type: application/json" \
 			-d '{"properties": {"enabled": false}}' \
-			"${SERVER}/api/v1/substrate.reamde.dev/core/trigger/today-assistant-on-preparation"
+			"${SERVER}/api/v1/substrate.reamde.dev/core/trigger/today-preparer-on-preparation"
 	done
 }
 

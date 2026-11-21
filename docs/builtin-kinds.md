@@ -241,7 +241,7 @@ It ships three functions, one agent and five triggers:
   advice), and one per urgent mark an automation sets. It asks for nothing
   until an app has written the owner's `preference`, and nothing while its
   `assistantPrepares` is false.
-- `preparer`, an agent the trigger `today-assistant-on-preparation` runs on
+- `preparer`, an agent the trigger `today-preparer-on-preparation` runs on
   each new `preparation`, with the record as its message. It is not the
   owner's assistant: it runs on the provider bound to the bundle's `model`
   input, on a mid-priced model, against a

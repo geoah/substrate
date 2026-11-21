@@ -496,7 +496,7 @@ def write_day(server: Server, day: Day, assistant: bool, morning_done: bool) -> 
     # The dev server holds no model key, so the preparer's runs would only
     # fail: its trigger is off unless asked for. An install turns it on
     # again, which is why server.sh turns it off after each one too.
-    server.patch(TRIGGER, "today-assistant-on-preparation", {"enabled": assistant})
+    server.patch(TRIGGER, "today-preparer-on-preparation", {"enabled": assistant})
     print(f"seed: wrote {day.day()} ({zone}): {len(PROJECTS)} projects, {len(TASKS)} tasks, {len(SUGGESTED)} suggested tasks, "
           f"{len(SCHEDULES) + 1} doses, {len(ROUTINES)} routines, {len(MEETINGS)} meetings")
 

@@ -287,11 +287,11 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 		}
 	}
 	for id, callable := range map[string]string{
-		"today-fade-daily":               "substrate.reamde.dev/core/function/" + todayID + "/fade",
-		"today-prepare-morning":          "substrate.reamde.dev/core/function/" + todayID + "/prepare",
-		"today-prepare-on-urgent":        "substrate.reamde.dev/core/function/" + todayID + "/prepare",
-		"today-assistant-on-preparation": "substrate.reamde.dev/core/agent/" + todayID + "/preparer",
-		"today-stamp-on-urgentcheck":     "substrate.reamde.dev/core/function/" + todayID + "/stampurgent",
+		"today-fade-daily":              "substrate.reamde.dev/core/function/" + todayID + "/fade",
+		"today-prepare-morning":         "substrate.reamde.dev/core/function/" + todayID + "/prepare",
+		"today-prepare-on-urgent":       "substrate.reamde.dev/core/function/" + todayID + "/prepare",
+		"today-preparer-on-preparation": "substrate.reamde.dev/core/agent/" + todayID + "/preparer",
+		"today-stamp-on-urgentcheck":    "substrate.reamde.dev/core/function/" + todayID + "/stampurgent",
 	} {
 		row, err := ds.Get(ctx, triggerKind, id)
 		if err != nil {

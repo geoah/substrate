@@ -74,7 +74,7 @@ data:
 # been deleted, as `fade` deletes them.
 kind: substrate.reamde.dev/core/trigger
 metadata:
-  id: today-assistant-on-preparation
+  id: today-preparer-on-preparation
 data:
   properties:
     enabled: true

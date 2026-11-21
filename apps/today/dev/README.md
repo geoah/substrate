@@ -50,7 +50,7 @@ a meeting, a check of an urgent mark) is run by its own agent, the
 `preparer`, on the provider bound to the package's `model` input. The dev
 server holds no model key, so a run would only fail. `seed.py` and
 `server.sh` turn off the trigger that runs it
-(`today-assistant-on-preparation`); the `prepare` function still writes its
+(`today-preparer-on-preparation`); the `prepare` function still writes its
 `today/preparation` records, which is how to read what it would ask for.
 `TODAY_DEV_ASSISTANT=1` and `seed.py --assistant` leave the trigger on, for a
 server whose provider has been given a key.

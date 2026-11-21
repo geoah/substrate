@@ -140,11 +140,11 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 			// never the owner's assistant: its spend and its writes are
 			// its own.
 			triggers: map[string]string{
-				"today-fade-daily":               vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/fade",
-				"today-prepare-morning":          vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
-				"today-prepare-on-urgent":        vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
-				"today-assistant-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + todayPackage + "/preparer",
-				"today-stamp-on-urgentcheck":     vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/stampurgent",
+				"today-fade-daily":              vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/fade",
+				"today-prepare-morning":         vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
+				"today-prepare-on-urgent":       vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
+				"today-preparer-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + todayPackage + "/preparer",
+				"today-stamp-on-urgentcheck":    vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/stampurgent",
 			},
 		},
 		{

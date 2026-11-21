@@ -172,15 +172,17 @@ data:
         return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:24]
 
 
-    def morning_ask(day, zone_name, start, end):
+    def morning_ask(day, zone_name, start, end, now):
         return "\n".join([
-            "Prepare %s for the owner's day planner. Their zone is %s, and the day runs from %s to %s."
-            % (day.strftime("%A %Y-%m-%d"), zone_name, _instant(start), _instant(end)),
+            "Prepare %s for the owner's day planner. Their zone is %s, the day runs from %s to %s, and "
+            "it is now %s."
+            % (day.strftime("%A %Y-%m-%d"), zone_name, _instant(start), _instant(end), _instant(now)),
             "Write only what is listed here, and nothing at all if that day is over.",
             "",
             "1. Meetings. Read the day's calendar events: one query over the calendar kinds this "
-            "repository holds, with at bounded from %s to %s. For at most the next %d that have other "
-            "people in them and no %s record yet, write one with the write tool: op put, id the id the "
+            "repository holds, with at bounded from %s to %s. For at most %d of them, the soonest first, "
+            "that have other people in them, have not ended and have no %s record yet, write one with "
+            "the write tool: op put, id the id the "
             "read gave that event, and properties event (the path of the event, or of the repeating "
             "event it is an occurrence of), slot (its start), purpose (what it is for, in one or two "
             "sentences), since (what happened with these people since they last met), raise (what to "
@@ -192,7 +194,8 @@ data:
             "2. Flags. Read the active task lists and the open tasks beside what the %s records say "
             "happened. Where the priority of a list or a task should change today, propose it: one "
             "propose call per change, op patch, diff {\"properties\": {\"priority\": ...}} and one "
-            "sentence of rationale. At most %d, and none is fine."
+            "sentence of rationale. At most %d, none is fine, and never one an open change request "
+            "already proposes."
             % (DIGEST, MAX_FLAGS),
             "",
             "Reply with one line saying what you wrote.",
@@ -205,7 +208,7 @@ data:
             "has one, then write one %s record with the write tool: op put, id the task's id, and "
             "properties task (the task's path), answer and reason. answer is task (make it a task), "
             "done (a record shows it is already done: name that record as evidence) or dismiss. "
-            "reason is one sentence, written to \"you\". Skip a task that is no longer proposed."
+            "reason is one short sentence, written to \"you\". Skip a task that is no longer proposed."
             % (len(tasks), "task waits" if len(tasks) == 1 else "tasks wait", ADVICE),
             "",
         ]
@@ -224,7 +227,7 @@ data:
             "Check it: read the task, its origin and what is around it. Then write one %s record with "
             "the write tool: op put, id the task's id, and properties task (the task's path), verdict, "
             "reason and checkedAt (now). verdict is cannotwait where it cannot wait until the owner's "
-            "next free moment, and canwait where it can. reason is one sentence, written to \"you\"."
+            "next free moment, and canwait where it can. reason is one short sentence, written to \"you\"."
             % URGENTCHECK,
             "",
             "Reply with one line saying which.",
@@ -304,6 +307,6 @@ data:
         if _read(host, PREPARATION, host.records.get, PREPARATION, morning) is None:
             start = local.replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + datetime.timedelta(days=1)
-            asked.append(_ask(host, morning, day, "morning", morning_ask(day, zone_name, start, end)))
+            asked.append(_ask(host, morning, day, "morning", morning_ask(day, zone_name, start, end, now)))
         _advice(host, day, now, asked)
         return {"output": {"asked": asked}}

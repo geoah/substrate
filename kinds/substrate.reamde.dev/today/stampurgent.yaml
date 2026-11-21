@@ -50,6 +50,18 @@ data:
                 and not props.get("urgentCheckedAt") and not props.get("urgentHeldAt"))
 
 
+    # The reason is drawn beside the task's urgent pill, so one that runs on
+    # is cut at a word and says so.
+    REASON = 240
+
+
+    def sentence(text):
+        text = " ".join((text or "").split())
+        if len(text) <= REASON:
+            return text
+        return text[:REASON].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
     def stamps(verdict, reason, now):
         """What a verdict writes on the task, or None for a verdict nobody
         declared."""
@@ -57,7 +69,7 @@ data:
             return {"urgentCheckedAt": now}
         if verdict == "canwait":
             props = {"urgentHeldAt": now}
-            reason = " ".join((reason or "").split())[:200]
+            reason = sentence(reason)
             if reason:
                 props["urgentHeldReason"] = reason
             return props
