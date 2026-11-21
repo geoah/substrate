@@ -1,0 +1,101 @@
+# ---- suggestions nobody answered ---------------------------------------------
+# Fired by `today-fade-daily` (triggers.yaml). A suggested task is one whose
+# status is `proposed`; one still there two weeks after it was written was
+# never answered, and is abandoned. What was said stays where it was said:
+# only the suggestion goes. An automation carrying out the owner's rule, not
+# the assistant.
+#
+# The tasks package is named by a glob because this package cannot require
+# it (today.yaml): on a repository without it the read is refused, the body
+# catches that and writes nothing.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/today/fade
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Abandon each suggested task nobody answered within two weeks of its being
+    suggested, and delete the day planner's own preparation records of that
+    age.
+  runtime: python
+  timeout: PT30S
+  effect: write
+  permissions:
+    reads:
+      kinds:
+        - substrate.reamde.dev/tasks/*
+        - substrate.reamde.dev/today/preparation
+      budgets:
+        calls: 16
+        rows: 2000
+    writes:
+      - substrate.reamde.dev/tasks/*
+      - substrate.reamde.dev/today/preparation
+  source: |
+    """Suggested tasks nobody answered fade after two weeks.
+
+    One schedule fire reads the tasks still `proposed` and abandons each one
+    created more than AFTER ago, under the version it read: a task the owner
+    answers while this runs is left alone (`on_conflict="yield"` settles the
+    whole fire as a skip, and the next day's fire takes what is left). It
+    also deletes this package's own `preparation` records of that age.
+    """
+
+    import datetime
+
+    TASK = "substrate.reamde.dev/tasks/task"
+    PREPARATION = "substrate.reamde.dev/today/preparation"
+    AFTER = datetime.timedelta(days=14)
+    LIMIT = 200
+
+
+    def _now(host, input):
+        fire = (input.get("envelope") or {}).get("fire") or {}
+        at = host.observed.parse_instant(fire.get("at") or "")
+        return at or datetime.datetime.now(datetime.timezone.utc)
+
+
+    def _old(host, record, cutoff):
+        created = host.observed.parse_instant(record.get("createdAt") or "")
+        return created is not None and created <= cutoff
+
+
+    def _pages(host, kinds, where=None):
+        """Every record of a read, page by page; nothing when the kind is not
+        declared here, which is how a repository without the tasks package
+        reads."""
+        after = None
+        while True:
+            try:
+                page = host.records.list(kinds, where=where, first=200, after=after)
+            except host.Compacted:
+                return
+            except Exception as error:  # noqa: BLE001
+                if "unknown type" not in str(error):
+                    host.log("fade: %s is not read: %s" % (", ".join(kinds), error))
+                return
+            for record in page.get("records") or []:
+                yield record
+            after = page.get("cursor")
+            if not after:
+                return
+
+
+    def faded(host, records, cutoff):
+        """The records created at or before `cutoff`, oldest first."""
+        old = [r for r in records if _old(host, r, cutoff)]
+        old.sort(key=lambda r: r.get("createdAt") or "")
+        return old
+
+
+    def main(input, host):
+        cutoff = _now(host, input) - AFTER
+        tasks = faded(host, _pages(host, [TASK], {"status": {"eq": "proposed"}}), cutoff)[:LIMIT]
+        for task in tasks:
+            host.effects.patch(TASK, task["id"], properties={"status": "abandoned"},
+                               if_version=host.version(task), on_conflict="yield")
+        asked = faded(host, _pages(host, [PREPARATION]), cutoff)[:LIMIT]
+        for record in asked:
+            host.effects.delete(PREPARATION, record["id"])
+        return {"output": {"abandoned": len(tasks), "deleted": len(asked)}}

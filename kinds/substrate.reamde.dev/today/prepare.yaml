@@ -1,0 +1,264 @@
+# ---- what the assistant has not written yet ------------------------------------
+# Fired by three triggers (triggers.yaml): every half hour, when a task
+# arrives as a suggestion, and when an urgent mark arrives that nobody has
+# checked. It reads what is there, works out what is missing, and writes one
+# `preparation` record per thing to ask the assistant for. It calls no model:
+# the trigger on `preparation` runs the assistant, on the assistant's own
+# budget and deadline.
+#
+# ASKING TWICE IS ONE RECORD. Every id is derived from what is asked (the
+# day, the tasks, the mark), and each put is create-only, so a second fire
+# for the same thing writes nothing and runs nothing. That is the whole
+# retry rule: when the assistant or its provider cannot be reached, its run
+# fails and nothing here asks again until the day or the set of tasks
+# changes.
+#
+# NOTHING IS ASKED UNTIL AN APP HAS BEEN OPENED. The owner's zone and hour
+# are on their `preference` record, so a repository that added the package
+# and never used it asks for nothing. The same record's `assistantPrepares`
+# turns all of it off.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/today/prepare
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Work out what the assistant has not prepared for the owner's day (advice
+    on suggested tasks, what to know before today's meetings, a check of an
+    urgent mark) and ask for it by writing a preparation record.
+  runtime: python
+  timeout: PT20S
+  effect: write
+  permissions:
+    reads:
+      kinds:
+        - substrate.reamde.dev/tasks/*
+        - substrate.reamde.dev/today/preference
+        - substrate.reamde.dev/today/advice
+        - substrate.reamde.dev/today/preparation
+      budgets:
+        calls: 16
+        rows: 1500
+    writes:
+      - substrate.reamde.dev/today/preparation
+  source: |
+    """What the assistant is asked to prepare for the owner's day.
+
+    A schedule fire is the morning: once the owner's clock passes their
+    `prepareAt`, one `preparation` record for the day (meetings and flags),
+    and one for the suggested tasks that have no advice. A record delivery
+    names one task: a suggestion that has no advice, or an urgent mark nobody
+    has checked. Every ask says exactly what to write and where.
+    """
+
+    import datetime
+    import hashlib
+
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:  # no zone data: the day is read in UTC
+        ZoneInfo = None
+
+    TASK = "substrate.reamde.dev/tasks/task"
+    PREFERENCE = "substrate.reamde.dev/today/preference"
+    ADVICE = "substrate.reamde.dev/today/advice"
+    DOSSIER = "substrate.reamde.dev/today/dossier"
+    DIGEST = "substrate.reamde.dev/today/digest"
+    PREPARATION = "substrate.reamde.dev/today/preparation"
+
+    # How much one ask may hold, so one run of the assistant stays inside its
+    # own budget of turns and tool calls.
+    MAX_ADVICE = 20
+    MAX_MEETINGS = 6
+    MAX_FLAGS = 3
+
+
+    def _instant(at):
+        return at.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _zone(name):
+        if ZoneInfo is not None and name:
+            try:
+                return ZoneInfo(name)
+            except Exception:  # noqa: BLE001
+                pass
+        return datetime.timezone.utc
+
+
+    def _read(host, what, call, *args, **kwargs):
+        """A read that answers nothing where the kind is not declared here,
+        which is how a repository without the tasks package reads."""
+        try:
+            return call(*args, **kwargs)
+        except Exception as error:  # noqa: BLE001
+            if "unknown type" not in str(error):
+                host.log("prepare: %s is not read: %s" % (what, error))
+            return None
+
+
+    def _preference(host):
+        record = _read(host, PREFERENCE, host.records.get, PREFERENCE, "default")
+        return (record or {}).get("properties")
+
+
+    def _all(host, kinds, where=None, limit=600):
+        out, after = [], None
+        while len(out) < limit:
+            page = _read(host, ", ".join(kinds), host.records.list, kinds, where=where, first=200, after=after)
+            if not page:
+                break
+            out.extend(page.get("records") or [])
+            after = page.get("cursor")
+            if not after:
+                break
+        return out
+
+
+    def without_advice(tasks, advised):
+        """The suggested tasks no advice names, oldest first."""
+        have = set(advised)
+        waiting = [t for t in tasks if t.get("id") not in have]
+        waiting.sort(key=lambda t: (t.get("createdAt") or "", t.get("id") or ""))
+        return waiting
+
+
+    def _waiting(host):
+        tasks = _all(host, [TASK], {"status": {"eq": "proposed"}})
+        if not tasks:
+            return []
+        return without_advice(tasks, [a.get("id") for a in _all(host, [ADVICE])])
+
+
+    def _name(task):
+        name = ((task.get("properties") or {}).get("name") or "").strip().replace("\n", " ")
+        return name[:140]
+
+
+    def _digest(*parts):
+        return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:24]
+
+
+    def morning_ask(day, zone_name, start, end):
+        return "\n".join([
+            "Prepare %s for the owner's day planner. Their zone is %s, and the day runs from %s to %s."
+            % (day.strftime("%A %Y-%m-%d"), zone_name, _instant(start), _instant(end)),
+            "Write only what is listed here, and nothing at all if that day is over.",
+            "",
+            "1. Meetings. Read the day's calendar events: one query over the calendar kinds this "
+            "repository holds, with at bounded from %s to %s. For at most the next %d that have other "
+            "people in them and no %s record yet, write one with the write tool: op put, id the id the "
+            "read gave that event, and properties event (the path of the event, or of the repeating "
+            "event it is an occurrence of), slot (its start), purpose (what it is for, in one or two "
+            "sentences), since (what happened with these people since they last met), raise (what to "
+            "raise, one sentence each), after (what is due after it), tasks (the open and suggested "
+            "tasks that involve them), sources (the records you used) and writtenAt (now). Leave out a "
+            "property you have nothing for."
+            % (_instant(start), _instant(end), MAX_MEETINGS, DOSSIER),
+            "",
+            "2. Flags. Read the active task lists and the open tasks beside what the %s records say "
+            "happened. Where the priority of a list or a task should change today, propose it: one "
+            "propose call per change, op patch, diff {\"properties\": {\"priority\": ...}} and one "
+            "sentence of rationale. At most %d, and none is fine. Never write priority on a task or a "
+            "list that exists yourself."
+            % (DIGEST, MAX_FLAGS),
+            "",
+            "Reply with one line saying what you wrote.",
+        ])
+
+
+    def advice_ask(tasks):
+        lines = [
+            "%d suggested %s for your advice. For each one below, read it, and its origin where it "
+            "has one, then write one %s record with the write tool: op put, id the task's id, and "
+            "properties task (the task's path), answer and reason. answer is task (make it a task), "
+            "done (a record shows it is already done: name that record as evidence) or dismiss. "
+            "reason is one sentence, written to \"you\". Change nothing on the tasks themselves."
+            % (len(tasks), "task waits" if len(tasks) == 1 else "tasks wait", ADVICE),
+            "",
+        ]
+        lines += ["- %s/%s: %s" % (TASK, t["id"], _name(t)) for t in tasks]
+        lines += ["", "Reply with one line saying what you wrote."]
+        return "\n".join(lines)
+
+
+    def urgent_ask(task):
+        props = task.get("properties") or {}
+        why = (props.get("priorityReason") or "").strip()
+        return "\n".join([
+            "%s/%s (\"%s\") was marked urgent by %s%s"
+            % (TASK, task["id"], _name(task), props.get("prioritySetBy") or "someone",
+               ": \"%s\"." % why if why else ", with no reason given."),
+            "Check it: read the task, its origin and what is around it. If it cannot wait until the "
+            "owner's next free moment, patch the task with urgentCheckedAt set to now. If it can "
+            "wait, patch it with urgentHeldAt set to now and urgentHeldReason, one sentence written "
+            "to \"you\". Change nothing else on it, and never take the mark off.",
+            "",
+            "Reply with one line saying which.",
+        ])
+
+
+    def unchecked(task):
+        """An urgent mark an automation or the API set that the assistant has
+        written neither stamp for."""
+        props = (task or {}).get("properties") or {}
+        return (props.get("priority") == "urgent"
+                and props.get("prioritySetBy") in ("automation", "api")
+                and not props.get("urgentCheckedAt") and not props.get("urgentHeldAt"))
+
+
+    def _ask(host, id, day, reason, ask, subjects=None):
+        props = {"day": day.isoformat(), "reason": reason, "ask": ask}
+        if subjects:
+            props["subjects"] = subjects
+        host.effects.put(PREPARATION, id, properties=props, if_absent=True)
+        return id
+
+
+    def _advice(host, day, asked):
+        waiting = _waiting(host)[:MAX_ADVICE]
+        if waiting:
+            ids = sorted(t["id"] for t in waiting)
+            asked.append(_ask(host, "a" + _digest(day.isoformat(), *ids), day, "advice", advice_ask(waiting),
+                              ["%s/%s" % (TASK, i) for i in ids]))
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        fire = envelope.get("fire") or {}
+        now = host.observed.parse_instant(fire.get("at") or "") or datetime.datetime.now(datetime.timezone.utc)
+        preference = _preference(host)
+        if preference is None:
+            return {"output": {"skipped": "no day preference yet"}}
+        if preference.get("assistantPrepares") is False:
+            return {"output": {"skipped": "the owner turned preparing off"}}
+        zone_name = preference.get("timezone") or "UTC"
+        local = now.astimezone(_zone(zone_name))
+        day = local.date()
+        asked = []
+
+        record = envelope.get("record")
+        if record is not None or "change" in envelope:
+            # One task moved: a check of its urgent mark, and advice where a
+            # suggestion has none.
+            if (record or {}).get("kind") != TASK:
+                return {"output": {"skipped": "not a task"}}
+            if unchecked(record):
+                props = record.get("properties") or {}
+                asked.append(_ask(host, "u" + _digest(day.isoformat(), record["id"], props.get("priorityReason") or ""),
+                                  day, "urgent", urgent_ask(record), ["%s/%s" % (TASK, record["id"])]))
+            if (record.get("properties") or {}).get("status") == "proposed":
+                _advice(host, day, asked)
+            return {"output": {"asked": asked}}
+
+        # The morning, once the owner's clock passes the hour they set.
+        if local.strftime("%H:%M") < (preference.get("prepareAt") or "06:30"):
+            return {"output": {"skipped": "before the morning"}}
+        morning = "d" + day.strftime("%Y%m%d")
+        if _read(host, PREPARATION, host.records.get, PREPARATION, morning) is None:
+            start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + datetime.timedelta(days=1)
+            asked.append(_ask(host, morning, day, "morning", morning_ask(day, zone_name, start, end)))
+        _advice(host, day, asked)
+        return {"output": {"asked": asked}}

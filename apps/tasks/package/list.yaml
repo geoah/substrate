@@ -70,3 +70,25 @@ data:
           to: abandoned
         - from: abandoned
           to: active
+    # ---- a list as a project (version 4) ----------------------------------------
+    # A list that holds a piece of work is a project to an app that plans a
+    # day: it has a priority of its own, apart from its tasks', and places
+    # where its work happens. Both optional and neither with a default, so the
+    # version is additive. No `urgent`: that step is a task's.
+    priority:
+      type: enum
+      description: how much the list's work matters now, from none to high;
+        absent means none
+      values:
+        - none
+        - low
+        - medium
+        - high
+    # Unpinned, as a task's `origin` is: a tracker's project, a channel and a
+    # repository are three providers' kinds.
+    sources:
+      type: reference
+      kind: any
+      repeated: true
+      description: where the list's work happens, such as an issue tracker's
+        project, a channel or a code repository

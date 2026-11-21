@@ -29,6 +29,8 @@ const (
 	labsPackage        = kinds.SeedAuthority + "/labs"
 	environmentPackage = kinds.SeedAuthority + "/environment"
 	clinicalPackage    = kinds.SeedAuthority + "/clinical"
+	routinesPackage    = kinds.SeedAuthority + "/routines"
+	todayPackage       = kinds.SeedAuthority + "/today"
 	metricKind         = kinds.SeedObservationsPackage + "/metric"
 	analyteKind        = labsPackage + "/analyte"
 )
@@ -115,7 +117,33 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 		requires  []string
 		triggers  map[string]string
 	}{
-		{id: healthPackage, kinds: []string{healthPackage + "/sleep", healthPackage + "/workout"}},
+		// A dose on a rule is ticked like any routine, so health requires
+		// routines for the trait its medication schedule binds.
+		{
+			id:       healthPackage,
+			kinds:    []string{healthPackage + "/sleep", healthPackage + "/workout", healthPackage + "/medication", healthPackage + "/medicationschedule"},
+			requires: []string{routinesPackage},
+		},
+		// Traits and kinds only: what requires it takes on no reach.
+		{id: routinesPackage, kinds: []string{routinesPackage + "/routine", routinesPackage + "/routinelog"}},
+		// It requires nothing, the tasks package least of all: an app
+		// publishes that one, and no shipped bundle owns it.
+		{
+			id: todayPackage,
+			kinds: []string{
+				todayPackage + "/preference", todayPackage + "/plan", todayPackage + "/advice", todayPackage + "/digest",
+				todayPackage + "/reviewmark", todayPackage + "/dossier", todayPackage + "/returnpoint", todayPackage + "/rule",
+				todayPackage + "/preparation",
+			},
+			functions: []string{todayPackage + "/fade", todayPackage + "/prepare"},
+			triggers: map[string]string{
+				"today-fade-daily":               vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/fade",
+				"today-prepare-morning":          vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
+				"today-prepare-on-suggested":     vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
+				"today-prepare-on-urgent":        vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
+				"today-assistant-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + kinds.SeedAuthority + "/assistant/moss",
+			},
+		},
 		{
 			id:        labsPackage,
 			kinds:     []string{analyteKind, labsPackage + "/labreport", labsPackage + "/labresult"},
@@ -180,9 +208,27 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 	if err := installClosure(clinical, bundlesByID(cat), shippedBundle(t, cat, clinicalPackage), map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range append(clinicalKindRefs(), labsPackage+"/labreport", healthPackage+"/workout") {
+	for _, k := range append(clinicalKindRefs(), labsPackage+"/labreport", healthPackage+"/workout", routinesPackage+"/routinelog") {
 		if _, ok := clinical.ByIdentity(k); !ok {
 			t.Errorf("installing clinical did not declare %s", k)
+		}
+	}
+	// routines carries no code and no records, so requiring it widens
+	// nothing an approval reaches.
+	routines := shippedBundle(t, cat, routinesPackage)
+	if n := len(routines.Closure.Functions) + len(routines.Closure.Agents) + len(routines.Closure.TriggerCallables); n != 0 {
+		t.Errorf("routines ships %d functions, agents and triggers; a package health requires ships traits and kinds only", n)
+	}
+	// today installs onto the bare seed, with no tasks package there: its
+	// references to a task are pinned at core's lifecycle trait and its
+	// functions name the tasks kinds by a glob.
+	today := loadSeed(t)
+	if err := installClosure(today, bundlesByID(cat), shippedBundle(t, cat, todayPackage), map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []string{todayPackage + "/fade", todayPackage + "/prepare"} {
+		if _, err := today.ResolveFunction(fn); err != nil {
+			t.Errorf("%s did not install on a repository without tasks: %v", fn, err)
 		}
 	}
 }

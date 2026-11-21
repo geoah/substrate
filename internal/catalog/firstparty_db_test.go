@@ -23,6 +23,8 @@ const (
 	applehealthID = "providers.substrate.reamde.dev/applehealth"
 	environmentID = "substrate.reamde.dev/environment"
 	clinicalID    = "substrate.reamde.dev/clinical"
+	routinesID    = "substrate.reamde.dev/routines"
+	todayID       = "substrate.reamde.dev/today"
 )
 
 // requirePublishedInstall fails unless pkg is installed in ds as a published
@@ -67,6 +69,10 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 			t.Fatalf("install %s without health: %v", applehealthID, err)
 		}
 		requirePublishedInstall(t, c, ds, healthID, healthID+"/sleep")
+		// health requires routines for the trait its medication schedule
+		// binds, so the same install brings that too.
+		requirePublishedInstall(t, c, ds, routinesID, routinesID+"/routinelog")
+		requirePublishedInstall(t, c, ds, healthID, healthID+"/medicationschedule")
 		requirePublishedInstall(t, c, ds, applehealthID, applehealthID+"/metricbatch")
 		if _, err := ds.Get(ctx, metricKind, "health/heart_rate"); err != nil {
 			t.Errorf("the health metric records did not land with it: %v", err)
@@ -238,6 +244,85 @@ func TestAPackageThatDeclaresNoKindsInstallsItsRecords(t *testing.T) {
 	}
 	if st.Kinds != 0 {
 		t.Errorf("%s holds %d kinds, want none", environmentID, st.Kinds)
+	}
+}
+
+// THE TODAY CATALOGUE INSTALLS WHERE NO TASKS PACKAGE IS, AND ITS
+// INSTRUCTIONS ARE THE OWNER'S TO CHANGE. An app publishes `tasks` through
+// the project's authority document, so no shipped bundle owns it and today
+// requires nothing: a reference to a task is pinned at core's lifecycle
+// trait and its functions name the tasks kinds by a glob. It ships the
+// assistant's standing instructions as records of the seeded llm package's
+// kind, which an install writes and a later install leaves alone once the
+// owner has edited or retired one (decision record 0191).
+func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *testing.T) {
+	ctx := context.Background()
+	c := loadCatalog(t)
+	ds := newDataset(t)
+	if _, err := ds.KindByRef(ctx, "substrate.reamde.dev/tasks/task"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a fresh repository already declares the tasks package: %v", err)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, todayID, ds); err != nil {
+		t.Fatalf("install %s on a repository without tasks: %v", todayID, err)
+	}
+	requirePublishedInstall(t, c, ds, todayID, todayID+"/advice")
+	const (
+		instructionKind = "substrate.reamde.dev/llm/instruction"
+		triggerKind     = "substrate.reamde.dev/core/trigger"
+		moss            = "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss"
+	)
+	shipped := []string{
+		"today-suggest", "today-suggested-task", "today-existing", "today-urgent", "today-durations",
+		"today-object-once", "today-sources", "today-voice", "today-glance", "today-preparation",
+	}
+	for _, id := range shipped {
+		row, err := ds.Get(ctx, instructionKind, id)
+		if err != nil {
+			t.Fatalf("the instruction %s did not land: %v", id, err)
+		}
+		agent, _ := row.Properties["agent"].(map[string]any)
+		if agent["ref"] != moss || row.Properties["source"] != "import" || row.Properties["active"] != true {
+			t.Errorf("%s: agent %v, source %v, active %v; want the assistant's, imported and active", id, agent["ref"], row.Properties["source"], row.Properties["active"])
+		}
+	}
+	for id, callable := range map[string]string{
+		"today-fade-daily":               "substrate.reamde.dev/core/function/" + todayID + "/fade",
+		"today-prepare-morning":          "substrate.reamde.dev/core/function/" + todayID + "/prepare",
+		"today-prepare-on-suggested":     "substrate.reamde.dev/core/function/" + todayID + "/prepare",
+		"today-prepare-on-urgent":        "substrate.reamde.dev/core/function/" + todayID + "/prepare",
+		"today-assistant-on-preparation": moss,
+	} {
+		row, err := ds.Get(ctx, triggerKind, id)
+		if err != nil {
+			t.Fatalf("the trigger %s did not land: %v", id, err)
+		}
+		if got, _ := row.Properties["callable"].(map[string]any); got["ref"] != callable {
+			t.Errorf("%s calls %v, want %s", id, got["ref"], callable)
+		}
+	}
+
+	// The owner rewords one and retires another; the package is added again.
+	const theirs = "Write to me plainly, and keep it short."
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, instructionKind, "today-voice", substrate.PatchInput{
+		Properties: map[string]any{"text": theirs},
+	}); err != nil {
+		t.Fatalf("the owner's edit: %v", err)
+	}
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, instructionKind, "today-glance", substrate.PatchInput{
+		Properties: map[string]any{"active": false},
+	}); err != nil {
+		t.Fatalf("the owner's retiring one: %v", err)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, todayID, ds); err != nil {
+		t.Fatalf("re-install %s: %v", todayID, err)
+	}
+	voice, err := ds.Get(ctx, instructionKind, "today-voice")
+	if err != nil || voice.Properties["text"] != theirs {
+		t.Errorf("the re-install left today-voice as %v (%v), want the owner's words", voice.Properties["text"], err)
+	}
+	glance, err := ds.Get(ctx, instructionKind, "today-glance")
+	if err != nil || glance.Properties["active"] != false {
+		t.Errorf("the re-install left today-glance active=%v (%v), want it retired", glance.Properties["active"], err)
 	}
 }
 

@@ -327,10 +327,15 @@ is wrong, and one that names a kind by a bare word is refused everywhere
 `source`, `sourcelink`) ships no metrics. The metrics, and the domain kinds,
 come from the well-known CATALOGUES, first-party packages under the same
 authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
-`health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
+medication, medicationschedule, `health/*` metrics; requires `routines`), `…/labs` (lab reports and results, `labs/*` metrics,
 `convertlab`; requires `health`), `…/environment` (`environment/*`
 metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
-`labs`, decision 0193). The catalog serves them as published packages, through
+`labs`, decision 0193). Two more catalogues carry no metrics: `…/routines`
+(the `series` and `occurrencelog` traits, `routine` and `routinelog`; traits and
+kinds only, and `health` requires it for its `medicationschedule`) and
+`…/today` (a day planner's own kinds, `fade` and `prepare`, and the
+assistant's standing instructions as `llm/instruction` records; it requires
+nothing, and pins a reference to a task at core's `lifecycle`). The catalog serves them as published packages, through
 the add route (`bin/substratectl add substrate.reamde.dev/labs`), they
 land published under their publisher's authority and never in `~`, and adding one first adds every
 published package it requires, so adding

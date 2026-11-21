@@ -1,0 +1,176 @@
+# A calendar for the dev server alone, in the repository's own namespace.
+# The invented day needs meetings, and a real calendar comes from a provider
+# that needs an account. This stands in for one: an `event` that binds core's
+# `temporal(range)` and `override`, and a `series` that binds `temporal(range)`
+# and `recurring`, which is all Substrate Today asks of a calendar kind. The
+# properties carry the Google provider's names and shapes (`summary`,
+# `location`, `hangoutLink`, `attendees` as objects with `value`,
+# `displayName`, `self` and `responseStatus`), so what is drawn here is drawn
+# the same from a connected account.
+#
+# Applied by `server.sh`: substratectl apply -f apps/today/dev/calendar.yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ~/calendar
+data:
+  authority: "~"
+  package: calendar
+  version: 1
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/calendar/series
+data:
+  authority: "~"
+  package: calendar
+  description: >-
+    An event that repeats, such as a daily standup: its rule and its first
+    occurrence. A read that bounds the time computes each occurrence.
+  purpose: supporting
+  names:
+    singular: series
+  label:
+    singular: Repeating event
+    plural: Repeating events
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/recurring
+  displayTemplate: "{summary}"
+  properties:
+    summary:
+      type: string
+      description: the event's title line
+    description:
+      type: text
+      description: the event's prose
+    location:
+      type: string
+      description: where it is, as written
+    calendarName:
+      type: string
+      description: the calendar it is on, such as Work
+    hangoutLink:
+      type: url
+      description: the video call's join link
+    attendees:
+      type: object
+      repeated: true
+      description: who is invited, each entry whole
+      fields:
+        value:
+          type: email
+          description: the attendee's address
+        displayName:
+          type: string
+          description: the name the invitation spelled
+        self:
+          type: bool
+          description: whether this entry is you
+        responseStatus:
+          type: enum
+          values:
+            - needsaction
+            - declined
+            - tentative
+            - accepted
+          description: what they answered
+        optional:
+          type: bool
+          description: whether they are optional
+        organizer:
+          type: bool
+          description: whether they organized it
+    recurrence:
+      type: recurrence
+      description: the rule, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrences the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrences beside the rule
+    timezone:
+      type: timezone
+      description: the zone a time-of-day rule resolves in
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/calendar/event
+data:
+  authority: "~"
+  package: calendar
+  description: >-
+    An event on your calendar: its title, when and where it is, the join link
+    and who is invited.
+  purpose: primary
+  names:
+    singular: event
+  label:
+    singular: Calendar event
+    plural: Calendar events
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/override
+  displayTemplate: "{summary}"
+  properties:
+    summary:
+      type: string
+      description: the event's title line
+    description:
+      type: text
+      description: the event's prose
+    location:
+      type: string
+      description: where it is, as written
+    status:
+      type: enum
+      values:
+        - confirmed
+        - tentative
+        - cancelled
+      description: whether it is confirmed, tentative or cancelled
+    calendarName:
+      type: string
+      description: the calendar it is on, such as Work
+    hangoutLink:
+      type: url
+      description: the video call's join link
+    attendees:
+      type: object
+      repeated: true
+      description: who is invited, each entry whole
+      fields:
+        value:
+          type: email
+          description: the attendee's address
+        displayName:
+          type: string
+          description: the name the invitation spelled
+        self:
+          type: bool
+          description: whether this entry is you
+        responseStatus:
+          type: enum
+          values:
+            - needsaction
+            - declined
+            - tentative
+            - accepted
+          description: what they answered
+        optional:
+          type: bool
+          description: whether they are optional
+        organizer:
+          type: bool
+          description: whether they organized it
+    recurrenceOf:
+      type: reference
+      kind: ~/calendar/series
+      mustExist: true
+      onDelete: cascade
+      description: the repeating event this replaces one occurrence of
+    originalAt:
+      type: datetime
+      description: the occurrence it replaces, as the rule gave it

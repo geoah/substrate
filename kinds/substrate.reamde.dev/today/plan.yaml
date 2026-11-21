@@ -1,0 +1,52 @@
+# the day's plan, one record a day, id `d<YYYYMMDD>`. It holds what the owner
+# ticked when they saved and nothing a reader could work out: no sizes, no
+# capacity, no order and no flags. A flag changed while planning is written
+# to its task, and a suggested task ticked becomes a task, by the same save.
+# Only the app writes it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/plan
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Your plan for one day, as you saved it: what you picked, how you settled
+    meetings that overlap, what you asked to be sent, and where unfinished
+    things went at the end of the day.
+  purpose: primary
+  ids:
+    type: named
+  names:
+    singular: plan
+  label:
+    singular: Day plan
+    plural: Day plans
+  displayTemplate: "Plan for {day}"
+  properties:
+    day:
+      type: date
+      required: true
+      description: the day this plan is for
+    picked:
+      type: reference
+      kind: any
+      repeated: true
+      description: what you ticked when you saved the plan, such as tasks
+    overlaps:
+      type: json
+      description: "how you settled meetings that overlap: a list of {events:
+        [path, path], chosen: path, message: text, sentAt: datetime}"
+    sends:
+      type: json
+      description: "the messages you ticked to be sent on save: a list of
+        {to: path, text, sentAt: datetime}"
+    moves:
+      type: json
+      description: "where an unfinished task went at the end of the day: a
+        list of {task: path, to: date}"
+    savedAt:
+      type: datetime
+      description: when you saved the plan; absent on a day you did not plan
+    wrapSavedAt:
+      type: datetime
+      description: when you saved the end of the day

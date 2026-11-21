@@ -1,0 +1,130 @@
+# a dose on a rule. It binds the routines package's `series` trait beside
+# core's `temporal(point)` and `recurring`, so whatever shows and ticks
+# routines shows and ticks a dose without knowing what a medication is: `at`
+# is the first dose, `recurrence` the rule, and each dose taken or skipped is
+# a `routines/routinelog` whose `series` points here.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/health/medicationschedule
+data:
+  authority: substrate.reamde.dev
+  package: health
+  description: >-
+    When a dose of one of your medications is due, such as one Vitamin D tablet
+    every morning: the medication, the dose and the rule it repeats on. Each
+    dose taken or skipped is a routine log.
+  purpose: primary
+  names:
+    singular: medicationschedule
+  label:
+    singular: Medication schedule
+    plural: Medication schedules
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/recurring
+    - substrate.reamde.dev/routines/series
+  displayTemplate: "{name}"
+  properties:
+    # Written by whoever makes the schedule: a row shows it without reading
+    # the medication, and a template cannot spell a dose.
+    name:
+      type: string
+      required: true
+      description: what a day shows the dose as, such as the medication's
+        name
+    medication:
+      type: reference
+      kind: substrate.reamde.dev/health/medication
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the medication this is a dose of
+    doseAmount:
+      type: float
+      description: how much one dose is, as a number, such as 1 or 2.5
+    doseUnit:
+      type: enum
+      description: what the dose is counted in
+      values:
+        - value: tablet
+          label: Tablet
+        - value: capsule
+          label: Capsule
+        - value: pill
+          label: Pill
+        - value: click
+          label: Click
+        - value: pump
+          label: Pump
+        - value: drop
+          label: Drop
+        - value: spray
+          label: Spray
+        - value: ml
+          label: ml
+        - value: injection
+          label: Injection
+        - value: puff
+          label: Puff
+        - value: application
+          label: Application
+        - value: gummy
+          label: Gummy
+        - value: piece
+          label: Piece
+    window:
+      type: enum
+      default: exact
+      description: the part of the day it belongs to; exact means at its time
+      values:
+        - value: exact
+          label: At its time
+        - value: morning
+          label: Morning
+        - value: afternoon
+          label: Afternoon
+        - value: evening
+          label: Evening
+        - value: anytime
+          label: Any time that day
+    status:
+      type: state
+      description: active while you are taking it; paused and archived schedules
+        are left out of the day
+      states:
+        - active
+        - paused
+        - archived
+      initial: active
+      transitions:
+        - from: active
+          to: paused
+        - from: paused
+          to: active
+        - from: active
+          to: archived
+        - from: paused
+          to: archived
+        - from: archived
+          to: active
+    group:
+      type: string
+      description: schedules that share a group and a time are shown as one
+        row and ticked together, such as Morning medication
+    recurrence:
+      type: recurrence
+      description: the rule it repeats on, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: doses the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra doses beside the rule
+    timezone:
+      type: timezone
+      description: the zone a time-of-day rule resolves in
+    notes:
+      type: markdown
+      description: anything worth keeping about it, as prose

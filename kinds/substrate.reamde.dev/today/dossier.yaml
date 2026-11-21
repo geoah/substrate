@@ -1,0 +1,65 @@
+# what to know before one meeting: one record per occurrence, the id the
+# occurrence's own (the id a window read gives it), so a writer upserts.
+# `event` is the stored event or its series, and `slot` the occurrence's
+# start, because a computed occurrence is not a record a reference could
+# hold to. The assistant writes it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/dossier
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    What to know before one meeting: what it is for, what happened since you
+    last met, what to raise, and what is due after it, with the tasks and
+    records that bear on it.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: dossier
+  label:
+    singular: Meeting dossier
+    plural: Meeting dossiers
+  displayTemplate: "{purpose}"
+  properties:
+    event:
+      type: reference
+      kind: any
+      description: the calendar event, or the repeating event it is an occurrence
+        of
+    slot:
+      type: datetime
+      description: when this occurrence starts
+    purpose:
+      type: string
+      description: what the meeting is for, in one or two sentences
+    since:
+      type: markdown
+      description: what happened since you last met, as prose
+    raise:
+      type: string
+      repeated: true
+      description: what to raise, one sentence each
+    after:
+      type: string
+      description: what is due after the meeting, in one sentence
+    tasks:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      repeated: true
+      description: the open and suggested tasks that involve the people in
+        it
+    readFirst:
+      type: reference
+      kind: any
+      repeated: true
+      description: what to read before it, such as a document or a thread
+    sources:
+      type: reference
+      kind: any
+      repeated: true
+      description: the records it was written from
+    writtenAt:
+      type: datetime
+      description: when the assistant wrote it

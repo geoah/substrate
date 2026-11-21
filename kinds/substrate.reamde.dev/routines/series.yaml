@@ -1,0 +1,25 @@
+# what a thing needs to be shown and ticked as a routine. A kind binds it
+# beside core's `temporal(point)` and `recurring`: the temporal slot is the
+# first occurrence and the rule gives the rest.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/routines/series
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  description: "something done on a rule, with the name a day shows it by,
+    the part of the day it belongs to, whether it is running, and the group
+    it is ticked with"
+  # The trait contracts presence and datatype only, never the VALUES: each
+  # binding kind declares the same words on its own properties.
+  #
+  # `window`: exact (at its time), morning, afternoon, evening or anytime.
+  # `status`: active, paused or archived; a reader leaves out a series that is
+  #   not active, because the window read knows nothing of status.
+  # `group`: series that share a group and a slot time are one row and one
+  #   tap, such as a morning's five doses. Absent is a row of its own.
+  properties:
+    name: string
+    window: enum
+    status: state
+    group: string

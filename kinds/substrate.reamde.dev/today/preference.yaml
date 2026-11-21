@@ -1,0 +1,62 @@
+# the owner's settings for a day planner: one record, id `default`, as an
+# input's record is found by that id. The app writes it; the `prepare`
+# function reads the zone and the hour from it, and does nothing while there
+# is none, so a repository that added the package and never opened an app on
+# it runs no morning.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/preference
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Your settings for planning the day: your time zone, when the morning is
+    prepared, when you last looked, and how long an unchecked urgent mark
+    waits. One record, with the id default.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: preference
+  label:
+    singular: Day preference
+    plural: Day preferences
+  displayTemplate: "Day preferences"
+  properties:
+    timezone:
+      type: timezone
+      description: the zone your day is planned in, as your device has it
+    prepareAt:
+      type: string
+      default: "06:30"
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      description: the time of day the morning is prepared, as HH:MM in your
+        zone
+    lastActiveAt:
+      type: datetime
+      description: when you last did something in the app, which what is new
+        is measured from
+    nightReadAt:
+      type: datetime
+      description: when you last read what happened overnight
+    urgentWait:
+      type: duration
+      default: PT2M
+      description: how long an urgent mark nobody has checked waits before
+        it interrupts
+    # The switch for everything `prepare` asks the assistant for. It is here
+    # and not on the triggers because an upgrade writes a shipped trigger
+    # whole, so a trigger turned off would be on again after one.
+    assistantPrepares:
+      type: bool
+      default: true
+      description: whether your assistant prepares the day on its own, such
+        as advice on suggested tasks and what to know before meetings
+    # Pinned at core's lifecycle trait, not at the tasks package's list: this
+    # package ships in the binary and tasks is published by an app, so it
+    # cannot be required (see today.yaml). A task list binds lifecycle.
+    quietProjects:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      repeated: true
+      description: the task lists whose news you do not want shown

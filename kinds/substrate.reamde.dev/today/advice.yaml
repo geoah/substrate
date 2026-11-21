@@ -1,0 +1,56 @@
+# the assistant's answer to one suggested task: the option a reader marks as
+# suggested. The id is the task's own, so there is one advice per task and a
+# writer upserts; that is why the ids are named. `task` is pinned at core's
+# lifecycle trait rather than the tasks package's task (see today.yaml): a
+# suggested task is a record waiting in a proposed state, whatever its kind.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/advice
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    What your assistant suggests you do with one suggested task: make it a
+    task, mark it already done, or dismiss it, with one sentence of why.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: advice
+  label:
+    singular: Advice
+    plural: Advice
+  displayTemplate: "{answer}: {reason}"
+  properties:
+    task:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the suggested task this is about
+    answer:
+      type: enum
+      required: true
+      description: what the assistant suggests
+      values:
+        - value: task
+          label: Make it a task
+        - value: done
+          label: Already done
+        - value: dismiss
+          label: Dismiss
+    reason:
+      type: string
+      description: why, in one sentence written to you
+    evidence:
+      type: reference
+      kind: any
+      description: for already done, the record that shows it
+    objectedAt:
+      type: datetime
+      description: when the assistant objected to your dismissing it; it objects
+        once
+    objection:
+      type: string
+      description: the objection, in one sentence

@@ -163,6 +163,8 @@
   "substrate.reamde.dev/core/trigger": "P7D",
   "substrate.reamde.dev/core/triggerrun": "P7D",
   "substrate.reamde.dev/core/unit": "all",
+  "substrate.reamde.dev/health/medication": "all",
+  "substrate.reamde.dev/health/medicationschedule": "all",
   "substrate.reamde.dev/health/sleep": "all",
   "substrate.reamde.dev/health/workout": "all",
   "substrate.reamde.dev/labs/analyte": "all",
@@ -182,5 +184,16 @@
   "substrate.reamde.dev/observations/observation": "all",
   "substrate.reamde.dev/observations/source": "all",
   "substrate.reamde.dev/observations/sourcelink": "all",
-  "substrate.reamde.dev/observations/trace": "all"
+  "substrate.reamde.dev/observations/trace": "all",
+  "substrate.reamde.dev/routines/routine": "all",
+  "substrate.reamde.dev/routines/routinelog": "all",
+  "substrate.reamde.dev/today/advice": "all",
+  "substrate.reamde.dev/today/digest": "all",
+  "substrate.reamde.dev/today/dossier": "all",
+  "substrate.reamde.dev/today/plan": "all",
+  "substrate.reamde.dev/today/preference": "all",
+  "substrate.reamde.dev/today/preparation": "all",
+  "substrate.reamde.dev/today/returnpoint": "all",
+  "substrate.reamde.dev/today/reviewmark": "all",
+  "substrate.reamde.dev/today/rule": "all"
 }

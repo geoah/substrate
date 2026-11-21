@@ -1,0 +1,107 @@
+# The today package's deliveries. An install or an upgrade writes each of
+# these whole, so a trigger its owner turned off is on again after one: the
+# switch that lasts is `assistantPrepares` on the owner's `preference`
+# record, which `prepare` reads before it asks for anything.
+#
+# The two record triggers name the tasks package's task, which this package
+# cannot require (today.yaml): on a repository without it they match nothing.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-fade-daily
+data:
+  properties:
+    enabled: true
+    label: Suggested tasks nobody answered fade after two weeks
+    source:
+      schedule:
+        recurrence: "FREQ=DAILY"
+        timezone: UTC
+        startsAt: "2026-01-01T03:10:00Z"
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/fade
+---
+# Every half hour, because the morning is at the owner's own hour in their
+# own zone, which is on a record and not in this file. The body does nothing
+# until that hour passes, and nothing again once the day is asked for.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-prepare-morning
+data:
+  properties:
+    enabled: true
+    label: The morning is prepared at your hour
+    source:
+      schedule:
+        recurrence: "FREQ=MINUTELY;INTERVAL=30"
+        timezone: UTC
+        startsAt: "2026-01-01T00:00:00Z"
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
+---
+# A task that arrives as a suggestion, or is still one after a change, with
+# only the latest change per task in a batch. The body asks for advice only
+# where a suggestion has none. A suggestion the assistant itself just wrote
+# is skipped here: its instructions have it write its advice in the same
+# turn, a moment later, and the half-hourly pass asks for any it left out.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-prepare-on-suggested
+data:
+  properties:
+    enabled: true
+    label: A suggested task gets the assistant's advice
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/tasks/task
+        ops:
+          - create
+          - update
+        coalesce: true
+        when: >-
+          record != null && "status" in record.properties && record.properties.status
+          == "proposed" && !("actorPackage" in change && change.actorType
+          == "agent" && change.actorPackage == "substrate.reamde.dev/assistant")
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
+---
+# An urgent mark an automation or the API set, which the assistant has
+# written neither stamp for. Once it writes one, the guard no longer passes.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-prepare-on-urgent
+data:
+  properties:
+    enabled: true
+    label: An urgent mark nobody has checked is checked
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/tasks/task
+        ops:
+          - create
+          - update
+        when: >-
+          record != null && "priority" in record.properties && record.properties.priority
+          == "urgent" && "prioritySetBy" in record.properties && (record.properties.prioritySetBy
+          == "automation" || record.properties.prioritySetBy == "api") &&
+          !("urgentCheckedAt" in record.properties) && !("urgentHeldAt" in
+          record.properties)
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
+---
+# What `prepare` asks for, the assistant writes: a new preparation record is
+# its message, and its standing instruction (instructions.yaml,
+# `today-preparation`) says to do what the record's `ask` says and nothing
+# else. A run acts for no one and counts against the assistant's own daily
+# spend, which holds this trigger when it is spent.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-assistant-on-preparation
+data:
+  properties:
+    enabled: true
+    label: The assistant prepares what was asked for
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/today/preparation
+        ops:
+          - create
+    callable: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss

@@ -170,3 +170,60 @@ data:
       mustExist: true
       description: the people this task involves, such as who asked for it
         or who is waiting on it
+    # ---- put off, and who flagged it (version 4) --------------------------------
+    # What an app that plans a day needs of a task, each optional and none
+    # with a default, so the version is additive and a repository takes it
+    # without review. The Tasks app reads none of them.
+    #
+    # `notBefore` hides a task until then; `deferrals` counts how often it was
+    # moved later. Nothing on the server counts: whoever moves `notBefore` or
+    # the due day later adds one in the same write.
+    notBefore:
+      type: datetime
+      description: hidden until then, for a task you put off to tonight or
+        next week
+    deferrals:
+      type: int
+      description: how many times it was put off, counted by whoever moves
+        it later, in the same write
+    # WHO SET THE PRIORITY IT HAS NOW. `urgent` is the one step an assistant,
+    # an automation or the API may put on a task without the owner asking, so
+    # a reader has to know whose word it is, why, and what to put back.
+    # Absent reads as the owner's.
+    prioritySetBy:
+      type: enum
+      description: who set the priority it has now; absent means you did
+      values:
+        - owner
+        - assistant
+        - automation
+        - api
+    priorityReason:
+      type: string
+      description: why it has this priority, in one sentence from whoever
+        set it
+    priorityWas:
+      type: enum
+      description: the priority it had before it was marked urgent, written
+        in that same write, so taking urgent off puts it back
+      values:
+        - none
+        - low
+        - medium
+        - high
+    # An urgent mark someone else set is checked by the assistant, which
+    # writes one of two stamps and never takes the mark off: it agrees
+    # (`urgentCheckedAt`), or it thinks the task can wait (`urgentHeldAt`,
+    # with why). With neither, nobody has checked it.
+    urgentCheckedAt:
+      type: datetime
+      description: when the assistant looked at an urgent mark and agreed
+        it cannot wait
+    urgentHeldAt:
+      type: datetime
+      description: when the assistant looked at an urgent mark and thought
+        it can wait
+    urgentHeldReason:
+      type: string
+      description: why the assistant thinks an urgent task can wait, in one
+        sentence

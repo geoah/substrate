@@ -1,0 +1,100 @@
+# the general series: anything done on a rule that no other package gives a
+# kind of its own. `at` is the first occurrence and `recurrence` the rule.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/routines/routine
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  description: >-
+    Something you do on a rule, such as a habit, a chore, a ritual or a skincare
+    step: when it comes round, the part of the day it belongs to and whether
+    it is running. Each time it comes round is marked done or skipped with
+    a routine log.
+  purpose: primary
+  names:
+    singular: routine
+  label:
+    singular: Routine
+    plural: Routines
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/recurring
+    - substrate.reamde.dev/routines/series
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what to do, in a few words, such as Water the plants
+    category:
+      type: enum
+      default: other
+      description: what sort of routine it is
+      values:
+        - value: chore
+          label: Chore
+        - value: exercise
+          label: Exercise
+        - value: hygiene
+          label: Hygiene
+        - value: habit
+          label: Habit
+        - value: other
+          label: Other
+    window:
+      type: enum
+      default: exact
+      description: the part of the day it belongs to; exact means at its time
+      values:
+        - value: exact
+          label: At its time
+        - value: morning
+          label: Morning
+        - value: afternoon
+          label: Afternoon
+        - value: evening
+          label: Evening
+        - value: anytime
+          label: Any time that day
+    status:
+      type: state
+      description: active while it is running; paused and archived routines
+        are left out of the day
+      states:
+        - active
+        - paused
+        - archived
+      initial: active
+      transitions:
+        - from: active
+          to: paused
+        - from: paused
+          to: active
+        - from: active
+          to: archived
+        - from: paused
+          to: archived
+        - from: archived
+          to: active
+    group:
+      type: string
+      description: routines that share a group and a time are shown as one
+        row and ticked together, such as Evening skincare
+    recurrence:
+      type: recurrence
+      description: the rule it repeats on, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrences the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrences beside the rule
+    timezone:
+      type: timezone
+      description: the zone a time-of-day rule resolves in
+    notes:
+      type: markdown
+      description: anything worth keeping about it, as prose

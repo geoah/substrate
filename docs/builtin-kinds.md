@@ -4,9 +4,9 @@ This page maps the vocabulary this binary ships, package by package: the five
 packages a repository is seeded with, `substrate.reamde.dev/core`,
 `substrate.reamde.dev/llm`, `substrate.reamde.dev/console`,
 `substrate.reamde.dev/observations` and `substrate.reamde.dev/assistant`
-(agents, no kinds), the four well-known catalogues it can
-add (`health`, `labs`, `environment` and `clinical`, under the same
-authority), and the sample packages it can add, the LLM sample among them,
+(agents, no kinds), the six well-known catalogues it can
+add (`health`, `labs`, `environment`, `clinical`, `routines` and `today`,
+under the same authority), and the sample packages it can add, the LLM sample among them,
 each copied into the repository's local namespace, `~`, when it is added. A
 kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
@@ -99,16 +99,20 @@ installed, and adding this sample again is what lands it afterwards
 
 ## substrate.reamde.dev/health (a well-known catalogue)
 
-A person's body, sleep and training. Added from the catalog, never
-copied: it lands under `substrate.reamde.dev` and upgrades from the catalog
+A person's body, sleep and training, and what they take. Added from the
+catalog, never copied: it lands under `substrate.reamde.dev` and upgrades
+from the catalog
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 The Apple Health and WHOOP providers require it, so adding either
-adds it.
+adds it. Since version 3 it requires [`routines`](#substratereamdedevroutines-a-well-known-catalogue),
+and adding it adds `routines` first.
 
-| Kind      | What it is                                                                                     |
-| --------- | ---------------------------------------------------------------------------------------------- |
-| `sleep`   | One night or nap: its span, time in each stage, efficiency and the device's scores.            |
-| `workout` | One session: sport, span, distance, active and total energy, heart rate and time in each zone. |
+| Kind                 | What it is                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `sleep`              | One night or nap: its span, time in each stage, efficiency and the device's scores.                                     |
+| `workout`            | One session: sport, span, distance, active and total energy, heart rate and time in each zone.                          |
+| `medication`         | A medicine, supplement or skincare product you take or use: its name, form, strength and category.                      |
+| `medicationschedule` | A dose on a rule, pointing at a `medication`. It binds `routines/series`, so each dose taken or skipped is a `routines/routinelog`. |
 
 It ships 33 metric records with ids `health/<name>`, such as
 `health/heart_rate` and `health/body_mass`, each with its LOINC,
@@ -172,6 +176,78 @@ meter to write observations against, `environment/air_temperature`,
 `environment/relative_humidity`, `environment/illuminance`,
 `environment/atmospheric_pressure`, `environment/energy` and
 `environment/power`.
+
+## substrate.reamde.dev/routines (a well-known catalogue)
+
+What you do on a rule, and whether you did it. Traits and kinds only: it
+ships no function, trigger, metric or record, so a package that requires it
+(`health` does) takes on nothing but the vocabulary.
+
+| Trait           | What it contracts                                                                                                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `series`        | Something done on a rule: `name`, `window` (the part of the day), `status` and `group`. A kind binds it beside core's `temporal(point)` and `recurring`, which give its occurrences on a read that bounds `at`. |
+| `occurrencelog` | One occurrence marked done or skipped: `status`, `scheduledAt` and `details`. An occurrence with no log is what missed means.                                                                               |
+
+| Kind      | What it is                                                                                                                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routine` | The general series: a habit, a chore, a ritual or a skincare step, with its rule, the part of the day it belongs to, whether it is active, paused or archived, and the group it is ticked with.                                                                                                              |
+| `routinelog` | The done or skipped mark for one occurrence of any series. Its `series` reference is pinned at the `series` trait ([decision 0034](decisions/0034-a-reference-may-pin-a-trait-not-only-a-kind.md)), so it points at a routine, a medication schedule or any other kind that binds it, and at nothing else. |
+
+A log's id is the occurrence's own, `<series id>_<slot>` with the slot as
+UTC `YYYYMMDDTHHMMSSZ`, which is the id a [window read](api.md#the-window-read)
+gives the computed occurrence. So the kind's ids are named, an occurrence has
+at most one log, and a tick made twice lands on one record. A read with
+`filter.implements` naming `substrate.reamde.dev/routines/series` and `at`
+bounded answers the occurrences of every kind that binds the trait. It does
+not leave out a paused series: the read knows nothing of status, so a reader
+filters on `status` or drops them itself.
+
+## substrate.reamde.dev/today (a well-known catalogue)
+
+What a day planner keeps beside the records it reads. Substrate Today reads
+tasks, task lists, routines and calendar events from the packages that own
+them, and keeps here what is its own. It requires nothing: a task and a task
+list are the `tasks` package's, which Substrate Tasks publishes through the
+project's authority document and not the binary, so a reference to one is
+pinned at core's `lifecycle` trait, which both bind, and on a repository
+without `tasks` those parts stay empty.
+
+| Kind          | What it is                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preference`  | The owner's settings, one record with the id `default`: their zone, when the morning is prepared, when they last looked, and whether the assistant prepares. |
+| `plan`        | One day's plan as the owner saved it, with the id `d<YYYYMMDD>`: what they picked, how overlapping meetings were settled, and where unfinished things went. |
+| `advice`      | The assistant's answer to one suggested task (make it a task, already done or dismiss) with a sentence of why. Its id is the task's.                     |
+| `digest`      | What happened on one project since the owner last looked: the latest thing in a sentence, and each item with its time. Its id is the project's.         |
+| `reviewmark`  | How far the owner has read one project's news. Its id is the project's.                                                                                 |
+| `dossier`     | What to know before one meeting: what it is for, what to raise, what is due after it. Its id is the occurrence's.                                       |
+| `returnpoint` | Where the owner left one record: a note, the last look, or that it arrived unopened. Its id is that record's.                                           |
+| `rule`        | A rule the owner keeps about what reaches them: what it matches, and whether to hold, raise, skip or mark it urgent.                                    |
+| `preparation` | One thing the assistant was asked to prepare, written by `prepare`: the day, the reason and the ask in full.                                            |
+
+It ships two functions and five triggers:
+
+- `fade`, daily: a task still in its proposed state two weeks after it was
+  written is abandoned, under the version the function read, so one the
+  owner answers meanwhile is left alone.
+- `prepare`, every half hour, when a task arrives as a suggestion and when
+  an urgent mark arrives that nobody has checked. It calls no model: it
+  works out what the assistant has not written and asks for it as a
+  `preparation` record whose id is derived from what is asked, so asking
+  twice is one record. It asks for nothing until an app has written the
+  owner's `preference`, and nothing while its `assistantPrepares` is false.
+- The trigger `today-assistant-on-preparation` runs the assistant on each
+  new `preparation`, with the record as its message, on the assistant's own
+  budget and against its own [daily spend](agents.md#the-daily-spend-cap).
+
+It also ships ten [`llm/instruction`](#substratereamdedevllm) records for
+the assistant, with ids that start `today-` and `source: import`: how it
+suggests a task, proposes a change to one that exists, sets and checks an
+urgent mark, and answers a `preparation`. They are records, so the owner
+edits or retires one like their own, and an upgrade never writes over a
+record its owner changed
+([decision 0191](decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md)).
+An instruction names an agent, so these hold wherever the assistant works,
+and removing the package leaves them: retire the ones you do not want.
 
 ## substrate.reamde.dev/core
 

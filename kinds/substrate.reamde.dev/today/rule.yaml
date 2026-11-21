@@ -1,0 +1,70 @@
+# a rule the owner keeps about what reaches them: what to hold, raise or
+# skip, and what may be marked urgent. The owner writes them; whatever sorts
+# what comes in reads them.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/rule
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    A rule you keep about what reaches you, such as hold everything from one
+    channel or a page from the on-call tool is urgent: what it matches and
+    what happens to it.
+  purpose: primary
+  names:
+    singular: rule
+  label:
+    singular: Attention rule
+    plural: Attention rules
+  displayTemplate: "{text}"
+  properties:
+    text:
+      type: string
+      required: true
+      description: the rule in your words
+    scope:
+      type: enum
+      required: true
+      description: what the rule matches on
+      values:
+        - value: source
+          label: Source
+        - value: person
+          label: Person
+        - value: channel
+          label: Channel
+        - value: kind
+          label: Kind
+        - value: sender
+          label: Sender
+    match:
+      type: string
+      required: true
+      description: the value it matches, such as a channel's name
+    effect:
+      type: enum
+      required: true
+      description: what happens to what it matches
+      values:
+        - value: hold
+          label: Hold
+        - value: raise
+          label: Raise
+        - value: briefing
+          label: Briefing
+        - value: skip
+          label: Skip
+        - value: include
+          label: Include
+        - value: urgent
+          label: Urgent
+    from:
+      type: reference
+      kind: any
+      description: the record the rule was made from, such as the message
+        you said it about
+    enabled:
+      type: bool
+      default: true
+      description: whether the rule is in force

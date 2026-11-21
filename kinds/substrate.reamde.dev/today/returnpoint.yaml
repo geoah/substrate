@@ -1,0 +1,44 @@
+# where the owner left something: one record per record, the id that
+# record's own. `at` is when. A note is the owner's words and is never
+# replaced by a mark the app made on its own.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/returnpoint
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Where you left something, so you can pick it up again: a note in your
+    words, the last time you looked at it, or that it came in and you have
+    not opened it.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: returnpoint
+  label:
+    singular: Return point
+    plural: Return points
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{text|mark}"
+  properties:
+    record:
+      type: reference
+      kind: any
+      required: true
+      description: what you left
+    mark:
+      type: enum
+      description: whether you wrote a note, looked at it, or it arrived and
+        was never opened
+      values:
+        - value: note
+          label: Note
+        - value: viewed
+          label: Viewed
+        - value: arrived
+          label: Arrived
+    text:
+      type: string
+      description: where you were, in your words

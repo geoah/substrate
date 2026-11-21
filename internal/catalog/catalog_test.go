@@ -189,6 +189,10 @@ func TestCatalogSaysWhatEachPackageIsFor(t *testing.T) {
 		{id: "substrate.reamde.dev/clinical", brings: []string{substrate.BringsCollections}},
 		{id: "substrate.reamde.dev/health", brings: []string{substrate.BringsCollections, substrate.BringsMetrics}},
 		{id: "substrate.reamde.dev/environment", brings: []string{substrate.BringsMetrics}},
+		// today ships two functions and offers neither to an agent, so it
+		// brings collections and no tools.
+		{id: "substrate.reamde.dev/routines", brings: []string{substrate.BringsCollections}},
+		{id: "substrate.reamde.dev/today", brings: []string{substrate.BringsCollections}},
 		{id: "samples.substrate.reamde.dev/notes", brings: []string{substrate.BringsTools, substrate.BringsCollections, substrate.BringsAgents}},
 		{id: "samples.substrate.reamde.dev/llm", brings: []string{substrate.BringsAgents}},
 	} {
