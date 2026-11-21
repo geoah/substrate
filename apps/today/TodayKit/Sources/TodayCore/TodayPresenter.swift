@@ -3,31 +3,38 @@ import SubstrateCore
 import SubstrateRuntime
 import SubstrateScreens
 
-/// The root's presenter: every word the app's screen shows.
+/// The root's presenter: the day made from the state, then every word the
+/// app's screens show, by the engine.
 public enum TodayPresenter {
-    public static func present(_ state: TodayApp.State, linked: LinkedRecords, build: BuildFacts) -> TodayPresentation {
-        let rows = state.linked.records(of: TodayKinds.item)
-            .map { ItemRow(id: $0.id, title: name($0), delete: "Delete") }
-            .sorted { ($0.title.lowercased(), $0.id) < ($1.title.lowercased(), $1.id) }
-        let notKept: String? = if case let .notKept(words) = state.adding { words } else { nil }
-        let add = AddField(
-            prompt: "Add an item", text: state.draft,
-            notKept: notKept.map { ProblemPresentation(title: "A change was not kept", message: $0, fix: ProblemFix(title: "Retry", action: .tryAgain)) })
+    /// The day the engine reads, from what the root holds.
+    public static func day(_ state: TodayApp.State, now: Date, calendar: Calendar) -> Day {
+        var day = Day(now: now, calendar: calendar)
+        day.discovery = state.discovery ?? Discovery()
+        day.take(state.linked.records.values)
+        day.take(state.requests)
+        day.take(state.contacts.values)
+        day.occurrences = state.windows.occurrences.compactMap(Occurrence.init)
+        day.meetings = state.windows.meetings.compactMap(Meeting.init)
+        day.stale = state.stale
+        day.drafts = state.drafts
+        // The day's notes are another day's until the owner looks.
+        if let notes = state.notes, notes.day == day.today { day.notes = notes }
+        day.exchanges = state.exchanges
+        day.reachable = state.reachable && state.linked.link?.online != false
+        return day
+    }
+
+    public static func present(_ state: TodayApp.State, linked: LinkedRecords, build: BuildFacts, now: Date, calendar: Calendar) -> TodayPresentation {
+        let engine = DayEngine(day(state, now: now, calendar: calendar))
+        let reminds = state.permission == .on || state.permission == .notTimeSensitive
         return TodayPresentation(
-            title: "Items", items: KeyedList(rows, revision: state.revision), add: add,
-            empty: rows.isEmpty ? EmptyPresentation(title: "No items", message: "Add one below.") : nil,
+            pane: engine.pane, pages: PageSource(maker: engine, stamp: state.revision &+ Int(now.timeIntervalSince1970 / 60)),
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: [],
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
             about: AboutPresentation.present(
                 appName: TodayApp.appName, version: build.version, channel: build.channel, offered: state.offered,
-                privacyPolicy: build.privacyPolicy))
-    }
-
-    /// An item's name, as its record holds it.
-    static func name(_ record: Record) -> String {
-        let name = record.properties["name"]?.text ?? ""
-        return name.isEmpty ? "Untitled item" : name
+                privacyPolicy: build.privacyPolicy), reminders: reminds ? engine.reminders : [], nextChange: engine.nextChange)
     }
 
     /// Settings as one screen: the app's sections, then the kit's.

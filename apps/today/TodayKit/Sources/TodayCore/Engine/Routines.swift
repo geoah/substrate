@@ -1,0 +1,183 @@
+import Foundation
+import SubstrateCore
+
+// Routines: everything that binds the series trait, by the occurrences the
+// window read gave. Series that share a group and a slot are one row and
+// one tap.
+
+extension DayEngine {
+    struct RoutineRow: Equatable {
+        var id: String
+        var title: String
+        var slot: Date
+        var occurrences: [Occurrence]
+        var isDose: Bool
+    }
+
+    /// The rows of one local day, in slot order: active series only.
+    func routineRows(from start: Date, to end: Date) -> [RoutineRow] {
+        var rows: [String: RoutineRow] = [:]
+        for occurrence in day.occurrences where occurrence.slot >= start && occurrence.slot < end {
+            guard let series = day.series[occurrence.series], series.active else { continue }
+            let id = "routine:\(series.group.map { "g:" + $0 } ?? series.id):\(Occurrence.stamp(occurrence.slot))"
+            var row = rows[id] ?? RoutineRow(id: id, title: series.group ?? series.name, slot: occurrence.slot, occurrences: [], isDose: false)
+            row.occurrences.append(occurrence)
+            row.isDose = row.isDose || series.isDose
+            rows[id] = row
+        }
+        return rows.values.map { row in
+            var sorted = row
+            sorted.occurrences.sort { (day.series[$0.series]?.name ?? "", $0.id) < (day.series[$1.series]?.name ?? "", $1.id) }
+            return sorted
+        }.sorted { ($0.slot, $0.id) < ($1.slot, $1.id) }
+    }
+
+    var todaysRoutines: [RoutineRow] { routineRows(from: day.startOfToday, to: day.startOfTomorrow) }
+    var yesterdaysRoutines: [RoutineRow] { routineRows(from: day.startOfYesterday, to: day.startOfToday) }
+
+    func open(_ row: RoutineRow) -> [Occurrence] { row.occurrences.filter { day.logs[$0.id] == nil } }
+
+    /// When the row was finished: its last log, once every occurrence has one.
+    func doneAt(_ row: RoutineRow) -> Date? {
+        guard open(row).isEmpty else { return nil }
+        return row.occurrences.compactMap { day.logs[$0.id]?.at }.max()
+    }
+
+    /// When anything was last logged, where that is more than a week ago:
+    /// logging has stopped, and the rows say so instead of asking after
+    /// every day that passed.
+    var loggingStopped: Date? {
+        guard let last = day.logs.values.map(\.at).max(), now.timeIntervalSince(last) > 7 * 86400 else { return nil }
+        return last
+    }
+
+    /// One pill and one sentence, when nothing has been logged for a week.
+    func stale(_ row: RoutineRow) -> StaleNote? {
+        loggingStopped.map { StaleNote("Nothing has been logged since \(Words.dayMonth($0, calendar)). A tick here is the log.") }
+    }
+
+    func routineCard(_ row: RoutineRow) -> RoutineCard {
+        let word = row.isDose ? "Taken" : "Done"
+        let items = row.occurrences.map { occurrence -> RoutineCard.Item in
+            let series = day.series[occurrence.series]
+            let log = day.logs[occurrence.id]
+            return RoutineCard.Item(
+                id: occurrence.id, name: series?.name ?? "Untitled routine", detail: series?.dose,
+                logged: log.map { $0.done ? "\(word) at \(clock($0.at))." : "Skipped." })
+        }
+        let done = doneAt(row)
+        return RoutineCard(
+            items: items,
+            done: done == nil ? ButtonPresentation(word, glyph: .done, role: .primary, wide: true, command: .log(row: row.id, done: true)) : nil,
+            skip: done == nil ? ButtonPresentation("Skip", role: .quiet, command: .log(row: row.id, done: false)) : nil,
+            said: done.map { "\(word) at \(clock($0))." }, stale: done == nil ? stale(row) : nil)
+    }
+
+    func row(_ routine: RoutineRow, state: Row.State) -> Row {
+        let left = open(routine).count
+        let count = routine.occurrences.count
+        let line: String
+        if count > 1 {
+            line = left < count ? "\(count - left) of \(count) logged." : "\(count) items."
+        } else {
+            line = day.series[routine.occurrences[0].series]?.dose ?? "At \(clock(routine.slot))."
+        }
+        let word = routine.isDose ? "Taken" : "Done"
+        return Row(
+            id: routine.id, glyph: .routine, title: routine.title, line: line, state: state,
+            trailing: .tick(ButtonPresentation(word, glyph: .done, iconOnly: true, role: .secondary, command: .log(row: routine.id, done: true))),
+            body: .routine(routineCard(routine)))
+    }
+
+    /// The routine row an id names, among yesterday's and today's.
+    func routine(_ id: String) -> RoutineRow? { (todaysRoutines + yesterdaysRoutines).first { $0.id == id } }
+
+    // MARK: What yesterday left
+
+    struct Left: Equatable {
+        enum Kind: Equatable {
+            case routine(RoutineRow)
+            case task(TaskItem)
+        }
+
+        var id: String
+        var kind: Kind
+    }
+
+    /// What yesterday left: a routine row with nothing logged, and a task
+    /// that was due before today and is still open.
+    var yesterdayLeft: [Left] {
+        // Where logging has stopped, yesterday's routines are not asked after: today's rows say it is stale.
+        var out: [Left] = loggingStopped != nil ? [] : yesterdaysRoutines.filter { !open($0).isEmpty }.map { Left(id: "y-" + $0.id, kind: .routine($0)) }
+        for task in day.tasks where task.isOpen && !hidden(task) {
+            guard let due = task.dueDay, due < day.today, (task.notBefore ?? .distantPast) < day.startOfToday else { continue }
+            out.append(Left(id: "y-task:" + task.id, kind: .task(task)))
+        }
+        return out
+    }
+
+    func yesterdayCard(_ left: [Left]) -> YesterdayCard {
+        let items = left.map { item -> YesterdayCard.Item in
+            switch item.kind {
+            case let .routine(row):
+                let verb = row.isDose ? "Took it yesterday" : "Did it yesterday"
+                let count = open(row).count
+                return YesterdayCard.Item(
+                    id: item.id, glyph: .routine, title: row.title, pill: Pill(.neutral, row.isDose ? "A dose" : "A routine"),
+                    text: "\(count == 1 ? "It was" : "\(Words.num(count)) were") due yesterday at \(clock(row.slot)). Not logged.",
+                    options: OptionList(
+                        .round,
+                        [
+                            OptionRow(id: "took", name: verb, line: "Logged for yesterday.", command: .answerYesterday(item: item.id, option: "took")),
+                            OptionRow(
+                                id: "skipped", name: "Skipped", line: "Logged as skipped.", command: .answerYesterday(item: item.id, option: "skipped")),
+                        ]))
+            case let .task(task):
+                let due = task.dueDay.map { Words.day($0.start(in: calendar, hour: 12), now: now, calendar) } ?? "yesterday"
+                return YesterdayCard.Item(
+                    id: item.id, glyph: .task, title: task.name, pill: Pill(.neutral, "A task, due \(due)"), text: task.reason,
+                    options: OptionList(
+                        .round,
+                        [
+                            OptionRow(
+                                id: "today", name: "Do it today", line: "It goes into today's order.",
+                                command: .answerYesterday(item: item.id, option: "today")),
+                            OptionRow(
+                                id: "tomorrow", name: "Tomorrow", line: "It leaves today and comes back tomorrow.",
+                                command: .answerYesterday(item: item.id, option: "tomorrow")),
+                            OptionRow(id: "drop", name: "Drop it", line: "Closed as not done.", command: .answerYesterday(item: item.id, option: "drop")),
+                        ]))
+            }
+        }
+        return YesterdayCard(items: items)
+    }
+
+    func yesterdayRow(_ left: [Left], state: Row.State) -> Row {
+        let named = left.map { item -> String in
+            switch item.kind {
+            case let .routine(row): Words.low(row.title)
+            case let .task(task): Words.low(task.name)
+            }
+        }
+        let onlyRoutines = left.allSatisfy { if case .routine = $0.kind { true } else { false } }
+        return Row(
+            id: "yesterday", glyph: onlyRoutines ? .routine : .task, title: "Left from yesterday",
+            line: "\(Words.things(left.count, "thing")): \(Words.list(named)).", state: state, body: .yesterday(yesterdayCard(left)))
+    }
+
+    // MARK: Reminders
+
+    /// One reminder for each routine row still open in the next three days,
+    /// at its slot. Its words name no medicine: the group, or "Medication",
+    /// and a count.
+    var reminders: [ReminderPlan] {
+        let end = calendar.date(byAdding: .day, value: 3, to: day.startOfToday) ?? now.addingTimeInterval(3 * 86400)
+        return routineRows(from: now, to: end).filter { !open($0).isEmpty }.prefix(48).map { row in
+            let grouped = day.series[row.occurrences[0].series]?.group != nil
+            let count = open(row).count
+            return ReminderPlan(
+                id: "today.routine." + row.id, title: grouped || !row.isDose ? row.title : "Medication",
+                body: count == 1 ? "1 item" : "\(count) items", fireAt: row.slot, row: row.id)
+        }
+    }
+}

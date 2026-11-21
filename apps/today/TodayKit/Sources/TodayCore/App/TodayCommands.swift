@@ -1,0 +1,332 @@
+import Foundation
+import SubstrateCore
+import SubstrateLocal
+import SubstrateRuntime
+import SubstrateScreens
+
+/// What each command means, as events: the writes it makes (through the
+/// outbox), the draft it changes, the note the device keeps. A choice that
+/// takes effect at once writes here; a draft above a Save writes nothing
+/// until its Save.
+public extension TodayApp {
+    func events(for command: TodayCommand, in context: Enrichment<TodayApp>) -> [Event] {
+        let state = context.state
+        let calendar = Self.calendar(context.environment.timeZone, context.environment.locale)
+        let now = context.now
+        let day = TodayPresenter.day(state, now: now, calendar: calendar)
+        let engine = DayEngine(day)
+        let writes = TodayWrites(day: day, mint: { context.mint() })
+        // The day's notes: today's as the device holds them, else a new day's.
+        var notes = state.notes?.day == day.today ? day.notes : Self.rolled(state.notes, at: now, today: day.today)
+        var drafts = state.drafts
+        var out: [Event] = []
+
+        /// A write goes to the outbox only where the repository holds its kind.
+        func wrote(_ write: LocalWrite) {
+            let entries = write.entries.filter { $0.kind == TodayKinds.patchRequest || day.discovery.holds($0.kind) }
+            guard !entries.isEmpty else { return }
+            out.append(.records(.wrote(LocalWrite(entries: entries, replacing: write.replacing))))
+        }
+
+        /// What the assistant suggested for a record, taken or turned down
+        /// by what the owner chose.
+        func settle(_ suggestion: Suggestion?, accept: Bool) {
+            guard let suggestion else { return }
+            wrote(writes.decide(suggestion, accept: accept))
+            out.append(.decided([suggestion.id]))
+        }
+
+        func ask(_ subject: MossSubject, _ text: String) {
+            let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !question.isEmpty else { return }
+            let exchange = Exchange(id: context.mint().uuidString.lowercased(), subject: subject, question: question, at: now)
+            out.append(.asked(exchange, message: Assistant.message(subject, question, day: day), context: Assistant.context(subject, day: day)))
+        }
+
+        func move(_ task: TaskItem, option: String) {
+            guard let choice = engine.whenOptions.first(where: { $0.id == option }) else { return }
+            wrote(writes.move(task, to: choice.notBefore))
+        }
+
+        switch command {
+        // MARK: Routines
+        case let .log(row, done):
+            guard let routine = engine.routine(row) else { break }
+            for occurrence in engine.open(routine) { wrote(writes.log(occurrence, done: done)) }
+            if state.permission == .notAsked { out.append(.permissionWanted) }
+        case let .logOccurrence(id, done):
+            guard let occurrence = day.occurrences.first(where: { $0.id == id }) else { break }
+            wrote(writes.log(occurrence, done: done))
+        case let .unlog(id):
+            wrote(writes.unlog(id))
+        case let .later(row):
+            guard let routine = engine.routine(row) else { break }
+            let count = engine.open(routine).count
+            out.append(
+                .later(
+                    ReminderPlan(
+                        id: "today.later." + row, title: routine.isDose && !routine.title.lowercased().contains("medic") ? "Medication" : routine.title,
+                        body: count == 1 ? "1 item" : "\(count) items", fireAt: now.addingTimeInterval(3600), row: row)))
+
+        // MARK: What yesterday left
+        case let .answerYesterday(item, option):
+            guard let left = engine.yesterdayLeft.first(where: { $0.id == item }) else { break }
+            switch left.kind {
+            case let .routine(routine):
+                for occurrence in engine.open(routine) { wrote(writes.log(occurrence, done: option == "took")) }
+            case let .task(task):
+                switch option {
+                case "today": wrote(writes.change(task, ["dueDay": .string(day.today.description)]))
+                case "tomorrow":
+                    var change: JSONObject = ["dueDay": .string(day.today.adding(days: 1, in: calendar).description)]
+                    if day.discovery.taskMoves {
+                        change["notBefore"] = TodayWrites.stamp(day.startOfTomorrow)
+                        change["deferrals"] = .number(Decimal(task.deferrals + 1))
+                    }
+                    wrote(writes.change(task, change))
+                case "drop": wrote(writes.status(task, .abandoned))
+                default: break
+                }
+            }
+            notes.yesterday[item] = option
+            notes.yesterdayAt[item] = now
+
+        // MARK: The night and what is happening
+        case .readNight:
+            wrote(writes.preference(["nightReadAt": TodayWrites.stamp(now)]))
+        case let .gotIt(project):
+            for digest in day.digests where project == nil || digest.key == project {
+                let items = project == nil ? engine.dayItems(digest).filter { engine.isNew($0, in: digest) } : digest.items
+                guard let latest = items.map(\.at).max() else { continue }
+                let through = max(latest, min(digest.until ?? latest, now))
+                guard through > (day.marks[digest.key] ?? .distantPast) else { continue }
+                wrote(writes.mark(digest.key, through: through))
+            }
+        case let .answerNight(project, option):
+            notes.night[project] = option
+            if option == "take", let digest = day.digests.first(where: { $0.key == project }), let text = digest.line ?? engine.nightItems(digest).first?.text {
+                var properties: JSONObject = ["name": .string(String(text.prefix(140)))]
+                if let list = day.list(project) { properties["list"] = TodayWrites.reference(list.path) }
+                let id = context.mint().uuidString.lowercased()
+                wrote(writes.writes.create(TodayKinds.task, id, properties: properties))
+                notes.added.append(id)
+            }
+
+        // MARK: Suggested tasks
+        case let .suggest(id, answer):
+            drafts.suggested[id] = answer
+        case let .saveSuggested(id):
+            let tasks = id.map { id in engine.proposed.filter { $0.id == id } } ?? engine.morningSuggested
+            var counts = notes.suggestedSaved.count == 3 ? notes.suggestedSaved : [0, 0, 0]
+            for task in tasks {
+                guard let answer = engine.pending(task) else { continue }
+                wrote(writes.answer(task, answer))
+                counts[SuggestedAnswer.allCases.firstIndex(of: answer) ?? 0] += 1
+                drafts.suggested[task.id] = nil
+            }
+            notes.suggestedSaved = counts
+            if id == nil { notes.suggestedSavedAt = now }
+
+        // MARK: The plan
+        case let .planPick(id):
+            guard let task = day.task(id) else { break }
+            var plan = drafts.plan ?? PlanDraft()
+            plan.picked[id] = !engine.ticked(task)
+            drafts.plan = plan
+        case let .planFlag(id, flag):
+            var plan = drafts.plan ?? PlanDraft()
+            plan.flags[id] = flag
+            drafts.plan = plan
+        case let .planOverlap(id, option):
+            var plan = drafts.plan ?? PlanDraft()
+            plan.overlaps[id] = option
+            drafts.plan = plan
+        case let .planSend(id):
+            var plan = drafts.plan ?? PlanDraft()
+            plan.sends[id] = !(plan.sends[id] ?? false)
+            drafts.plan = plan
+        case .planReset:
+            drafts.plan = nil
+        case .planSave:
+            let picked = engine.candidates.filter(engine.ticked)
+            guard !picked.isEmpty else { break }
+            // A suggested task ticked becomes a task; a flag changed on the
+            // page is written to its task.
+            for task in picked where task.isProposed { wrote(writes.answer(task, .task)) }
+            for (id, flag) in (drafts.plan?.flags ?? [:]).sorted(by: { $0.key < $1.key }) {
+                guard let task = day.task(id), flag != task.shownFlag || task.isProposed else { continue }
+                wrote(writes.flag(task, flag))
+            }
+            var overlaps = day.plan?.overlaps ?? []
+            for overlap in engine.overlaps {
+                guard let chosen = drafts.plan?.overlaps[overlap.id] else { continue }
+                let paths = overlap.meetings.map(\.path)
+                overlaps.removeAll { Set($0.events) == Set(paths) }
+                overlaps.append(PlanRecord.Overlap(events: paths, chosen: chosen, at: now))
+            }
+            // A message goes only if its row was ticked: the assistant is
+            // asked to send it, and nothing else is.
+            var sends = day.plan?.sends ?? []
+            for index in sends.indices where sends[index].sentAt == nil {
+                sends[index].ticked = drafts.plan?.sends[sends[index].id] ?? false
+                if sends[index].ticked {
+                    let name = sends[index].toName ?? sends[index].to.flatMap(day.person)?.name ?? "the person it is for"
+                    ask(.day, "Send this message to \(name), as I ticked it in today's plan: \(sends[index].text)")
+                }
+            }
+            var change: JSONObject = [
+                "picked": .array(picked.map { TodayWrites.reference($0.path) }), "savedAt": TodayWrites.stamp(now),
+                "overlaps": TodayWrites.encode(overlaps),
+            ]
+            if !sends.isEmpty { change["sends"] = TodayWrites.encode(sends) }
+            wrote(writes.plan(change))
+            drafts.plan = nil
+
+        // MARK: An overlap, outside the plan
+        case let .decideOverlap(id, option):
+            guard let overlap = engine.overlaps.first(where: { $0.id == id }) else { break }
+            wrote(writes.plan(["overlaps": writes.overlaps(replacing: overlap, chosen: option, kept: day.plan?.overlaps ?? [])]))
+
+        // MARK: A task
+        case let .setFlag(id, flag):
+            guard let task = day.task(id) else { break }
+            // The order follows the flag only once its list is closed.
+            if drafts.held[id] == nil, !drafts.heldNone.contains(id) {
+                if let had = task.shownFlag { drafts.held[id] = had } else { drafts.heldNone.insert(id) }
+            }
+            let suggestion = engine.flagSuggestion(task.path)
+            settle(suggestion, accept: suggestion?.flag == flag)
+            wrote(writes.flag(task, flag))
+            notes.urgentTaken[id] = nil
+            notes.urgentLeft[id] = nil
+        case .settleFlags:
+            drafts.held = [:]
+            drafts.heldNone = []
+        case let .setWhen(id, option), let .moveTo(id, option):
+            guard let task = day.task(id) else { break }
+            move(task, option: option)
+        case let .setProject(id, project):
+            guard let task = day.task(id) else { break }
+            let suggestion = engine.listSuggestion(task.path)
+            settle(suggestion, accept: suggestion?.list == project)
+            wrote(writes.project(task, project))
+        case let .done(id):
+            guard let task = day.task(id) else { break }
+            wrote(writes.status(task, .done))
+        case let .reopen(id):
+            guard let task = day.task(id) else { break }
+            wrote(writes.status(task, .open))
+
+        // MARK: Urgent
+        case let .urgent(id, choice):
+            guard let task = day.task(id), task.urgent else { break }
+            switch choice {
+            case .takeNow:
+                notes.urgentTaken[id] = now
+                notes.urgentLeft[id] = nil
+            case .leave:
+                notes.urgentLeft[id] = now
+                notes.urgentTaken[id] = nil
+            case .notUrgent:
+                wrote(writes.notUrgent(task))
+                notes.urgentTaken[id] = nil
+                notes.urgentLeft[id] = nil
+            }
+
+        // MARK: Priorities
+        case let .setPriority(id, flag):
+            guard let list = day.list(id) else { break }
+            let suggestion = engine.flagSuggestion(list.path)
+            settle(suggestion, accept: suggestion?.flag == flag)
+            wrote(writes.priority(list, flag))
+        case let .togglePriority(id):
+            guard let list = day.list(id) else { break }
+            let suggestion = engine.flagSuggestion(list.path)
+            if list.flag == nil {
+                settle(suggestion, accept: suggestion != nil)
+                wrote(writes.priority(list, suggestion?.flag ?? .medium))
+            } else {
+                settle(suggestion, accept: false)
+                wrote(writes.priority(list, nil))
+            }
+        case let .removePriority(id):
+            guard let list = day.list(id) else { break }
+            settle(engine.flagSuggestion(list.path), accept: false)
+            wrote(writes.priority(list, nil))
+
+        // MARK: The end of the day
+        case let .carry(id, option):
+            drafts.carry[id] = option
+        case .saveWrap:
+            var moves: [JSONValue] = []
+            for task in engine.carrying {
+                let pick = drafts.carry[task.id] ?? notes.carried[task.id] ?? "tomorrow"
+                switch pick {
+                case "drop":
+                    wrote(writes.status(task, .abandoned))
+                    moves.append(.object(["task": .string(task.path), "to": "dropped"]))
+                case "nextweek":
+                    let monday = engine.whenOptions.first { $0.id == "nextweek" }?.notBefore ?? day.startOfTomorrow
+                    wrote(writes.move(task, to: monday))
+                    moves.append(.object(["task": .string(task.path), "to": .string(CivilDay(monday, in: calendar).description)]))
+                default:
+                    wrote(writes.move(task, to: day.startOfTomorrow))
+                    moves.append(.object(["task": .string(task.path), "to": .string(day.today.adding(days: 1, in: calendar).description)]))
+                }
+                notes.carried[task.id] = pick
+            }
+            wrote(writes.plan(["wrapSavedAt": TodayWrites.stamp(now), "moves": .array(moves)]))
+            drafts.carry = [:]
+
+        // MARK: Add or ask
+        case let .addOrAsk(text):
+            let typed = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty else { break }
+            if typed.hasSuffix("?") {
+                ask(.day, typed)
+            } else {
+                let id = writes.writes.newID()
+                wrote(writes.add(Words.cap(typed), id: id))
+                notes.added.append(id)
+            }
+        case let .ask(subject, text):
+            ask(subject, text)
+        case let .closeAnswer(id):
+            out.append(.answerClosed(id))
+        case .stopAnswer:
+            out.append(.stopped)
+        case let .send(id):
+            notes.sent[id] = now
+
+        // MARK: The app
+        case .looked, .foreground:
+            if command == .foreground { out.append(.records(.foregrounded)) }
+            out.append(.looked(at: now, today: day.today, zone: context.environment.timeZone.identifier))
+            // The last look is kept in the repository too, no more often
+            // than every five minutes: the assistant prepares nothing until
+            // the preference exists, and reads the owner's time zone there.
+            let zone = context.environment.timeZone.identifier
+            if state.notesRead, day.discovery.holds(TodayKinds.preference),
+                !day.preference.exists || day.preference.timezone != zone || now.timeIntervalSince(day.preference.lastActiveAt ?? .distantPast) > 300
+            {
+                wrote(writes.preference(["lastActiveAt": TodayWrites.stamp(now), "timezone": .string(zone)]))
+            }
+        case .refresh:
+            out.append(.records(.refreshAsked))
+        case .clearSaved:
+            out.append(.records(.clearAsked))
+        case let .offered(version):
+            out.append(.offered(version))
+        case .dismissProblem:
+            out.append(.problemDismissed)
+        case .notificationsAsked:
+            out.append(.permissionWanted)
+        }
+
+        if drafts != state.drafts { out.append(.drafted(drafts)) }
+        if notes != state.notes, notes != Self.rolled(state.notes, at: now, today: day.today) || state.notes?.day != day.today {
+            out.append(.noted(notes))
+        }
+        return out
+    }
+}

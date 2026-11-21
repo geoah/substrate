@@ -28,8 +28,7 @@ public enum TodayManifest {
     {
         AppManifest(
             appName: TodayApp.appName, clientID: clientID, scopes: scopes, requirement: requirement,
-            claimedRedirect: claimedRedirect, passwordFallback: .never, names: [TodayKinds.packageID: "Today"],
-            kindLabels: [TodayKinds.item: KindLabel(singular: "Item", plural: "Items")], softwareVersion: softwareVersion)
+            claimedRedirect: claimedRedirect, passwordFallback: .never, names: [TodayKinds.packageID: "Today"], softwareVersion: softwareVersion)
     }
 
     /// This build's manifest: a release's stamped client id and claimed
