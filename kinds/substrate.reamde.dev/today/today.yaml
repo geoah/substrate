@@ -48,7 +48,7 @@ data:
   # 1: preference, plan, advice, digest, reviewmark, dossier, returnpoint,
   # rule, preparation and urgentcheck; fade, prepare and stampurgent with
   # their triggers; the preparer; the assistant's standing instructions.
-  version: 1
+  version: 2
 ---
 # ---- the bundle document: the install unit ------------------------------------
 # Ten kinds, three functions and one agent. The triggers (triggers.yaml) and

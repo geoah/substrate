@@ -69,6 +69,7 @@ data:
         ZoneInfo = None
 
     TASK = "substrate.reamde.dev/tasks/task"
+    LIST = "substrate.reamde.dev/tasks/list"
     PREFERENCE = "substrate.reamde.dev/today/preference"
     ADVICE = "substrate.reamde.dev/today/advice"
     URGENTCHECK = "substrate.reamde.dev/today/urgentcheck"
@@ -191,12 +192,13 @@ data:
             "property you have nothing for."
             % (_instant(start), _instant(end), MAX_MEETINGS, DOSSIER),
             "",
-            "2. Flags. Read the active task lists and the open tasks beside what the %s records say "
-            "happened. Where the priority of a list or a task should change today, propose it: one "
-            "propose call per change, op patch, diff {\"properties\": {\"priority\": ...}} and one "
-            "sentence of rationale. At most %d, none is fine, and never one an open change request "
-            "already proposes."
-            % (DIGEST, MAX_FLAGS),
+            "2. Flags. Read the active task lists (%s) and the open tasks (%s) beside what the %s "
+            "records say happened. Where the priority of one of those should change today, propose "
+            "it: one propose call per change, op patch, diff {\"properties\": {\"priority\": ...}} and "
+            "one sentence of rationale. Only on records of those two kinds: a task or a list of any "
+            "other kind is not the owner's day. At most %d, none is fine, and never one an open "
+            "change request already proposes."
+            % (LIST, TASK, DIGEST, MAX_FLAGS),
             "",
             "Reply with one line saying what you wrote.",
         ])
