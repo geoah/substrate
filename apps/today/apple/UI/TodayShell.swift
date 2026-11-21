@@ -27,6 +27,7 @@ public enum Today {
         // A fixture scene draws with no shell at all, and a session handed
         // to the build is written before the shell reads the Keychain.
         if TodayDebug.demo != nil { return }
+        TodayDebug.setZone()
         TodayDebug.writeSession()
         #endif
         _ = shell
@@ -68,7 +69,7 @@ public enum Today {
 }
 
 #if DEBUG
-/// Two hooks for a debug build, since nothing in the kit offers them. Both
+/// Three hooks for a debug build, since nothing in the kit offers them. All
 /// compile out of a release build.
 ///
 /// - `SUBSTRATE_TODAY_DEMO=<scene>` (or the launch argument
@@ -81,6 +82,9 @@ public enum Today {
 ///   it shares nothing with a signed-in build. A fourth word, `app`, keeps
 ///   it as an app session with `full`; without it the session reads as a
 ///   password one, which the status check reports as older access.
+/// - `SUBSTRATE_TODAY_ZONE=<IANA zone>` reads the day in that time zone, so
+///   a day seeded with `seed.py --timezone` can be tried at another hour
+///   than this machine's: the morning, late in the evening.
 enum TodayDebug {
     static let keychainService = "dev.reamde.substrate.today.debug"
     static let folder = "SubstrateToday-Debug"
@@ -109,6 +113,17 @@ enum TodayDebug {
         }
         return Session(server: server, repository: words[1], secret: words[2])
     }()
+
+    /// The process's time zone, set before the shell is made, so the first
+    /// day read is already in it. The kit's environment follows the
+    /// system's zone, not the process's default one, and the system's is
+    /// read from `TZ` where that is set.
+    static func setZone() {
+        guard let zone = value("SUBSTRATE_TODAY_ZONE").flatMap(TimeZone.init(identifier:)) else { return }
+        setenv("TZ", zone.identifier, 1)
+        NSTimeZone.resetSystemTimeZone()
+        NSTimeZone.default = zone
+    }
 
     /// Writes the session where the debug shell reads it, replacing the
     /// one a run before left.

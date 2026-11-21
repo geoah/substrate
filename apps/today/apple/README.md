@@ -56,7 +56,7 @@ no page open the list of projects stands there.
 
 ## Driving a debug build
 
-Two hooks, in a debug build only:
+Three hooks, in a debug build only:
 
 - `SUBSTRATE_TODAY_DEMO=<scene>` (or the launch argument `-SUBSTRATE_TODAY_DEMO <scene>`) draws one of
   `TodayFixtures.all` by name (`today-working`, or `working`) with no server and no session. Its commands
@@ -66,6 +66,10 @@ Two hooks, in a debug build only:
   (`dev.reamde.substrate.today.debug`, `SubstrateToday-Debug`), so it shares nothing with a signed-in
   build. A fourth word, `app`, keeps it as an app session with `full`; without it the session reads as a
   password one.
+
+- `SUBSTRATE_TODAY_ZONE=<IANA zone>` reads the day in that time zone. With `dev/seed.py --timezone` naming the
+  same zone, the invented day can be tried at another hour than this machine's: `Etc/GMT+12` is the morning when
+  it is evening in London.
 
 On a simulator the environment reaches the app as `SIMCTL_CHILD_SUBSTRATE_TODAY_DEMO`, and so on.
 
