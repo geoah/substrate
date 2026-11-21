@@ -1,22 +1,87 @@
+import SubstrateScreens
 import SubstrateUI
 import SwiftUI
 import TodayCore
 
 /// The sign-in while there is no session, the access-ended screen while the
-/// token is refused, else the app.
+/// token is refused, else the day.
 public struct RootView: View {
     public init() {}
 
     public var body: some View {
-        AppShellRoot<TodayApp, ItemsView>(tagline: "Your items, kept in your substrate.") { link, app in
-            ItemsView(link: link, app: app)
+        #if DEBUG
+        if let scene = TodayDebug.demo {
+            DayScreen(app: scene)
+        } else {
+            signedIn
+        }
+        #else
+        signedIn
+        #endif
+    }
+
+    private var signedIn: some View {
+        AppShellRoot<TodayApp, DayRoot>(tagline: "Your day, in one pane, from your substrate.") { link, app in
+            DayRoot(link: link, app: app)
         }
         .environment(Today.shell)
     }
 }
 
-/// Settings: the app's own sections, then the kit's status, repository and
-/// about, as one presentation.
+/// The day under the shell: every command goes to the app's root, and what
+/// stands in the way of the link is said above the pane.
+struct DayRoot: View {
+    @Environment(TodayShell.self) private var shell
+    let link: LinkPresentation<TodayPresentation>
+    let app: TodayPresentation
+    @State private var settings = false
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettingsWindow
+    #endif
+
+    var body: some View {
+        let shell = shell
+        DayScreen(app: app, send: { shell.send($0) }, openSettings: settingsButton) {
+            LinkNotices<TodayApp>(link: link, lines: app.notices, openStatus: showSettings)
+        }
+        .problem(app.problem, dismiss: { shell.send(.dismissProblem) })
+        .task { shell.send(.looked) }
+        #if os(iOS)
+        .sheet(isPresented: $settings) {
+            NavigationStack {
+                SettingsView()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { settings = false } }
+                }
+            }
+        }
+        #endif
+    }
+}
+
+extension DayRoot {
+    /// The Mac has Settings in its menu; an iPhone and an iPad reach it
+    /// from a button under the day.
+    private var settingsButton: (() -> Void)? {
+        #if os(macOS)
+        nil
+        #else
+        showSettings
+        #endif
+    }
+
+    private var showSettings: () -> Void {
+        #if os(macOS)
+        let open = openSettingsWindow
+        return { open() }
+        #else
+        return { settings = true }
+        #endif
+    }
+}
+
+/// Settings: the app's own sections (how the assistant behaves, reminders),
+/// then the kit's status, repository and about, as one presentation.
 public struct SettingsView: View {
     public init() {}
 

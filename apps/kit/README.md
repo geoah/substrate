@@ -7,8 +7,8 @@ session, asking whether the app is still set up, and the screens for all of
 it. Beside that, the record and its values as the console draws them, the
 loop every screen runs, what an app keeps on the device, and the bridge
 that carries all of it to Android. The console's shell (Substrate),
-Substrate Sync, Substrate Chat, Substrate Workouts, Substrate Tasks and the
-template `mise run apps:new` copies use it; an app's Apple target adds it as
+Substrate Sync, Substrate Chat, Substrate Workouts, Substrate Tasks,
+Substrate Today and the template `mise run apps:new` copies use it; an app's Apple target adds it as
 a local package (`project.yml`'s `packages:`), and an app's core as a path
 dependency in its `Package.swift`. The design it implements is
 [docs/plans/app-setup.md](../../docs/plans/app-setup.md), and its layout is
