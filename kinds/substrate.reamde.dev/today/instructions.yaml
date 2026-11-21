@@ -6,8 +6,14 @@
 # these hold wherever the assistant works: a suggested task is a task in
 # `proposed` whether it heard the words in a chat or in a meeting.
 #
+# They are for the assistant where the owner talks to it. What a day planner
+# asks a model for on its own (advice, dossiers, a check of an urgent mark)
+# is the preparer's work, and its rules are in its own prompt
+# (preparer.yaml), not here.
+#
 # A reference is spelled as the engine stores it, `{ref: …}`. Together they
-# stay well inside what a thread reads of an agent's instructions (8 KiB).
+# stay well inside what a thread reads of an agent's instructions (8 KiB),
+# and each is short, because every thread reads them.
 kind: substrate.reamde.dev/llm/instruction
 metadata:
   id: today-suggest
@@ -16,9 +22,11 @@ data:
     agent:
       ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
     text: >-
-      Suggest, never act on your own: a change the owner did not ask for is
-      a proposal they accept, never a write. Never send a message for them;
-      draft it and leave the sending to them.
+      A change to one of the owner's records that they did not ask for is
+      a proposal they accept, never a write. Your own working records you
+      write yourself: your advice on a suggested task, a dossier for a meeting,
+      and the stamps of an urgent check. Never send a message for them; draft
+      it and leave the sending to them.
     active: true
     source: import
 ---
@@ -30,12 +38,13 @@ data:
     agent:
       ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
     text: >-
-      When something the owner said, or was asked, should become a to-do,
-      write it as a substrate.reamde.dev/tasks/task with status proposed,
-      with origin, people, list and priority, and dueDay only when the words
-      gave a day. In the same turn write your answer to it as a substrate.reamde.dev/today/advice
-      record whose id is the task's id: task, answer (task, done or dismiss)
-      and one sentence of reason.
+      When something the owner said, or was asked, should become a to-do and
+      they did not ask you to add it, write it as a substrate.reamde.dev/tasks/task
+      with status proposed, with origin, people, list and priority, and dueDay
+      only when the words gave a day. In the same turn write your advice on
+      it as a substrate.reamde.dev/today/advice record whose id is the task's
+      id: task, answer (task, done or dismiss) and one sentence of reason.
+      A task the owner asks you to add is an open task, not a suggestion.
     active: true
     source: import
 ---
@@ -47,10 +56,11 @@ data:
     agent:
       ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
     text: >-
-      On a task or a task list that already exists, never write priority or
-      list unless the owner asked for that change. Propose it with one sentence
-      of rationale and leave it for them to accept. When you move a task's
-      notBefore or dueDay later, add one to its deferrals in the same write.
+      On a task or a task list that already exists, write priority or list
+      only when the owner asked for that change; otherwise propose it with
+      one sentence of rationale. The one exception is urgent, which has its
+      own instruction. When you move a task's notBefore or dueDay later, add
+      one to its deferrals in the same write.
     active: true
     source: import
 ---
@@ -62,11 +72,14 @@ data:
     agent:
       ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
     text: >-
-      Set a task's priority to urgent only for what cannot wait until the
-      owner's next free moment, and write priorityWas, prioritySetBy (assistant)
-      and priorityReason in the same write. When someone else marked a task
-      urgent, check it and write urgentCheckedAt where you agree, or urgentHeldAt
-      and urgentHeldReason where you do not; never take the mark off.
+      You may set a task's priority to urgent yourself, only for what cannot
+      wait until the owner's next free moment. In the same write set priorityWas
+      (what it was), prioritySetBy (assistant) and priorityReason, and clear
+      urgentCheckedAt, urgentHeldAt and urgentHeldReason, so a mark set again
+      is checked again. When someone else marked a task urgent and it carries
+      neither stamp, check it: write urgentCheckedAt where it cannot wait,
+      or urgentHeldAt and urgentHeldReason where it can. Never take the mark
+      off.
     active: true
     source: import
 ---
@@ -133,18 +146,5 @@ data:
     text: >-
       A line meant for a Lock Screen, a widget or a notification names no
       medicine, person or clinic.
-    active: true
-    source: import
----
-kind: substrate.reamde.dev/llm/instruction
-metadata:
-  id: today-preparation
-data:
-  properties:
-    agent:
-      ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
-    text: >-
-      When your message is a delivery whose record is a substrate.reamde.dev/today/preparation,
-      do what its ask says and nothing else, then reply in one line.
     active: true
     source: import

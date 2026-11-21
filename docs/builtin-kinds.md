@@ -222,27 +222,47 @@ without `tasks` those parts stay empty.
 | `dossier`     | What to know before one meeting: what it is for, what to raise, what is due after it. Its id is the occurrence's.                                       |
 | `returnpoint` | Where the owner left one record: a note, the last look, or that it arrived unopened. Its id is that record's.                                           |
 | `rule`        | A rule the owner keeps about what reaches them: what it matches, and whether to hold, raise, skip or mark it urgent.                                    |
-| `preparation` | One thing the assistant was asked to prepare, written by `prepare`: the day, the reason and the ask in full.                                            |
+| `preparation` | One thing that was asked to be prepared, written by `prepare`: the day, the reason and the ask in full.                                                 |
+| `urgentcheck` | The preparer's verdict on one urgent mark an automation set: whether the task can wait, and why. Its id is the task's.                                 |
 
-It ships two functions and five triggers:
+It ships three functions, one agent and five triggers:
 
 - `fade`, daily: a task still in its proposed state two weeks after it was
   written is abandoned, under the version the function read, so one the
-  owner answers meanwhile is left alone.
-- `prepare`, every half hour, when a task arrives as a suggestion and when
-  an urgent mark arrives that nobody has checked. It calls no model: it
-  works out what the assistant has not written and asks for it as a
-  `preparation` record whose id is derived from what is asked, so asking
-  twice is one record. It asks for nothing until an app has written the
-  owner's `preference`, and nothing while its `assistantPrepares` is false.
-- The trigger `today-assistant-on-preparation` runs the assistant on each
-  new `preparation`, with the record as its message, on the assistant's own
-  budget and against its own [daily spend](agents.md#the-daily-spend-cap).
+  owner answers meanwhile is left alone. It does nothing until an app has
+  written the owner's `preference`, so adding the package alone abandons
+  nothing.
+- `prepare`, every half hour, and when an urgent mark arrives that nobody
+  has checked. It calls no model: it works out what has not been prepared
+  and asks for it as a `preparation` record whose id is derived from what
+  is asked, so asking twice is one record. A day is one ask for the morning
+  at the owner's hour, one for advice at most every two hours (for at most
+  eight suggested tasks, the newest first, and only while one has no
+  advice), and one per urgent mark an automation sets. It asks for nothing
+  until an app has written the owner's `preference`, and nothing while its
+  `assistantPrepares` is false.
+- `preparer`, an agent the trigger `today-assistant-on-preparation` runs on
+  each new `preparation`, with the record as its message. It is not the
+  owner's assistant: it runs on the provider bound to the bundle's `model`
+  input, on a mid-priced model, against a
+  [daily spend](agents.md#the-daily-spend-cap) of its own (100 cents), so
+  preparing a day never spends what the owner's chats are bought with. It
+  reads what other people wrote, so it writes only `advice`, `dossier`,
+  `urgentcheck` and change requests, and holds no write on a task or a
+  list. It is withheld from chat.
+- `stampurgent`, when an `urgentcheck` is written: it stamps the task with
+  the verdict (`urgentCheckedAt`, or `urgentHeldAt` and `urgentHeldReason`)
+  while the mark is still unchecked, and writes nothing else.
 
-It also ships ten [`llm/instruction`](#substratereamdedevllm) records for
+After adding the package, bind its `model` input to the AI provider the
+preparer should run on, unless the repository has one provider or one named
+`default` ([bundles](bundles.md#what-a-bundle-ships)); until it resolves,
+the preparer's runs are refused and nothing is prepared.
+
+It also ships nine [`llm/instruction`](#substratereamdedevllm) records for
 the assistant, with ids that start `today-` and `source: import`: how it
-suggests a task, proposes a change to one that exists, sets and checks an
-urgent mark, and answers a `preparation`. They are records, so the owner
+suggests a task, proposes a change to one that exists, and sets and checks
+an urgent mark where the owner talks to it. They are records, so the owner
 edits or retires one like their own, and an upgrade never writes over a
 record its owner changed
 ([decision 0191](decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md)).

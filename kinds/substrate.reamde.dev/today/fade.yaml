@@ -5,6 +5,11 @@
 # only the suggestion goes. An automation carrying out the owner's rule, not
 # the assistant.
 #
+# IT DOES NOTHING UNTIL AN APP HAS BEEN OPENED. The rule is the day
+# planner's, so it holds only where one is in use: a repository that added
+# the package and never opened an app on it has no `preference` record, and
+# nothing of its is abandoned.
+#
 # The tasks package is named by a glob because this package cannot require
 # it (today.yaml): on a repository without it the read is refused, the body
 # catches that and writes nothing.
@@ -17,7 +22,7 @@ data:
   description: >-
     Abandon each suggested task nobody answered within two weeks of its being
     suggested, and delete the day planner's own preparation records of that
-    age.
+    age. It does nothing until the owner has opened a day planner.
   runtime: python
   timeout: PT30S
   effect: write
@@ -25,6 +30,7 @@ data:
     reads:
       kinds:
         - substrate.reamde.dev/tasks/*
+        - substrate.reamde.dev/today/preference
         - substrate.reamde.dev/today/preparation
       budgets:
         calls: 16
@@ -39,12 +45,14 @@ data:
     created more than AFTER ago, under the version it read: a task the owner
     answers while this runs is left alone (`on_conflict="yield"` settles the
     whole fire as a skip, and the next day's fire takes what is left). It
-    also deletes this package's own `preparation` records of that age.
+    also deletes this package's own `preparation` records of that age. It
+    does neither until the owner's `preference` record exists.
     """
 
     import datetime
 
     TASK = "substrate.reamde.dev/tasks/task"
+    PREFERENCE = "substrate.reamde.dev/today/preference"
     PREPARATION = "substrate.reamde.dev/today/preparation"
     AFTER = datetime.timedelta(days=14)
     LIMIT = 200
@@ -89,7 +97,19 @@ data:
         return old
 
 
+    def in_use(host):
+        """Whether a day planner has been opened here: its preference record
+        is what the app writes first."""
+        try:
+            return host.records.get(PREFERENCE, "default") is not None
+        except Exception as error:  # noqa: BLE001
+            host.log("fade: %s is not read: %s" % (PREFERENCE, error))
+            return False
+
+
     def main(input, host):
+        if not in_use(host):
+            return {"output": {"skipped": "no day preference yet"}}
         cutoff = _now(host, input) - AFTER
         tasks = faded(host, _pages(host, [TASK], {"status": {"eq": "proposed"}}), cutoff)[:LIMIT]
         for task in tasks:

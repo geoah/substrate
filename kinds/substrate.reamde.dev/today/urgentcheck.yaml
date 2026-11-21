@@ -1,0 +1,48 @@
+# the preparer's verdict on one urgent mark nobody had checked: whether the
+# task can wait. The preparer holds no write on a task, so it writes its
+# verdict here and the `stampurgent` function (triggers.yaml) stamps the
+# task with it. The id is the task's own, so there is one per task and a
+# second check of a mark set again replaces the first; that is why the ids
+# are named. `task` is pinned at core's lifecycle trait rather than the
+# tasks package's task (see today.yaml).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/urgentcheck
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Your assistant's check of one urgent mark an automation set: whether the
+    task can wait until your next free moment, with one sentence of why.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: urgentcheck
+  label:
+    singular: Urgent check
+    plural: Urgent checks
+  displayTemplate: "{verdict}: {reason}"
+  properties:
+    task:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the task whose urgent mark was checked
+    verdict:
+      type: enum
+      required: true
+      description: whether it can wait
+      values:
+        - value: cannotwait
+          label: It cannot wait
+        - value: canwait
+          label: It can wait
+    reason:
+      type: string
+      description: why, in one sentence written to you
+    checkedAt:
+      type: datetime
+      description: when the mark was checked

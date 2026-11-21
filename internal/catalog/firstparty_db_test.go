@@ -254,7 +254,8 @@ func TestAPackageThatDeclaresNoKindsInstallsItsRecords(t *testing.T) {
 // trait and its functions name the tasks kinds by a glob. It ships the
 // assistant's standing instructions as records of the seeded llm package's
 // kind, which an install writes and a later install leaves alone once the
-// owner has edited or retired one (decision record 0191).
+// owner has edited or retired one (decision record 0191). What it asks a
+// model for runs on its own agent, the preparer, never the assistant.
 func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *testing.T) {
 	ctx := context.Background()
 	c := loadCatalog(t)
@@ -273,7 +274,7 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 	)
 	shipped := []string{
 		"today-suggest", "today-suggested-task", "today-existing", "today-urgent", "today-durations",
-		"today-object-once", "today-sources", "today-voice", "today-glance", "today-preparation",
+		"today-object-once", "today-sources", "today-voice", "today-glance",
 	}
 	for _, id := range shipped {
 		row, err := ds.Get(ctx, instructionKind, id)
@@ -288,9 +289,9 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 	for id, callable := range map[string]string{
 		"today-fade-daily":               "substrate.reamde.dev/core/function/" + todayID + "/fade",
 		"today-prepare-morning":          "substrate.reamde.dev/core/function/" + todayID + "/prepare",
-		"today-prepare-on-suggested":     "substrate.reamde.dev/core/function/" + todayID + "/prepare",
 		"today-prepare-on-urgent":        "substrate.reamde.dev/core/function/" + todayID + "/prepare",
-		"today-assistant-on-preparation": moss,
+		"today-assistant-on-preparation": "substrate.reamde.dev/core/agent/" + todayID + "/preparer",
+		"today-stamp-on-urgentcheck":     "substrate.reamde.dev/core/function/" + todayID + "/stampurgent",
 	} {
 		row, err := ds.Get(ctx, triggerKind, id)
 		if err != nil {

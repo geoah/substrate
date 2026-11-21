@@ -17,15 +17,28 @@
 #
 # CODE, kept small:
 #
-#   fade     daily: a suggested task nobody answered in two weeks is
-#            abandoned. The owner's rule carried out by an automation.
-#   prepare  works out what the assistant has not written yet and asks for
-#            it, as a `preparation` record. It calls no model itself.
+#   fade         daily: a suggested task nobody answered in two weeks is
+#                abandoned. The owner's rule carried out by an automation.
+#   prepare      works out what has not been prepared yet and asks for it,
+#                as a `preparation` record. It calls no model itself.
+#   preparer     an agent, run by a trigger on `preparation` with the record
+#                as its message. It writes its advice, its dossiers, its
+#                verdict on an urgent mark, and change requests, and nothing
+#                else: it reads what other people wrote, so it holds no write
+#                on a task or a list.
+#   stampurgent  stamps a task with the preparer's verdict on its urgent mark.
 #
-# The assistant is run by a trigger on `preparation` (triggers.yaml), with
-# the record as its message, and its standing instructions for all of this
-# are `llm/instruction` records this package ships (instructions.yaml),
-# which the owner edits like their own (decision record 0191).
+# THE PREPARER IS NOT THE OWNER'S ASSISTANT. It runs on a mid-priced model
+# under a daily cap of its own, on the provider bound to this bundle's
+# `model` input, so preparing a day never spends what the owner's chats are
+# bought with. A normal day is one run for the morning, one for advice at
+# most every two hours while a suggested task has none, and one per urgent
+# mark an automation sets (prepare.yaml).
+#
+# The assistant's standing instructions for a day planner are
+# `llm/instruction` records this package ships (instructions.yaml), which the
+# owner edits like their own (decision record 0191). They are for where the
+# owner talks to their assistant; the preparer's rules are in its prompt.
 kind: substrate.reamde.dev/core/package
 metadata:
   id: substrate.reamde.dev/today
@@ -33,14 +46,14 @@ data:
   authority: substrate.reamde.dev
   package: today
   # 1: preference, plan, advice, digest, reviewmark, dossier, returnpoint,
-  # rule and preparation; fade and prepare with their triggers; the
-  # assistant's standing instructions.
+  # rule, preparation and urgentcheck; fade, prepare and stampurgent with
+  # their triggers; the preparer; the assistant's standing instructions.
   version: 1
 ---
 # ---- the bundle document: the install unit ------------------------------------
-# Nine kinds and two functions. The triggers (triggers.yaml) and the
-# assistant's instructions (instructions.yaml) are data: an upgrade replaces
-# one only where its owner has not edited it.
+# Ten kinds, three functions and one agent. The triggers (triggers.yaml) and
+# the assistant's instructions (instructions.yaml) are data: an upgrade
+# replaces one only where its owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: substrate.reamde.dev/today
@@ -51,6 +64,11 @@ data:
     Planning your day: the day's plan, what your assistant prepared for it,
     how far you have read each project's news, and your rules for what reaches
     you. Substrate Today keeps them.
+  inputs:
+    model:
+      kind: substrate.reamde.dev/llm/provider
+      description: the AI provider your day is prepared on, picked when the
+        package is added
   installs:
     - substrate.reamde.dev/today/preference
     - substrate.reamde.dev/today/plan
@@ -61,5 +79,8 @@ data:
     - substrate.reamde.dev/today/returnpoint
     - substrate.reamde.dev/today/rule
     - substrate.reamde.dev/today/preparation
+    - substrate.reamde.dev/today/urgentcheck
     - substrate.reamde.dev/today/fade
     - substrate.reamde.dev/today/prepare
+    - substrate.reamde.dev/today/stampurgent
+    - substrate.reamde.dev/today/preparer

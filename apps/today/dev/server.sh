@@ -60,7 +60,7 @@ add_packages() {
 	done
 }
 
-# The dev server holds no model key, so a run of the assistant would only
+# The dev server holds no model key, so a run of the preparer would only
 # fail. An install writes the shipped trigger whole, enabled, so it is turned
 # off again after every add. TODAY_DEV_ASSISTANT=1 leaves it on.
 assistant_off() {

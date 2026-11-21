@@ -1,7 +1,7 @@
-# one thing the `prepare` function asked the assistant to write, and when.
-# The function computes what is missing and writes the ask; a trigger on this
-# kind (triggers.yaml) runs the assistant with the record as its message, on
-# the assistant's own budget and deadline, which a function calling an agent
+# one thing the `prepare` function asked for, and when. The function computes
+# what is missing and writes the ask; a trigger on this kind (triggers.yaml)
+# runs the preparer (preparer.yaml) with the record as its message, on the
+# preparer's own budget and deadline, which a function calling an agent
 # inside its own sixty seconds could not give it.
 #
 # The id says what it is for (`d<YYYYMMDD>` the morning, `a…` advice, `u…`
@@ -45,7 +45,7 @@ data:
     ask:
       type: text
       required: true
-      description: what the assistant was asked to write, in full
+      description: what was asked for, in full
     subjects:
       type: reference
       kind: any

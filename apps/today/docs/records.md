@@ -33,8 +33,8 @@ absent value reads as the first one named.
 | `prioritySetBy`    | enum `owner assistant automation api`   | Who set the `priority` it has now. Absent reads as `owner`.                                        |
 | `priorityReason`   | string                                  | The setter's one sentence, shown beside an urgent pill.                                            |
 | `priorityWas`      | enum `none low medium high`             | Written in the same write as `urgent`: what "Not urgent" puts back.                                |
-| `urgentCheckedAt`  | datetime                                | The assistant looked and agrees it cannot wait.                                                    |
-| `urgentHeldAt`     | datetime                                | The assistant looked and thinks it can wait.                                                       |
+| `urgentCheckedAt`  | datetime                                | The mark was checked, and it cannot wait.                                                          |
+| `urgentHeldAt`     | datetime                                | The mark was checked, and it can wait.                                                             |
 | `urgentHeldReason` | string                                  | Why it can wait, in one sentence.                                                                  |
 
 Rules:
@@ -43,6 +43,9 @@ Rules:
   `prioritySetBy: owner`, and in the same write clears `priorityReason`, `priorityWas`, `urgentCheckedAt`,
   `urgentHeldAt` and `urgentHeldReason`.
 - "Not urgent" writes `priority` back to `priorityWas` (or `none`) in that same shape.
+- Whoever sets `urgent` writes `priorityWas`, `prioritySetBy` and `priorityReason` in the same write, and
+  clears `urgentCheckedAt`, `urgentHeldAt` and `urgentHeldReason` in it, so a mark set again is checked
+  again.
 - A task whose `priority` is `urgent` is in one of three states:
   - **checked**: `prioritySetBy` is `assistant`, or `urgentCheckedAt` is set, or `prioritySetBy` is `owner`
     or absent (set in another app by the owner's hand). It interrupts.
@@ -136,7 +139,8 @@ a full `<kind>/<id>` path, such as `substrate.reamde.dev/tasks/list/<id>`, and a
 | `today/dossier`     | the occurrence's id         | `event` (reference, any: the event or its series), `slot` (datetime: the occurrence's start), `purpose` (string), `since` (markdown), `raise` (string, repeated), `after` (string), `tasks` (reference at `lifecycle`, repeated), `readFirst` (reference, any, repeated), `sources` (reference, any, repeated), `writtenAt` (datetime)                                              | the assistant                     |
 | `today/returnpoint` | the record's id             | binds `temporal(point)`; `record` (reference, any, required), `mark` (enum `note viewed arrived`), `text` (string)                                                                                                                                                                                                                                                                  | the app                           |
 | `today/rule`        | minted                      | `text` (string, required), `scope` (enum `source person channel kind sender`, required), `match` (string, required), `effect` (enum `hold raise briefing skip include urgent`, required), `from` (reference, any), `enabled` (bool, default true)                                                                                                                                   | the owner                         |
-| `today/preparation` | by what is asked            | `day` (date, required), `reason` (enum `morning advice urgent`, required), `ask` (text, required: what the assistant is asked to write), `subjects` (reference, any, repeated)                                                                                                                                                                                                      | the `prepare` function            |
+| `today/preparation` | by what is asked            | `day` (date, required), `reason` (enum `morning advice urgent`, required), `ask` (text, required: what is asked for, in full), `subjects` (reference, any, repeated) |
+| `today/urgentcheck` | the task's id               | `task` (reference at `lifecycle`, required, `mustExist`, cascade), `verdict` (enum `cannotwait canwait`, required), `reason` (string), `checkedAt` (datetime). The app does not read it: `stampurgent` turns it into the task's stamps |
 
 What the digest means: for one project, what came in after `since` and up to `until`. The app shows the
 items newer than that project's `today/reviewmark.through` as "what is happening", and the items between
@@ -152,26 +156,39 @@ The package also holds:
 - **Function `fade`**, on a daily schedule: a `tasks/task` still `proposed` two weeks after it was created
   is abandoned, under the version it read, so a task the owner answers meanwhile is left alone. It also
   deletes `today/preparation` records of that age. An automation carrying out the owner's rule, not the
-  assistant.
-- **Function `prepare`**, every half hour, when a task arrives as a suggestion and when an urgent mark
-  arrives that nobody has checked. It calls no model. It works out what the assistant has not written and
-  asks for it by writing a `today/preparation` record, whose id is derived from what is asked, so asking
-  twice is one record:
+  assistant. It does nothing until the app has written `today/preference`, so adding the package alone
+  abandons nothing.
+- **Function `prepare`**, every half hour, and when an urgent mark arrives that nobody has checked. It
+  calls no model. It works out what has not been prepared and asks for it by writing a `today/preparation`
+  record, whose id is derived from what is asked, so asking twice is one record:
   - `d<YYYYMMDD>`, once the owner's clock passes `prepareAt` in their `timezone`: a dossier for at most six
     of the day's meetings, and at most three patch requests for flags.
-  - `a…`: advice for the suggested tasks that have none, at most twenty, asked once a day per set of tasks.
-  - `u…`: the check of one urgent mark an automation or the API set (`urgentCheckedAt`, or `urgentHeldAt`
-    with `urgentHeldReason`).
+  - `a…`: advice for the suggested tasks that have none, at most eight per ask and the newest first, at
+    most every two hours, and only while at least one has none. No trigger fires when a suggestion
+    arrives.
+  - `u…`: the check of one urgent mark an automation or the API set.
 
-  It asks for nothing until the app has written `today/preference`, and nothing while `assistantPrepares`
-  is false.
-- **A trigger that runs the assistant** on each new `today/preparation`, with the record as its message, on
-  the assistant's own budget and deadline and against its own daily spend. A function may call an agent
-  only inside its own sixty seconds, which a morning does not fit, so the ask is a record. An install or an
-  upgrade turns a shipped trigger back on, so the switch that lasts is `assistantPrepares`.
-- **The assistant's standing instructions**, as ten `llm/instruction` records with ids that start `today-`
-  and `source: import`. They name the agent, so they hold wherever it works. The owner edits or retires one
-  like their own, and an upgrade never writes over a record the owner changed.
+  A normal day is one run for the morning, three to six for advice (twelve at most), and one per urgent
+  mark. It asks for nothing until the app has written `today/preference`, and nothing while
+  `assistantPrepares` is false.
+- **Agent `preparer`**, run by a trigger on each new `today/preparation`, with the record as its message.
+  It is not the owner's assistant: it runs on the provider bound to the package's `model` input, on a
+  mid-priced model, against a daily spend of its own (100 cents), so preparing a day never spends what the
+  owner's chats are bought with. It reads what other people wrote (a suggested task's words come from a
+  mail or a message), so it writes only `today/advice`, `today/dossier`, `today/urgentcheck` and patch
+  requests, and holds no write on a task or a list. A function may call an agent only inside its own sixty
+  seconds, which a morning does not fit, so the ask is a record. An install or an upgrade turns a shipped
+  trigger back on, so the switch that lasts is `assistantPrepares`.
+- **Function `stampurgent`**, when a `today/urgentcheck` is written: it writes `urgentCheckedAt`, or
+  `urgentHeldAt` with `urgentHeldReason`, on the task, only while its mark is still unchecked, and nothing
+  else.
+- **The assistant's standing instructions**, as nine `llm/instruction` records with ids that start `today-`
+  and `source: import`, for where the owner talks to their assistant. They name the agent, so they hold
+  wherever it works. The owner edits or retires one like their own, and an upgrade never writes over a
+  record the owner changed.
+
+After the package is added, its `model` input is bound to the AI provider the preparer runs on, unless the
+repository has one provider or one named `default`. Until it resolves, nothing is prepared.
 
 Not built: a function that carries out a `today/rule` whose effect is `urgent`. Messages have no trait a
 package could read them by, so it would have to name every provider's message kind.

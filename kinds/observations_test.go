@@ -133,15 +133,18 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 			kinds: []string{
 				todayPackage + "/preference", todayPackage + "/plan", todayPackage + "/advice", todayPackage + "/digest",
 				todayPackage + "/reviewmark", todayPackage + "/dossier", todayPackage + "/returnpoint", todayPackage + "/rule",
-				todayPackage + "/preparation",
+				todayPackage + "/preparation", todayPackage + "/urgentcheck",
 			},
-			functions: []string{todayPackage + "/fade", todayPackage + "/prepare"},
+			functions: []string{todayPackage + "/fade", todayPackage + "/prepare", todayPackage + "/stampurgent"},
+			// What is asked for is prepared by the package's own agent,
+			// never the owner's assistant: its spend and its writes are
+			// its own.
 			triggers: map[string]string{
 				"today-fade-daily":               vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/fade",
 				"today-prepare-morning":          vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
-				"today-prepare-on-suggested":     vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
 				"today-prepare-on-urgent":        vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
-				"today-assistant-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + kinds.SeedAuthority + "/assistant/moss",
+				"today-assistant-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + todayPackage + "/preparer",
+				"today-stamp-on-urgentcheck":     vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/stampurgent",
 			},
 		},
 		{
@@ -226,7 +229,7 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 	if err := installClosure(today, bundlesByID(cat), shippedBundle(t, cat, todayPackage), map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range []string{todayPackage + "/fade", todayPackage + "/prepare"} {
+	for _, fn := range []string{todayPackage + "/fade", todayPackage + "/prepare", todayPackage + "/stampurgent"} {
 		if _, err := today.ResolveFunction(fn); err != nil {
 			t.Errorf("%s did not install on a repository without tasks: %v", fn, err)
 		}

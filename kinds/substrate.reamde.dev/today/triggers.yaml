@@ -3,8 +3,13 @@
 # switch that lasts is `assistantPrepares` on the owner's `preference`
 # record, which `prepare` reads before it asks for anything.
 #
-# The two record triggers name the tasks package's task, which this package
-# cannot require (today.yaml): on a repository without it they match nothing.
+# No trigger fires on a suggested task arriving: suggestions arrive all day,
+# and a run of a model for each would cost more than its advice is worth.
+# The half-hourly pass asks for advice, at most every two hours.
+#
+# The record trigger on a task names the tasks package's task, which this
+# package cannot require (today.yaml): on a repository without it, it
+# matches nothing.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: today-fade-daily
@@ -36,34 +41,9 @@ data:
         startsAt: "2026-01-01T00:00:00Z"
     callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
 ---
-# A task that arrives as a suggestion, or is still one after a change, with
-# only the latest change per task in a batch. The body asks for advice only
-# where a suggestion has none. A suggestion the assistant itself just wrote
-# is skipped here: its instructions have it write its advice in the same
-# turn, a moment later, and the half-hourly pass asks for any it left out.
-kind: substrate.reamde.dev/core/trigger
-metadata:
-  id: today-prepare-on-suggested
-data:
-  properties:
-    enabled: true
-    label: A suggested task gets the assistant's advice
-    source:
-      record:
-        kinds:
-          - substrate.reamde.dev/tasks/task
-        ops:
-          - create
-          - update
-        coalesce: true
-        when: >-
-          record != null && "status" in record.properties && record.properties.status
-          == "proposed" && !("actorPackage" in change && change.actorType
-          == "agent" && change.actorPackage == "substrate.reamde.dev/assistant")
-    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
----
-# An urgent mark an automation or the API set, which the assistant has
-# written neither stamp for. Once it writes one, the guard no longer passes.
+# An urgent mark an automation or the API set, which carries neither stamp.
+# Once `stampurgent` writes one, the guard no longer passes; whoever sets
+# the mark again clears both, and it is checked again.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: today-prepare-on-urgent
@@ -86,22 +66,43 @@ data:
           record.properties)
     callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/prepare
 ---
-# What `prepare` asks for, the assistant writes: a new preparation record is
-# its message, and its standing instruction (instructions.yaml,
-# `today-preparation`) says to do what the record's `ask` says and nothing
-# else. A run acts for no one and counts against the assistant's own daily
-# spend, which holds this trigger when it is spent.
+# What `prepare` asks for, the preparer writes (preparer.yaml): a new
+# preparation record is its message. A run acts for no one and counts
+# against the preparer's own daily spend, which holds this trigger when it is
+# spent, and nothing else: the owner's assistant is not run from here. The
+# guard keeps a held delivery from buying a run for a record that has since
+# been deleted, as `fade` deletes them.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: today-assistant-on-preparation
 data:
   properties:
     enabled: true
-    label: The assistant prepares what was asked for
+    label: Your day is prepared as asked
     source:
       record:
         kinds:
           - substrate.reamde.dev/today/preparation
         ops:
           - create
-    callable: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+        when: record != null
+    callable: substrate.reamde.dev/core/agent/substrate.reamde.dev/today/preparer
+---
+# The preparer's verdict on an urgent mark is stamped on the task by a
+# function, because the preparer holds no write on a task (stampurgent.yaml).
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-stamp-on-urgentcheck
+data:
+  properties:
+    enabled: true
+    label: A checked urgent mark is stamped on its task
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/today/urgentcheck
+        ops:
+          - create
+          - update
+        when: record != null
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/stampurgent

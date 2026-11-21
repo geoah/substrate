@@ -333,9 +333,10 @@ metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
 `labs`, decision 0193). Two more catalogues carry no metrics: `…/routines`
 (the `series` and `occurrencelog` traits, `routine` and `routinelog`; traits and
 kinds only, and `health` requires it for its `medicationschedule`) and
-`…/today` (a day planner's own kinds, `fade` and `prepare`, and the
-assistant's standing instructions as `llm/instruction` records; it requires
-nothing, and pins a reference to a task at core's `lifecycle`). The catalog serves them as published packages, through
+`…/today` (a day planner's own kinds, `fade`, `prepare` and `stampurgent`,
+the `preparer` agent on the bundle's provider input with a daily cap of its
+own, and the assistant's standing instructions as `llm/instruction` records;
+it requires nothing, and pins a reference to a task at core's `lifecycle`). The catalog serves them as published packages, through
 the add route (`bin/substratectl add substrate.reamde.dev/labs`), they
 land published under their publisher's authority and never in `~`, and adding one first adds every
 published package it requires, so adding

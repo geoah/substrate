@@ -150,16 +150,18 @@ SCHEDULES = [
     ("pm-zinc", "zinc", "19:30", "evening", "Evening medication", "tablet"),
 ]
 # (key, name, category, time, window, group, status)
+# The steps of one group sit a minute apart, in the order they are done: the
+# pane draws a group as one row a day whatever its slots.
 ROUTINES = [
     ("am-cleanser", "Cleanser", "hygiene", "07:35", "morning", "Morning skincare", "active"),
-    ("am-toner", "Toner", "hygiene", "07:35", "morning", "Morning skincare", "active"),
-    ("am-serum", "Vitamin C serum", "hygiene", "07:35", "morning", "Morning skincare", "active"),
-    ("am-moisturiser", "Moisturiser", "hygiene", "07:35", "morning", "Morning skincare", "active"),
-    ("am-sunscreen", "Sunscreen", "hygiene", "07:35", "morning", "Morning skincare", "active"),
+    ("am-toner", "Toner", "hygiene", "07:36", "morning", "Morning skincare", "active"),
+    ("am-serum", "Vitamin C serum", "hygiene", "07:37", "morning", "Morning skincare", "active"),
+    ("am-moisturiser", "Moisturiser", "hygiene", "07:38", "morning", "Morning skincare", "active"),
+    ("am-sunscreen", "Sunscreen", "hygiene", "07:39", "morning", "Morning skincare", "active"),
     ("am-meditate", "Meditate", "habit", "07:45", "morning", None, "active"),
     ("pm-cleanser", "Cleanser", "hygiene", "19:35", "evening", "Evening skincare", "active"),
-    ("pm-toner", "Toner", "hygiene", "19:35", "evening", "Evening skincare", "active"),
-    ("pm-moisturiser", "Moisturiser", "hygiene", "19:35", "evening", "Evening skincare", "active"),
+    ("pm-toner", "Toner", "hygiene", "19:36", "evening", "Evening skincare", "active"),
+    ("pm-moisturiser", "Moisturiser", "hygiene", "19:37", "evening", "Evening skincare", "active"),
     ("pm-read", "Read 20 pages", "habit", "22:00", "evening", None, "active"),
     ("stretch", "Stretch", "exercise", "13:00", "afternoon", None, "paused"),
 ]
@@ -491,7 +493,7 @@ def write_day(server: Server, day: Day, assistant: bool, morning_done: bool) -> 
         kind, name = (LIST, "list/" + target) if what == "list" else (TASK, "task/" + target)
         server.put(REQUEST, uid("request/" + key), {"op": "patch", "target": path(kind, name), "diff": {"properties": {"priority": priority}}, "rationale": why})
 
-    # The dev server holds no model key, so the assistant's runs would only
+    # The dev server holds no model key, so the preparer's runs would only
     # fail: its trigger is off unless asked for. An install turns it on
     # again, which is why server.sh turns it off after each one too.
     server.patch(TRIGGER, "today-assistant-on-preparation", {"enabled": assistant})
@@ -547,7 +549,7 @@ def main() -> int:
     parser.add_argument("--timezone", help="an IANA zone; this machine's when absent")
     parser.add_argument("--keep", action="store_true", help="write over what is there instead of wiping first")
     parser.add_argument("--morning-done", action="store_true", help="log today's morning medication as taken")
-    parser.add_argument("--assistant", action="store_true", help="leave the trigger that runs the assistant on")
+    parser.add_argument("--assistant", action="store_true", help="leave the trigger that runs the preparer on")
     parser.add_argument("--allow-remote", action="store_true", help="run against a server that is not on this machine")
     args = parser.parse_args()
 
