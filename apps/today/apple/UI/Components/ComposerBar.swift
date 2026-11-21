@@ -10,6 +10,7 @@ struct ComposerBar: View {
     var answer: AnswerCard?
 
     @Environment(\.pane) private var pane
+    @Environment(\.words) private var words
     @State private var text = ""
     @FocusState private var focused: Bool
 
@@ -30,7 +31,7 @@ struct ComposerBar: View {
                     .padding(.horizontal, 14)
             }
             HStack(spacing: 2) {
-                IconButton(Symbol.add, label: PaneWords.add, action: submit)
+                IconButton(Symbol.add, label: words.add, action: submit)
                 TextField(composer.placeholder, text: $text, axis: .vertical)
                     .font(TodayLook.Text.field)
                     .lineLimit(1 ... 4)
@@ -42,9 +43,9 @@ struct ComposerBar: View {
                 if trimmed.isEmpty {
                     // Dictation is the keyboard's: the button puts the
                     // cursor in the field, where the system's microphone is.
-                    IconButton(Symbol.dictate, label: PaneWords.dictate, look: .filled) { focused = true }
+                    IconButton(Symbol.dictate, label: words.dictate, look: .filled) { focused = true }
                 } else {
-                    IconButton(Symbol.send, label: PaneWords.send, look: .filled, action: submit)
+                    IconButton(Symbol.send, label: words.send, look: .filled, action: submit)
                 }
             }
             .padding(.horizontal, 5)

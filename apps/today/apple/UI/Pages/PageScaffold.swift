@@ -15,6 +15,8 @@ struct PageScaffold<Content: View, Bottom: View>: View {
     @ViewBuilder var bottom: () -> Bottom
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.words) private var words
+    @Environment(\.ground) private var ground
 
     var body: some View {
         ScrollView {
@@ -28,22 +30,30 @@ struct PageScaffold<Content: View, Bottom: View>: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if back != nil || trailing != nil { bar }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0, content: bottom)
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottom().edgeFade(.bottom) }
+        .edgeFade(.top)
     }
 
+    /// The bar stands on the ground itself: what scrolls under it fades
+    /// into the ground's colour, so nothing shows through its buttons.
     private var bar: some View {
         HStack {
-            if let back { IconButton(Symbol.back, label: PaneWords.back, action: back) }
+            if let back { IconButton(Symbol.back, label: words.back, action: back) }
             Spacer()
             if let trailing { PaneButton(trailing) }
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 4)
         .background {
-            UnevenRoundedRectangle(bottomLeadingRadius: TodayLook.listRadius, bottomTrailingRadius: TodayLook.listRadius, style: .continuous)
-                .fill(TodayLook.glass(scheme))
-                .cardShadow(small: true)
-                .ignoresSafeArea(edges: .top)
+            LinearGradient(
+                stops: [
+                    .init(color: ground.top(scheme), location: 0), .init(color: ground.top(scheme), location: 0.82),
+                    .init(color: ground.top(scheme).opacity(0), location: 1),
+                ], startPoint: .top, endPoint: .bottom
+            )
+            .padding(.bottom, -EdgeFade.reach)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
         }
     }
 }

@@ -10,7 +10,9 @@ import Testing
 @testable import TodayCore
 
 /// The pane at a moment of the invented day.
-private func pane(_ clock: String, urgent: Bool = true, held: Bool = true, reachable: Bool = true, edit: (inout TodayApp.State) -> Void = { _ in }) -> PanePresentation {
+private func pane(_ clock: String, urgent: Bool = true, held: Bool = true, reachable: Bool = true, edit: (inout TodayApp.State) -> Void = { _ in })
+    -> PanePresentation
+{
     TodayFixtures.present(TodayFixtures.state(at: clock, urgent: urgent, held: held, reachable: reachable, edit: edit), at: clock).pane
 }
 
@@ -300,7 +302,9 @@ struct UrgentTests {
     @Test func somethingTheAssistantHoldsBackWaitsInWhatIsHappening() throws {
         let pane = pane("16:35")
         #expect(pane.ground != .urgent)
-        guard case let .happening(happening)? = pane.items.first(where: { if case .happening = $0 { true } else { false } }) else { return #expect(Bool(false)) }
+        guard case let .happening(happening)? = pane.items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
         #expect(happening.pill == .urgent && happening.line.hasPrefix("One thing is marked urgent and waits here."))
         let lantern = try #require(happening.groups.first { $0.name == "Lantern" })
         let item = try #require(lantern.items.first)
@@ -320,7 +324,8 @@ struct UrgentTests {
         #expect(pane.lead == "row:urgent:t-wei" && pane.ground == .urgent)
         guard case let .urgent(card) = try #require(row(pane, "urgent:t-wei")).body else { return #expect(Bool(false)) }
         #expect(card.unchecked == "Moss cannot be reached, so nobody has checked this.")
-        let engine = DayEngine(TodayPresenter.day(TodayFixtures.state(at: "16:23", held: false), now: TodayFixtures.at("16:23"), calendar: TodayFixtures.calendar))
+        let engine = DayEngine(
+            TodayPresenter.day(TodayFixtures.state(at: "16:23", held: false), now: TodayFixtures.at("16:23"), calendar: TodayFixtures.calendar))
         #expect(engine.nextChange == TodayFixtures.at("16:24"), "the pane is drawn again when the wait ends")
     }
 
@@ -356,13 +361,43 @@ struct WriteTests {
         await harness.send(.log(row: routine.id, done: true))
         let entries = writes(harness).flatMap(\.entries)
         #expect(entries.count == 5 && entries.allSatisfy { $0.method == .put && $0.kind == TodayKinds.log && $0.baseVersion == 0 })
-        let vitd = try #require(entries.first { $0.recordID == "vitd_20261119T073000Z" })
+        // The steps of the group sit a minute apart: each is logged at its own slot's id.
+        #expect(Set(entries.map(\.recordID)).count == 5)
+        let vitd = try #require(entries.first { $0.recordID == "vitd_20261119T073300Z" })
         #expect(
             vitd.properties == [
-                "series": "substrate.reamde.dev/health/medicationschedule/vitd", "scheduledAt": "2026-11-19T07:30:00Z", "at": "2026-11-19T07:05:00Z",
+                "series": "substrate.reamde.dev/health/medicationschedule/vitd", "scheduledAt": "2026-11-19T07:33:00Z", "at": "2026-11-19T07:05:00Z",
             ])
         // The row is done at once, laid over before the server answers.
         #expect(rows(await harness.presentation.pane).first?.id != routine.id)
+    }
+
+    @Test func anAnswerToWhatYesterdayLeftStaysWithItsChoiceAndTheChoiceMoves() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        await load(harness, "07:05")
+        func card() async -> YesterdayCard? {
+            for row in rows(await harness.presentation.pane) { if case let .yesterday(card) = row.body { return card } }
+            return nil
+        }
+        let before = try #require(await card())
+        let dose = try #require(before.items.first { $0.title == "Weekly medication" })
+        #expect(dose.options.rows.allSatisfy { !$0.selected } && dose.chosen == nil && dose.text == "It was due yesterday at 07:30. Not logged.")
+        await harness.send(.answerYesterday(item: dose.id, option: "took"))
+        let first = writes(harness).flatMap(\.entries)
+        #expect(first.map(\.method) == [.put] && first[0].recordID == "b12_20261118T073000Z")
+        // Choosing hides nothing: while another thing waits, the answered one stays in the card with its choice filled.
+        if let after = await card() {
+            let answered = try #require(after.items.first { $0.id == dose.id })
+            #expect(answered.options.rows.first { $0.id == "took" }?.selected == true && answered.chosen == "Chosen at 07:05.")
+            #expect(answered.text == "It was due yesterday at 07:30.")
+        }
+        // Another tap moves the choice: the log that answer made is changed, not made again.
+        harness.clearTrace()
+        await harness.deliver(.records(.enqueued(Set(first.map(\.id)), queue: first, landed: [])))
+        await harness.send(.answerYesterday(item: dose.id, option: "skipped"))
+        let second = writes(harness).flatMap(\.entries)
+        #expect(second.map(\.method) == [.patch] && second[0].recordID == "b12_20261118T073000Z" && second[0].properties == ["status": "skipped"])
+        #expect(await harness.state.notes?.yesterday[dose.id] == "skipped")
     }
 
     @Test func aSkipIsACreateThenAPatchOfItsState() async throws {
@@ -392,7 +427,10 @@ struct WriteTests {
         await load(harness, "11:30")
         guard case let .task(task) = await harness.presentation.page(.task("p-vendor")) else { return #expect(Bool(false)) }
         let when = try #require(task.card.doors.first { $0.id == "when" })
-        #expect(when.options.rows.map(\.name) == ["Today, where it is", "The 16:30 gap", "The 18:15 gap", "The 20:30 gap", "Tonight, after 21:30", "Tomorrow", "Next week"])
+        #expect(
+            when.options.rows.map(\.name) == [
+                "Today, where it is", "The 16:30 gap", "The 18:15 gap", "The 20:30 gap", "Tonight, after 21:30", "Tomorrow", "Next week",
+            ])
         #expect(when.value == "Today, where it is")
         await harness.send(.setWhen(task: "p-vendor", option: "tomorrow"))
         let entry = try #require(writes(harness).flatMap(\.entries).first)
@@ -444,7 +482,9 @@ struct WriteTests {
         let added = try #require(row(pane, "task:" + entry.recordID))
         #expect(added.stripe == .none && added.line == "You added it at 11:30.")
         await harness.send(.addOrAsk("What can I drop this afternoon?"))
-        guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else { return #expect(Bool(false)) }
+        guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
         #expect(exchange.subject == .day && message == "What can I drop this afternoon?" && context.isEmpty)
         #expect(await harness.presentation.pane.answer?.state == .waiting)
         await harness.deliver(.answer(exchange.id, .delta("Callum is at the standup too.")))
@@ -457,7 +497,9 @@ struct WriteTests {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
         await load(harness, "11:30")
         await harness.send(.ask(.task("p-vendor"), "Break it into steps"))
-        guard case let .ask(exchange, _, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else { return #expect(Bool(false)) }
+        guard case let .ask(exchange, _, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
         #expect(context == ["\(TodayKinds.task)/p-vendor"])
         await harness.deliver(.answer(exchange.id, .failed("Moss could not be reached. The server did not answer.")))
         guard case let .task(page) = await harness.presentation.page(.task("p-vendor")) else { return #expect(Bool(false)) }
@@ -488,7 +530,8 @@ struct ReadTests {
         let vendor = try #require(day.task("p-vendor"))
         #expect(vendor.flag == .high && vendor.list == "extapi" && vendor.dueDay == CivilDay("2026-11-19") && vendor.setBy == .owner)
         #expect(day.series.count == 14 && day.series.values.filter(\.isDose).count == 10)
-        #expect(day.series["\(TodayFixtures.scheduleKind)/vitd"]?.dose == "1000 iu")
+        #expect(day.series["\(TodayFixtures.scheduleKind)/vitd"]?.dose == "1 tablet")
+        #expect(day.strengths["\(TodayKinds.medication)/vitd"] == "1,000 IU" && day.strengths["\(TodayKinds.medication)/omega"] == nil)
         #expect(day.plan?.picked.count == 13 && day.plan?.overlaps.count == 4)
         #expect(day.preference.urgentWait == 120 && day.preference.nightReadAt == TodayFixtures.at("08:27"))
         let occurrence = try #require(Occurrence(TodayFixtures.occurrences[0]))
@@ -497,7 +540,9 @@ struct ReadTests {
         // A property of another shape reads as absent, never as a crash.
         let odd = Record(id: "x", kind: TodayKinds.task, properties: ["name": 3, "priority": ["a"], "people": "nobody", "dueDay": "soon"])
         #expect(TaskItem(odd)?.name == "Untitled task" && TaskItem(odd)?.flag == nil && TaskItem(odd)?.people == [])
-        #expect(Meeting(Record(id: "m", kind: "a.b/c/d", properties: ["at": "2026-11-19T10:00:00Z", "endsAt": "2026-11-19T10:30:00Z", "status": "cancelled"])) == nil)
+        #expect(
+            Meeting(Record(id: "m", kind: "a.b/c/d", properties: ["at": "2026-11-19T10:00:00Z", "endsAt": "2026-11-19T10:30:00Z", "status": "cancelled"]))
+                == nil)
     }
 
     @Test func aRepositoryWithoutThePackagesDrawsAnEmptyPaneAndWritesNothing() async throws {
@@ -565,6 +610,95 @@ struct ReadTests {
         #expect(TodayReminders.command(for: response) == .log(row: first.row, done: false))
     }
 
+    @Test func aGroupIsOneRowADayWhateverItsSlotsInSlotOrder() throws {
+        // The morning doses sit a minute apart, 07:30 to 07:34, to keep their order.
+        let pane = pane("07:05")
+        let routine = rows(pane)[0]
+        #expect(routine.id == "routine:g:Morning medication:2026-11-19" && routine.line == "5 items.")
+        guard case let .routine(card) = routine.body else { return #expect(Bool(false)) }
+        #expect(card.items.map(\.name) == ["Magnesium", "Omega-3", "Probiotic", "Vitamin D", "Zinc"])
+        // A strength where the medication's record gives one, else the dose, written as people write them.
+        #expect(card.items.map(\.detail) == ["200 mg", "1 capsule", "1 capsule", "1,000 IU", "15 mg"])
+        // One reminder a day for the group, at its first slot.
+        let plan = TodayFixtures.present(TodayFixtures.state(at: "07:05"), at: "07:05").reminders
+        let morning = plan.filter { $0.title == "Morning medication" }
+        #expect(morning.map(\.fireAt) == [TodayFixtures.at("07:30"), TodayFixtures.at("07:30", day: 1), TodayFixtures.at("07:30", day: 2)])
+        #expect(morning.allSatisfy { $0.body == "5 items" })
+        // Part of the way through the group's minutes it is still one row, and no reminder is planned for a slot gone by.
+        let midway = TodayFixtures.present(TodayFixtures.state(at: "07:32"), at: "07:32")
+        #expect(rows(midway.pane).first?.id == routine.id)
+        #expect(midway.reminders.filter { $0.title == "Morning medication" }.count == 2)
+    }
+
+    @Test func aRowOfOneThingListsNoItems() throws {
+        let pane = pane("07:38")
+        let skin = try #require(rows(pane).first { $0.title == "Skincare" })
+        guard case let .routine(card) = skin.body else { return #expect(Bool(false)) }
+        #expect(card.items.isEmpty && skin.line == "At 07:35.")
+    }
+
+    @Test func amountsAreWrittenAsPeopleWriteThem() {
+        #expect(Words.amount(1000, "iu") == "1,000 IU" && Words.amount(200, "mg") == "200 mg" && Words.amount(100, "mcg") == "100 mcg")
+        #expect(Words.amount(5, "percent") == "5%" && Words.amount(Decimal(string: "0.5")!, "ml") == "0.5 ml" && Words.amount(12500, "units") == "12,500 units")
+        #expect(Words.amount(1, "capsule") == "1 capsule" && Words.amount(2, "capsule") == "2 capsules" && Words.amount(2, "gummy") == "2 gummies")
+        #expect(Words.amount(3, nil) == "3")
+    }
+
+    @Test func noTwoProjectsShareInitials() {
+        #expect(Words.initials("EU AI Act", last: false) == "EU" && Words.initials("External API reliability", last: false) == "EA")
+        #expect(Words.initials("GitHub orgs", last: false) == "GO" && Words.initials("Tomas Varga", last: true) == "TV")
+        let strip = pane("11:30").strip.entries
+        #expect(strip.first { $0.name == "EU AI Act" }?.tile.initials == "EU")
+        #expect(strip.first { $0.name == "External API reliability" }?.tile.initials == "EA")
+        #expect(Set(strip.map(\.tile.initials)).count == strip.count)
+        // One whose initials are taken is drawn by the first two letters of its first word.
+        let lists = ["Personal; Health", "Personal; Home", "Personal; Other", "Platform hiring"].enumerated().map { index, name in
+            ListItem(Record(id: "l\(index)", kind: TodayKinds.list, properties: ["name": .string(name), "status": "active"], version: 1))!
+        }
+        let drawn = DayEngine.initials(lists)
+        #expect(drawn["l0"] == "PH" && drawn["l1"] == "PE" && drawn["l2"] == "PO")
+        #expect(Set(drawn.values).count >= 3)
+    }
+
+    @Test func theAssistantsBoxKeepsItsSubjectsCapitals() throws {
+        guard case let .project(project) = page("11:30", .project("extapi")) else { return #expect(Bool(false)) }
+        #expect(project.moss?.title == "Moss, about External API reliability")
+        guard case let .meeting(meeting) = page("11:30", .meeting("tomas")) else { return #expect(Bool(false)) }
+        #expect(meeting.card.moss?.title.hasPrefix("Moss, about Tomas") == true)
+    }
+
+    @Test func settingsListTheAssistantsInstructionsAndWriteGuardedPatches() async throws {
+        let instruction = Record(
+            id: "today-suggest", kind: TodayKinds.instruction,
+            properties: [
+                "agent": .string("substrate.reamde.dev/core/agent/\(TodayKinds.assistant)"), "text": "Suggest, never act.", "active": true,
+                "source": "import",
+            ], version: 3, createdAt: TodayFixtures.stamp(TodayFixtures.at("09:00", day: -3)))
+        let other = Record(
+            id: "someone-elses", kind: TodayKinds.instruction,
+            properties: ["agent": "substrate.reamde.dev/core/agent/example.com/helpers/other", "text": "Not Moss's."], version: 1)
+        let edit: (inout TodayApp.State) -> Void = { state in
+            for record in [instruction, other] { state.linked.records["\(record.kind)/\(record.id)"] = record }
+        }
+        let shown = TodayFixtures.present(TodayFixtures.state(at: "11:30", edit: edit), at: "11:30")
+        #expect(shown.moss.rows == [MossSettings.Row(id: "today-suggest", text: "Suggest, never act.", on: true, source: "Came with a package")])
+        #expect(shown.settings.first?.rows.map(\.id) == [.app("assistantPrepares"), .app("prepareAt"), .app("urgentWait")])
+
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
+        await load(harness, "11:30", edit: edit)
+        await harness.send(.instruction("today-suggest", on: false))
+        await harness.send(.rewriteInstruction("today-suggest", text: "  Suggest, and never act.  "))
+        await harness.send(.settings(.choose(row: .app("urgentWait"), option: "300")))
+        await harness.send(.settings(.toggle(row: .app("assistantPrepares"), on: false)))
+        let entries = writes(harness).flatMap(\.entries)
+        #expect(entries.count == 4 && entries.allSatisfy { $0.method == .patch })
+        #expect(entries[0].kind == TodayKinds.instruction && entries[0].recordID == "today-suggest" && entries[0].properties == ["active": false])
+        #expect(entries[0].baseVersion == 3)
+        #expect(entries[1].properties == ["text": "Suggest, and never act."])
+        #expect(entries[2].kind == TodayKinds.preference && entries[2].properties == ["urgentWait": "PT300S"])
+        #expect(entries[3].properties == ["assistantPrepares": false])
+    }
+
     @Test func theManifestIsTheRequestAppJSONRecords() throws {
         struct Recorded: Decodable {
             struct Ask: Decodable, Equatable {
@@ -619,11 +753,14 @@ private func environment(_ clock: String) -> AppEnvironment {
 }
 
 /// The root at a moment of the invented day, laid over through its own events.
-private func load(_ harness: ControllerHarness<TodayApp>, _ clock: String) async {
-    let state = TodayFixtures.state(at: clock)
+private func load(_ harness: ControllerHarness<TodayApp>, _ clock: String, edit: (inout TodayApp.State) -> Void = { _ in }) async {
+    let state = TodayFixtures.state(at: clock, edit: edit)
     await harness.deliver(.discovered(TodayFixtures.discovery))
     await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
-    await harness.deliver(.localRead(notes: state.notes, windows: state.windows, at: TodayFixtures.at(clock), today: CivilDay(year: 2026, month: 11, day: 19), zone: TodayFixtures.zone.identifier))
+    await harness.deliver(
+        .localRead(
+            notes: state.notes, windows: state.windows, at: TodayFixtures.at(clock), today: CivilDay(year: 2026, month: 11, day: 19),
+            zone: TodayFixtures.zone.identifier))
     await harness.deliver(.windowsRead(state.windows, requests: state.requests, stale: []))
     await harness.deliver(.contactsRead(Array(state.contacts.values), asked: []))
     await harness.deliver(.permission(.on))

@@ -82,7 +82,8 @@ extension DayEngine {
         } else if control.stripe.suggested {
             pills.append(.suggested)
         }
-        return Door(id: "flag", label: "Flag", value: value, stripe: task.urgent ? nil : control.stripe, pills: pills, options: control.options, notes: control.notes)
+        return Door(
+            id: "flag", label: "Flag", value: value, stripe: task.urgent ? nil : control.stripe, pills: pills, options: control.options, notes: control.notes)
     }
 
     /// The project door: on a task with no project, or one typed today.

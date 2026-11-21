@@ -54,9 +54,12 @@ extension DayEngine {
         func group(_ list: ListItem?) -> PlanPage.Group {
             let mine = all.filter { $0.list == list?.id }.sorted { (rank(planFlag($0)), $0.createdAt) < (rank(planFlag($1)), $1.createdAt) }
             let items = mine.map(planItem)
-            let first = items.filter(\.suggested), rest = items.filter { !$0.suggested }
+            let first = items.filter(\.suggested)
+            let rest = items.filter { !$0.suggested }
             let count = items.filter(\.ticked).count
-            let meetings = todaysMeetings.filter { $0.end > now }.filter { meeting in !Set(tasks(for: meeting).compactMap(\.list)).isDisjoint(with: [list?.id].compactMap { $0 }) }
+            let meetings = todaysMeetings.filter { $0.end > now }.filter { meeting in
+                !Set(tasks(for: meeting).compactMap(\.list)).isDisjoint(with: [list?.id].compactMap { $0 })
+            }
             let restTicked = rest.filter(\.ticked).count
             return PlanPage.Group(
                 id: list?.id ?? "none", tile: list.map { tile($0) }, name: list?.name ?? "On no project",
@@ -146,8 +149,14 @@ extension DayEngine {
                     }))
         }
         let unanswered = proposed.map { suggestedItem($0, own: true) }
-        let first = day.tasks.filter { $0.isOpen && ($0.dueDay == day.today.adding(days: 1, in: calendar) || ($0.notBefore.map { $0 >= day.startOfTomorrow && $0 < day.startOfTomorrow.addingTimeInterval(86400) } ?? false)) }
-        let meetingsTomorrow = day.meetings.filter { $0.start >= day.startOfTomorrow && $0.start < day.startOfTomorrow.addingTimeInterval(86400) }.sorted { $0.start < $1.start }
+        let first = day.tasks.filter {
+            $0.isOpen
+                && ($0.dueDay == day.today.adding(days: 1, in: calendar)
+                    || ($0.notBefore.map { $0 >= day.startOfTomorrow && $0 < day.startOfTomorrow.addingTimeInterval(86400) } ?? false))
+        }
+        let meetingsTomorrow = day.meetings.filter { $0.start >= day.startOfTomorrow && $0.start < day.startOfTomorrow.addingTimeInterval(86400) }.sorted {
+            $0.start < $1.start
+        }
         var tomorrow: [String] = []
         if let meeting = meetingsTomorrow.first { tomorrow.append("\(meeting.title) at \(clock(meeting.start))") }
         tomorrow += first.prefix(3).map(\.name)

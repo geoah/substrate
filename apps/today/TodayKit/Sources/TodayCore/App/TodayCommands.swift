@@ -70,26 +70,34 @@ public extension TodayApp {
 
         // MARK: What yesterday left
         case let .answerYesterday(item, option):
-            guard let left = engine.yesterdayLeft.first(where: { $0.id == item }) else { break }
+            guard let left = engine.yesterdayLeft.first(where: { $0.id == item }), left.answered != option else { break }
             switch left.kind {
             case let .routine(routine):
-                for occurrence in engine.open(routine) { wrote(writes.log(occurrence, done: option == "took")) }
+                // A first answer logs what was open; a moved choice changes the logs that answer made.
+                let occurrences = left.answered == nil ? engine.open(routine) : engine.answeredOccurrences(routine, since: left.at)
+                for occurrence in occurrences { wrote(writes.log(occurrence, done: option == "took")) }
             case let .task(task):
+                var change: JSONObject = [:]
+                // Dropped by the answer before: it is open again.
+                if task.status == .abandoned, option != "drop" { change["status"] = "open" }
                 switch option {
-                case "today": wrote(writes.change(task, ["dueDay": .string(day.today.description)]))
+                case "today":
+                    change["dueDay"] = .string(day.today.description)
+                    if day.discovery.taskMoves, task.notBefore != nil { change["notBefore"] = .null }
                 case "tomorrow":
-                    var change: JSONObject = ["dueDay": .string(day.today.adding(days: 1, in: calendar).description)]
+                    change["dueDay"] = .string(day.today.adding(days: 1, in: calendar).description)
                     if day.discovery.taskMoves {
                         change["notBefore"] = TodayWrites.stamp(day.startOfTomorrow)
                         change["deferrals"] = .number(Decimal(task.deferrals + 1))
                     }
-                    wrote(writes.change(task, change))
-                case "drop": wrote(writes.status(task, .abandoned))
+                case "drop": change = ["status": "abandoned"]
                 default: break
                 }
+                if !change.isEmpty { wrote(writes.change(task, change)) }
             }
             notes.yesterday[item] = option
-            notes.yesterdayAt[item] = now
+            // The first answer's time stays: it is what "Chosen at" says, and what finds its logs.
+            if notes.yesterdayAt[item] == nil { notes.yesterdayAt[item] = now }
 
         // MARK: The night and what is happening
         case .readNight:
@@ -297,6 +305,17 @@ public extension TodayApp {
             out.append(.stopped)
         case let .send(id):
             notes.sent[id] = now
+
+        // MARK: Settings
+        case let .instruction(id, on):
+            guard let instruction = day.instructions.first(where: { $0.id == id }), instruction.active != on else { break }
+            wrote(writes.instruction(instruction, ["active": .bool(on)]))
+        case let .rewriteInstruction(id, text):
+            let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let instruction = day.instructions.first(where: { $0.id == id }), !words.isEmpty, words != instruction.text else { break }
+            wrote(writes.instruction(instruction, ["text": .string(words)]))
+        case let .settings(row):
+            if let change = TodaySettings.change(row) { wrote(writes.preference(change)) }
 
         // MARK: The app
         case .looked, .foreground:

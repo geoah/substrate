@@ -95,6 +95,12 @@ public struct Day: Sendable {
     public var tasks: [TaskItem] = []
     public var advice: [String: Advice] = [:]
     public var series: [String: SeriesItem] = [:]
+    /// Each medication's strength in words ("200 mg"), by its path, where
+    /// its record gives one.
+    public var strengths: [String: String] = [:]
+    /// The assistant's standing instructions, oldest first: the order it
+    /// reads them in.
+    public var instructions: [Instruction] = []
     public var occurrences: [Occurrence] = []
     public var logs: [String: LogItem] = [:]
     public var meetings: [Meeting] = []
@@ -142,6 +148,11 @@ public struct Day: Sendable {
             case TodayKinds.task: if let item = TaskItem(record) { tasks.append(item) }
             case TodayKinds.advice: if let item = Advice(record) { advice[item.task] = item }
             case TodayKinds.log: if let item = LogItem(record) { logs[item.id] = item }
+            case TodayKinds.medication:
+                if let amount = record["strengthAmount"]?.decimal {
+                    strengths["\(record.kind)/\(record.id)"] = Words.amount(amount, record["strengthUnit"]?.text)
+                }
+            case TodayKinds.instruction: if let item = Instruction(record) { instructions.append(item) }
             case TodayKinds.digest: if let item = Digest(record) { digests.append(item) }
             case TodayKinds.reviewmark:
                 if let through = record["through"]?.text.flatMap(Timestamp.parse) { marks[record["project"]?.referenceID ?? record.id] = through }
@@ -152,7 +163,8 @@ public struct Day: Sendable {
             case TodayKinds.returnpoint: if let item = ReturnPoint(record) { returns[item.record] = item }
             case TodayKinds.patchRequest: if let item = Suggestion(record) { suggestions.append(item) }
             case TodayKinds.contact:
-                people["\(record.kind)/\(record.id)"] = Person(path: "\(record.kind)/\(record.id)", name: record.title ?? record["displayName"]?.text ?? "Someone")
+                people["\(record.kind)/\(record.id)"] = Person(
+                    path: "\(record.kind)/\(record.id)", name: record.title ?? record["displayName"]?.text ?? "Someone")
             default:
                 if discovery.series.contains(record.kind) {
                     let item = SeriesItem(record)
@@ -164,5 +176,6 @@ public struct Day: Sendable {
         tasks.sort { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
         digests.sort { $0.key < $1.key }
         suggestions.sort { $0.id < $1.id }
+        instructions.sort { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
     }
 }

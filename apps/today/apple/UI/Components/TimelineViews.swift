@@ -36,7 +36,7 @@ struct TimelineLineView: View {
             Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
                 .frame(minWidth: 44, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
-                (Text(line.who.map { $0 + " " } ?? "").fontWeight(.semibold) + Text(line.text))
+                Text("\(Text(line.who.map { $0 + " " } ?? "").fontWeight(.semibold))\(Text(line.text))")
                     .font(TodayLook.Text.body)
                     .foregroundStyle(.ink)
                     .multilineTextAlignment(.leading)
@@ -57,6 +57,7 @@ struct TimelineLineView: View {
 /// with the moon glyph; it opens in place to what happened since the day
 /// before ended, by project.
 struct NightView: View {
+    @Environment(\.words) private var words
     var night: NightPresentation
 
     @Environment(PaneViewState.self) private var state
@@ -89,7 +90,7 @@ struct NightView: View {
             HStack(alignment: .top, spacing: 4) {
                 RowHead(icon: .glyph(.night), title: night.title, line: night.headline ?? night.line, size: night.leads ? .lead : .open)
                 if !night.leads {
-                    IconButton(Symbol.close, label: PaneWords.close, small: true) {
+                    IconButton(Symbol.close, label: words.close, small: true) {
                         withAnimation(.snappy(duration: 0.2)) { state.toggle("night") }
                     }
                 }
@@ -231,11 +232,11 @@ struct HappeningView: View {
                 HStack(alignment: .center, spacing: TodayLook.lead) {
                     if let tile = happening.tile { TileView(tile: tile, size: .row) }
                     VStack(alignment: .leading, spacing: 4) {
-                        (Text(happening.time.map { $0 + " " } ?? "").font(TodayLook.Text.time.weight(.bold)).foregroundStyle(.ink)
-                            + Text(happening.line).font(TodayLook.Text.body)
-                            .foregroundStyle(happening.quiet ? AnyShapeStyle(.inkSecond) : AnyShapeStyle(.ink)))
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "\(Text(happening.time.map { $0 + " " } ?? "").font(TodayLook.Text.time.weight(.bold)).foregroundStyle(.ink))\(Text(happening.line).font(TodayLook.Text.body).foregroundStyle(happening.quiet ? Color.inkSecond : Color.ink))"
+                        )
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         if let pill = happening.pill { PillView(pill) }
                     }
                 }
@@ -357,7 +358,7 @@ struct ParkedLineView: View {
     var line: ParkedLine
 
     var body: some View {
-        (Text(line.what).fontWeight(.semibold).foregroundStyle(.ink) + Text(" " + line.rest).foregroundStyle(.inkSecond))
+        Text("\(Text(line.what).fontWeight(.semibold).foregroundStyle(.ink))\(Text(" " + line.rest).foregroundStyle(.inkSecond))")
             .font(TodayLook.Text.body)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)

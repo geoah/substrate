@@ -241,17 +241,17 @@ struct ProjectPageView: View {
                 .background(.urgentFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         if let moss = page.moss { MossBoxView(box: moss) }
-        PageSection(label: PaneWords.tasks) {
+        PageSection(label: page.labels.tasks) {
             if page.tasks.isEmpty {
                 if let empty = page.tasksEmpty { PageText(empty, quiet: true) }
             } else {
                 TaskLines(lines: page.tasks)
             }
         }
-        if !page.done.isEmpty { PageSection(label: PaneWords.done) { TaskLines(lines: page.done) } }
-        if !page.notToday.isEmpty { PageSection(label: PaneWords.notToday) { TaskLines(lines: page.notToday) } }
+        if !page.done.isEmpty { PageSection(label: page.labels.done) { TaskLines(lines: page.done) } }
+        if !page.notToday.isEmpty { PageSection(label: page.labels.notToday) { TaskLines(lines: page.notToday) } }
         if !page.suggested.isEmpty || page.suggestedEmpty != nil {
-            PageSection(label: PaneWords.suggested) {
+            PageSection(label: page.labels.suggested) {
                 if let empty = page.suggestedEmpty, page.suggested.isEmpty { PageText(empty, quiet: true) }
                 ForEach(Array(page.suggested.enumerated()), id: \.element.id) { index, item in
                     SuggestedItemView(item: item, first: index == 0)
@@ -259,10 +259,10 @@ struct ProjectPageView: View {
             }
         }
         if !page.meetings.isEmpty {
-            PageSection(label: PaneWords.meetingsToday) { MeetingLines(lines: page.meetings) }
+            PageSection(label: page.labels.meetings) { MeetingLines(lines: page.meetings) }
         }
         if !page.timeline.isEmpty || page.timelineEmpty != nil {
-            PageSection(label: PaneWords.timeline) {
+            PageSection(label: page.labels.timeline) {
                 if let empty = page.timelineEmpty, page.timeline.isEmpty { PageText(empty, quiet: true) }
                 ForEach(page.timeline) { group in
                     VStack(alignment: .leading, spacing: 6) {
@@ -335,14 +335,14 @@ struct PersonPageView: View {
             }
         }
         if !page.suggested.isEmpty {
-            PageSection(label: PaneWords.suggested) {
+            PageSection(label: page.labels.suggested) {
                 ForEach(Array(page.suggested.enumerated()), id: \.element.id) { index, item in
                     SuggestedItemView(item: item, first: index == 0)
                 }
             }
         }
         if !page.meetings.isEmpty {
-            PageSection(label: PaneWords.meetingsToday) { MeetingLines(lines: page.meetings) }
+            PageSection(label: page.labels.meetings) { MeetingLines(lines: page.meetings) }
         }
         if let moss = page.moss { MossBoxView(box: moss) }
     }

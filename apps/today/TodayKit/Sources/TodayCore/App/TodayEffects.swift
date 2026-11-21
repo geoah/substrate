@@ -75,6 +75,11 @@ public extension TodayApp {
                 }
             }
             out.append(.readWindows(discovery))
+        case let .looked(at, _, _):
+            // A build that reads more kinds than the kept answer covers, or
+            // an answer hours old, asks the repository again: a package may
+            // have been added since.
+            if signedIn, state.linked.link?.online != false, let discovery = state.discovery, discovery.stale(at: at) { out.append(.discover) }
         case let .windowsRead(windows, _, _):
             out.append(.saveWindows(windows))
         case let .asked(exchange, message, context):
@@ -151,7 +156,7 @@ public extension TodayApp {
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {
-                    return .discovered(try await TodayReads.discover(client))
+                    return .discovered(try await TodayReads.discover(client, now: clock.now))
                 } catch {
                     return .discoveryFailed(explain(error, app: Self.appName, server: client.server))
                 }

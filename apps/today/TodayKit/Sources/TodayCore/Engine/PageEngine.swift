@@ -82,10 +82,14 @@ extension DayEngine: PageMaking {
             timeline.append(
                 .init(
                     id: "coming", label: "Coming up",
-                    lines: coming.map { TimelineLine(id: "m-" + $0.id, time: clock($0.start), text: $0.title + ($0.start <= now ? ", on now." : "."), opens: .meeting($0.id)) }))
+                    lines: coming.map {
+                        TimelineLine(id: "m-" + $0.id, time: clock($0.start), text: $0.title + ($0.start <= now ? ", on now." : "."), opens: .meeting($0.id))
+                    }))
         }
         var todayLines = (digest.map(dayItems) ?? []).enumerated().map { line($1, id: "d-\($0)") }
-        todayLines += done.compactMap { task in task.completedAt.map { TimelineLine(id: "t-" + task.id, time: clock($0), who: "You", text: "finished: \(Words.low(task.name)).") } }
+        todayLines += done.compactMap { task in
+            task.completedAt.map { TimelineLine(id: "t-" + task.id, time: clock($0), who: "You", text: "finished: \(Words.low(task.name)).") }
+        }
         if !todayLines.isEmpty { timeline.append(.init(id: "today", label: "Today", lines: todayLines.sorted { $0.time > $1.time })) }
         let night = (digest.map(nightItems) ?? []).enumerated().map { line($1, id: "n-\($0)") }
         if !night.isEmpty { timeline.append(.init(id: "night", label: "Overnight", lines: night)) }
@@ -104,7 +108,9 @@ extension DayEngine: PageMaking {
             notToday: notToday.map(taskLine), suggested: suggested.map { suggestedItem($0, own: true) },
             suggestedEmpty: suggested.isEmpty ? "Nothing suggested here that you have not answered." : nil, timeline: timeline,
             timelineEmpty: timeline.isEmpty ? "Nothing is recorded for this project in the sources checked." : nil,
-            meetings: coming.map { MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end))" + ($0.start <= now ? ", on now." : ".")) })
+            meetings: coming.map {
+                MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end))" + ($0.start <= now ? ", on now." : "."))
+            })
     }
 
     // MARK: A person
@@ -124,8 +130,12 @@ extension DayEngine: PageMaking {
     // MARK: A meeting and a task
 
     func meetingPage(_ meeting: Meeting) -> MeetingPage {
-        let when = meeting.end <= now ? "over" : meeting.start <= now ? "now" : isToday(meeting.start) ? Words.until(meeting.start, now: now) : Words.day(meeting.start, now: now, calendar)
-        return MeetingPage(id: meeting.id, eyebrow: "\(clock(meeting.start)) to \(clock(meeting.end)), \(when)", title: meeting.title, card: meetingCard(meeting))
+        let when =
+            meeting.end <= now
+            ? "over"
+            : meeting.start <= now ? "now" : isToday(meeting.start) ? Words.until(meeting.start, now: now) : Words.day(meeting.start, now: now, calendar)
+        return MeetingPage(
+            id: meeting.id, eyebrow: "\(clock(meeting.start)) to \(clock(meeting.end)), \(when)", title: meeting.title, card: meetingCard(meeting))
     }
 
     func taskPage(_ task: TaskItem) -> TaskPage {

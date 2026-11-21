@@ -42,7 +42,8 @@ struct DayRoot: View {
     var body: some View {
         let shell = shell
         DayScreen(app: app, send: { shell.send($0) }, openSettings: settingsButton) {
-            LinkNotices<TodayApp>(link: link, lines: app.notices, openStatus: showSettings)
+            // The link's banner already says a server that is not answering: the records' own line would say it twice.
+            LinkNotices<TodayApp>(link: link, lines: link.banner == nil ? app.notices : [], openStatus: showSettings)
         }
         .problem(app.problem, dismiss: { shell.send(.dismissProblem) })
         .task { shell.send(.looked) }
@@ -77,16 +78,5 @@ extension DayRoot {
         #else
         return { settings = true }
         #endif
-    }
-}
-
-/// Settings: the app's own sections (how the assistant behaves, reminders),
-/// then the kit's status, repository and about, as one presentation.
-public struct SettingsView: View {
-    public init() {}
-
-    public var body: some View {
-        AppSettingsView<TodayApp>()
-            .environment(Today.shell)
     }
 }

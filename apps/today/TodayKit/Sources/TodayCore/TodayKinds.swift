@@ -13,6 +13,8 @@ public enum TodayKinds {
     // Routines: the trait a series binds, and the one log kind.
     public static let series = "\(authority)/routines/series"
     public static let log = "\(authority)/routines/routinelog"
+    /// What a dose is of: read for its strength, which a dose's row says.
+    public static let medication = "\(authority)/health/medication"
 
     // The app's own.
     public static let preference = "\(packageID)/preference"
@@ -37,7 +39,7 @@ public enum TodayKinds {
 
     /// The kinds read whole and followed through the watch, where the
     /// repository holds them; the series kinds join them once discovered.
-    public static let linkable = [list, task, log, preference, plan, advice, digest, reviewmark, dossier, returnpoint]
+    public static let linkable = [list, task, log, medication, preference, plan, advice, digest, reviewmark, dossier, returnpoint, instruction]
 
     /// The one preference record, and the digest and review mark that
     /// belong to no project.

@@ -102,7 +102,9 @@ extension DayEngine {
         var paired: Set<String> = []
         var out: [Overlap] = []
         for (index, first) in meetings.enumerated() where !paired.contains(first.id) {
-            guard let second = meetings[(index + 1)...].first(where: { !paired.contains($0.id) && $0.start < first.end && first.start < $0.end }) else { continue }
+            guard let second = meetings[(index + 1)...].first(where: { !paired.contains($0.id) && $0.start < first.end && first.start < $0.end }) else {
+                continue
+            }
             paired.formUnion([first.id, second.id])
             let paths = [first.path, second.path]
             let record = day.plan?.overlaps.first { Set($0.events) == Set(paths) }
@@ -228,7 +230,9 @@ extension DayEngine {
                 MeetingCard.Reading(id: "\(index)", title: RecordReference(path: path).map(fallbackName) ?? path, kind: nil)
             },
             join: meeting.join.flatMap { url in
-                soon ? ButtonPresentation("Join", glyph: .join, role: .primary, wide: true, url: url) : ButtonPresentation("Join link", glyph: .join, role: .quiet, url: url)
+                soon
+                    ? ButtonPresentation("Join", glyph: .join, role: .primary, wide: true, url: url)
+                    : ButtonPresentation("Join link", glyph: .join, role: .quiet, url: url)
             }, after: dossier?.after,
             moss: mossBox(.meeting(meeting.id), about: meeting.title, asks: ["Prepare me in three lines", "What is open with the people in it?"]))
     }

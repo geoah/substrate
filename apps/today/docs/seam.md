@@ -50,6 +50,8 @@ When a flag list is closed the view sends `settleFlags`, so the order follows th
 | `FlagControl`                                                | A flag where it can change: the stripe, the word, the three options, and `open` when drawn open         |
 | `Flag`, `Stripe`, `Glyph`, `Tile`, `Badge`, `Icon`, `Pill`   | The marks: flag stripe (hollow when suggested), kind glyph, project tile, person badge, pill            |
 | `Chips`, `ProjectChip`, `PersonChip`, `StaleNote`, `Ground`  | Chips under a title, the stale pill with its sentence, the six grounds                                  |
+| `WrapLabels`, `MeetingLabels`, `PageLabels`, `ControlWords`  | The fixed words: the label over each part of a card or page, and each icon button's name                |
+| `MossSettings`                                               | Settings, "How Moss behaves": each standing instruction with a switch and its text to edit              |
 
 `Pill.Kind` gives a pill's tone and glyph: `suggested` (sparkles), `urgent` (flame), `stale` (clock),
 `caution`, `neutral`. An `OptionRow` with `suggested` carries the Suggested pill, and `reason` is the
@@ -72,6 +74,7 @@ assistant's sentence under it.
 | `carry(task:option:)`, `saveWrap`                                                           | The wrap: a draft until `saveWrap`                                                     |
 | `addOrAsk(_:)`, `ask(_:_:)`, `closeAnswer(_:)`, `stopAnswer`                                | The field and the assistant's boxes                                                    |
 | `send(_:)`                                                                                  | Send, under a message that is ready                                                    |
+| `instruction(_:on:)`, `rewriteInstruction(_:text:)`, `settings(_:)`                         | Settings: an instruction on or off, its text, a row of the app's own                   |
 | `looked`, `refresh`, `foreground`, `clearSaved`, `offered(_:)`, `dismissProblem`, `notificationsAsked` | The app's own                                                                |
 
 Every button and option row in a presentation already carries the command it sends, so a view rarely names

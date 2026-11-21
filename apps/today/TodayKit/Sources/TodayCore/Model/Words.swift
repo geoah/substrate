@@ -69,7 +69,8 @@ enum Words {
     /// A day named from today: "today", "yesterday", "tomorrow", "Tuesday"
     /// within a week either way, else "5 November".
     static func day(_ date: Date, now: Date, _ calendar: Calendar) -> String {
-        let from = calendar.startOfDay(for: now), to = calendar.startOfDay(for: date)
+        let from = calendar.startOfDay(for: now)
+        let to = calendar.startOfDay(for: date)
         let days = calendar.dateComponents([.day], from: from, to: to).day ?? 0
         switch days {
         case 0: return "today"
@@ -99,16 +100,66 @@ enum Words {
         return "in \(minutes / 60) h" + (rest > 0 ? String(format: " %02d", rest) : "")
     }
 
+    static func words(_ name: String) -> [Substring] {
+        name.split(whereSeparator: { $0 == " " || $0 == ";" || $0 == "-" || $0 == "_" || $0 == "/" }).filter {
+            $0.first?.isLetter == true || $0.first?.isNumber == true
+        }
+    }
+
     /// Two initials: the first letters of a name's first two words (a
     /// project), or of its first and last (a person); one word gives its
-    /// first two letters.
+    /// first two letters. A project whose first word is a short acronym in
+    /// capitals ("EU AI Act") is drawn by it.
     static func initials(_ name: String, last: Bool) -> String {
-        let words = name.split(whereSeparator: { $0 == " " || $0 == ";" || $0 == "-" || $0 == "_" || $0 == "/" }).filter { $0.first?.isLetter == true || $0.first?.isNumber == true }
+        let words = words(name)
         guard let first = words.first else { return "?" }
+        if !last, (2 ... 3).contains(first.count), first.allSatisfy({ $0.isUppercase || $0.isNumber }), first.contains(where: \.isLetter) {
+            return String(first.prefix(2))
+        }
         if words.count > 1, let other = last ? words.last : words.dropFirst().first, let a = first.first, let b = other.first {
             return (String(a) + String(b)).uppercased()
         }
         return String(first.prefix(2)).uppercased()
+    }
+
+    /// The first two letters of a name's first word: what a project takes
+    /// when another already has its initials.
+    static func firstTwo(_ name: String) -> String {
+        guard let first = words(name).first else { return "?" }
+        return String(first.prefix(2)).uppercased()
+    }
+
+    /// An amount as people write it: "200 mg", "1,000 IU", "5%", "1
+    /// capsule", "2 tablets". A unit of measure is cased as it is written;
+    /// a unit that is counted takes its plural.
+    static func amount(_ value: Decimal, _ unit: String?) -> String {
+        let number = grouped(value)
+        guard let unit, !unit.isEmpty else { return number }
+        switch unit.lowercased() {
+        case "iu": return "\(number) IU"
+        case "percent", "%": return "\(number)%"
+        case "mg", "mcg", "g", "ml", "kg", "l": return "\(number) \(unit.lowercased())"
+        case "units", "unit": return "\(number) \(value == 1 ? "unit" : "units")"
+        default:
+            let one = unit.lowercased()
+            if value == 1 { return "\(number) \(one)" }
+            return "\(number) \(one.hasSuffix("y") ? one.dropLast() + "ies" : one + "s")"
+        }
+    }
+
+    /// "1,000", "0.5", "12,500.25": thousands apart, as a label writes them.
+    static func grouped(_ value: Decimal) -> String {
+        let plain = NSDecimalNumber(decimal: value).stringValue
+        let negative = plain.hasPrefix("-")
+        let parts = plain.drop(while: { $0 == "-" }).split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        let whole = parts.first.map(String.init) ?? plain
+        var out = ""
+        for (index, digit) in whole.enumerated() {
+            if index > 0, (whole.count - index) % 3 == 0 { out.append(",") }
+            out.append(digit)
+        }
+        if parts.count > 1 { out += "." + parts[1] }
+        return (negative ? "-" : "") + out
     }
 
     /// A hue from a stable hash of an id, so one thing is the same colour

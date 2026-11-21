@@ -22,8 +22,10 @@ enum TodayReads {
         try await client.record(TodayKinds.kind, kind)
     }
 
-    static func discover(_ client: SubstrateClient) async throws -> Discovery {
+    static func discover(_ client: SubstrateClient, now: Date) async throws -> Discovery {
         var found = Discovery()
+        found.known = TodayKinds.linkable
+        found.at = now
         try await withThrowingTaskGroup(of: (String, Record?).self) { group in
             for kind in TodayKinds.linkable {
                 group.addTask { (kind, try await declaration(client, kind)) }

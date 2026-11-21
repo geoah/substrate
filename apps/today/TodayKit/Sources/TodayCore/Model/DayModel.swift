@@ -129,9 +129,11 @@ public struct SeriesItem: Equatable, Sendable {
     public var window: String
     public var active: Bool
     public var group: String?
-    /// "200 mg", "1 capsule": only a dose has one.
+    /// "1 capsule", "2 tablets": only a dose has one.
     public var dose: String?
     public var isDose: Bool
+    /// The medication a dose is of, by path.
+    public var medication: String?
 
     public var path: String { "\(kind)/\(id)" }
 
@@ -142,12 +144,32 @@ public struct SeriesItem: Equatable, Sendable {
         window = record["window"]?.text ?? "exact"
         active = (record["status"]?.text ?? "active") == "active"
         group = record["group"]?.text
+        medication = record["medication"]?.referencePath
         isDose = record["medication"] != nil || record["doseAmount"] != nil
-        if let amount = record["doseAmount"]?.decimal {
-            let unit = record["doseUnit"]?.text
-            let number = NSDecimalNumber(decimal: amount).stringValue
-            dose = unit.map { "\(number) \($0)\(amount == 1 || ["ml", "mg", "mcg", "g", "iu", "units"].contains($0) ? "" : "s")" } ?? number
-        }
+        if let amount = record["doseAmount"]?.decimal { dose = Words.amount(amount, record["doseUnit"]?.text) }
+    }
+}
+
+/// One of the assistant's standing instructions: an `llm/instruction` that
+/// names the assistant the app talks to.
+public struct Instruction: Equatable, Sendable {
+    public var id: String
+    public var text: String
+    public var active: Bool
+    /// Who wrote it: `owner`, `agent` or `import` (shipped with a package).
+    public var source: String
+    public var createdAt: Date
+    public var version: Int
+
+    init?(_ record: Record) {
+        guard record.kind == TodayKinds.instruction, let text = record["text"]?.text else { return nil }
+        guard record["agent"]?.referencePath?.hasSuffix("/" + TodayKinds.assistant) == true else { return nil }
+        id = record.id
+        self.text = text
+        active = record["active"]?.bool ?? true
+        source = record["source"]?.text ?? "owner"
+        createdAt = record.createdDate
+        version = record.version
     }
 }
 
@@ -367,6 +389,11 @@ public struct Preference: Equatable, Sendable {
     public var nightReadAt: Date?
     /// Seconds an urgent mark nobody checked waits before it interrupts.
     public var urgentWait: TimeInterval = 120
+    /// When the assistant prepares the morning, as "HH:MM" in `timezone`.
+    public var prepareAt = "06:30"
+    /// Whether the assistant prepares at all: the morning, the advice on
+    /// a suggested task, the check of an urgent mark.
+    public var assistantPrepares = true
     public var version = 0
 
     init() {}
@@ -378,6 +405,8 @@ public struct Preference: Equatable, Sendable {
         lastActiveAt = record["lastActiveAt"]?.text.flatMap(Timestamp.parse)
         nightReadAt = record["nightReadAt"]?.text.flatMap(Timestamp.parse)
         if let wait = record["urgentWait"]?.text.flatMap(ISODuration.parse) { urgentWait = TimeInterval(max(0, wait)) }
+        if let at = record["prepareAt"]?.text, !at.isEmpty { prepareAt = at }
+        assistantPrepares = record["assistantPrepares"]?.bool ?? true
         version = record.version
     }
 }

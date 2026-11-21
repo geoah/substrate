@@ -1,7 +1,7 @@
 import Foundation
-import SubstrateCore
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 
 /// What Substrate Today asks a substrate for (app.json, which a test
 /// holds this to): `full`, alone, as Substrate Chat does. The pane reads

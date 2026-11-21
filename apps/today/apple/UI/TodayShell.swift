@@ -62,7 +62,7 @@ public enum Today {
             manifest: TodayManifest.current, keychainService: service, folder: folder, packages: TodayManifest.packages,
             words: TodayApp.words(device:),
             app: { TodayApp(cache: $0.cache, outbox: $0.outbox, words: $0.words, build: $0.build, folder: $0.folder) },
-            refresh: .foreground, respond: TodayReminders.command(for:), clearSaved: .clearSaved,
+            refresh: .foreground, respond: TodayReminders.command(for:), settings: { .settings($0) }, clearSaved: .clearSaved,
             settingsScreen: TodayPresenter.settings)
     }
 }

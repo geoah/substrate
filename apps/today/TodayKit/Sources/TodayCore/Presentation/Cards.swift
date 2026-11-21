@@ -53,8 +53,8 @@ public struct YesterdayCard: Codable, Equatable, Hashable, Sendable {
         public var id: String
         public var glyph: Glyph
         public var title: String
-        /// "A dose", "A task, due yesterday", "Expected from someone".
-        public var pill: Pill?
+        /// What it was and when it was due, in one sentence: the glyph
+        /// already says whether it is a routine or a task.
         public var text: String?
         public var options: OptionList
         /// "Chosen at 08:19."
@@ -63,13 +63,12 @@ public struct YesterdayCard: Codable, Equatable, Hashable, Sendable {
         public var ready: ReadyMessage?
 
         public init(
-            id: String, glyph: Glyph, title: String, pill: Pill? = nil, text: String? = nil, options: OptionList, chosen: String? = nil,
+            id: String, glyph: Glyph, title: String, text: String? = nil, options: OptionList, chosen: String? = nil,
             ready: ReadyMessage? = nil
         ) {
             self.id = id
             self.glyph = glyph
             self.title = title
-            self.pill = pill
             self.text = text
             self.options = options
             self.chosen = chosen
@@ -551,6 +550,8 @@ public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
     public var line: String?
     /// "in 2 h 40", on the next fixed point alone.
     public var until: String?
+    /// Under the title of the meeting in full: "to 14:40, Google Meet, 2 people".
+    public var detail: String?
     /// On now.
     public var live: Bool
     /// The meeting is, or is about to be, the current item.
@@ -564,6 +565,7 @@ public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
         id: String, start: String, end: String, title: String, people: [Badge] = [], attendance: String? = nil, line: String? = nil,
         until: String? = nil, live: Bool = false, leads: Bool = false, off: Bool = false, project: ProjectChip? = nil, card: MeetingCard
     ) {
+        detail = (["to \(end)"] + [card.meta].compactMap { $0 }).joined(separator: ", ")
         self.id = id
         self.start = start
         self.end = end
@@ -632,6 +634,8 @@ public struct MeetingCard: Codable, Equatable, Sendable {
     public var join: ButtonPresentation?
     public var after: String?
     public var moss: MossBox?
+    /// The label over each part.
+    public var labels = MeetingLabels()
 
     public init(
         meta: String? = nil, chips: Chips = .none, purpose: String? = nil, overlap: OverlapCard? = nil, tasksTitle: String? = nil,
@@ -881,6 +885,8 @@ public struct WrapCard: Codable, Equatable, Sendable {
     /// "Tomorrow": what is first.
     public var tomorrow: String?
     public var save: SaveRow
+    /// The label over each part.
+    public var labels = WrapLabels()
 
     public init(
         done: [Done] = [], others: String? = nil, suggested: String? = nil, moved: [Titled] = [], carry: [Carry] = [],

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateScreens
 
 /// A page. Navigation is the views': a view keeps a path of these and asks
 /// the presentation for each (`TodayPresentation.page(_:)`). One level: a
@@ -174,6 +175,16 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
 
     /// Send, under a message that is ready: the message's id.
     case send(String)
+
+    // MARK: Settings (choices, at once)
+
+    /// One of the assistant's standing instructions is turned on or off.
+    case instruction(String, on: Bool)
+    /// Its text is rewritten.
+    case rewriteInstruction(String, text: String)
+    /// A row of the app's own settings: when the assistant prepares, and
+    /// how long an urgent mark nobody checked waits.
+    case settings(SettingsCommand)
 
     // MARK: The app
 

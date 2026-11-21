@@ -88,7 +88,6 @@ struct YesterdayCardView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if let pill = item.pill { PillView(pill) }
                                 if let text = item.text {
                                     Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -388,7 +387,7 @@ struct WrapCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !card.done.isEmpty {
-                section(PaneWords.doneToday) {
+                section(card.labels.done) {
                     ForEach(card.done) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(item.title)
@@ -407,10 +406,10 @@ struct WrapCardView: View {
             if let others = card.others { NoteText(others) }
             if let suggested = card.suggested { NoteText(suggested) }
             if !card.moved.isEmpty {
-                section(PaneWords.movedEarlier) { ForEach(card.moved) { titled($0) } }
+                section(card.labels.moved) { ForEach(card.moved) { titled($0) } }
             }
             if !card.carry.isEmpty {
-                section(PaneWords.carriesOver) {
+                section(card.labels.carry) {
                     ForEach(card.carry) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
@@ -424,17 +423,17 @@ struct WrapCardView: View {
                 }
             }
             if !card.unanswered.isEmpty {
-                section(PaneWords.unanswered) {
+                section(card.labels.unanswered) {
                     ForEach(Array(card.unanswered.enumerated()), id: \.element.id) { index, item in
                         SuggestedItemView(item: item, first: index == 0)
                     }
                 }
             }
             if !card.dismissed.isEmpty {
-                section(PaneWords.dismissedToday) { ForEach(card.dismissed) { titled($0) } }
+                section(card.labels.dismissed) { ForEach(card.dismissed) { titled($0) } }
             }
             if let tomorrow = card.tomorrow {
-                section(PaneWords.tomorrow) {
+                section(card.labels.tomorrow) {
                     Text(tomorrow).font(TodayLook.Text.body).foregroundStyle(.ink).fixedSize(horizontal: false, vertical: true)
                 }
             }

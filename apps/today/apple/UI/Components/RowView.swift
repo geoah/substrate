@@ -70,6 +70,7 @@ extension Stripe {
 /// One row of the day. Closed it is a line of a list; opened in place, or
 /// as the current item, it is a card with its body under its head.
 struct RowView: View {
+    @Environment(\.words) private var words
     var row: Row
     /// Drawn inside a list of lines, which draws the hairline above it.
     var first = true
@@ -150,7 +151,7 @@ struct RowView: View {
                     icon: .glyph(row.glyph), title: row.title, line: isUrgent ? nil : row.line, stripe: row.stripe,
                     size: lead ? .lead : .open)
                 if !lead {
-                    IconButton(Symbol.close, label: PaneWords.close, small: true) {
+                    IconButton(Symbol.close, label: words.close, small: true) {
                         withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
                     }
                 }

@@ -56,8 +56,7 @@ extension DayEngine {
         if closing, let wrap = wrapRow(state: state, closing: true) { out.append(wrap) }
         out += soon.map { row($0, state: state) }
         if isCurrent {
-            let left = yesterdayLeft
-            if !left.isEmpty { out.append(yesterdayRow(left, state: state)) }
+            if let yesterday = yesterdayRow(yesterdayLeft, state: state) { out.append(yesterday) }
             if let suggested = suggestedRow(state: state) { out.append(suggested) }
             if let plan = planRow(state: state) { out.append(plan) }
             out += heard.map { heardRow($0, state: state) }
@@ -100,7 +99,8 @@ extension DayEngine {
     // MARK: The pane
 
     public var pane: PanePresentation {
-        let stretches = stretches, runs = runs
+        let stretches = stretches
+        let runs = runs
         let current = currentStretch
         let urgent = interrupting
         var items: [PaneItem] = []
@@ -147,7 +147,8 @@ extension DayEngine {
                     items.append(
                         .parked(
                             ParkedLine(
-                                id: "s\(stretch.index)", what: Words.cap(Words.list(names + (rows.count > 4 ? ["\(Words.low(Words.num(rows.count - 4))) more"] : []))),
+                                id: "s\(stretch.index)",
+                                what: Words.cap(Words.list(names + (rows.count > 4 ? ["\(Words.low(Words.num(rows.count - 4))) more"] : []))),
                                 rest: "\(rows.count == 1 ? "waits" : "wait") until you are out.")))
                     rows = []
                 } else if lead == nil, let first = rows.first {
@@ -206,7 +207,8 @@ extension DayEngine {
             strip: strip, items: items, ground: ground,
             composer: ComposerPresentation(added: day.notes.added.last),
             answer: asked.map(answerCard), lead: lead,
-            empty: day.discovery.present.isEmpty && day.discovery.series.isEmpty ? "Nothing to draw a day from yet. Add the tasks, routines and today packages to this repository." : nil)
+            empty: day.discovery.present.isEmpty && day.discovery.series.isEmpty
+                ? "Nothing to draw a day from yet. Add the tasks, routines and today packages to this repository." : nil)
     }
 
     /// The ground a leading row gives the pane.
@@ -232,14 +234,16 @@ extension DayEngine {
         return late.map { task in
             let selected = whenSelected(task)
             var rows = options.map { option in
-                OptionRow(id: option.id, name: option.name, line: option.line, selected: selected == option.id, command: .moveTo(task: task.id, option: option.id))
+                OptionRow(
+                    id: option.id, name: option.name, line: option.line, selected: selected == option.id, command: .moveTo(task: task.id, option: option.id))
             }
             rows.append(
                 OptionRow(
                     id: "today", name: "Leave it where it is", line: "It stays open where it is. The evening asks again.",
                     command: .moveTo(task: task.id, option: "today")))
             return UnfinishedCard(
-                id: task.id, line: "\(Words.cap(Words.low(task.name))) will not be finished before \(next.meetings[0].title) at \(clock(next.from)). Where does it go?",
+                id: task.id,
+                line: "\(Words.cap(Words.low(task.name))) will not be finished before \(next.meetings[0].title) at \(clock(next.from)). Where does it go?",
                 left: day.returns[task.path].map { "Left at \(clock($0.at)): \(Words.low($0.text))" }, options: OptionList(.round, rows),
                 project: chip(task.list))
         }

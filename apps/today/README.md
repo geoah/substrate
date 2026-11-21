@@ -1,103 +1,97 @@
 # Substrate Today
 
-An app built on the kit (`apps/kit`): its items kept in the owner's
-substrate, on iPhone, iPad and Mac. Every screen is a presentation
-TodayKit makes, and each platform's UI draws it and sends commands,
+One pane for the day, on iPhone, iPad and Mac: the order of the day under a
+strip of the projects you flagged, with the assistant on every item. It is
+built on the kit (`apps/kit`) and drawn from records: every screen is a
+presentation TodayKit makes, and the SwiftUI views draw it and send commands,
 nothing else ([docs/plans/app-kit.md](../../docs/plans/app-kit.md)).
 
-A new app made by `mise run apps:new <id>` starts as this one, renamed for
-its id, and builds and passes its tests before anyone edits it. Start from
-here, then read the kit's
-[Linked records](../kit/README.md#linked-records) and
-[An app's shell](../kit/README.md#an-apps-shell): this app is those two
-paragraphs and little else.
+The app asks for `full`, alone, as Substrate Chat does: the pane reads across
+packages and talks to the assistant, which reads everything. A `full` request
+carries no package details, so the app publishes nothing and sets nothing up.
+What it reads comes from packages the owner adds from the catalogue
+(`routines`, `health`, `today`) and from `tasks`, which Substrate Tasks
+publishes. A part whose package the repository lacks stays empty; the app
+never fails because one is missing.
 
 | Where | What |
 | --- | --- |
-| `app.json` | the app, named once: its ids, the package it publishes and asks for, its scope |
-| `package/` | `substrate.reamde.dev/today`, the package its approval installs ([its README](package/README.md)) |
+| `app.json` | the app, named once: its ids, its scope (`full`), and that it publishes and asks for no package |
+| [`docs/records.md`](docs/records.md) | every kind and property the pane reads and writes, who writes each, and the rules that turn records into the pane |
+| [`docs/seam.md`](docs/seam.md) | the presentation types and the commands: what a view draws and sends |
 | `TodayKit/` | the core, a Swift package with no UI framework that builds and tests on Linux: `TodayCore` |
 | `apple/Sources/` | the app target: its scenes and the updater |
-| `apple/UI/` | `SubstrateTodayUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
-| `apple/Tests/` | the views drawn from TodayKit's fixtures, on the Mac |
+| `apple/UI/` | `SubstrateTodayUI`: the kit's `AppShell` over the app's root, the design guide's components, the pane and the pages ([its README](apple/README.md)) |
+| `apple/Tests/` | the gallery: every component, scene and page drawn on the Mac |
+| [`dev/`](dev/README.md) | a dev server with the packages and an invented day, to try the app against |
+
+## The pane
+
+From top to bottom: the strip (the projects with a flag, in flag order), the
+night, what is done earlier today, what is happening since the last look
+(directly above the current item), the current item in full, what comes next
+in the order it is acted on, and "Add or ask" fixed at the bottom. The
+priorities, the list of projects, a project, a person, a meeting, a task and
+the plan are pages; everything else opens in place.
+
+The rules are the engine's, and a test pins each:
+
+- **Tasks and suggested tasks, nothing else.** A suggested task is a task in
+  `proposed`; the suggested tasks are answered together and saved with one
+  button, with the assistant's answer selected and marked Suggested.
+- **The assistant suggests and never acts.** Above a Save its option starts
+  selected and nothing takes effect until Save; where a tap takes effect at
+  once its option only carries the pill. A flag or a project it suggests on
+  something that exists is a patch request, accepted by choosing it.
+- **A choice hides nothing.** An answered thing stays where it was with its
+  choice filled and when it was chosen, and another tap moves the choice.
+- **A flag is High, Medium or Low.** Urgent is above them and is never
+  written by the app: it is taken off by "Not urgent" or by choosing a flag.
+  An urgent mark the assistant checked interrupts; one it holds back waits in
+  what is happening; one nobody checked waits two minutes, then interrupts.
+- **Routines are one row a group a day.** The occurrences of one local day
+  whose series share a group are one row and one tap, in slot order; one
+  reminder a day at the first slot, whose words name no medicine.
+- **No durations.** Only real times: when something starts, how long until it.
 
 ## TodayKit
 
-`TodayCore` holds, each in a file of its own: `TodayKinds` (every kind
-name the app spells), `TodayManifest` (what its approval asks for, held
-to `app.json` by a test), `TodayApp` (the root under
-`LinkController<TodayApp>`, a `LinkedRecordsApp`: its items are the kit's
-`LinkedRecords`, every write goes through the outbox, and it writes only its
-own engine and effects, here Storage's sizes), `TodayPresenter` and
-`TodayPresentation` (every word the screen shows, Settings included), and
-`TodayFixtures` (the screen in the states the app shows it in).
+`TodayCore`, by folder:
 
-The items are a `KeyedList` whose revision is the root's own counter
-(`State.revision`), moved by the engine whenever the items may be drawn
-otherwise, never a count of them: a rename keeps the count and must still
-move the revision, or the Android bridge sends no delta.
+| Folder | What |
+| --- | --- |
+| `Presentation/` | the values a view draws and the one `TodayCommand` enum; every word shown is here, the labels of each part included |
+| `Model/` | the records as values (`Day` and its parts), what the repository holds (`Discovery`), the drafts above each Save, the day's notes the device keeps, and the wording helpers |
+| `Engine/` | `DayEngine`: pure functions from a `Day` to the pane and the pages |
+| `App/` | the root under the kit's link (`TodayApp`, a `LinkedRecordsApp`): commands to events, effects, the reads beside the linked kinds (two window reads, open requests, sync status), the writes, the assistant's client, Settings |
+| `TodayFixtures.swift` | an invented day as records, and one named scene per moment the design draws, each made by running the engine at a fixed instant |
 
-What the add field holds is the root's (`State.draft`), and it is cleared
-only once the outbox has the item it adds (`.records(.enqueued)`): a write
-the device could not keep (`.records(.notQueued)`, a full disk) is undone
-and leaves the text where it was, with why beside it and Retry, so nothing
-typed is lost before it is kept. Every write the owner fills in is held so.
+The small kinds (lists, tasks, the series kinds, logs, medications, the app's
+own, the assistant's instructions) are read whole and followed through the
+watch. Routine occurrences and meetings come from window reads, kept on the
+device so the pane draws offline. Every write goes through the outbox in the
+shape `docs/records.md` gives it.
 
-## Growing it
-
-What an app adds next, each as Substrate Tasks does it
-([its README](../tasks/README.md)):
-
-- **A change, or an edit.** `RecordWrites.change` is a patch guarded by the
-  version the outbox last saw: on a conflict the record is read again and
-  the patch sent once more on top, right for a toggle or a rename the owner
-  makes in passing. `RecordWrites.edit` is a patch on the version the owner
-  saw: a conflict parks it as a refused write the Status screen offers to
-  retry or discard, right for a form the owner filled in.
-
-  ```swift
-  case let .rename(id, name):
-      guard let record = context.state.linked.records[RecordFold.key(TodayKinds.item, id)] else { return [] }
-      return [.records(.wrote(writes.change(TodayKinds.item, id, properties: ["name": .string(name)],
-                                            version: record.version > 0 ? record.version : nil)))]
-  ```
-
-- **An editor.** A child controller the root keeps under a key it mints
-  (`children(in:)`), its save handed up as the root's own events with
-  `events(fromChild:_:)`: the write, and the editor kept open with its
-  draft until the outbox has it, as the add field is, so `.records(.enqueued)`
-  closes it and `.records(.notQueued)` hands it why, with Save as Retry
-  (Tasks' `TaskEditor` and `EditorSave`). It holds the record as it was when
-  it opened and patches what the owner changed on that version, so a change
-  made elsewhere meanwhile comes back as a conflict. Drawn over the screen
-  with `.childSheet(app.editors, dismiss:)`.
-- **A question first.** A `ConfirmationPresentation` in the presentation and
-  `.confirmation(app.confirmation, confirm:, dismiss:)` on the view; a
-  settings row asks its own (`SettingsRow.confirmation`), from its button.
-- **Settings of its own.** A section of rows in the presentation's
-  `settings`, their commands routed by `Configuration.settings`, the values
-  kept in the repository's folder with `SettingsFile`.
-- **Reminders.** A plan of `NotificationRequest`s the presenter makes from
-  the records, made the device's with `Notifications.reconcile(_:prefix:)`,
-  and a tap back as a command through `Configuration.respond`.
-- **A second section.** An `AppMenuPresentation` and `AppMenuRoot { tabs }
-  split: { sidebar }`: a tab bar on a phone, a sidebar on an iPad and a Mac.
+Settings holds the app's own part above the kit's: **How Moss behaves** (the
+assistant's standing instructions, each with a switch and its text to edit,
+written as guarded patches) and **Preparing the day** (whether and when the
+assistant prepares, and how long an urgent mark nobody checked waits), from
+the one `today/preference`.
 
 ## Running it
 
 ```bash
-swift test --package-path apps/today/TodayKit   # the core, on the Mac
-mise run apple:project                                # the Xcode project, this app's targets included
-xcodebuild -project apps/xcode/Substrate.xcodeproj -scheme SubstrateToday -destination 'platform=macOS' \
-  test -only-testing:SubstrateTodayTests           # the views drawn from the fixtures
+mise run apple:build:today   # the Mac app and the simulator app, registering nothing with Apple
+mise run apple:test:today    # TodayKit's tests, then the gallery drawn on the Mac
 ```
 
-Then build the `SubstrateToday` scheme. A local build's client id is the
-loopback one (`TodayManifest.localClientID`), so the approval page calls
-the app unverified. Against a local substrate, the approval installs the
-package from an authority document written from this tree:
+`apps/today/dev/server.sh up` starts a dev server with the packages and an
+invented day, and a debug build opens it without the approval page
+([Driving a debug build](apple/README.md#driving-a-debug-build)). A debug
+build also draws any fixture scene with no server at all.
 
-```bash
-.mise/python.sh .mise/closures.py --out .dev/authority --authority substrate.reamde.dev today
-SUBSTRATE_INSECURE_AUTHORITY_DOCS="substrate.reamde.dev=$PWD/.dev/authority/authority.json" mise run dev:up
-```
+## Not built yet
+
+Widgets and the Lock Screen, App Intents, Live Activities, and messages the
+assistant drafts for the owner to send. A reminder's actions (Taken, Skip,
+Later) work from a notification.

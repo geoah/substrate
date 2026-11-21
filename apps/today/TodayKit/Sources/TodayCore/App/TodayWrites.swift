@@ -165,6 +165,12 @@ struct TodayWrites {
         return writes.change(TodayKinds.reviewmark, key, properties: ["through": Self.stamp(through)], version: version(TodayKinds.reviewmark, key))
     }
 
+    /// One of the assistant's standing instructions, changed on the version
+    /// the owner saw: another hand's change in between is not written over.
+    func instruction(_ instruction: Instruction, _ change: JSONObject) -> LocalWrite {
+        writes.edit(TodayKinds.instruction, instruction.id, properties: change, seen: instruction.version)
+    }
+
     func preference(_ change: JSONObject) -> LocalWrite {
         upsert(TodayKinds.preference, TodayKinds.preferenceID, created: [:], change: change)
     }

@@ -13,10 +13,15 @@ struct StripView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ViewThatFits(in: .horizontal) {
-                header(date: strip.date, stacked: false)
-                header(date: strip.dateShort, stacked: false)
-                header(date: strip.date, stacked: true)
+            if typeSize.isAccessibilitySize {
+                tallHeader
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    header(date: strip.date, stacked: false)
+                    header(date: strip.dateShort, stacked: false)
+                    header(date: strip.date, stacked: true)
+                    tallHeader
+                }
             }
             if let empty = strip.empty {
                 NoteText(empty).padding(.horizontal, 8).padding(.bottom, 8)
@@ -37,6 +42,27 @@ struct StripView: View {
     private var columns: [GridItem] {
         let column = GridItem(.flexible(), spacing: 2, alignment: .topLeading)
         return typeSize.isAccessibilitySize ? [column] : [column, column]
+    }
+
+    /// The header where the text is set very large, or nothing else fits:
+    /// the title and the date, each on its own line and free to wrap, and
+    /// the two buttons under them.
+    private var tallHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(strip.title).font(TodayLook.font(.headline, weight: .bold)).foregroundStyle(.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(strip.date).font(TodayLook.font(.footnote, weight: .medium)).foregroundStyle(.inkSecond)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                PaneButton(strip.allProjects, small: true)
+                PaneButton(strip.edit, small: true)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The title and the date, then the strip's two buttons. Where the

@@ -144,6 +144,30 @@ import TodayCore
             size: CGSize(width: 393, height: 2600))
     }
 
+    /// Settings' own part: the assistant's standing instructions, one on,
+    /// one off and one the owner wrote, each with its switch and Edit, and
+    /// the editor of one.
+    @Test func howMossBehavesDraws() async throws {
+        let moss = MossSettings(
+            rows: [
+                MossSettings.Row(
+                    id: "a", text: "Suggest, never act. Every change is a proposal the owner accepts. Never send a message; draft it.", on: true,
+                    source: "Came with a package"),
+                MossSettings.Row(
+                    id: "b", text: "Never estimate how long something takes or whether the day fits. Only real times.", on: false,
+                    source: "Came with a package"),
+                MossSettings.Row(id: "c", text: "Write to me in British English.", on: true, source: "Yours"),
+            ], footer: "These are Moss's instructions wherever it works, not this app's alone.")
+        try await both("settings-moss", size: CGSize(width: 393, height: 760)) {
+            Form { MossSettingsSection(moss: moss, send: { _ in }, edit: { _ in }) }.formStyle(.grouped)
+        }
+        try await write(
+            "settings-moss-empty",
+            Form { MossSettingsSection(moss: MossSettings(empty: "Moss has no standing instructions."), send: { _ in }, edit: { _ in }) }.formStyle(.grouped),
+            size: CGSize(width: 393, height: 300))
+        try await write("settings-moss-edit", InstructionEditor(moss: moss, row: moss.rows[0]) { _ in }, size: CGSize(width: 393, height: 520))
+    }
+
     // MARK: The design guide's components
 
     @Test func everyComponentDraws() async throws {

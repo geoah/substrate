@@ -7,6 +7,7 @@ import TodayCore
 /// assistant's hue and nothing else on the card is. It prepares and waits:
 /// nothing leaves until the owner presses Send.
 struct MossBoxView: View {
+    @Environment(\.words) private var words
     var box: MossBox
 
     @Environment(\.pane) private var pane
@@ -40,7 +41,7 @@ struct MossBoxView: View {
                         .submitLabel(.send)
                         .padding(.leading, 14)
                         .frame(minHeight: TodayLook.target)
-                    IconButton(Symbol.send, label: PaneWords.send, look: .filled, action: send)
+                    IconButton(Symbol.send, label: words.send, look: .filled, action: send)
                 }
                 .background(.card, in: Capsule())
             }
@@ -77,7 +78,7 @@ struct AnswerCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            (Text(answer.heading + ": ").foregroundStyle(.inkSecond) + Text(answer.question).foregroundStyle(.ink))
+            Text("\(Text(answer.heading + ": ").foregroundStyle(.inkSecond))\(Text(answer.question).foregroundStyle(.ink))")
                 .font(TodayLook.Text.footnote.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
             switch answer.state {

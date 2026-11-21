@@ -7,6 +7,7 @@ import TodayCore
 /// it. Opened in place, or leading the day, it is a card with what to know
 /// before it.
 struct MeetingRowView: View {
+    @Environment(\.words) private var words
     var meeting: MeetingRow
     var first = true
     /// Inside an overlap's block: drawn on the block's own card.
@@ -101,19 +102,22 @@ struct MeetingRowView: View {
                             until
                         }
                     }
-                    Text([String("to " + meeting.end), meeting.card.meta].compactMap { $0 }.joined(separator: ", "))
-                        .font(TodayLook.Text.second)
-                        .foregroundStyle(.inkSecond)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail = meeting.detail {
+                        Text(detail)
+                            .font(TodayLook.Text.second)
+                            .foregroundStyle(.inkSecond)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !meeting.leads {
-                    IconButton(Symbol.close, label: PaneWords.close, small: true) {
+                    IconButton(Symbol.close, label: words.close, small: true) {
                         withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
                     }
                 }
             }
-            MeetingCardView(card: meeting.card, scope: meeting.id)
+            // Inside an overlap's block the block has said the overlap and holds its options: the meeting does not say them again.
+            MeetingCardView(card: meeting.card, scope: meeting.id, showsOverlap: !inBlock)
         }
         .modifier(MeetingSurface(inBlock: inBlock, live: meeting.live))
     }
@@ -153,6 +157,8 @@ struct MeetingCardView: View {
     var card: MeetingCard
     /// What keeps this card's ticked points apart from another's.
     var scope: String
+    /// False where the overlap this meeting is in is drawn around it.
+    var showsOverlap = true
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.pane) private var pane
@@ -163,7 +169,7 @@ struct MeetingCardView: View {
             if let purpose = card.purpose {
                 Text(purpose).font(TodayLook.font(.callout)).foregroundStyle(.ink).fixedSize(horizontal: false, vertical: true)
             }
-            if let overlap = card.overlap { OverlapCardView(card: overlap) }
+            if showsOverlap, let overlap = card.overlap { OverlapCardView(card: overlap) }
             if !card.tasks.isEmpty {
                 section(card.tasksTitle) {
                     RowList {
@@ -174,25 +180,25 @@ struct MeetingCardView: View {
                 }
             }
             if let since = card.since {
-                section(PaneWords.since) {
+                section(card.labels.since) {
                     Text(since).font(TodayLook.Text.body).foregroundStyle(.inkSecond).fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !card.said.isEmpty {
-                section(PaneWords.said) {
+                section(card.labels.said) {
                     ForEach(card.said) { said in
                         HStack(alignment: .top, spacing: 8) {
                             BadgeView(badge: said.badge, size: .chip)
-                            (Text(said.name + " ").font(TodayLook.Text.button).foregroundStyle(.ink)
-                                + Text(said.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                                + Text(said.time.map { " " + $0 } ?? "").font(TodayLook.Text.footnote).foregroundStyle(.inkSecond))
-                                .fixedSize(horizontal: false, vertical: true)
+                            Text(
+                                "\(Text(said.name + " ").font(TodayLook.Text.button).foregroundStyle(.ink))\(Text(said.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond))\(Text(said.time.map { " " + $0 } ?? "").font(TodayLook.Text.footnote).foregroundStyle(.inkSecond))"
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
             }
             if !card.raise.isEmpty {
-                section(PaneWords.raise) {
+                section(card.labels.raise) {
                     ForEach(Array(card.raise.enumerated()), id: \.offset) { index, point in
                         let id = "raise:\(scope):\(index)"
                         Button {
@@ -216,7 +222,7 @@ struct MeetingCardView: View {
                 }
             }
             if !card.readFirst.isEmpty {
-                section(PaneWords.readFirst) {
+                section(card.labels.readFirst) {
                     RowList {
                         ForEach(Array(card.readFirst.enumerated()), id: \.element.id) { index, reading in
                             Button {
@@ -244,7 +250,7 @@ struct MeetingCardView: View {
             }
             if let join = card.join { PaneButton(join) }
             if let after = card.after {
-                section(PaneWords.after) {
+                section(card.labels.after) {
                     Text(after).font(TodayLook.Text.body).foregroundStyle(.inkSecond).fixedSize(horizontal: false, vertical: true)
                 }
             }

@@ -23,6 +23,11 @@ public struct TodayPresentation: Codable, Equatable, Sendable {
     /// The instant the pane stops being true as drawn: the next minute,
     /// or the moment an urgent mark nobody checked starts to interrupt.
     public var nextChange: Date?
+    /// What each icon button is called.
+    public var words = ControlWords()
+    /// How the assistant behaves: its standing instructions, each with a
+    /// switch and its text to edit. Settings draws it above the rest.
+    public var moss = MossSettings()
 
     public init(
         pane: PanePresentation, pages: PageSource = PageSource(), notices: [NoticeLine] = [], problem: ProblemPresentation? = nil,

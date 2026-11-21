@@ -192,6 +192,8 @@ public struct ProjectPage: Codable, Equatable, Sendable, Identifiable {
     public var timelineEmpty: String?
     /// "Meetings today".
     public var meetings: [MeetingLine]
+    /// The label over each part.
+    public var labels = PageLabels()
 
     public init(
         id: String, tile: Tile, name: String, flag: FlagControl? = nil, makePriority: ButtonPresentation? = nil, summary: String? = nil,
@@ -253,6 +255,8 @@ public struct PersonPage: Codable, Equatable, Sendable, Identifiable {
     public var suggested: [SuggestedItem]
     public var meetings: [MeetingLine]
     public var moss: MossBox?
+    /// The label over each part.
+    public var labels = PageLabels()
 
     public init(
         id: String, badge: Badge, name: String, sees: String? = nil, tasksTitle: String, tasks: [TaskLine] = [], tasksEmpty: String? = nil,

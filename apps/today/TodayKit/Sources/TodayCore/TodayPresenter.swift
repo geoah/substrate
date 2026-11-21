@@ -25,16 +25,19 @@ public enum TodayPresenter {
     }
 
     public static func present(_ state: TodayApp.State, linked: LinkedRecords, build: BuildFacts, now: Date, calendar: Calendar) -> TodayPresentation {
-        let engine = DayEngine(day(state, now: now, calendar: calendar))
+        let day = day(state, now: now, calendar: calendar)
+        let engine = DayEngine(day)
         let reminds = state.permission == .on || state.permission == .notTimeSensitive
-        return TodayPresentation(
+        var out = TodayPresentation(
             pane: engine.pane, pages: PageSource(maker: engine, stamp: state.revision &+ Int(now.timeIntervalSince1970 / 60)),
             notices: linked.notice(state.linked).map { [$0] } ?? [],
-            problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: [],
+            problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: TodaySettings.sections(day),
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
             about: AboutPresentation.present(
                 appName: TodayApp.appName, version: build.version, channel: build.channel, offered: state.offered,
                 privacyPolicy: build.privacyPolicy), reminders: reminds ? engine.reminders : [], nextChange: engine.nextChange)
+        out.moss = TodaySettings.moss(day)
+        return out
     }
 
     /// Settings as one screen: the app's sections, then the kit's.

@@ -7,9 +7,34 @@ import SubstrateCore
 /// instant.
 public struct DayEngine: Sendable {
     public let day: Day
+    /// Each project's initials, by the list's id: no two alike.
+    let initials: [String: String]
 
     public init(_ day: Day) {
         self.day = day
+        initials = DayEngine.initials(day.lists)
+    }
+
+    /// The initials each project is drawn by. Two projects never share
+    /// them: the flagged ones choose first, in flag order, then the rest by
+    /// name, and one whose initials are taken is drawn by the first two
+    /// letters of its first word.
+    static func initials(_ lists: [ListItem]) -> [String: String] {
+        let order = lists.sorted {
+            (!$0.active ? 1 : 0, $0.flag?.rank ?? 3, $0.name.lowercased(), $0.id) < (!$1.active ? 1 : 0, $1.flag?.rank ?? 3, $1.name.lowercased(), $1.id)
+        }
+        var taken: Set<String> = []
+        var out: [String: String] = [:]
+        for list in order {
+            var mine = Words.initials(list.name, last: false)
+            if taken.contains(mine) {
+                let other = Words.firstTwo(list.name)
+                if !taken.contains(other) { mine = other }
+            }
+            taken.insert(mine)
+            out[list.id] = mine
+        }
+        return out
     }
 
     var now: Date { day.now }
@@ -18,7 +43,7 @@ public struct DayEngine: Sendable {
     // MARK: Marks
 
     func tile(_ list: ListItem, suggested: Bool = false) -> Tile {
-        Tile(initials: Words.initials(list.name, last: false), hue: Words.hue(list.id), suggested: suggested)
+        Tile(initials: initials[list.id] ?? Words.initials(list.name, last: false), hue: Words.hue(list.id), suggested: suggested)
     }
 
     func chip(_ listID: String?, suggested: Bool = false) -> ProjectChip? {

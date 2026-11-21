@@ -18,6 +18,10 @@ extension EnvironmentValues {
     /// False where glass cannot be drawn (a gallery's offscreen window): the
     /// strip and the field are then a translucent fill.
     @Entry var drawsGlass = true
+    /// What each icon button is called, from the presentation.
+    @Entry var words = ControlWords()
+    /// The ground the screen stands on, so an edge can fade into it.
+    @Entry var ground = Ground.working
 }
 
 /// A button as the core presents it: its role's shape, its glyph before

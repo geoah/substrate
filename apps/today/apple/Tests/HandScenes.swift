@@ -338,7 +338,7 @@ enum HandScenes {
                         YesterdayCard(
                             items: [
                                 YesterdayCard.Item(
-                                    id: "y-b12", glyph: .routine, title: "Vitamin B12", pill: Pill(.neutral, "A dose"),
+                                    id: "y-b12", glyph: .routine, title: "Vitamin B12",
                                     text: "Weekly, due Wednesday morning. Not logged.",
                                     options: OptionList(
                                         .round,

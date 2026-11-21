@@ -14,6 +14,7 @@ struct PaneView<Header: View>: View {
     @ViewBuilder var header: () -> Header
 
     @Environment(PaneViewState.self) private var state
+    @Environment(\.words) private var words
 
     var body: some View {
         let blocks = PaneBlock.blocks(of: pane.items, open: state.opened)
@@ -34,7 +35,7 @@ struct PaneView<Header: View>: View {
                         Button(action: openSettings) {
                             HStack(spacing: 6) {
                                 Image(systemName: Symbol.settings.systemName).font(TodayLook.font(.footnote, weight: .semibold))
-                                Text(PaneWords.settings)
+                                Text(words.settings)
                             }
                         }
                         .buttonStyle(.today(.small))

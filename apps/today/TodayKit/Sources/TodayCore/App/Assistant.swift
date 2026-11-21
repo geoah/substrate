@@ -115,6 +115,7 @@ enum Assistant {
     /// it is, since no record goes with it.
     static func message(_ subject: MossSubject, _ text: String, day: Day) -> String {
         guard case let .meeting(id) = subject, let meeting = day.meetings.first(where: { $0.id == id }) else { return text }
-        return "About the meeting \"\(meeting.title)\" at \(Words.clock(meeting.start, day.calendar)) \(Words.day(meeting.start, now: day.now, day.calendar)): \(text)"
+        return
+            "About the meeting \"\(meeting.title)\" at \(Words.clock(meeting.start, day.calendar)) \(Words.day(meeting.start, now: day.now, day.calendar)): \(text)"
     }
 }

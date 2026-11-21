@@ -47,6 +47,8 @@ struct DayScreen<Notices: View>: View {
         }
         .environment(state)
         .environment(\.pane, actions)
+        .environment(\.words, app.words)
+        .environment(\.ground, app.pane.ground)
         .environment(\.colorScheme, app.pane.ground.scheme(in: system))
         .tint(TodayLook.ink.color)
     }
@@ -84,10 +86,11 @@ struct DayScreen<Notices: View>: View {
     private var day: some View {
         PaneView(pane: app.pane, openSettings: openSettings, header: notices)
             .safeAreaInset(edge: .bottom, spacing: 0) { field }
+            .edgeFade(.top)
     }
 
     private var field: some View {
-        ComposerBar(composer: app.pane.composer, answer: app.pane.answer)
+        ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom)
     }
 
     // MARK: A wide screen

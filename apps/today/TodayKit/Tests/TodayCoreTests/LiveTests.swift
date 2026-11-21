@@ -23,7 +23,7 @@ struct LiveTests {
 
     static func state(_ client: SubstrateClient) async throws -> TodayApp.State {
         var state = TodayApp.State()
-        let discovery = try await TodayReads.discover(client)
+        let discovery = try await TodayReads.discover(client, now: Date())
         state.discovery = discovery
         state.linked.loaded = true
         for record in try await client.listAll(ListQuery(kinds: discovery.linked, first: 200), limit: 10000).records {
@@ -50,7 +50,8 @@ struct LiveTests {
             case .put: _ = try await client.put(entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion)
             case .patch:
                 let seen = try await client.record(entry.kind, entry.recordID)?.version
-                _ = try await client.patch(entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion.flatMap { $0 > 0 ? $0 : nil } ?? seen)
+                _ = try await client.patch(
+                    entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion.flatMap { $0 > 0 ? $0 : nil } ?? seen)
             case .delete: try await client.delete(entry.kind, entry.recordID)
             default: break
             }
@@ -62,10 +63,22 @@ struct LiveTests {
         let state = try await Self.state(client)
         let discovery = try #require(state.discovery)
         print("LIVE discovery present:", discovery.present.map { $0.split(separator: "/").suffix(2).joined(separator: "/") })
-        print("LIVE discovery series:", discovery.series, "calendars:", discovery.calendars, "taskMoves:", discovery.taskMoves, "listPriority:", discovery.listPriority)
-        print("LIVE linked records:", state.linked.records.count, "occurrences:", state.windows.occurrences.count, "meetings:", state.windows.meetings.count, "requests:", state.requests.count, "stale:", state.stale.count, "contacts:", state.contacts.count)
-        if let sample = state.windows.occurrences.first { print("LIVE occurrence:", sample.kind, sample.id, sample.version, sample["at"]?.text ?? "-", sample["name"]?.text ?? "-", sample["status"]?.text ?? "-") }
-        if let sample = state.windows.meetings.first { print("LIVE meeting:", sample.kind, sample.id, sample["at"]?.text ?? "-", sample["endsAt"]?.text ?? "-", sample.title ?? "-", Array(sample.properties.keys).sorted()) }
+        print(
+            "LIVE discovery series:", discovery.series, "calendars:", discovery.calendars, "taskMoves:", discovery.taskMoves, "listPriority:",
+            discovery.listPriority)
+        print(
+            "LIVE linked records:", state.linked.records.count, "occurrences:", state.windows.occurrences.count, "meetings:", state.windows.meetings.count,
+            "requests:", state.requests.count, "stale:", state.stale.count, "contacts:", state.contacts.count)
+        if let sample = state.windows.occurrences.first {
+            print(
+                "LIVE occurrence:", sample.kind, sample.id, sample.version, sample["at"]?.text ?? "-", sample["name"]?.text ?? "-",
+                sample["status"]?.text ?? "-")
+        }
+        if let sample = state.windows.meetings.first {
+            print(
+                "LIVE meeting:", sample.kind, sample.id, sample["at"]?.text ?? "-", sample["endsAt"]?.text ?? "-", sample.title ?? "-",
+                Array(sample.properties.keys).sorted())
+        }
         #expect(discovery.present.contains(TodayKinds.task) && discovery.present.contains(TodayKinds.list) && discovery.present.contains(TodayKinds.log))
         #expect(discovery.taskMoves && discovery.listPriority)
         #expect(!discovery.series.isEmpty && !discovery.calendars.isEmpty)
@@ -74,7 +87,9 @@ struct LiveTests {
         print("LIVE pane:\n" + outline(presentation.pane))
         #expect(!presentation.pane.strip.entries.isEmpty)
         #expect(presentation.pane.items.count > 3)
-        if case let .plan(plan) = presentation.page(.plan) { print("LIVE plan groups:", plan.groups.map { "\($0.name) \($0.count)" }, "overlaps:", plan.overlaps.map(\.name)) }
+        if case let .plan(plan) = presentation.page(.plan) {
+            print("LIVE plan groups:", plan.groups.map { "\($0.name) \($0.count)" }, "overlaps:", plan.overlaps.map(\.name))
+        }
     }
 
     @Test func oneWriteOfEachKindLands() async throws {
@@ -132,7 +147,10 @@ struct LiveTests {
         #expect(try await client.record(TodayKinds.list, list.id)?["priority"]?.text == "medium")
 
         // The plan, a review mark and the preference: each under its fixed id.
-        try await Self.send(writes.plan(["picked": .array([TodayWrites.reference(task.path)]), "savedAt": TodayWrites.stamp(now), "overlaps": TodayWrites.encode([PlanRecord.Overlap]())]), client)
+        try await Self.send(
+            writes.plan([
+                "picked": .array([TodayWrites.reference(task.path)]), "savedAt": TodayWrites.stamp(now), "overlaps": TodayWrites.encode([PlanRecord.Overlap]()),
+            ]), client)
         let plan = try #require(try await client.record(TodayKinds.plan, PlanRecord.id(day.today)))
         #expect(PlanRecord(plan)?.picked == [task.path] && PlanRecord(plan)?.savedAt != nil)
         if let digest = day.digests.first {

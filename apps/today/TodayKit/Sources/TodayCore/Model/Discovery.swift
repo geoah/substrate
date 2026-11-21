@@ -21,6 +21,11 @@ public struct Discovery: Codable, Equatable, Sendable {
     /// The list kind declares `priority`: where it does not, no project
     /// can be flagged.
     public var listPriority: Bool
+    /// The kinds this build looked for when it asked, and when it asked:
+    /// a build that reads more, or a repository given more since, asks
+    /// again. Absent in what an earlier build kept.
+    public var known: [String]?
+    public var at: Date?
 
     public init(present: [String] = [], series: [String] = [], calendars: [String] = [], taskMoves: Bool = true, listPriority: Bool = true) {
         self.present = present
@@ -38,6 +43,13 @@ public struct Discovery: Codable, Equatable, Sendable {
     }
 
     public func holds(_ kind: String) -> Bool { present.contains(kind) || series.contains(kind) }
+
+    /// Whether to ask the repository again: this build reads kinds the
+    /// answer did not cover, or the answer is more than six hours old (a
+    /// package may have been added since).
+    public func stale(at now: Date) -> Bool {
+        known != TodayKinds.linkable || now.timeIntervalSince(at ?? .distantPast) > 6 * 3600
+    }
 
     /// Whether a kind's declaration binds core `temporal` as a range.
     static func isRange(_ definition: [String: JSONValue]) -> Bool {

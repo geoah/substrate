@@ -109,7 +109,7 @@ extension DayEngine {
             for (index, item) in dayItems(digest).enumerated() {
                 let new = isNew(item, in: digest)
                 byKey[digest.key, default: []].append(
-                    HappeningItem(id: "\(digest.key)-\(index)", time: clock(item.at), text: item.text, isNew: new, pill: new ? .new : nil))
+                    HappeningItem(id: "\(digest.key)-\(index)", time: clock(item.at), text: item.text, isNew: new))
                 if new { fresh.append((item.at, digest.key, item.text)) }
             }
         }
@@ -135,7 +135,9 @@ extension DayEngine {
         let lead = fresh.first
         let others = max(0, fresh.count - 1)
         let otherProjects = Set(fresh.dropFirst().map(\.key)).count
-        var line = waiting.isEmpty ? "" : (waiting.count == 1 ? "One thing is marked urgent and waits here. " : "\(Words.num(waiting.count)) things are marked urgent and wait here. ")
+        var line =
+            waiting.isEmpty
+            ? "" : (waiting.count == 1 ? "One thing is marked urgent and waits here. " : "\(Words.num(waiting.count)) things are marked urgent and wait here. ")
         if let lead {
             line += lead.text
             if others > 0 { line += " And \(Words.low(Words.num(others))) more on \(Words.low(Words.things(otherProjects, "project")))." }
@@ -151,7 +153,8 @@ extension DayEngine {
                 : HappeningRest(
                     line: Words.things(restCount, "more thing") + (restNew > 0 ? ", \(Words.low(Words.num(restNew))) new" : ""), groups: restGroups),
             gotIt: fresh.isEmpty ? nil : ButtonPresentation("Got it", glyph: .done, role: .primary, command: .gotIt(project: nil)),
-            nothingNew: fresh.isEmpty ? "Nothing new since you last looked." : nil)
+            // Said once: the closed line already says it when nothing urgent waits there.
+            nothingNew: fresh.isEmpty && !waiting.isEmpty ? "Nothing new since you last looked." : nil)
     }
 
     // MARK: Earlier today
@@ -160,21 +163,29 @@ extension DayEngine {
         var lines: [(at: Date, line: EarlierPresentation.Line)] = []
         for task in day.tasks where task.status == .done {
             guard let at = task.completedAt, isToday(at), at <= now else { continue }
-            lines.append((at, .init(id: "task:" + task.id, time: clock(at), text: task.name, button: ButtonPresentation("Open", role: .quiet, opens: .task(task.id)))))
+            lines.append(
+                (at, .init(id: "task:" + task.id, time: clock(at), text: task.name, button: ButtonPresentation("Open", role: .quiet, opens: .task(task.id)))))
         }
         for row in todaysRoutines {
             guard let at = doneAt(row) else { continue }
             lines.append((at, .init(id: row.id, time: clock(at), text: row.title)))
         }
         for meeting in todaysMeetings where meeting.end <= now && attends(meeting) != false {
-            lines.append((meeting.end, .init(id: "meeting:" + meeting.id, time: clock(meeting.end), text: meeting.title, button: ButtonPresentation("Open", role: .quiet, opens: .meeting(meeting.id)))))
+            lines.append(
+                (
+                    meeting.end,
+                    .init(
+                        id: "meeting:" + meeting.id, time: clock(meeting.end), text: meeting.title,
+                        button: ButtonPresentation("Open", role: .quiet, opens: .meeting(meeting.id)))
+                ))
         }
         if let read = nightReadAt { lines.append((read, .init(id: "night", time: clock(read), text: "Read the night."))) }
         if let saved = day.notes.suggestedSavedAt {
             lines.append((saved, .init(id: "suggested", time: clock(saved), text: "Suggested tasks saved: " + Words.low(savedLine(day.notes.suggestedSaved)))))
         }
         if let saved = day.plan?.savedAt, isToday(saved) {
-            lines.append((saved, .init(id: "plan", time: clock(saved), text: "Plan saved.", button: ButtonPresentation("Open the plan", role: .quiet, opens: .plan))))
+            lines.append(
+                (saved, .init(id: "plan", time: clock(saved), text: "Plan saved.", button: ButtonPresentation("Open the plan", role: .quiet, opens: .plan))))
         }
         for (id, at) in day.notes.yesterdayAt.sorted(by: { $0.key < $1.key }) {
             lines.append((at, .init(id: "y:" + id, time: clock(at), text: "From yesterday: answered.")))

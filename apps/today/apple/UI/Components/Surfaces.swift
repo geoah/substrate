@@ -50,6 +50,70 @@ struct GroundView: View {
     }
 }
 
+extension Ground {
+    /// The ground's colour at the top of the screen, and at its bottom.
+    func top(_ scheme: ColorScheme) -> Color { stops(scheme).first?.color ?? .clear }
+    func bottom(_ scheme: ColorScheme) -> Color { stops(scheme).last?.color ?? .clear }
+}
+
+/// A clean edge where the day scrolls under the status bar or under what is
+/// fixed at the bottom: the ground's own colour, whole at the screen's edge
+/// and fading out toward the content. Without it the lines scrolling past
+/// collide with the clock, and read as garbled glass under the field.
+struct EdgeFade: ViewModifier {
+    enum Edge {
+        case top
+        case bottom
+    }
+
+    var edge: Edge
+    /// How far the colour takes to fade out, past the bar it covers.
+    static let reach: CGFloat = 18
+    @Environment(\.ground) private var ground
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        switch edge {
+        case .top:
+            // Over the content: whole under the status bar, gone a little below it.
+            content.overlay(alignment: .top) {
+                GeometryReader { proxy in
+                    let inset = proxy.safeAreaInsets.top
+                    let colour = ground.top(scheme)
+                    LinearGradient(
+                        stops: [
+                            .init(color: colour, location: 0), .init(color: colour, location: inset / (inset + Self.reach)),
+                            .init(color: colour.opacity(0), location: 1),
+                        ], startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: inset + Self.reach)
+                    .offset(y: -inset)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        case .bottom:
+            // Behind what is fixed there: whole under it and down to the screen's edge, fading in just above it.
+            content.background {
+                let colour = ground.bottom(scheme)
+                LinearGradient(
+                    stops: [
+                        .init(color: colour.opacity(0), location: 0), .init(color: colour, location: 0.3), .init(color: colour, location: 1),
+                    ], startPoint: .top, endPoint: .bottom
+                )
+                .padding(.top, -Self.reach)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+extension View {
+    func edgeFade(_ edge: EdgeFade.Edge) -> some View { modifier(EdgeFade(edge: edge)) }
+}
+
 /// A card: white on every ground (dark on the closing one), rounded, with
 /// its inset and a soft shadow.
 struct CardSurface: ViewModifier {
