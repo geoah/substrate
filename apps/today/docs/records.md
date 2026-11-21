@@ -73,8 +73,9 @@ Traits and kinds only: no functions, so a package that requires it brings no rea
   `temporal(point)` and core `recurring`, which give its occurrences.
   - `window`: `exact`, `morning`, `afternoon`, `evening`, `anytime`.
   - `status`: `active` (initial), `paused`, `archived`.
-  - `group`: series that share a group and a slot time are one row and one tap ("Morning medication, 5
-    items"). Absent: a row of its own.
+  - `group`: occurrences on the same local day whose series share a group are one row and one tap
+    ("Morning medication, 5 items"), in slot order, at the time of the first slot; a tap logs each at its own
+    slot. So the steps of one routine can sit a minute apart to keep their order. Absent: a row of its own.
 - Trait `routines/occurrencelog`: `status` (state), `scheduledAt` (datetime), `details` (markdown).
 - Kind `routines/routine`: the general series (a habit, a ritual, a chore, a skincare step). Binds
   `routines/series`, `temporal(point)`, `recurring`. Properties: `name` (required), `category` (enum `chore
