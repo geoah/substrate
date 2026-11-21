@@ -204,6 +204,18 @@ build_tasks() {
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateTasks.app"
 }
 
+# Substrate Today: one target for iPhone, iPad and Mac, built as Tasks is.
+today() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateToday -derivedDataPath "$DERIVED" -quiet "$@"
+}
+
+build_today() {
+	today -destination 'platform=macOS' -configuration Debug build
+	today -destination 'generic/platform=iOS Simulator' -configuration Debug build
+	echo "apple: $DERIVED/Build/Products/Debug/SubstrateToday.app"
+	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateToday.app"
+}
+
 # Substrate Template, what `apps:new` copies: built and tested like Tasks, so
 # the views a new app starts from compile and draw. Never released.
 template() {
@@ -675,6 +687,17 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		project
 		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests
 		;;
+	build:today)
+		project
+		build_today
+		;;
+	test:today)
+		# TodayKit on the Mac, then the app's views over its fixtures and
+		# the design guide's components.
+		swift test --package-path ../today/TodayKit
+		project
+		today -destination 'platform=macOS' test -only-testing:SubstrateTodayTests
+		;;
 	test:template)
 		# TemplateKit on the Mac, then the app's views over its fixtures.
 		swift test --package-path ../template/TemplateKit
@@ -731,7 +754,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 			exec "$APPLE_ROOT/.mise/apps.sh" site
 		;;
 	*)
-		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|measure:chat|test:kit|test:workouts|test:tasks|test:template|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
+		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|build:today|sim:chat|test:chat|measure:chat|test:kit|test:workouts|test:tasks|test:today|test:template|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 		exit 2
 		;;
 	esac

@@ -1,0 +1,150 @@
+import SubstrateUI
+import SwiftUI
+import TodayCore
+
+/// What a view of the pane can do: send a command, open a page, open an
+/// address outside the app. Views decide nothing themselves; a drawing has
+/// actions that go nowhere.
+struct PaneActions: Sendable {
+    var send: @MainActor @Sendable (TodayCommand) -> Void = { _ in }
+    var open: @MainActor @Sendable (TodayRoute) -> Void = { _ in }
+    var openURL: @MainActor @Sendable (String) -> Void = { _ in }
+    /// The assistant is asked about one thing, from its box.
+    @MainActor func ask(_ subject: MossSubject, _ text: String) { send(.ask(subject, text)) }
+}
+
+extension EnvironmentValues {
+    @Entry var pane = PaneActions()
+    /// False where glass cannot be drawn (a gallery's offscreen window): the
+    /// strip and the field are then a translucent fill.
+    @Entry var drawsGlass = true
+}
+
+/// A button as the core presents it: its role's shape, its glyph before
+/// the word, a right chevron after it when it opens a page. A tap sends its
+/// command, opens its page, or opens its address.
+struct PaneButton: View {
+    var button: ButtonPresentation
+    /// Inside a tinted box, where the quiet fill would not show.
+    var onTint = false
+    /// Lower, with the same target: the strip's All projects, a line's Open.
+    var small = false
+
+    @Environment(\.pane) private var pane
+    @State private var asking = false
+
+    init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false) {
+        self.button = button
+        self.onTint = onTint
+        self.small = small
+    }
+
+    var body: some View {
+        Group {
+            if button.iconOnly, let glyph = button.glyph {
+                IconButton(glyph, label: button.title, small: small, look: button.role == .primary ? .filled : .quiet, action: act)
+            } else {
+                Button(action: act) {
+                    ButtonWord(text: button.title, glyph: button.glyph, opensPage: button.opens != nil)
+                }
+                .buttonStyle(.today(kind))
+            }
+        }
+        .disabled(!button.enabled)
+    }
+
+    private var kind: TodayButtonStyle.Kind {
+        switch button.role {
+        case .primary: button.wide ? .wide : .primary
+        case .secondary: small ? .small : (onTint ? .onTint : .secondary)
+        case .quiet: small ? .small : .outlined
+        case .destructive: .destructive
+        }
+    }
+
+    private func act() {
+        if let command = button.command { pane.send(command) }
+        if let route = button.opens { pane.open(route) }
+        if let url = button.url { pane.openURL(url) }
+    }
+}
+
+/// A project named as a chip: its tile and its name. It opens the
+/// project's page, so it is a button with a whole target.
+struct ProjectChipView: View {
+    var chip: ProjectChip
+    @Environment(\.pane) private var pane
+
+    var body: some View {
+        Button {
+            pane.open(chip.route)
+        } label: {
+            HStack(spacing: 6) {
+                TileView(tile: chip.tile, size: .chip)
+                Text(chip.name)
+                    .font(TodayLook.Text.button)
+                    .foregroundStyle(.inkSecond)
+                    .lineLimit(1)
+                if chip.suggested { PillView(.suggested) }
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 9)
+            .frame(minHeight: 28)
+            .background(TodayLook.ink.color.opacity(0.06), in: RoundedRectangle(cornerRadius: TodayLook.chipRadius, style: .continuous))
+            .touchTargetHeight()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(chip.name)
+    }
+}
+
+/// A person named as a chip: the badge and what the chip says. It opens
+/// the person's page.
+struct PersonChipView: View {
+    var chip: PersonChip
+    @Environment(\.pane) private var pane
+
+    var body: some View {
+        Button {
+            pane.open(chip.route)
+        } label: {
+            HStack(spacing: 6) {
+                BadgeView(badge: chip.badge, size: .chip)
+                Text(chip.label)
+                    .font(TodayLook.Text.button)
+                    .foregroundStyle(.inkSecond)
+                    .lineLimit(1)
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 9)
+            .frame(minHeight: 28)
+            .background(TodayLook.ink.color.opacity(0.06), in: RoundedRectangle(cornerRadius: TodayLook.chipRadius, style: .continuous))
+            .touchTargetHeight()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(chip.label)
+    }
+}
+
+/// The chips under a title: its project, who it is for, and its state
+/// words, wrapping where the width runs out.
+struct ChipsView: View {
+    var chips: Chips
+
+    var body: some View {
+        if !chips.isEmpty {
+            WrapLayout(spacing: TodayLook.betweenChips) {
+                if let project = chips.project { ProjectChipView(chip: project) }
+                ForEach(chips.people) { PersonChipView(chip: $0) }
+                ForEach(chips.pills, id: \.self) { PillView($0).frame(minHeight: 28) }
+            }
+        }
+    }
+}
+
+extension View {
+    /// A control drawn lower than a target is still touched in a whole one.
+    func touchTargetHeight() -> some View {
+        contentShape(TouchTarget())
+    }
+}
