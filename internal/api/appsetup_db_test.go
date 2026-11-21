@@ -397,7 +397,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	}
 	// The requirement's kinds land too, listed as added under the step that
 	// brings them, and the row lists its own alone.
-	step := health.Package.Requires[0]
+	step := health.Package.Requires[1]
 	if !slices.ContainsFunc(step.Kinds, func(k substrate.AuthorizationKind) bool { return k.Identity == healthPkg+"/sleep" && k.Added }) {
 		t.Fatalf("health adds %+v, want its sleep kind among them", step.Kinds)
 	}
