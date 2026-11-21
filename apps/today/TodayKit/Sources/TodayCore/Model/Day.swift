@@ -139,6 +139,12 @@ public struct Day: Sendable {
     public func task(_ id: String) -> TaskItem? { tasks.first { $0.id == id } }
     public func person(_ path: String) -> Person? { people[path] }
 
+    /// A meeting by its id, or by the id another calendar gave it.
+    public func meeting(_ id: String) -> Meeting? { meetings.first { $0.id == id } ?? meetings.first { $0.also.contains(id) } }
+
+    /// What to know before a meeting, kept under any of its ids.
+    public func dossier(_ meeting: Meeting) -> Dossier? { dossiers[meeting.id] ?? meeting.also.lazy.compactMap { dossiers[$0] }.first }
+
     /// The records of a linked read, decoded into the day.
     public mutating func take(_ records: some Sequence<Record>) {
         for record in records {
@@ -163,8 +169,8 @@ public struct Day: Sendable {
             case TodayKinds.returnpoint: if let item = ReturnPoint(record) { returns[item.record] = item }
             case TodayKinds.patchRequest: if let item = Suggestion(record) { suggestions.append(item) }
             case TodayKinds.contact:
-                people["\(record.kind)/\(record.id)"] = Person(
-                    path: "\(record.kind)/\(record.id)", name: record.title ?? record["displayName"]?.text ?? "Someone")
+                let person = Person(record)
+                people[person.path] = person
             default:
                 if discovery.series.contains(record.kind) {
                     let item = SeriesItem(record)

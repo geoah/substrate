@@ -9,7 +9,6 @@ public struct WrapLabels: Codable, Equatable, Hashable, Sendable {
     public var done = "Done today"
     public var moved = "Moved earlier today"
     public var carry = "Carries over: where does each go?"
-    public var unanswered = "Suggested, and not answered"
     public var dismissed = "Dismissed today"
     public var tomorrow = "Tomorrow"
 

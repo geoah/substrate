@@ -61,7 +61,7 @@ public enum UrgentChoice: String, Codable, Hashable, Sendable, CaseIterable {
 ///   what yesterday left, something urgent, a priority): the write is made
 ///   when the command arrives.
 /// - **A draft above a Save** (`suggest`, the `plan…` commands, `carry`):
-///   nothing is written until the card's Save (`saveSuggested`, `planSave`,
+///   nothing is written until the card's Save (`saveSuggestedCard`, `planSave`,
 ///   `saveWrap`).
 /// - **An action** (`done`, `log`, `send`, `gotIt`, `readNight`).
 public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
@@ -96,9 +96,12 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
 
     /// The owner's pick for one suggested task. Nothing takes effect.
     case suggest(String, SuggestedAnswer)
-    /// Save: every list of the card (nil), or the one of a suggested task
-    /// drawn alone.
-    case saveSuggested(String?)
+    /// Save, on the suggested tasks card: the ones it draws, by id. The
+    /// card draws twelve at a time, and nothing it does not draw is
+    /// answered.
+    case saveSuggestedCard([String])
+    /// Save, under one suggested task drawn alone.
+    case saveSuggested(String)
 
     // MARK: The plan (a draft, then Save)
 

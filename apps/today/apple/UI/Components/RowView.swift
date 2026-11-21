@@ -21,6 +21,9 @@ struct RowHead: View {
     var stripe: Stripe = .none
     var size: Size = .line
     var struck = false
+    /// A task's line may be the opening of its description: three lines at
+    /// most, whatever the text size. Nil draws every line.
+    var lineLimit: Int?
 
     var body: some View {
         HStack(alignment: .top, spacing: TodayLook.lead) {
@@ -39,6 +42,7 @@ struct RowHead: View {
                         .font(size == .line ? TodayLook.Text.second : TodayLook.Text.body)
                         .foregroundStyle(.inkSecond)
                         .multilineTextAlignment(.leading)
+                        .lineLimit(lineLimit)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -83,6 +87,10 @@ struct RowView: View {
 
     var isCard: Bool { row.state == .now || state.isOpen(openID) }
 
+    private var lineLimit: Int? {
+        if case .task = row.body { 3 } else { nil }
+    }
+
     var body: some View {
         if isCard { card } else { line }
     }
@@ -96,7 +104,7 @@ struct RowView: View {
                     withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        RowHead(icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe)
+                        RowHead(icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, lineLimit: lineLimit)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -149,7 +157,7 @@ struct RowView: View {
             HStack(alignment: .top, spacing: 4) {
                 RowHead(
                     icon: .glyph(row.glyph), title: row.title, line: isUrgent ? nil : row.line, stripe: row.stripe,
-                    size: lead ? .lead : .open)
+                    size: lead ? .lead : .open, lineLimit: lineLimit)
                 if !lead {
                     IconButton(Symbol.close, label: words.close, small: true) {
                         withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }

@@ -118,6 +118,7 @@ struct SuggestedCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             NoteText(card.rule)
+            if let batch = card.batch { NoteText(batch) }
             ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
                 SuggestedItemView(item: item, first: index == 0)
             }
@@ -145,10 +146,7 @@ struct SuggestedItemView: View {
                     Text(item.origin).font(TodayLook.Text.footnote).foregroundStyle(.inkSecond)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let quote = item.quote {
-                    Text(quote).font(TodayLook.Text.second).italic().foregroundStyle(.inkSecond)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                if let quote = item.quote { QuoteText(quote) }
             }
             .opacity(dim)
             if item.fade.level > 0 {
@@ -189,6 +187,28 @@ struct SuggestedItemView: View {
         case 3...: 0.5
         default: 1
         }
+    }
+}
+
+/// What was said, where a task came from words. In a card or a row it is
+/// three lines at most, whatever the text size: the core gives its opening
+/// words, and the task's own page draws all of it (`whole`), where a long
+/// path or address breaks onto the next line.
+struct QuoteText: View {
+    var text: String
+    var whole = false
+
+    init(_ text: String, whole: Bool = false) {
+        self.text = text
+        self.whole = whole
+    }
+
+    var body: some View {
+        Text(text).font(TodayLook.Text.second).italic().foregroundStyle(.inkSecond)
+            .multilineTextAlignment(.leading)
+            .lineLimit(whole ? nil : 3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -312,6 +332,8 @@ struct TaskCardView: View {
     var chips: Chips = .none
     /// What keeps this card's open lines apart from another's.
     var scope: String
+    /// On the task's own page, which draws all of its description.
+    var whole = false
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.colorScheme) private var scheme
@@ -319,10 +341,7 @@ struct TaskCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ChipsView(chips: card.chips.isEmpty ? chips : card.chips)
-            if let quote = card.quote {
-                Text(quote).font(TodayLook.Text.second).italic().foregroundStyle(.inkSecond)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            if let quote = card.quote { QuoteText(quote, whole: whole) }
             if let left = card.left {
                 VStack(alignment: .leading, spacing: 3) {
                     SectionLabel(left.heading)
@@ -422,13 +441,7 @@ struct WrapCardView: View {
                     }
                 }
             }
-            if !card.unanswered.isEmpty {
-                section(card.labels.unanswered) {
-                    ForEach(Array(card.unanswered.enumerated()), id: \.element.id) { index, item in
-                        SuggestedItemView(item: item, first: index == 0)
-                    }
-                }
-            }
+            if let unanswered = card.unanswered { NoteText(unanswered) }
             if !card.dismissed.isEmpty {
                 section(card.labels.dismissed) { ForEach(card.dismissed) { titled($0) } }
             }

@@ -133,7 +133,7 @@ a full `<kind>/<id>` path, such as `substrate.reamde.dev/tasks/list/<id>`, and a
 | Kind                | Id                          | Properties                                                                                                                                                                                                                                                                                                                                                                          | Written by                        |
 | ------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `today/preference`  | `default`                   | `timezone` (timezone), `prepareAt` (string `HH:MM`, default `06:30`), `lastActiveAt` (datetime), `nightReadAt` (datetime), `urgentWait` (duration, an ISO 8601 string, default `PT2M`), `assistantPrepares` (bool, default true), `quietProjects` (reference at `lifecycle`, repeated)                                                                                              | the app                           |
-| `today/plan`        | `d<YYYYMMDD>`               | `day` (date, required), `picked` (reference, any, repeated), `overlaps` (json: `[{events: [path, path], chosen: path, message: text, sentAt: datetime}]`), `sends` (json: `[{to: path, text, sentAt}]`), `moves` (json: `[{task: path, to: date}]`), `savedAt` (datetime), `wrapSavedAt` (datetime)                                                                                 | the app, and nothing else         |
+| `today/plan`        | `d<YYYYMMDD>`               | `day` (date, required), `picked` (reference, any, repeated), `overlaps` (json: `[{events: [path, path], chosen: path or "both", at: datetime, message: text, sentAt: datetime}]`; `at` is when it was chosen), `sends` (json: `[{to: path, text, sentAt}]`), `moves` (json: `[{task: path, to: date or "dropped"}]`: where the wrap sent each thing that carried over, `"dropped"` for one closed as not done), `savedAt` (datetime), `wrapSavedAt` (datetime)                                                                                 | the app, and nothing else         |
 | `today/advice`      | the task's id               | `task` (reference at `lifecycle`, required, `mustExist`, cascade), `answer` (enum `task done dismiss`, required), `reason` (string), `evidence` (reference, any), `objectedAt` (datetime), `objection` (string)                                                                                                                                                                     | the assistant                     |
 | `today/digest`      | the list's id, or `unfiled` | `project` (reference at `lifecycle`, `mustExist`, cascade; absent on `unfiled`), `since` (datetime), `until` (datetime), `line` (string: the latest thing, in one sentence), `count` (int), `items` (json: `[{at: datetime, text, sources: [path], people: [path]}]`, newest first, at most 30), `needsOwner` (bool), `needsOwnerReason` (string), `sources` (reference, any, repeated) | whatever keeps the owner's memory |
 | `today/reviewmark`  | the list's id, or `unfiled` | `project` (reference at `lifecycle`, cascade), `through` (datetime, required)                                                                                                                                                                                                                                                                                                       | the app, on "Got it"              |
@@ -199,6 +199,18 @@ package could read them by, so it would have to name every provider's message ki
 A meeting is an occurrence of any kind that binds core `temporal(range)` with `recurring` or `override`
 (a calendar's event and its series). The app reads today and the next two days with a window read. Two that
 overlap are an overlap, settled in the plan (`today/plan.overlaps`).
+
+One event synced from two accounts is one meeting: two events with the same start, the same end and the same
+title (compared without case or surrounding space) are drawn once, with the attendees of both. An event titled
+only "Busy" at the same start and end as a named one is that one's shadow and is not drawn.
+
+## People
+
+A person is a `substrate.reamde.dev/core/contact`, read by reference from a task's `people` and a meeting's
+attendees. The app reads `name`, `givenName`, `familyName`, `nickname` and the reserved `title`. The name it
+shows is `name` when it has an upper-case letter; otherwise `givenName` and `familyName`; otherwise a `title`
+with an upper-case letter; otherwise the nickname, or the handle `name` or `title` holds, with its first letter
+in upper case. Inside a sentence ("for …", "with …") it is the given name, else the first word of the name.
 
 ## Writes the app makes
 

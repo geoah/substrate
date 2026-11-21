@@ -32,6 +32,55 @@ enum Words {
         return first.lowercased() + text.dropFirst()
     }
 
+    /// How many letters of a description a card shows: about three lines
+    /// of a phone's width.
+    static let excerptLimit = 120
+    /// The same for a row's own line, which is narrower: its flag button
+    /// and its icon take room a card's text has. Longer, and the view's
+    /// three-line cap cuts it a second time, wherever the line happens to
+    /// break.
+    static let lineExcerptLimit = 80
+
+    /// The opening words of a long text, as one paragraph: cut at a word
+    /// and ended with an ellipsis. A card or a row shows this much of a
+    /// description; the whole of it is on the thing's own page.
+    static func excerpt(_ text: String, limit: Int = excerptLimit) -> String {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        let flat = words.joined(separator: " ")
+        guard flat.count > limit else { return flat }
+        var out = ""
+        for word in words {
+            guard out.count + word.count + (out.isEmpty ? 0 : 1) <= limit else { break }
+            out += (out.isEmpty ? "" : " ") + word
+        }
+        // One unbroken run longer than the limit has no word to cut at.
+        if out.isEmpty { out = String(flat.prefix(limit)) }
+        while let last = out.last, ".,;:([{-\u{2013}\u{2014}".contains(last) { out.removeLast() }
+        return out + "\u{2026}"
+    }
+
+    /// A person's name from what a contact holds. `name` is the name when
+    /// it has a capital; a `name` all in lower case is a handle. Then the
+    /// given and family names, then a `title` that has a capital, then
+    /// the nickname or the handle with its first letter in upper case.
+    static func personName(name: String?, given: String?, family: String?, title: String?, nickname: String?) -> String? {
+        func kept(_ text: String?) -> String? {
+            let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let name = kept(name), name.contains(where: \.isUppercase) { return name }
+        let parts = [kept(given), kept(family)].compactMap { $0 }
+        if !parts.isEmpty { return parts.joined(separator: " ") }
+        if let title = kept(title), title.contains(where: \.isUppercase) { return title }
+        return (kept(nickname) ?? kept(name) ?? kept(title)).map(handleName)
+    }
+
+    /// A handle as a name: the part before an address's "@", its first
+    /// letter in upper case.
+    static func handleName(_ handle: String) -> String {
+        cap(handle.split(separator: "@").first.map(String.init) ?? handle)
+    }
+
     /// A sentence ends with a full stop unless it already ends one.
     static func dot(_ text: String) -> String {
         guard let last = text.last else { return text }

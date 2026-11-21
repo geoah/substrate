@@ -367,16 +367,13 @@ struct TaskPageView: View {
         if let suggestion = page.suggestion {
             Text(suggestion.origin).font(TodayLook.Text.footnote).foregroundStyle(.inkSecond)
                 .fixedSize(horizontal: false, vertical: true)
-            if let quote = suggestion.quote {
-                Text(quote).font(TodayLook.Text.second).italic().foregroundStyle(.inkSecond)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            if let quote = suggestion.quote { QuoteText(quote, whole: true) }
             ChipsView(chips: suggestion.chips)
             OptionListView(suggestion.options)
             if let save = suggestion.save { SaveRowView(row: save) }
             if let moss = page.card.moss { MossBoxView(box: moss) }
         } else {
-            TaskCardView(card: page.card, scope: "page:" + page.id)
+            TaskCardView(card: page.card, scope: "page:" + page.id, whole: true)
         }
     }
 }

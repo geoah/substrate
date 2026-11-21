@@ -14,7 +14,7 @@ public enum TodayPresenter {
         day.take(state.requests)
         day.take(state.contacts.values)
         day.occurrences = state.windows.occurrences.compactMap(Occurrence.init)
-        day.meetings = state.windows.meetings.compactMap(Meeting.init)
+        day.meetings = Meeting.merged(state.windows.meetings.compactMap(Meeting.init))
         day.stale = state.stale
         day.drafts = state.drafts
         // The day's notes are another day's until the owner looks.

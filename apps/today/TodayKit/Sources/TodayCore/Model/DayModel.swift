@@ -250,6 +250,10 @@ public struct Meeting: Equatable, Sendable {
     public var place: String?
     public var join: String?
     public var count: Int
+    /// The ids of the same event as other calendars hold it, and of a
+    /// "Busy" block that only shadows it: a page, a dossier or a choice
+    /// kept under one of them is this meeting's.
+    public var also: [String] = []
 
     public var path: String { "\(kind)/\(id)" }
 
@@ -272,12 +276,62 @@ public struct Meeting: Equatable, Sendable {
         people = attendees.filter { $0["self"]?.bool != true && $0["resource"]?.bool != true }.compactMap { value in
             if let path = value.referencePath, RecordReference(path: path) != nil { return Person(name: "", email: nil, contact: path) }
             let email = value["value"]?.text ?? value["email"]?.text
-            guard let name = value["displayName"]?.text ?? value["name"]?.text ?? email?.split(separator: "@").first.map(String.init) else { return nil }
+            // An attendee with no name written out is named by the handle of the address.
+            let written = Words.personName(name: value["displayName"]?.text ?? value["name"]?.text, given: nil, family: nil, title: nil, nickname: nil)
+            guard let name = written ?? email.map(Words.handleName) else { return nil }
             return Person(name: name, email: email, contact: value["contact"]?.referencePath)
         }
         count = attendees.count
         join = record["hangoutLink"]?.text ?? record["url"]?.text
         place = record["location"]?.text ?? (record["hangoutLink"]?.text != nil ? "Google Meet" : nil)
+    }
+
+    /// A title as it is compared: without case or surrounding space.
+    var titleKey: String { title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+
+    /// What a calendar writes in place of an event it may not show.
+    var isBusyBlock: Bool { titleKey == "busy" }
+
+    /// One event synced from two accounts is one meeting. Events with the
+    /// same start, the same end and the same title are merged into the
+    /// first by id, with every attendee of each; and an event titled only
+    /// "Busy" at the time of a named one is that one's shadow, and is left
+    /// out. The order is by start, then id.
+    static func merged(_ meetings: [Meeting]) -> [Meeting] {
+        var out: [Meeting] = []
+        for meeting in meetings.sorted(by: { ($0.start, $0.id) < ($1.start, $1.id) }) {
+            if let index = out.firstIndex(where: { $0.start == meeting.start && $0.end == meeting.end && $0.titleKey == meeting.titleKey }) {
+                out[index].take(meeting)
+            } else {
+                out.append(meeting)
+            }
+        }
+        for shadow in out where shadow.isBusyBlock {
+            guard let named = out.firstIndex(where: { $0.start == shadow.start && $0.end == shadow.end && !$0.isBusyBlock }) else { continue }
+            out[named].also += [shadow.id] + shadow.also
+            out.removeAll { $0.id == shadow.id }
+        }
+        return out
+    }
+
+    /// The same event from another calendar: its attendees join this
+    /// one's, and where it is and how to join are kept from whichever has
+    /// them.
+    mutating func take(_ other: Meeting) {
+        // The owner's own entry, and attendees with no name, are counted and not listed.
+        let unlisted = max(count - people.count, other.count - other.people.count, 0)
+        for person in other.people {
+            let known = people.contains { mine in
+                if let contact = person.contact, contact == mine.contact { return true }
+                if let email = person.email?.lowercased(), email == mine.email?.lowercased() { return true }
+                return !person.name.isEmpty && person.name.caseInsensitiveCompare(mine.name) == .orderedSame
+            }
+            if !known { people.append(person) }
+        }
+        count = max(count, other.count, people.count + unlisted)
+        place = place ?? other.place
+        join = join ?? other.join
+        also += [other.id] + other.also
     }
 }
 
@@ -488,9 +542,30 @@ public struct StaleSource: Codable, Equatable, Sendable {
 public struct Person: Equatable, Sendable {
     public var path: String
     public var name: String
+    /// The given name, where the contact has one.
+    public var given: String?
 
     public var id: String { path }
-    /// How the person is named inside a sentence: the first name.
-    public var short: String { name.split(separator: " ").first.map(String.init) ?? name }
+    /// How the person is named inside a sentence: the given name, else the
+    /// first word of the name.
+    public var short: String { given ?? name.split(separator: " ").first.map(String.init) ?? name }
     public var badge: Badge { Badge(initials: Words.initials(name, last: true), hue: Words.hue(path)) }
+
+    public init(path: String, name: String, given: String? = nil) {
+        self.path = path
+        self.name = name
+        self.given = given
+    }
+
+    /// A `core/contact`. Its `name` is absent on some and a handle in
+    /// lower case on others, so the name is worked out (`Words.personName`).
+    init(_ record: Record) {
+        path = "\(record.kind)/\(record.id)"
+        let given = record["givenName"]?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.given = given?.isEmpty == false ? given : nil
+        name =
+            Words.personName(
+                name: record["name"]?.text ?? record["displayName"]?.text, given: record["givenName"]?.text, family: record["familyName"]?.text,
+                title: record["title"]?.text, nickname: record["nickname"]?.text) ?? "Someone"
+    }
 }

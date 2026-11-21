@@ -34,14 +34,14 @@ When a flag list is closed the view sends `settleFlags`, so the order follows th
 | `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line       |
 | `RoutineCard`                                                | A routine row, open: its items, Taken or Done, Skip, a stale note                                       |
 | `YesterdayCard`                                              | What yesterday left: each thing with its option list, acting on a tap                                   |
-| `SuggestedCard`, `SuggestedItem`                             | The suggested tasks save card, and one suggested task wherever it is drawn (`save` set when drawn alone) |
+| `SuggestedCard`, `SuggestedItem`                             | The suggested tasks save card, twelve at a time (`batch` says so where more wait), and one suggested task wherever it is drawn (`save` set when drawn alone) |
 | `PlanRowCard`                                                | "Plan the day" in the day: one line and "Open the plan"                                                 |
 | `OverlapCard`, `OverlapBlock`                                | An overlap's options; in the timeline, the block around its meetings                                    |
 | `MeetingRow`, `MeetingCard`                                  | A meeting as a line, and in full                                                                        |
 | `TaskCard`, `Door`, `TaskLine`                               | A task open (chips, doors for Flag, Project and When, Done, the assistant's box); a task as a list line |
 | `UrgentCard`                                                 | What cannot wait, in its three states (open, chosen, unchecked)                                         |
 | `UnfinishedCard`                                             | The assistant asks where something flagged High goes                                                    |
-| `WrapCard`                                                   | The end of the day save card                                                                            |
+| `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait |
 | `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives                             |
 | `ComposerPresentation`                                       | "Add or ask"                                                                                            |
 | `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `MissingPage` |
@@ -64,7 +64,7 @@ assistant's sentence under it.
 | `log(row:done:)`, `logOccurrence(_:done:)`, `unlog(_:)`, `later(row:)`                      | A routine row: Taken or Done, Skip, one item, taken back, the notification's Later     |
 | `answerYesterday(item:option:)`                                                             | An option of what yesterday left; takes effect at once                                 |
 | `readNight`, `gotIt(project:)`, `answerNight(project:option:)`                              | The night and what is happening                                                        |
-| `suggest(_:_:)`, `saveSuggested(_:)`                                                        | A draft pick on a suggested task; Save for the card (`nil`) or for one                 |
+| `suggest(_:_:)`, `saveSuggestedCard(_:)`, `saveSuggested(_:)`                               | A draft pick on a suggested task; Save for the card (the ids it draws) or for one      |
 | `planPick`, `planFlag`, `planOverlap`, `planSend`, `planReset`, `planSave`                  | The plan page: a draft until `planSave`                                                |
 | `decideOverlap(_:option:)`                                                                  | An overlap outside the plan; takes effect at once                                      |
 | `setFlag(task:_:)`, `settleFlags`, `setWhen(task:option:)`, `setProject(task:project:)`     | A task's doors; each takes effect at once                                              |

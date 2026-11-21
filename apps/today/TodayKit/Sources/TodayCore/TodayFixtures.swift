@@ -349,6 +349,10 @@ public enum TodayFixtures {
     static var meetings: [Record] {
         [
             event("physio", "08:00", "08:15", "Physiotherapy call", people: ["Dana Whitlock"], meet: false),
+            // The same call as a second account's calendar holds it, and what
+            // that calendar shows of the 1:1: one meeting each, never two.
+            event("physio-second", "08:00", "08:15", " physiotherapy call ", people: ["Dana Whitlock", "Ines Castel"]),
+            event("tomas-busy", "14:20", "14:40", "Busy", meet: false),
             event("tomas", "14:20", "14:40", "Tomas", people: ["Tomas Varga"]),
             event("viktor", "14:40", "15:00", "Viktor", people: ["Viktor Lund"], meet: false),
             event("henrik", "15:00", "15:20", "Henrik", people: ["Henrik Aalto"]),
@@ -380,6 +384,80 @@ public enum TodayFixtures {
         out.append(occurrence(scheduleKind, "b12", at("07:30", day: -1)))
         // Yesterday's own are logged, all but the weekly one.
         return out
+    }
+
+    // MARK: A repository that was not answered
+
+    /// A description of three paragraphs that names where it came from, as
+    /// a task made from a long message holds one.
+    static let longDescription = """
+        Asked in the finance channel whether the October ledger was checked against the bank export, and you said you would look before the quarter closes.
+
+        The working notes list four accounts that did not match, two of them by less than a euro, and one with no export at all for the second week.
+
+        Source: substrate.reamde.dev/chat/message/7f3c1b1e-2f0a-4c57-9a55-0d1b6f6a2c11 and https://example.com/finance/ledger/2026/october/reconciliation-working-notes?view=full&highlight=unmatched
+        """
+
+    /// Contacts as an address book leaves them: one with no `name`, one
+    /// whose `name` is a handle in lower case, one with a title alone.
+    static var namelessContacts: [Record] {
+        [
+            Record(
+                id: "odile", kind: TodayKinds.contact,
+                properties: ["givenName": "Odile", "familyName": "Marchetti", "nickname": "odilem", "title": "odilem"], version: 1),
+            Record(id: "rsato", kind: TodayKinds.contact, properties: ["name": "rsato", "title": "rsato"], version: 1),
+            Record(id: "pilar", kind: TodayKinds.contact, properties: ["title": "Pilar Quint"], version: 1),
+        ]
+    }
+
+    /// A hundred invented suggestions nobody answered, spread over the last
+    /// thirteen days. Three have the assistant's answer; the newest has a
+    /// long description, and two name a contact with no `name`.
+    static var backlog: [Record] {
+        let verbs = ["Reply about", "Send", "Check", "Book a slot for", "Review", "Ask about", "Write up", "Confirm", "Chase", "Draft"]
+        let things = [
+            "the venue quote", "the audit sample", "the travel form", "the onboarding notes", "the rota change", "the storage bill",
+            "the badge request", "the survey answers", "the release notes", "the seating plan",
+        ]
+        var out: [Record] = []
+        for index in 1 ... 100 {
+            let id = String(format: "b-%03d", index)
+            let created = at("06:00", day: -(index % 13)).addingTimeInterval(Double(index) * 60)
+            let people = index == 78 ? ["odile"] : index == 65 ? ["rsato"] : []
+            out.append(
+                task(
+                    id, "\(verbs[(index - 1) % 10]) \(things[(index - 1) / 10])", status: "proposed", people: people, created: created,
+                    quote: index == 91 ? longDescription : index % 4 == 0 ? "I will get to it this week." : nil))
+        }
+        out += [
+            advice("b-001", "task", "It was asked for by Friday."), advice("b-002", "done", "The form was sent on Tuesday."),
+            advice("b-003", "dismiss", "The rota was settled without you."),
+        ]
+        return out
+    }
+
+    /// The backlog laid over a moment of the invented day: the hundred, the
+    /// contacts they name, and the assistant's answer on two of the day's own.
+    static func crowd(_ state: inout TodayApp.State) {
+        for (key, record) in state.linked.records where record.kind == TodayKinds.advice && !["p-kenji", "o-maya"].contains(record.id) {
+            state.linked.records[key] = nil
+        }
+        for record in backlog { state.linked.records[RecordFold.key(record.kind, record.id)] = record }
+        for record in namelessContacts { state.contacts["\(record.kind)/\(record.id)"] = record }
+    }
+
+    /// Two tasks with the long description: one due today, which leads,
+    /// and one moved to this morning, whose row has no other line.
+    static func longTasks(_ state: inout TodayApp.State) {
+        let tasks = [
+            task(
+                "t-ledger", "Check the October ledger against the bank export", list: "extapi", flag: "high", created: at("09:00", day: -3),
+                quote: longDescription, extra: ["dueDay": "2026-11-19"]),
+            task(
+                "t-archive", "Move the old exports to the archive", flag: "medium", created: at("09:00", day: -4), quote: longDescription,
+                extra: ["notBefore": ts("10:00")]),
+        ]
+        for record in tasks { state.linked.records[RecordFold.key(record.kind, record.id)] = record }
     }
 
     // MARK: The day as the clock moves
@@ -578,6 +656,8 @@ public enum TodayFixtures {
             fixture("today-catchup", at: "08:20"),
             fixture("today-suggested", at: "08:30"),
             fixture("today-suggested-dismiss", at: "08:30") { $0.drafts.suggested["p-marcus"] = .dismiss },
+            // A repository with over a hundred suggestions: the card draws twelve at a time.
+            fixture("today-backlog", at: "08:30", routes: [.task("b-091"), .person(person("odile"))], edit: crowd),
             fixture("today-plan-row", at: "08:40", routes: [.plan, .priorities]),
             fixture("today-plan-draft", at: "08:40", routes: [.plan]) { state in
                 var draft = PlanDraft()
@@ -593,6 +673,8 @@ public enum TodayFixtures {
                     .meeting("tomas"), .plan,
                 ]),
             fixture("today-flag-open", at: "11:30") { $0.drafts.held["p-vendor"] = .high },
+            // A description of three paragraphs: its opening words in the day, all of it on the task's page.
+            fixture("today-long-description", at: "11:30", routes: [.task("t-ledger"), .task("t-archive")], edit: longTasks),
             fixture("today-interrupt", at: "11:40", routes: [.project("extapi"), .task("inc-2")]),
             fixture("today-premeet", at: "14:12", routes: [.meeting("tomas")]),
             fixture("today-meeting", at: "14:25"),
@@ -600,6 +682,7 @@ public enum TodayFixtures {
             fixture("today-unreachable", at: "16:35", held: false, reachable: false),
             fixture("today-evening", at: "19:35"),
             fixture("today-wrap", at: "22:15"),
+            fixture("today-backlog-wrap", at: "22:15", edit: crowd),
             fixture("today-asked", at: "11:30") { state in
                 state.exchanges = [
                     Exchange(

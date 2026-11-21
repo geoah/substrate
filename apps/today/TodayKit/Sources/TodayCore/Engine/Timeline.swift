@@ -182,7 +182,7 @@ extension DayEngine {
     /// dossier names.
     func tasks(for meeting: Meeting) -> [TaskItem] {
         let paths = Set(people(meeting).compactMap { $0.person?.path })
-        let named = Set(day.dossiers[meeting.id]?.tasks ?? [])
+        let named = Set(day.dossier(meeting)?.tasks ?? [])
         return day.tasks.filter { task in
             (task.isOpen || task.isProposed) && !hidden(task) && (named.contains(task.id) || !paths.isDisjoint(with: task.people))
         }
@@ -212,7 +212,7 @@ extension DayEngine {
     }
 
     func meetingCard(_ meeting: Meeting) -> MeetingCard {
-        let dossier = day.dossiers[meeting.id]
+        let dossier = day.dossier(meeting)
         let who = people(meeting)
         let tasks = tasks(for: meeting)
         let soon = meeting.start.timeIntervalSince(now) <= 10 * 60 && meeting.end > now
@@ -241,7 +241,7 @@ extension DayEngine {
         let who = people(meeting)
         let tasks = tasks(for: meeting)
         let attends = attends(meeting)
-        var line = day.dossiers[meeting.id]?.purpose
+        var line = day.dossier(meeting)?.purpose
         if let first = tasks.first {
             line = (first.isProposed ? "Suggested: " : "Your task: ") + Words.low(first.name) + ". " + (taskLine(first).line ?? "")
         }

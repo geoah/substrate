@@ -388,18 +388,23 @@ public struct MarkedBlock: Codable, Equatable, Hashable, Sendable, Identifiable 
 // MARK: Suggested tasks
 
 /// The suggested tasks: every list open, the assistant's option selected and
-/// marked Suggested, one Save. Saved, the row is one line.
+/// marked Suggested, one Save. Twelve at a time where more are waiting.
+/// Saved, the row is one line.
 public struct SuggestedCard: Codable, Equatable, Sendable {
     /// "Not answered, a suggestion fades after a week and is gone after two.
     /// What was said stays in memory."
     public var rule: String
+    /// "Showing twelve at a time. The next take their place when you
+    /// save.": only where more are waiting than `items` holds.
+    public var batch: String?
     public var items: [SuggestedItem]
     public var save: SaveRow
     /// "125 older than two weeks were dismissed when the app was set up."
     public var dismissedOlder: String?
 
-    public init(rule: String, items: [SuggestedItem], save: SaveRow, dismissedOlder: String? = nil) {
+    public init(rule: String, batch: String? = nil, items: [SuggestedItem], save: SaveRow, dismissedOlder: String? = nil) {
         self.rule = rule
+        self.batch = batch
         self.items = items
         self.save = save
         self.dismissedOlder = dismissedOlder
@@ -441,6 +446,8 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     public var title: String
     /// "You said it to Kenji on Wednesday at 21:37."
     public var origin: String
+    /// What was said: its opening words (`Words.excerpt`) in a card or a
+    /// row, all of it on the task's own page.
     public var quote: String?
     public var fade: Fade
     public var chips: Chips
@@ -448,7 +455,7 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     public var options: OptionList
     public var objection: Objection?
     /// Its own Save, where it is drawn alone: it arrived during the day, or
-    /// it is on a project's or a person's page. Nil inside the morning card.
+    /// it is on a project's or a person's page. Nil inside the card.
     public var save: SaveRow?
     /// Whether Save would change it.
     public var pending: Bool
@@ -700,7 +707,8 @@ public struct TaskCard: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var chips: Chips
     /// What was said, where the task came from words: "“I will go over
-    /// these tomorrow”, Tue 20:26".
+    /// these tomorrow”, Tue 20:26". Its opening words in the day, all of
+    /// it on the task's own page.
     public var quote: String?
     public var left: Left?
     /// "Put off three times.", from the third time.
@@ -878,8 +886,9 @@ public struct WrapCard: Codable, Equatable, Sendable {
     public var moved: [Titled]
     /// "Carries over: where does each go?"
     public var carry: [Carry]
-    /// "Suggested, and not answered", each with its own Save.
-    public var unanswered: [SuggestedItem]
+    /// "Three suggested tasks are still not answered.": how many, and
+    /// nothing more about them. They are answered on their own card.
+    public var unanswered: String?
     /// "Dismissed today".
     public var dismissed: [Titled]
     /// "Tomorrow": what is first.
@@ -890,7 +899,7 @@ public struct WrapCard: Codable, Equatable, Sendable {
 
     public init(
         done: [Done] = [], others: String? = nil, suggested: String? = nil, moved: [Titled] = [], carry: [Carry] = [],
-        unanswered: [SuggestedItem] = [], dismissed: [Titled] = [], tomorrow: String? = nil, save: SaveRow
+        unanswered: String? = nil, dismissed: [Titled] = [], tomorrow: String? = nil, save: SaveRow
     ) {
         self.done = done
         self.others = others

@@ -47,8 +47,10 @@ extension DayEngine {
     /// assistant's answer; nil leaves it as it is.
     func pending(_ task: TaskItem) -> SuggestedAnswer? { day.drafts.suggested[task.id] ?? day.advice[task.id]?.answer }
 
-    /// - Parameter own: drawn alone, with its own Save.
-    func suggestedItem(_ task: TaskItem, own: Bool) -> SuggestedItem {
+    /// - Parameters:
+    ///   - own: drawn alone, with its own Save.
+    ///   - whole: on the task's own page, which shows all of what was said.
+    func suggestedItem(_ task: TaskItem, own: Bool, whole: Bool = false) -> SuggestedItem {
         let advice = day.advice[task.id]
         let pick = day.drafts.suggested[task.id]
         let selected = pick ?? advice?.answer
@@ -72,7 +74,7 @@ extension DayEngine {
         }
         let todo = selected != nil
         return SuggestedItem(
-            id: task.id, title: task.name, origin: origin(task), quote: task.details, fade: fade(task),
+            id: task.id, title: task.name, origin: origin(task), quote: whole ? task.details : task.details.map { Words.excerpt($0) }, fade: fade(task),
             chips: Chips(project: chip(task.list), people: people(task)), stripe: stripe(task), options: options, objection: objection,
             save: own
                 ? SaveRow(button: ButtonPresentation("Save", glyph: .done, role: .primary, enabled: todo, command: .saveSuggested(task.id)))
@@ -90,15 +92,20 @@ extension DayEngine {
         return parts.isEmpty ? "Nothing was changed." : Words.cap(Words.list(parts)) + "."
     }
 
+    /// The card draws twelve at a time, and its Save answers the ones it
+    /// draws and no other: nothing the owner has not seen is answered.
     var suggestedCard: SuggestedCard {
-        let items = morningSuggested.map { suggestedItem($0, own: false) }
+        let items = shownSuggested.map { suggestedItem($0, own: false) }
         let todo = items.filter(\.pending).count
         return SuggestedCard(
-            rule: DayEngine.fadeRule, items: items,
+            rule: DayEngine.fadeRule,
+            batch: morningSuggested.count > items.count
+                ? "Showing \(Words.low(Words.num(items.count))) at a time. The next take their place when you save." : nil,
+            items: items,
             save: SaveRow(
                 button: ButtonPresentation(
                     "Save \(todo) \(todo == 1 ? "answer" : "answers")", glyph: .done, role: .primary, wide: true, enabled: todo > 0,
-                    command: .saveSuggested(nil))))
+                    command: .saveSuggestedCard(items.map(\.id)))))
     }
 
     func suggestedRow(state: Row.State) -> Row? {

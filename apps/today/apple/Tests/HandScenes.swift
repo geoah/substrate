@@ -398,6 +398,7 @@ enum HandScenes {
                     body: .suggested(
                         SuggestedCard(
                             rule: "Not answered, a suggestion fades after a week and is gone after two. What was said stays in memory.",
+                            batch: "Showing twelve at a time. The next take their place when you save.",
                             items: [
                                 suggestedItem(
                                     "p-kenji", "Sync with Kenji about the stopped VMs", origin: "You said it to Kenji on Wednesday at 21:37.",
@@ -409,7 +410,9 @@ enum HandScenes {
                                     quote: "“I will go over these tomorrow”", fade: 3, pick: .dismiss, objection: true),
                             ],
                             save: SaveRow(
-                                button: ButtonPresentation("Save 13 answers", glyph: .done, role: .primary, wide: true, command: .saveSuggested(nil))),
+                                button: ButtonPresentation(
+                                    "Save 12 answers", glyph: .done, role: .primary, wide: true,
+                                    command: .saveSuggestedCard(["p-kenji", "p-tomas", "p-marcus"]))),
                             dismissedOlder: "125 older than two weeks were dismissed when the app was set up.")))),
             .row(
                 Row(
@@ -502,6 +505,7 @@ enum HandScenes {
                         option("monday", "Monday"), option("drop", "Drop it"),
                     ]))
         ],
+        unanswered: "One suggested task is still not answered.",
         dismissed: [WrapCard.Titled(id: "x1", title: "Go through Marcus's list", line: "Dismissed at 08:38.")],
         tomorrow: "Presentation interview at 14:00. All hands at 17:00.",
         save: SaveRow(button: ButtonPresentation("Save and close the day", glyph: .done, role: .primary, wide: true, command: .saveWrap)))

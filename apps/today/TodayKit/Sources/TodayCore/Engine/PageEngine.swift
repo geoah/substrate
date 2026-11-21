@@ -12,7 +12,7 @@ extension DayEngine: PageMaking {
         case .plan: return .plan(planPage)
         case let .project(id): return day.list(id).map { .project(projectPage($0)) } ?? .missing(MissingPage())
         case let .person(id): return day.person(id).map { .person(personPage($0)) } ?? .missing(MissingPage())
-        case let .meeting(id): return day.meetings.first { $0.id == id }.map { .meeting(meetingPage($0)) } ?? .missing(MissingPage())
+        case let .meeting(id): return day.meeting(id).map { .meeting(meetingPage($0)) } ?? .missing(MissingPage())
         case let .task(id): return day.task(id).map { .task(taskPage($0)) } ?? .missing(MissingPage())
         }
     }
@@ -147,11 +147,12 @@ extension DayEngine: PageMaking {
         var eyebrow: String?
         if task.status == .done { eyebrow = task.completedAt.map { "Done at \(clock($0))" } ?? "Done" }
         if task.status == .abandoned { eyebrow = "Dropped" }
-        var card = taskCard(task)
+        // A task's own page is where all of its description is.
+        var card = taskCard(task, whole: true)
         // The line above the title already says when it was done.
         if task.status == .done { card.said = nil }
         return TaskPage(
-            id: task.id, eyebrow: eyebrow, glyph: task.status == .done ? .done : .task, title: task.name, line: why(task), stripe: stripe(task),
-            card: card, suggestion: task.isProposed ? suggestedItem(task, own: true) : nil)
+            id: task.id, eyebrow: eyebrow, glyph: task.status == .done ? .done : .task, title: task.name, line: reason(task), stripe: stripe(task),
+            card: card, suggestion: task.isProposed ? suggestedItem(task, own: true, whole: true) : nil)
     }
 }

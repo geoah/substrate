@@ -184,8 +184,9 @@ extension DayEngine {
         return Chips(project: project, people: people(task), pills: pills)
     }
 
-    /// Why a task matters now, in one line.
-    func why(_ task: TaskItem) -> String? {
+    /// Why a task matters now, where a record says so: its reason, when it
+    /// was typed, when it is due.
+    func reason(_ task: TaskItem) -> String? {
         if let reason = task.reason { return reason }
         // A task still on its way to the server has no stamp of its own yet.
         if day.notes.added.contains(task.id) { return "You added it at \(clock(task.createdAt == .distantPast ? now : task.createdAt))." }
@@ -193,11 +194,17 @@ extension DayEngine {
         if let due = task.dueDay {
             return due == day.today ? "Due today." : "Due \(Words.day(due.start(in: calendar, hour: 12), now: now, calendar))."
         }
-        if let details = task.details?.split(separator: "\n").first { return String(details) }
         return nil
     }
 
-    func taskCard(_ task: TaskItem) -> TaskCard {
+    /// A task's one line in a row: why it matters now, else the opening
+    /// words of its description.
+    func why(_ task: TaskItem) -> String? { reason(task) ?? task.details.map { Words.excerpt($0, limit: Words.lineExcerptLimit) } }
+
+    /// - Parameter whole: on the task's own page, which shows all of its
+    ///   description. In the day a card shows its opening words, and none
+    ///   where the row's line above it is those words already.
+    func taskCard(_ task: TaskItem, whole: Bool = false) -> TaskCard {
         var doors: [Door] = []
         if task.isOpen {
             doors.append(flagDoor(task))
@@ -207,7 +214,8 @@ extension DayEngine {
         let left = day.returns[task.path].map { TaskCard.Left(heading: "Where you left it, \(clock($0.at))", text: $0.text) }
         let held = urgentState(task) == .held || urgentState(task) == .unchecked(interrupts: false)
         return TaskCard(
-            id: task.id, chips: taskChips(task), quote: task.details, left: left,
+            id: task.id, chips: taskChips(task),
+            quote: whole ? task.details : reason(task) == nil ? nil : task.details.map { Words.excerpt($0) }, left: left,
             deferred: task.deferrals >= 3 ? "Put off \(Words.low(Words.num(task.deferrals))) times." : nil,
             markedTitle: held ? "Marked urgent, and waiting" : nil, marked: held ? markedBlock(task) : nil, doors: doors,
             done: task.isOpen ? ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)) : nil,
@@ -238,7 +246,8 @@ extension DayEngine {
                 command: .urgent(task: task.id, .notUrgent)),
         ]
         return UrgentCard(
-            id: task.id, setBy: "\(setter(task)) marked it urgent at \(clock(task.updatedAt)).", text: task.reason ?? task.details, voices: voices,
+            id: task.id, setBy: "\(setter(task)) marked it urgent at \(clock(task.updatedAt)).",
+            text: task.reason ?? task.details.map { Words.excerpt($0) }, voices: voices,
             unchecked: unchecked ? (day.reachable ? "Nobody has checked this yet." : "Moss cannot be reached, so nobody has checked this.") : nil,
             took: parked.map { "It takes the place of \(Words.low($0)), which waits where you left it." } ?? "It takes the place of what you were doing.",
             options: OptionList(.round, rows), project: chip(task.list),

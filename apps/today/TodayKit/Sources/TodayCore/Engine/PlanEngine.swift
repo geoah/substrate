@@ -159,7 +159,10 @@ extension DayEngine {
                             command: .carry(task: task.id, option: option.id))
                     }))
         }
-        let unanswered = proposed.map { suggestedItem($0, own: true) }
+        // The suggested tasks are answered on their own card: here, only how many wait.
+        let waiting = proposed.count
+        let unanswered =
+            waiting == 0 ? nil : "\(Words.things(waiting, "suggested task")) \(waiting == 1 ? "is" : "are") still not answered."
         let first = day.tasks.filter {
             $0.isOpen
                 && ($0.dueDay == day.today.adding(days: 1, in: calendar)

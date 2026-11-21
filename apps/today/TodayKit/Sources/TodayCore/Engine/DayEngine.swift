@@ -162,16 +162,33 @@ public struct DayEngine: Sendable {
     /// The suggested tasks still waiting for an answer.
     var proposed: [TaskItem] { day.tasks.filter(\.isProposed) }
 
+    /// How many suggested tasks the card draws at a time.
+    static let suggestedBatch = 12
+
+    /// More are waiting than the card draws at once: every one goes
+    /// through the card, and none is a row of its own.
+    var suggestedCrowded: Bool { proposed.count > DayEngine.suggestedBatch }
+
     /// The ones the morning card holds: every one waiting, until the card
-    /// is saved; after that, a new one is a row of its own.
+    /// is saved; after that, a new one is a row of its own while few wait.
     var morningSuggested: [TaskItem] {
-        guard let saved = day.notes.suggestedSavedAt else { return proposed }
+        guard let saved = day.notes.suggestedSavedAt, !suggestedCrowded else { return proposed }
         return proposed.filter { $0.createdAt <= saved }
     }
 
     var heard: [TaskItem] {
-        guard let saved = day.notes.suggestedSavedAt else { return [] }
+        guard let saved = day.notes.suggestedSavedAt, !suggestedCrowded else { return [] }
         return proposed.filter { $0.createdAt > saved }
+    }
+
+    /// The ones the card draws, twelve at most: those the assistant has
+    /// answered, the oldest first as it fades soonest, then the newest of
+    /// the rest. A pick moves nothing, so a row never jumps under a tap.
+    var shownSuggested: [TaskItem] {
+        let waiting = morningSuggested
+        let answered = waiting.filter { day.advice[$0.id] != nil }
+        let rest = waiting.filter { day.advice[$0.id] == nil }.sorted { ($0.createdAt, $0.id) > ($1.createdAt, $1.id) }
+        return Array((answered + rest).prefix(DayEngine.suggestedBatch))
     }
 
     // MARK: Urgent

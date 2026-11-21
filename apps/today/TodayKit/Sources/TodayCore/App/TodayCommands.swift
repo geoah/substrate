@@ -43,6 +43,19 @@ public extension TodayApp {
             out.append(.asked(exchange, message: Assistant.message(subject, question, day: day), context: Assistant.context(subject, day: day)))
         }
 
+        /// Each suggested task that has an answer, the owner's or the
+        /// assistant's, is written with it; one with none is left as it is.
+        func answer(_ tasks: [TaskItem]) {
+            var counts = notes.suggestedSaved.count == 3 ? notes.suggestedSaved : [0, 0, 0]
+            for task in tasks {
+                guard let answer = engine.pending(task) else { continue }
+                wrote(writes.answer(task, answer))
+                counts[SuggestedAnswer.allCases.firstIndex(of: answer) ?? 0] += 1
+                drafts.suggested[task.id] = nil
+            }
+            notes.suggestedSaved = counts
+        }
+
         func move(_ task: TaskItem, option: String) {
             guard let choice = engine.whenOptions.first(where: { $0.id == option }) else { return }
             wrote(writes.move(task, to: choice.notBefore))
@@ -124,17 +137,11 @@ public extension TodayApp {
         // MARK: Suggested tasks
         case let .suggest(id, answer):
             drafts.suggested[id] = answer
+        case let .saveSuggestedCard(ids):
+            answer(engine.proposed.filter { ids.contains($0.id) })
+            notes.suggestedSavedAt = now
         case let .saveSuggested(id):
-            let tasks = id.map { id in engine.proposed.filter { $0.id == id } } ?? engine.morningSuggested
-            var counts = notes.suggestedSaved.count == 3 ? notes.suggestedSaved : [0, 0, 0]
-            for task in tasks {
-                guard let answer = engine.pending(task) else { continue }
-                wrote(writes.answer(task, answer))
-                counts[SuggestedAnswer.allCases.firstIndex(of: answer) ?? 0] += 1
-                drafts.suggested[task.id] = nil
-            }
-            notes.suggestedSaved = counts
-            if id == nil { notes.suggestedSavedAt = now }
+            answer(engine.proposed.filter { $0.id == id })
 
         // MARK: The plan
         case let .planPick(id):

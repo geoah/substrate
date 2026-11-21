@@ -38,7 +38,9 @@ The rules are the engine's, and a test pins each:
 
 - **Tasks and suggested tasks, nothing else.** A suggested task is a task in
   `proposed`; the suggested tasks are answered together and saved with one
-  button, with the assistant's answer selected and marked Suggested.
+  button, with the assistant's answer selected and marked Suggested. The
+  card draws twelve at a time, and one the assistant has not answered has
+  nothing selected.
 - **The assistant suggests and never acts.** Above a Save its option starts
   selected and nothing takes effect until Save; where a tap takes effect at
   once its option only carries the pill. A flag or a project it suggests on
