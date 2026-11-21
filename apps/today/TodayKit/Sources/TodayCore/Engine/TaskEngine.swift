@@ -141,7 +141,9 @@ extension DayEngine {
         }
     }
 
-    func markedBlock(_ task: TaskItem) -> MarkedBlock {
+    /// - Parameter reasonSaid: the line above the block already says why the
+    ///   assistant thinks it can wait, so its option does not say it again.
+    func markedBlock(_ task: TaskItem, reasonSaid: Bool = false) -> MarkedBlock {
         let unchecked = task.heldAt == nil && task.checkedAt == nil
         let chosen = day.notes.urgentLeft[task.id]
         var rows = [
@@ -151,7 +153,7 @@ extension DayEngine {
                 command: .urgent(task: task.id, .takeNow)),
             OptionRow(
                 id: "leave", name: "Leave it here", line: "It stays in what is happening with the urgent pill. Nothing is parked.",
-                selected: chosen != nil, suggested: !unchecked && day.reachable, reason: unchecked ? nil : task.heldReason,
+                selected: chosen != nil, suggested: !unchecked && day.reachable, reason: unchecked || reasonSaid ? nil : task.heldReason,
                 command: .urgent(task: task.id, .leave)),
         ]
         rows.append(

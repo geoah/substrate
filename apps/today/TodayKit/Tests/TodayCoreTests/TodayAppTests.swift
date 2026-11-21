@@ -261,6 +261,32 @@ struct SaveCardTests {
         #expect(await harness.state.drafts.plan == nil)
     }
 
+    @Test func aFlagSuggestedOnATaskStartsSelectedInThePlanAndIsTakenOnSave() async throws {
+        let request = Record(
+            id: "req-keys", kind: TodayKinds.patchRequest,
+            properties: [
+                "target": .string("\(TodayKinds.task)/t-keys"), "decision": "proposed", "diff": ["properties": ["priority": "high"]],
+                "rationale": "The order closes on Friday.",
+            ], version: 1)
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:40"), performsEffects: false)
+        await load(harness, "08:40") { $0.requests.append(request) }
+        guard case let .plan(plan) = await harness.presentation.page(.plan) else { return #expect(Bool(false)) }
+        let item = try #require(plan.groups.flatMap { $0.items + $0.more }.first { $0.id == "t-keys" })
+        // Above the Save the assistant's option starts selected, with its pill and its reason, and the stripe is hollow.
+        #expect(item.flag.stripe == Stripe(.high, suggested: true))
+        let high = try #require(item.flag.options.rows.first { $0.id == "high" })
+        #expect(high.selected && high.suggested && high.reason == "The order closes on Friday.")
+        await harness.send(.planPick("t-keys"))
+        #expect(writes(harness).isEmpty, "nothing above the Save takes effect before it")
+        await harness.send(.planSave)
+        let entries = writes(harness).flatMap(\.entries)
+        let decision = try #require(entries.first { $0.kind == TodayKinds.patchRequest })
+        #expect(decision.recordID == "req-keys" && decision.properties?["decision"]?.text == "accepted" && decision.baseVersion == 1)
+        #expect(decision.properties?["adjustedDiff"]?["properties"]?["prioritySetBy"]?.text == "owner")
+        #expect(entries.contains { $0.recordID == "t-keys" && $0.properties?["priority"] == "high" })
+        #expect(await !harness.state.requests.contains { $0.id == "req-keys" }, "a request decided here is hidden until it is read again")
+    }
+
     @Test func theWrapLeadsTheClosingDayAndSavesWhereEachThingGoes() async throws {
         let pane = pane("22:15")
         #expect(pane.lead == "row:wrap")
@@ -313,7 +339,9 @@ struct UrgentTests {
         #expect(marked.options.rows.map(\.name) == ["Take it now", "Leave it here", "Not urgent"])
         // A tap takes effect at once: the assistant's option has the pill and nothing is selected.
         #expect(marked.options.selected == nil && marked.options.rows[1].suggested)
-        #expect(marked.options.rows[1].reason == "It is a task for Friday morning, and Wei is here until Monday.")
+        // Why it can wait is said once, on the thing itself, and not again under the option.
+        #expect(item.source == "Moss thinks it can wait. It is a task for Friday morning, and Wei is here until Monday.")
+        #expect(marked.options.rows[1].reason == nil)
     }
 
     @Test func anUncheckedMarkWaitsTwoMinutesThenInterruptsAndSaysSo() throws {
@@ -391,6 +419,14 @@ struct WriteTests {
             #expect(answered.options.rows.first { $0.id == "took" }?.selected == true && answered.chosen == "Chosen at 07:05.")
             #expect(answered.text == "It was due yesterday at 07:30.")
         }
+        // What is done names the thing and its answer: the same words for each answered thing would say nothing.
+        func done() async -> [String] {
+            for item in await harness.presentation.pane.items {
+                if case let .earlier(earlier) = item { return earlier.lines.map(\.text).filter { $0.hasPrefix("From yesterday") } }
+            }
+            return []
+        }
+        #expect(await done() == ["From yesterday: weekly medication, taken."])
         // Another tap moves the choice: the log that answer made is changed, not made again.
         harness.clearTrace()
         await harness.deliver(.records(.enqueued(Set(first.map(\.id)), queue: first, landed: [])))
@@ -398,6 +434,7 @@ struct WriteTests {
         let second = writes(harness).flatMap(\.entries)
         #expect(second.map(\.method) == [.patch] && second[0].recordID == "b12_20261118T073000Z" && second[0].properties == ["status": "skipped"])
         #expect(await harness.state.notes?.yesterday[dose.id] == "skipped")
+        #expect(await done() == ["From yesterday: weekly medication, skipped."])
     }
 
     @Test func aSkipIsACreateThenAPatchOfItsState() async throws {

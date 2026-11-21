@@ -29,18 +29,24 @@ extension DayEngine {
         return suggestedForToday(task)
     }
 
-    func planFlag(_ task: TaskItem) -> Flag? { day.drafts.plan?.flags[task.id] ?? task.shownFlag }
+    /// The flag an item of the plan shows: the owner's pick in the draft,
+    /// else the one the assistant suggests on it (an open request, which
+    /// starts selected above the Save), else its own.
+    func planFlag(_ task: TaskItem) -> Flag? { day.drafts.plan?.flags[task.id] ?? flagSuggestion(task.path)?.flag ?? task.shownFlag }
 
     func planItem(_ task: TaskItem) -> PlanPage.Item {
         let own = day.drafts.plan?.flags[task.id]
         let flag = planFlag(task)
-        let suggestedFlag = own == nil && task.isProposed
+        let request = flagSuggestion(task.path)
+        let suggestedFlag = own == nil && (task.isProposed || request != nil)
         var line: String?
         if task.isProposed { line = "A suggested task: ticked, it is a task." }
         // Above the Save, the flag it has is the one selected until the owner picks another.
         let control = FlagControl(
             stripe: Stripe(flag, suggested: suggestedFlag), word: flag?.word ?? "No flag yet",
-            options: flagOptions(selected: flag, suggested: task.isProposed ? task.flag : nil, reason: nil) { .planFlag(task.id, $0) })
+            options: flagOptions(selected: flag, suggested: request?.flag ?? (task.isProposed ? task.flag : nil), reason: request?.reason) {
+                .planFlag(task.id, $0)
+            })
         return PlanPage.Item(
             id: task.id, title: task.name, why: why(task), line: line, ticked: ticked(task), suggested: !planSaved && suggestedForToday(task),
             flag: control)
@@ -90,7 +96,11 @@ extension DayEngine {
         }
         let going = sendRows.filter(\.selected).count
         let empty = priorities.filter { list in list.flag == .high && !picked.contains { $0.list == list.id } }
-        var bar = picked.isEmpty ? "Nothing is ticked for today." : "Save \(picked.count) for today, \(high) of them High. "
+        // Saved, and nothing changed since: the bar says what the plan holds, and there is nothing to save.
+        let unchanged = day.plan?.savedAt != nil && day.drafts.plan == nil
+        var bar =
+            picked.isEmpty
+            ? "Nothing is ticked for today." : "\(unchanged ? "\(picked.count)" : "Save \(picked.count)") for today, \(high) of them High. "
         if !picked.isEmpty {
             bar += going > 0 ? "\(going) \(going == 1 ? "message goes" : "messages go")." : "No message goes."
             if openOverlaps > 0 { bar += " \(openOverlaps) \(openOverlaps == 1 ? "overlap is" : "overlaps are") left to choose later." }
@@ -102,7 +112,8 @@ extension DayEngine {
             sent: sent.map { "To \($0.toName ?? "someone"). Sent at \(clock($0.sentAt ?? now))." },
             note: picked.isEmpty || empty.isEmpty ? nil : empty.map { "\($0.name) is flagged High and has nothing ticked for today." }.joined(separator: " "),
             barLine: bar,
-            save: ButtonPresentation("Save the plan", glyph: .done, role: .primary, wide: true, enabled: !picked.isEmpty, command: .planSave),
+            save: ButtonPresentation(
+                "Save the plan", glyph: .done, role: .primary, wide: true, enabled: !picked.isEmpty && !unchanged, command: .planSave),
             reset: day.drafts.plan == nil ? nil : ButtonPresentation("Reset", role: .quiet, command: .planReset),
             saved: day.plan?.savedAt.map { "Plan saved at \(clock($0))." }, empty: all.isEmpty ? "Nothing is on the table today." : nil)
     }
@@ -179,7 +190,7 @@ extension DayEngine {
     var wrapLine: String {
         let doneToday = day.tasks.filter { $0.status == .done && ($0.completedAt.map(isToday) ?? false) }
         let carry = carrying.count
-        return "\(Words.things(doneToday.count, "thing")) done. "
+        return (doneToday.isEmpty ? "Nothing done. " : "\(Words.things(doneToday.count, "thing")) done. ")
             + (carry > 0 ? "\(Words.num(carry)) \(carry == 1 ? "thing carries" : "things carry") over." : "Nothing carries over.")
     }
 

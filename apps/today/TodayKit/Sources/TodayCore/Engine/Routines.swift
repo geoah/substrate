@@ -208,6 +208,23 @@ extension DayEngine {
         return YesterdayCard(items: items)
     }
 
+    /// One answered thing as a line of what is done: "From yesterday:
+    /// vitamin B12, taken."
+    func yesterdayAnswer(_ item: Left) -> String? {
+        let name: String
+        let answer: String?
+        switch item.kind {
+        case let .routine(row):
+            name = row.title
+            answer = ["took": row.isDose ? "taken" : "done", "skipped": "skipped"][item.answered ?? ""]
+        case let .task(task):
+            name = task.name
+            answer = ["today": "moved to today", "tomorrow": "moved to tomorrow", "drop": "dropped"][item.answered ?? ""]
+        }
+        guard let answer else { return nil }
+        return "From yesterday: \(Words.low(name)), \(answer)."
+    }
+
     /// "yesterday", "on Tuesday": the day a task was due.
     func dueWord(_ task: TaskItem) -> String {
         guard let due = task.dueDay else { return "yesterday" }

@@ -112,7 +112,8 @@ public extension TodayApp {
             }
         case let .answerNight(project, option):
             notes.night[project] = option
-            if option == "take", let digest = day.digests.first(where: { $0.key == project }), let text = digest.line ?? engine.nightItems(digest).first?.text {
+            // The task is the thing the option's line named: the night's first item on the project.
+            if option == "take", let digest = day.digests.first(where: { $0.key == project }), let text = engine.nightItems(digest).first?.text ?? digest.line {
                 var properties: JSONObject = ["name": .string(String(text.prefix(140)))]
                 if let list = day.list(project) { properties["list"] = TodayWrites.reference(list.path) }
                 let id = context.mint().uuidString.lowercased()
@@ -161,6 +162,18 @@ public extension TodayApp {
             // A suggested task ticked becomes a task; a flag changed on the
             // page is written to its task.
             for task in picked where task.isProposed { wrote(writes.answer(task, .task)) }
+            // A flag the assistant suggests on a task that exists starts
+            // selected: it is taken where its task is ticked and the owner
+            // picked no other, and turned down where the owner picked another.
+            for task in engine.candidates {
+                guard let suggestion = engine.flagSuggestion(task.path), let suggested = suggestion.flag else { continue }
+                if let pick = drafts.plan?.flags[task.id] {
+                    settle(suggestion, accept: pick == suggested)
+                } else if engine.ticked(task) {
+                    settle(suggestion, accept: true)
+                    wrote(writes.flag(task, suggested))
+                }
+            }
             for (id, flag) in (drafts.plan?.flags ?? [:]).sorted(by: { $0.key < $1.key }) {
                 guard let task = day.task(id), flag != task.shownFlag || task.isProposed else { continue }
                 wrote(writes.flag(task, flag))

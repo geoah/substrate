@@ -120,7 +120,7 @@ extension DayEngine {
             let item = HappeningItem(
                 id: "urgent-" + task.id, time: clock(task.heldAt ?? task.updatedAt), text: task.name + ".",
                 source: task.heldReason.map { "Moss thinks it can wait. \($0)" } ?? "Nobody has checked it yet.", pill: .urgent,
-                marked: markedBlock(task))
+                marked: markedBlock(task, reasonSaid: task.heldReason != nil))
             byKey[key, default: []].insert(item, at: 0)
         }
         guard !byKey.isEmpty else { return nil }
@@ -187,8 +187,10 @@ extension DayEngine {
             lines.append(
                 (saved, .init(id: "plan", time: clock(saved), text: "Plan saved.", button: ButtonPresentation("Open the plan", role: .quiet, opens: .plan))))
         }
-        for (id, at) in day.notes.yesterdayAt.sorted(by: { $0.key < $1.key }) {
-            lines.append((at, .init(id: "y:" + id, time: clock(at), text: "From yesterday: answered.")))
+        // Each thing yesterday left, by name and with its answer: the same words for each would say nothing.
+        for item in yesterdayLeft {
+            guard let at = item.at, let line = yesterdayAnswer(item) else { continue }
+            lines.append((at, .init(id: "y:" + item.id, time: clock(at), text: line)))
         }
         if let closed = day.plan?.wrapSavedAt { lines.append((closed, .init(id: "wrap", time: clock(closed), text: "Day closed."))) }
         guard !lines.isEmpty else { return nil }

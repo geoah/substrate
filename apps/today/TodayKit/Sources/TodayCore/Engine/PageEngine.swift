@@ -105,7 +105,12 @@ extension DayEngine: PageMaking {
             summary: list.summary, urgent: urgent.map(taskLine),
             moss: mossBox(.project(list.id), about: list.name, asks: ["What should I do next here?", "What changed this week?"]),
             tasks: open.map(taskLine), tasksEmpty: open.isEmpty && done.isEmpty ? "No task of yours here today." : nil, done: done.map(taskLine),
-            notToday: notToday.map(taskLine), suggested: suggested.map { suggestedItem($0, own: true) },
+            // Under the label "Not today" a line that only says so again is left out.
+            notToday: notToday.map { task in
+                var line = taskLine(task)
+                if line.line == "Not today." { line.line = nil }
+                return line
+            }, suggested: suggested.map { suggestedItem($0, own: true) },
             suggestedEmpty: suggested.isEmpty ? "Nothing suggested here that you have not answered." : nil, timeline: timeline,
             timelineEmpty: timeline.isEmpty ? "Nothing is recorded for this project in the sources checked." : nil,
             meetings: coming.map {
@@ -142,8 +147,11 @@ extension DayEngine: PageMaking {
         var eyebrow: String?
         if task.status == .done { eyebrow = task.completedAt.map { "Done at \(clock($0))" } ?? "Done" }
         if task.status == .abandoned { eyebrow = "Dropped" }
+        var card = taskCard(task)
+        // The line above the title already says when it was done.
+        if task.status == .done { card.said = nil }
         return TaskPage(
             id: task.id, eyebrow: eyebrow, glyph: task.status == .done ? .done : .task, title: task.name, line: why(task), stripe: stripe(task),
-            card: taskCard(task), suggestion: task.isProposed ? suggestedItem(task, own: true) : nil)
+            card: card, suggestion: task.isProposed ? suggestedItem(task, own: true) : nil)
     }
 }

@@ -405,7 +405,7 @@ public struct PlanPage: Codable, Equatable, Sendable {
         }
     }
 
-    /// "Plan the day".
+    /// "Today's plan": the page names its noun, and the row in the day says what to do.
     public var title: String
     /// The shape of the day in real times: "Free until Tomas at 14:20, then
     /// meetings until 21:30, with gaps at 16:30 and 20:30."
@@ -441,7 +441,7 @@ public struct PlanPage: Codable, Equatable, Sendable {
     public var empty: String?
 
     public init(
-        title: String = "Plan the day", opening: String? = nil,
+        title: String = "Today's plan", opening: String? = nil,
         hint: String = "What Moss suggests for today is ticked. Untick what you do not want. Nothing changes until you save.",
         prioritiesLine: String = "Your priorities stand as you set them. They change on their own page.", groups: [Group],
         overlapsTitle: String? = nil, overlaps: [Overlap] = [], sendsTitle: String? = nil, sendsHint: String? = nil,
