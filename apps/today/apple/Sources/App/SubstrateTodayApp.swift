@@ -36,6 +36,10 @@ struct SubstrateTodayApp: App {
             .frame(minWidth: 520, minHeight: 420)
                 #endif
         }
+        #if os(macOS)
+        // Wide enough at first for the day with a page beside it: that layout starts at 900 points.
+        .defaultSize(width: 1180, height: 820)
+        #endif
         .onChange(of: scenePhase, initial: true) { _, phase in
             guard phase == .active else { return }
             Today.cameForward()

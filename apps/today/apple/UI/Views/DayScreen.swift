@@ -86,6 +86,7 @@ struct DayScreen<Notices: View>: View {
     private var day: some View {
         PaneView(pane: app.pane, openSettings: openSettings, header: notices)
             .safeAreaInset(edge: .bottom, spacing: 0) { field }
+            .safeAreaInset(edge: .top, spacing: 0) { WindowControlsRoom() }
             .edgeFade(.top)
     }
 

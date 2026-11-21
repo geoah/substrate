@@ -119,11 +119,12 @@ struct StripEntryView: View {
                             if !entry.tile.suggested {
                                 Image(systemName: Glyph.moss.systemName).font(.system(size: 9, weight: .bold))
                             }
-                            Text(suggestion).font(TodayLook.Text.stripSecond).lineLimit(1)
+                            Text(suggestion).font(TodayLook.Text.stripSecond).lineLimit(2).multilineTextAlignment(.leading)
                         }
                         .foregroundStyle(.mossWords)
                     } else if let line = entry.line {
-                        Text(line).font(TodayLook.Text.stripSecond).foregroundStyle(.inkSecond).lineLimit(1)
+                        // Two lines, as the name has: at a large text size "Nothing for today" does not fit a column on one.
+                        Text(line).font(TodayLook.Text.stripSecond).foregroundStyle(.inkSecond).lineLimit(2).multilineTextAlignment(.leading)
                     }
                 }
                 Spacer(minLength: 0)

@@ -114,6 +114,73 @@ extension View {
     func edgeFade(_ edge: EdgeFade.Edge) -> some View { modifier(EdgeFade(edge: edge)) }
 }
 
+/// Room at the top of the day for the controls the system draws in the top
+/// leading corner of an iPad's window, which would sit over the strip's
+/// title. The system says where they are only to a view laid out in that
+/// corner: a line there is narrowed by them, and that is how the day knows
+/// to start under them. Nothing on an iPhone, or with the window filling
+/// the screen.
+struct WindowControlsRoom: View {
+    @State private var whole: CGFloat = 0
+    @State private var clear: CGFloat = 0
+    /// The controls' height, with the gap the system leaves above them.
+    private static let room: CGFloat = 30
+
+    var body: some View {
+        #if os(iOS)
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: clear < whole - 1 ? Self.room : 0)
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.width
+            } action: {
+                whole = $0
+            }
+            .overlay(alignment: .top) {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 1)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.width
+                    } action: {
+                        clear = $0
+                    }
+                    .containerCornerOffset(.leading, sizeToFit: true)
+            }
+            .groundBar(clear < whole - 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        #endif
+    }
+}
+
+/// What is fixed at the top stands on the ground itself: what scrolls
+/// under it fades into the ground's colour, so nothing shows through it.
+struct GroundBar: ViewModifier {
+    var shown = true
+    @Environment(\.ground) private var ground
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.background {
+            if shown {
+                let colour = ground.top(scheme)
+                LinearGradient(
+                    stops: [.init(color: colour, location: 0), .init(color: colour, location: 0.82), .init(color: colour.opacity(0), location: 1)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .padding(.bottom, -EdgeFade.reach)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+extension View {
+    func groundBar(_ shown: Bool = true) -> some View { modifier(GroundBar(shown: shown)) }
+}
+
 /// A card: white on every ground (dark on the closing one), rounded, with
 /// its inset and a soft shadow.
 struct CardSurface: ViewModifier {

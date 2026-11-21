@@ -14,9 +14,7 @@ struct PageScaffold<Content: View, Bottom: View>: View {
     /// What is fixed at the bottom: the field, or the plan's Save.
     @ViewBuilder var bottom: () -> Bottom
 
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.words) private var words
-    @Environment(\.ground) private var ground
 
     var body: some View {
         ScrollView {
@@ -30,31 +28,27 @@ struct PageScaffold<Content: View, Bottom: View>: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if back != nil || trailing != nil { bar }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { bottom().edgeFade(.bottom) }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // With nothing fixed there (a page beside the day) the fade would be the inset's whole content, and
+            // its ground would be laid over the page.
+            if Bottom.self != EmptyView.self { bottom().edgeFade(.bottom) }
+        }
         .edgeFade(.top)
     }
 
-    /// The bar stands on the ground itself: what scrolls under it fades
-    /// into the ground's colour, so nothing shows through its buttons.
+    /// The bar stands on the ground itself (`GroundBar`), so nothing shows
+    /// through its buttons.
     private var bar: some View {
         HStack {
             if let back { IconButton(Symbol.back, label: words.back, action: back) }
             Spacer()
             if let trailing { PaneButton(trailing) }
         }
+        // In a window on an iPad the system's window controls sit where the back button would: it stands beside them.
+        .containerCornerOffset(.leading, sizeToFit: true)
         .padding(.horizontal, 10)
         .padding(.bottom, 4)
-        .background {
-            LinearGradient(
-                stops: [
-                    .init(color: ground.top(scheme), location: 0), .init(color: ground.top(scheme), location: 0.82),
-                    .init(color: ground.top(scheme).opacity(0), location: 1),
-                ], startPoint: .top, endPoint: .bottom
-            )
-            .padding(.bottom, -EdgeFade.reach)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
+        .groundBar()
     }
 }
 
