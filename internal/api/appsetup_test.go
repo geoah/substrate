@@ -20,9 +20,11 @@ const (
 	applePkg       = "providers.substrate.reamde.dev/apple"
 	appleHealthPkg = "providers.substrate.reamde.dev/applehealth"
 	healthPkg      = "substrate.reamde.dev/health"
-	healthAccount  = appleHealthPkg + "/account"
-	healthWebhook  = "applehealth-webhook"
-	syncAccountID  = "substrate-sync-1a2b3c4d"
+	// health requires it, so it lands first wherever health is set up.
+	routinesPkg   = "substrate.reamde.dev/routines"
+	healthAccount = appleHealthPkg + "/account"
+	healthWebhook = "applehealth-webhook"
+	syncAccountID = "substrate-sync-1a2b3c4d"
 	// What the code the applehealth package runs reaches (decision 0215),
 	// as the scopes that cover it, the two internal kinds by their exact
 	// scopes; and what Substrate Sync asks for: its own kinds and those.

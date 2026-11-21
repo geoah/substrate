@@ -370,8 +370,8 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	}
 	health := v.Setup[1]
 	if health.Action != substrate.SetupInstall || health.Package.Shipped != e.shipped(appleHealthPkg) ||
-		len(health.Package.Requires) != 1 || health.Package.Requires[0].ID != healthPkg ||
-		health.Package.Requires[0].Action != substrate.SetupInstall || health.Package.Requires[0].Shipped == 0 {
+		len(health.Package.Requires) != 2 || health.Package.Requires[0].ID != routinesPkg || health.Package.Requires[1].ID != healthPkg ||
+		health.Package.Requires[1].Action != substrate.SetupInstall || health.Package.Requires[1].Shipped == 0 {
 		t.Fatalf("applehealth row = %+v %+v", health, health.Package)
 	}
 	var adapter *substrate.AuthorizationFunction
@@ -632,10 +632,10 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	// Answered once: the read that handed the code over was the last.
 	wantStatus(t, e.show(id), http.StatusNotFound)
 	// The requirement landed before what requires it.
-	if installs := strings.Join(e.installs(), ","); installs != applePkg+","+healthPkg+","+appleHealthPkg {
+	if installs := strings.Join(e.installs(), ","); installs != applePkg+","+routinesPkg+","+healthPkg+","+appleHealthPkg {
 		t.Fatalf("installed %s", installs)
 	}
-	for _, pkg := range []string{applePkg, healthPkg, appleHealthPkg} {
+	for _, pkg := range []string{applePkg, routinesPkg, healthPkg, appleHealthPkg} {
 		if st, err := e.db.ds.BundleStatus(context.Background(), pkg); err != nil || !st.Installed {
 			t.Fatalf("%s after the set up = %+v, %v", pkg, st, err)
 		}
@@ -871,7 +871,7 @@ func TestASetUpThatWaitedRunsOnlyWhatWasApproved(t *testing.T) {
 		if done := e.settle(id); done.State != substrate.AuthorizationApproved {
 			t.Fatalf("the set up that waited ended %+v", done.Failure)
 		}
-		if got := strings.Join(e.installs(), ","); got != healthPkg+","+appleHealthPkg {
+		if got := strings.Join(e.installs(), ","); got != routinesPkg+","+healthPkg+","+appleHealthPkg {
 			t.Fatalf("installed %s, want applehealth's closure once", got)
 		}
 	})

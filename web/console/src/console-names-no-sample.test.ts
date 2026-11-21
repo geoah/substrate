@@ -256,6 +256,9 @@ const OWN_WORDS: Record<string, readonly string[]> = {
   // A page title's size, and a unit's printed note.
   "./components/identity/page-title.ts": ["a branch on the sample kind page"],
   "./lib/units.ts": ["a branch on the sample kind note"],
+  // A range preset: the day so far.
+  "./lib/observations-time.ts": ["the catalogue today"],
+  "./lib/observations.ts": ["the catalogue today"],
 }
 
 describe("the console's source", () => {
