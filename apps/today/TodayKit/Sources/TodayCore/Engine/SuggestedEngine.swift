@@ -86,9 +86,16 @@ extension DayEngine {
             told: SuggestedItem.Told(words: correction.text, answer: alone ? nil : exchange.map(answerCard)))
     }
 
+    /// The owner's pick for a suggestion, as the draft has it. "Other" is
+    /// no pick where the repository does not keep such words.
+    func pick(_ task: TaskItem) -> SuggestedAnswer? {
+        let pick = day.drafts.suggested[task.id]
+        return pick == .other && !keepsCorrections ? nil : pick
+    }
+
     /// What Save would apply to one suggestion: the owner's pick, else the
     /// assistant's answer; nil leaves it as it is.
-    func pending(_ task: TaskItem) -> SuggestedAnswer? { day.drafts.suggested[task.id] ?? day.advice[task.id]?.answer }
+    func pending(_ task: TaskItem) -> SuggestedAnswer? { pick(task) ?? day.advice[task.id]?.answer }
 
     /// - Parameters:
     ///   - own: drawn alone, with its own Save. Else it is in its project's
@@ -97,7 +104,7 @@ extension DayEngine {
     ///   - whole: on the task's own page, which shows all of what was said.
     func suggestedItem(_ task: TaskItem, own: Bool, whole: Bool = false) -> SuggestedItem {
         let advice = day.advice[task.id]
-        let pick = day.drafts.suggested[task.id]
+        let pick = pick(task)
         let selected = pick ?? advice?.answer
         let lines: [SuggestedAnswer: String] = [
             .task: taskEffect(task), .done: "Closed. Nothing more is asked.", .dismiss: "Not a task. What was said stays in memory.",
@@ -123,7 +130,7 @@ extension DayEngine {
         return SuggestedItem(
             id: task.id, title: task.name, origin: origin(task), quote: task.details.map { whole ? Words.prose($0) : Words.excerpt($0) },
             fade: fade(task), chips: Chips(project: own ? chip(task.list) : nil, people: people(task)), stripe: stripe(task), options: options,
-            other: selected == .other && keepsCorrections
+            other: selected == .other
                 ? SuggestedItem.Other(
                     placeholder: "What is wrong, or what to do instead", note: "Kept for whoever suggests tasks, and sent to Moss with this one.")
                 : nil,

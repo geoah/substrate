@@ -417,24 +417,18 @@ struct SuggestedGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button {
-                if let route = group.opens { pane.open(route) }
-            } label: {
-                HStack(spacing: 8) {
-                    if let tile = group.tile { TileView(tile: tile, size: .row) }
-                    Text(group.name).font(TodayLook.font(.headline, weight: .bold)).foregroundStyle(.ink).multilineTextAlignment(.leading)
-                    Spacer(minLength: 4)
-                    Text(group.count).font(TodayLook.Text.footnote.weight(.medium)).foregroundStyle(.inkSecond).fixedSize()
-                    if group.opens != nil { RowChevron(turn: .page) }
+            // A project's header opens the project; what is on no project has nowhere to open.
+            if let route = group.opens {
+                Button {
+                    pane.open(route)
+                } label: {
+                    header.contentShape(Rectangle())
                 }
-                .stripe(group.stripe, inset: 4)
-                .frame(minHeight: TodayLook.target)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens its page")
+            } else {
+                header
             }
-            .buttonStyle(.plain)
-            .disabled(group.opens == nil)
-            .accessibilityValue(group.stripe.spoken)
-            .accessibilityAddTraits(.isHeader)
             ForEach(Array(group.told.enumerated()), id: \.element.id) { index, item in
                 SuggestedItemView(item: item, first: index == 0)
             }
@@ -444,6 +438,21 @@ struct SuggestedGroupView: View {
             if let more = group.more { PaneButton(more) }
             if let save = group.save { SaveRowView(row: save) }
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            if let tile = group.tile { TileView(tile: tile, size: .row) }
+            Text(group.name).font(TodayLook.font(.headline, weight: .bold)).foregroundStyle(.ink).multilineTextAlignment(.leading)
+            Spacer(minLength: 4)
+            Text(group.count).font(TodayLook.Text.footnote.weight(.medium)).foregroundStyle(.inkSecond).fixedSize()
+            if group.opens != nil { RowChevron(turn: .page) }
+        }
+        .stripe(group.stripe, inset: 4)
+        .frame(minHeight: TodayLook.target)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(group.stripe.spoken)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

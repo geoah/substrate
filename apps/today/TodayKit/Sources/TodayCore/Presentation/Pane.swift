@@ -38,9 +38,10 @@ public enum PaneItem: Codable, Equatable, Sendable, Identifiable {
     /// What came in since the last look, directly above the item that leads.
     case happening(HappeningPresentation)
     /// A row of a free stretch: a task, a routine, the suggested tasks, the
-    /// plan, what yesterday left, something urgent, the wrap. The one whose
-    /// `state` is `.now` is drawn in full; the rest are lines that open in
-    /// place.
+    /// plan, what was not logged yesterday, something urgent, the wrap. The
+    /// one whose `state` is `.now` is drawn in full; the rest are lines
+    /// that open in place, or open a page where `trailing` says so. The
+    /// saved plan's row stands under what is done, and never leads.
     case row(Row)
     /// A meeting on its own line; the one that leads is drawn in full.
     case meeting(MeetingRow)

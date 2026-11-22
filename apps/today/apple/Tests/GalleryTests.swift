@@ -142,6 +142,7 @@ import TodayCore
         try await both("wide-mac", size: OffscreenDrawing.mac) { DayScreen(app: app) }
         try await write("wide-ipad-project", DayScreen(app: app, path: [.project("api")]), size: Self.pad)
         try await write("wide-ipad-plan", DayScreen(app: app, path: [.plan]), size: Self.pad)
+        try await write("wide-ipad-suggested", DayScreen(app: app, path: [.suggested]), size: Self.pad)
     }
 
     /// Large text: rows stack and never clip.
@@ -152,6 +153,9 @@ import TodayCore
         try await write(
             "large-text-priorities", DayScreen(app: app, path: [.priorities]).environment(\.dynamicTypeSize, .accessibility2),
             size: CGSize(width: 393, height: 2600))
+        try await write(
+            "large-text-suggested", DayScreen(app: app, path: [.suggested]).environment(\.dynamicTypeSize, .accessibility2),
+            size: CGSize(width: 393, height: 5200))
     }
 
     /// Settings' own part: the assistant's standing instructions, one on,

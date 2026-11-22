@@ -8,13 +8,15 @@ own against the kit.
 ## What a view keeps to itself
 
 - **Navigation.** A path of `TodayRoute` (`priorities`, `projects`, `project(id)`, `person(id)`,
-  `meeting(id)`, `task(id)`, `plan`). `TodayPresentation.page(_:)` answers a route with its
+  `meeting(id)`, `task(id)`, `plan`, `suggested`). `TodayPresentation.page(_:)` answers a route with its
   `PagePresentation` each time the view draws; it is cheap and pure. One level: a page opened from a page
   takes its place.
 - **What is open.** Which row, door, flag list, group or folded block is open is view state. The row whose
   `state` is `.now` (and the meeting whose `leads` is true, and the night when `leads`) is drawn open with
   no close button.
-- **What is typed.** The text of "Add or ask" and of an assistant box's field, until it is sent.
+- **What is typed.** The text of "Add or ask" and of an assistant box's field, until it is sent; and what
+  is typed under "Other" on a suggested task (`SuggestedItem.other`), until its Save. A view sends that Save
+  as `saveSuggested(ids, words:)` with the words of those ids, whatever `words` the button's own command carries.
 - **Ticks under "To raise"** on a meeting.
 
 When a flag list is closed the view sends `settleFlags`, so the order follows the flags only then.
@@ -31,20 +33,22 @@ When a flag list is closed the view sends `settleFlags`, so the order follows th
 | `EarlierPresentation`                                        | "Earlier today": one line with a count, opening to its lines                                            |
 | `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, a group per project in flag order, the rest as one count      |
 | `MarkedBlock`                                                | Something marked urgent and held back: who marked it and its options                                    |
-| `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line       |
+| `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line. `.page(route)` is a right chevron, and a tap on the line opens the page |
 | `RoutineCard`                                                | A routine row, open: its items, Taken or Done, Skip, a stale note                                       |
-| `YesterdayCard`                                              | What yesterday left: each thing with its option list, acting on a tap                                   |
-| `SuggestedCard`, `SuggestedItem`                             | The suggested tasks save card, twelve at a time (`batch` says so where more wait), and one suggested task wherever it is drawn (`save` set when drawn alone) |
-| `PlanRowCard`                                                | "Plan the day" in the day: one line and "Open the plan"                                                 |
+| `YesterdayCard`                                              | What was not logged yesterday: each routine with its option list, acting on a tap                       |
+| `SuggestedItem`                                              | One suggested task wherever it is drawn: `save` set when drawn alone, `other` while "Other" is the pick, `told` once the owner answered it in words |
+| `PageRowCard`                                                | What a row that opens a page holds where it leads: one line and one button ("Open the plan", "Open the suggested tasks") |
 | `OverlapCard`, `OverlapBlock`                                | An overlap's options; in the timeline, the block around its meetings                                    |
 | `MeetingRow`, `MeetingCard`                                  | A meeting as a line, and in full                                                                        |
 | `TaskCard`, `Door`, `TaskLine`                               | A task open (chips, doors for Flag, Project and When, Done, the assistant's box); a task as a list line |
 | `UrgentCard`                                                 | What cannot wait, in its three states (open, chosen, unchecked)                                         |
 | `UnfinishedCard`                                             | The assistant asks where something flagged High goes                                                    |
-| `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait |
+| `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait, and `answer` opens their page |
 | `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives                             |
 | `ComposerPresentation`                                       | "Add or ask"                                                                                            |
-| `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `MissingPage` |
+| `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `SuggestedPage`, `MissingPage` |
+| `SuggestedPage`, `SuggestedPage.Group`                       | The suggested tasks as a page: one save card for each project, six of a group drawn until `more` is pressed |
+| `PlanPage.Left`                                              | A task yesterday left, the first section of the plan page: its own list, nothing selected until chosen  |
 | `OptionList`, `OptionRow`                                    | The one control for a choice. `mark` round or square; a row's tap sends `command`                       |
 | `ButtonPresentation`, `SaveRow`, `ReadyMessage`              | A button (`command`, `opens` or `url`); the end of a save card; a message ready with its own Send        |
 | `FlagControl`                                                | A flag where it can change: the stripe, the word, the three options, and `open` when drawn open         |
@@ -62,10 +66,10 @@ assistant's sentence under it.
 | Command                                                                                     | When                                                                                   |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `log(row:done:)`, `logOccurrence(_:done:)`, `unlog(_:)`, `later(row:)`                      | A routine row: Taken or Done, Skip, one item, taken back, the notification's Later     |
-| `answerYesterday(item:option:)`                                                             | An option of what yesterday left; takes effect at once                                 |
+| `answerYesterday(item:option:)`                                                             | An option of a routine not logged yesterday; takes effect at once                      |
 | `readNight`, `gotIt(project:)`, `answerNight(project:option:)`                              | The night and what is happening                                                        |
-| `suggest(_:_:)`, `saveSuggestedCard(_:)`, `saveSuggested(_:)`                               | A draft pick on a suggested task; Save for the card (the ids it draws) or for one      |
-| `planPick`, `planFlag`, `planOverlap`, `planSend`, `planReset`, `planSave`                  | The plan page: a draft until `planSave`                                                |
+| `suggest(_:_:)`, `saveSuggested(_:words:)`, `showSuggested(group:)`                         | A draft pick on a suggested task; Save for the ids a group or one item draws, with what was typed under "Other"; the rest of a group |
+| `planPick`, `planFlag`, `planOverlap`, `planSend`, `planLeft`, `planReset`, `planSave`      | The plan page: a draft until `planSave`                                                |
 | `decideOverlap(_:option:)`                                                                  | An overlap outside the plan; takes effect at once                                      |
 | `setFlag(task:_:)`, `settleFlags`, `setWhen(task:option:)`, `setProject(task:project:)`     | A task's doors; each takes effect at once                                              |
 | `done(_:)`, `reopen(_:)`, `moveTo(task:option:)`                                            | A task's action; where an unfinished thing goes                                        |
@@ -98,7 +102,8 @@ one: it sends `button.command` or `row.command`.
 
 `TodayFixtures.all` is one named scene per moment the design draws, each made by running the root's presenter
 over the invented day at a fixed time: waking (and waking where logging has stopped), the routine, before the
-call, the catch-up with the night leading, the suggested tasks (and a dismissal the assistant objects to),
+call, the catch-up with the night leading, the suggested tasks (a dismissal the assistant objects to, "Other"
+picked, one answered in words, and a backlog of over a hundred),
 the plan's row and a plan draft, working at 11:30, a flag list open, the interrupt, before a meeting, in a
 meeting, the gap with something marked urgent and held, the same with the assistant unreachable, the evening,
 the wrap, an answer in place, and an empty repository. A gallery draws `fixture.app.pane`, and

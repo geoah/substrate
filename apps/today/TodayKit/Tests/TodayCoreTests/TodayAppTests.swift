@@ -420,8 +420,13 @@ struct SaveCardTests {
         await harness.deliver(.discovered(discovery))
         await harness.send(.suggest("p-marco", .other))
         harness.clearTrace()
+        // The pick is no pick there: the list shows the assistant's option selected, and Save applies that.
+        guard case let .task(page) = await harness.presentation.page(.task("p-marco")) else { return #expect(Bool(false)) }
+        #expect(page.suggestion?.options.rows.map(\.id) == ["task", "done", "dismiss"] && page.suggestion?.options.selected?.id == "task")
         await harness.send(.saveSuggested(["p-marco"], words: ["p-marco": "Not what he asked."]))
-        #expect(writes(harness).isEmpty && !harness.effects.contains { if case .ask = $0 { true } else { false } })
+        let written = writes(harness).flatMap(\.entries)
+        #expect(written.map(\.kind) == [TodayKinds.task] && written.first?.properties?["status"] == "open")
+        #expect(!harness.effects.contains { if case .ask = $0 { true } else { false } })
     }
 
     @Test func aSuggestionSaysWhenItWasHeardOnlyWhereItsRecordSaysSo() throws {
