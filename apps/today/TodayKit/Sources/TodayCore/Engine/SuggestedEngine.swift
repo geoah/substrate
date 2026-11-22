@@ -100,7 +100,9 @@ extension DayEngine {
     ///   - own: drawn alone, with its own Save. Else it is in its project's
     ///     group on the page, whose header names the project and whose Save
     ///     is the group's.
-    ///   - whole: on the task's own page, which shows all of what was said.
+    ///   - whole: on the task's own page, which shows all of what was said
+    ///     at once. Anywhere else a long text is its opening words until
+    ///     all of it is asked for.
     func suggestedItem(_ task: TaskItem, own: Bool, whole: Bool = false) -> SuggestedItem {
         let advice = day.advice[task.id]
         let pick = pick(task)
@@ -127,7 +129,8 @@ extension DayEngine {
         }
         let todo = selected != nil
         return SuggestedItem(
-            id: task.id, title: task.name, origin: origin(task), quote: task.details.map { whole ? Words.prose($0) : Words.excerpt($0) },
+            id: task.id, title: task.name, origin: origin(task), quote: details(task),
+            brief: whole ? nil : task.details.flatMap { Words.letters($0) > Words.excerptWholeLimit ? Brief(text: Words.excerpt($0)) : nil },
             fade: fade(task), chips: Chips(project: own ? chip(task.list) : nil, people: people(task)), stripe: stripe(task), options: options,
             other: selected == .other
                 ? SuggestedItem.Other(

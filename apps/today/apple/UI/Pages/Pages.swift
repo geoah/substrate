@@ -383,7 +383,7 @@ struct TaskPageView: View {
             }
             if let moss = page.card.moss { MossBoxView(box: moss) }
         } else {
-            TaskCardView(card: page.card, scope: "page:" + page.id, whole: true)
+            TaskCardView(card: page.card, scope: "page:" + page.id)
         }
     }
 }

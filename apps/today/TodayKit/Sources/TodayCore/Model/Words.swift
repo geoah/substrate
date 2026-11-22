@@ -42,6 +42,16 @@ enum Words {
     /// break.
     static let lineExcerptLimit = 80
 
+    /// A text a little longer than its excerpt is shown whole: a button
+    /// that showed a dozen more words would be a tap for nothing. Only one
+    /// longer than this is cut to `excerptLimit` with the rest behind
+    /// "Show all".
+    static let excerptWholeLimit = 200
+    /// The same pair for the current item's description, which has a
+    /// card's width and is what the owner is doing now.
+    static let leadWholeLimit = 240
+    static let leadExcerptLimit = 160
+
     /// A description as it is drawn: its Markdown, less what is not for
     /// reading. A record's path in brackets ("(source: <path>)") is where
     /// the words came from, which the task's origin holds already; and the
@@ -132,6 +142,9 @@ enum Words {
         }
         return out
     }
+
+    /// How long a text is as one paragraph, which is what `excerpt` cuts.
+    static func letters(_ text: String) -> Int { prose(text).split(whereSeparator: \.isWhitespace).joined(separator: " ").count }
 
     /// The opening words of a long text, as one paragraph: cut at a word
     /// and ended with an ellipsis. A card or a row shows this much of a

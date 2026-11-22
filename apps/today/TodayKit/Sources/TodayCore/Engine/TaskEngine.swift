@@ -204,12 +204,30 @@ extension DayEngine {
 
     /// A task's one line in a row: why it matters now, else the opening
     /// words of its description.
-    func why(_ task: TaskItem) -> String? { reason(task) ?? task.details.map { Words.excerpt(Words.plain($0), limit: Words.lineExcerptLimit) } }
+    func why(_ task: TaskItem) -> String? { reason(task) ?? opening(task) }
 
-    /// - Parameter whole: on the task's own page, which shows all of its
-    ///   description. In the day a card shows its opening words, and none
-    ///   where the row's line above it is those words already.
-    func taskCard(_ task: TaskItem, whole: Bool = false) -> TaskCard {
+    /// A closed row's line where the task has no reason to give: the
+    /// opening words of its description.
+    func opening(_ task: TaskItem) -> String? {
+        reason(task) == nil ? task.details.map { Words.excerpt(Words.plain($0), limit: Words.lineExcerptLimit) } : nil
+    }
+
+    /// A task's description as an open task shows it: all of it.
+    func details(_ task: TaskItem) -> String? {
+        task.details.map(Words.prose).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    }
+
+    /// What the current item shows of a long description until all of it
+    /// is asked for: that row is open without being asked. Nil for a
+    /// description short enough to stand there whole.
+    func brief(_ task: TaskItem) -> Brief? {
+        guard let details = details(task) else { return nil }
+        return Words.letters(details) > Words.leadWholeLimit ? Brief(text: Words.excerpt(details, limit: Words.leadExcerptLimit)) : nil
+    }
+
+    /// A task, open. It holds all of its description: the row that leads
+    /// the day is given its `brief` where it is made the lead.
+    func taskCard(_ task: TaskItem) -> TaskCard {
         var doors: [Door] = []
         if task.isOpen {
             doors.append(flagDoor(task))
@@ -219,8 +237,7 @@ extension DayEngine {
         let left = day.returns[task.path].map { TaskCard.Left(heading: "Where you left it, \(clock($0.at))", text: $0.text) }
         let held = urgentState(task) == .held || urgentState(task) == .unchecked(interrupts: false)
         return TaskCard(
-            id: task.id, chips: taskChips(task),
-            quote: whole ? task.details.map(Words.prose) : reason(task) == nil ? nil : task.details.map { Words.excerpt($0) }, left: left,
+            id: task.id, chips: taskChips(task), details: details(task), left: left,
             deferred: task.deferrals >= 3 ? "Put off \(Words.low(Words.num(task.deferrals))) times." : nil,
             markedTitle: held ? "Marked urgent, and waiting" : nil, marked: held ? markedBlock(task) : nil, doors: doors,
             done: task.isOpen ? ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)) : nil,
@@ -230,7 +247,8 @@ extension DayEngine {
 
     func taskRow(_ task: TaskItem, state: Row.State) -> Row {
         Row(
-            id: "task:" + task.id, glyph: .task, title: task.name, line: why(task), stripe: stripe(task), state: state, chips: taskChips(task),
+            id: "task:" + task.id, glyph: .task, title: task.name, line: reason(task), opening: opening(task), stripe: stripe(task), state: state,
+            chips: taskChips(task),
             trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done(task.id))),
             body: .task(taskCard(task)))
     }

@@ -479,9 +479,12 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     /// when it was said; "Suggested …" where the record only says when the
     /// suggestion was written.
     public var origin: String
-    /// What was said, as Markdown: its opening words (`Words.excerpt`) in a
-    /// card or a row, all of it on the task's own page.
+    /// What was said, all of it, as Markdown.
     public var quote: String?
+    /// Set in a card or a row where `quote` is long: its opening words
+    /// (`Words.excerpt`), shown until it is asked for all. Nil on the
+    /// task's own page, which shows all of it.
+    public var brief: Brief?
     public var fade: Fade
     public var chips: Chips
     public var stripe: Stripe
@@ -499,13 +502,15 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     public var told: Told?
 
     public init(
-        id: String, title: String, origin: String, quote: String? = nil, fade: Fade, chips: Chips = .none, stripe: Stripe = .none,
-        options: OptionList, other: Other? = nil, objection: Objection? = nil, save: SaveRow? = nil, pending: Bool, told: Told? = nil
+        id: String, title: String, origin: String, quote: String? = nil, brief: Brief? = nil, fade: Fade, chips: Chips = .none,
+        stripe: Stripe = .none, options: OptionList, other: Other? = nil, objection: Objection? = nil, save: SaveRow? = nil, pending: Bool,
+        told: Told? = nil
     ) {
         self.id = id
         self.title = title
         self.origin = origin
         self.quote = quote
+        self.brief = brief
         self.fade = fade
         self.chips = chips
         self.stripe = stripe
@@ -752,10 +757,12 @@ public struct TaskCard: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String
     public var chips: Chips
-    /// What was said, where the task came from words: "“I will go over
-    /// these tomorrow”, Tue 20:26". Its opening words in the day, all of
-    /// it on the task's own page.
-    public var quote: String?
+    /// The task's description, all of it, as Markdown: an open task shows
+    /// what it holds, in the day as on its own page.
+    public var details: String?
+    /// Set on the current item, which is open without being asked, where
+    /// `details` is long: it shows this much until it is asked for all.
+    public var brief: Brief?
     public var left: Left?
     /// "Put off three times.", from the third time.
     public var deferred: String?
@@ -771,12 +778,14 @@ public struct TaskCard: Codable, Equatable, Sendable, Identifiable {
     public var moss: MossBox?
 
     public init(
-        id: String, chips: Chips = .none, quote: String? = nil, left: Left? = nil, deferred: String? = nil, markedTitle: String? = nil,
-        marked: MarkedBlock? = nil, doors: [Door] = [], done: ButtonPresentation? = nil, said: String? = nil, moss: MossBox? = nil
+        id: String, chips: Chips = .none, details: String? = nil, brief: Brief? = nil, left: Left? = nil, deferred: String? = nil,
+        markedTitle: String? = nil, marked: MarkedBlock? = nil, doors: [Door] = [], done: ButtonPresentation? = nil, said: String? = nil,
+        moss: MossBox? = nil
     ) {
         self.id = id
         self.chips = chips
-        self.quote = quote
+        self.details = details
+        self.brief = brief
         self.left = left
         self.deferred = deferred
         self.markedTitle = markedTitle

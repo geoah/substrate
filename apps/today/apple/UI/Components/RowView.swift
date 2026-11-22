@@ -115,8 +115,10 @@ struct RowView: View {
                             withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
                         }
                     } label: {
+                        // Closed, a row with no line of its own says the opening of what it holds.
                         RowHead(
-                            icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, struck: struck, lineLimit: lineLimit
+                            icon: .glyph(row.glyph), title: row.title, line: row.line ?? row.opening, stripe: row.stripe, struck: struck,
+                            lineLimit: lineLimit
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())

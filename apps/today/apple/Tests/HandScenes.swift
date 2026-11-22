@@ -695,7 +695,7 @@ enum HandScenes {
         id: "t-vigil", title: "Triage the Vigil findings and review the four lockdown PRs",
         line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
         card: TaskCard(
-            id: "t-vigil", chips: Chips(project: security), quote: "“I will go over these tomorrow”, Tue 20:26",
+            id: "t-vigil", chips: Chips(project: security), details: "“I will go over these tomorrow”, Tue 20:26",
             left: TaskCard.Left(heading: "Where you left it, 13:55", text: "Findings sorted to OPS-2041. PR 3 of 4 is half read."),
             deferred: "Put off three times.", doors: [flagDoor(.high), whenDoor],
             done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-vigil")),

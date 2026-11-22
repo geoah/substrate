@@ -609,10 +609,13 @@ struct SaveCardTests {
         let key = RecordFold.key(TodayKinds.task, "p-marco")
         func lay(_ state: inout TodayApp.State) { state.linked.records[key]?.properties["description"] = .string(said) }
         let item = try #require(try suggestedPage("08:30", edit: lay).groups.flatMap(\.items).first { $0.id == "p-marco" })
+        // A text a little over a card's cut is shown whole, with its marks; cut, it would keep them closed.
+        #expect(item.quote == Words.prose(said) && item.brief == nil)
         #expect(
-            item.quote == "Agreed on the call: you would send everyone the answers. **Question:** do the drafts need the same sign-off? Seen again\u{2026}")
+            Words.excerpt(said)
+                == "Agreed on the call: you would send everyone the answers. **Question:** do the drafts need the same sign-off? Seen again\u{2026}")
         guard case let .task(own) = page("08:30", .task("p-marco"), edit: lay) else { return #expect(Bool(false)) }
-        #expect(own.suggestion?.quote == Words.prose(said))
+        #expect(own.suggestion?.quote == Words.prose(said) && own.suggestion?.brief == nil)
         let day = pane("11:30") { state in
             state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["priorityReason"] = nil
             state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["description"] =
@@ -620,10 +623,10 @@ struct SaveCardTests {
             state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["dueDay"] = nil
             state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["notBefore"] = TodayFixtures.ts("10:00")
         }
-        #expect(row(day, "task:t-leo")?.line == "Question: which of the decisions are ours?")
+        #expect(row(day, "task:t-leo")?.opening == "Question: which of the decisions are ours?")
     }
 
-    @Test func aLongDescriptionIsItsOpeningWordsInTheDayAndWholeOnItsPage() throws {
+    @Test func anOpenTaskShowsAllOfItsDescriptionAndTheCurrentItemItsOpeningWordsUntilAsked() throws {
         let long = TodayFixtures.longDescription
         let short = "Asked in the finance channel whether the October ledger was checked against the bank export, and you said you would look\u{2026}"
         #expect(Words.excerpt(long) == short && short.count <= Words.excerptLimit + 1)
@@ -632,26 +635,54 @@ struct SaveCardTests {
         #expect(Words.excerpt(String(repeating: "a", count: 300)).count == Words.excerptLimit + 1, "a run with no word to cut at is still cut")
         // A suggested task on the page, and on a project's or a person's page.
         let suggested = try suggestedPage("08:30", edit: TodayFixtures.crowd)
-        #expect(suggested.groups.flatMap(\.items).first { $0.id == "b-091" }?.quote == short)
-        // The lead: a reason above, the opening words under it.
+        let crowded = try #require(suggested.groups.flatMap(\.items).first { $0.id == "b-091" })
+        #expect(crowded.brief?.text == short && crowded.quote == long)
+        #expect(suggested.groups.flatMap(\.items).first { $0.quote == "I will get to it this week." }?.brief == nil, "a short one has no button")
+        // A text a little over the cut is whole: no button for a dozen words.
+        let some = String(repeating: "word ", count: 30) + "end."
+        func lay(_ state: inout TodayApp.State) {
+            TodayFixtures.crowd(&state)
+            state.linked.records[RecordFold.key(TodayKinds.task, "b-091")]?.properties["description"] = .string(some)
+        }
+        let near = try #require(try suggestedPage("08:30", edit: lay).groups.flatMap(\.items).first { $0.id == "b-091" })
+        #expect(some.count > Words.excerptLimit && some.count <= Words.excerptWholeLimit && near.quote == some && near.brief == nil)
+        // The lead is open without being asked: its reason above, and under it the opening
+        // words of a long description with the button that shows all of it, which the card holds.
         let day = pane("11:30", edit: TodayFixtures.longTasks)
         let lead = try #require(row(day, "task:t-ledger"))
         guard case let .task(open) = lead.body else { return #expect(Bool(false)) }
-        #expect(lead.state == .now && lead.line == "Due today." && open.quote == short)
-        // A row with no other reason: the opening words are its line, and are not said again under it.
-        // A row is narrower than a card, so its line is cut shorter: three lines there too, and cut once.
+        let brief = try #require(open.brief)
+        #expect(lead.state == .now && lead.line == "Due today." && lead.opening == nil && open.details == long)
+        #expect(brief.text.hasPrefix("Asked in the finance channel") && brief.text.hasSuffix("\u{2026}"))
+        #expect(brief.text.count <= Words.leadExcerptLimit + 1 && brief.more == "Show all" && brief.less == "Show less")
+        // A row with no other reason: closed, the opening words are its line, cut once and shorter
+        // than a card's, a row being narrower. Opened, it shows all of the description, and the
+        // head does not say its opening again.
         let moved = try #require(row(day, "task:t-archive"))
         guard case let .task(under) = moved.body else { return #expect(Bool(false)) }
         let line = "Asked in the finance channel whether the October ledger was checked against the\u{2026}"
-        #expect(moved.line == line && line.count <= Words.lineExcerptLimit + 1 && under.quote == nil)
-        // Nothing in the day holds the description whole.
-        let text = String(decoding: try JSONEncoder().encode(day), as: UTF8.self)
-        #expect(!text.contains("reconciliation-working-notes"))
-        // The task's own page shows all of it, and its line does not say its opening again.
+        #expect(moved.line == nil && moved.opening == line && line.count <= Words.lineExcerptLimit + 1)
+        #expect(under.details == long && under.brief == nil)
+        // A short description is whole where it leads too, and one of blank lines alone is none.
+        func lay(_ text: String) -> (inout TodayApp.State) -> Void {
+            { state in
+                TodayFixtures.longTasks(&state)
+                state.linked.records[RecordFold.key(TodayKinds.task, "t-ledger")]?.properties["description"] = .string(text)
+            }
+        }
+        guard case let .task(few) = try #require(row(pane("11:30", edit: lay("Two accounts.\n\nBoth small.")), "task:t-ledger")).body else {
+            return #expect(Bool(false))
+        }
+        #expect(few.details == "Two accounts.\n\nBoth small." && few.brief == nil)
+        guard case let .task(none) = try #require(row(pane("11:30", edit: lay(" \n\n ")), "task:t-ledger")).body else {
+            return #expect(Bool(false))
+        }
+        #expect(none.details == nil && none.brief == nil)
+        // The task's own page shows all of it as well, and its line does not say its opening.
         guard case let .task(own) = page("11:30", .task("t-archive"), edit: TodayFixtures.longTasks) else { return #expect(Bool(false)) }
-        #expect(own.card.quote == long && own.line == nil)
+        #expect(own.card.details == long && own.card.brief == nil && own.line == nil)
         guard case let .task(suggestion) = page("08:30", .task("b-091"), edit: TodayFixtures.crowd) else { return #expect(Bool(false)) }
-        #expect(suggestion.suggestion?.quote == long)
+        #expect(suggestion.suggestion?.quote == long && suggestion.suggestion?.brief == nil)
     }
 
     @Test func thePlanPageTicksWhatIsSuggestedAndNeverAMessage() throws {

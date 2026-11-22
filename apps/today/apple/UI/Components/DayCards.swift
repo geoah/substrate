@@ -152,7 +152,9 @@ struct SuggestedItemView: View {
                     Text(item.origin).font(TodayLook.Text.footnote).foregroundStyle(.inkSecond)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let quote = item.quote { QuoteText(quote) }
+                if let quote = item.quote {
+                    Folded(brief: item.brief, id: "said:" + item.id) { all in QuoteText(all ? quote : item.brief?.text ?? quote, whole: all) }
+                }
             }
             .opacity(dim)
             if let told = item.told {
@@ -303,6 +305,58 @@ struct QuoteText: View {
     }
 }
 
+/// A text that may be long. Where it has a `brief`, its opening words are
+/// drawn first, with a button under them that shows all of it in place
+/// and puts it back; with none, all of it is drawn and there is no button.
+struct Folded<Content: View>: View {
+    var brief: Brief?
+    /// What keeps this text's state apart from another's.
+    var id: String
+    /// The text: all of it, or as much as its brief says.
+    @ViewBuilder var content: (_ all: Bool) -> Content
+
+    @Environment(PaneViewState.self) private var state
+
+    var body: some View {
+        if let brief {
+            let all = state.isOpen(id)
+            VStack(alignment: .leading, spacing: 6) {
+                content(all)
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { state.toggle(id) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(all ? brief.less : brief.more)
+                        Image(systemName: (all ? Symbol.close : Symbol.open).systemName)
+                            .font(TodayLook.font(.caption, weight: .bold))
+                            .accessibilityHidden(true)
+                    }
+                }
+                .buttonStyle(.today(.small))
+                .accessibilityHint(all ? "Shows its opening words" : "Shows all of it in place")
+            }
+        } else {
+            content(true)
+        }
+    }
+}
+
+/// A task's description, to be read: its Markdown as text, every line of
+/// it, with a record it names as that record's pill.
+struct DetailsText: View {
+    var text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        RecordMarkdownText(text)
+            .font(TodayLook.Text.body)
+            .foregroundStyle(.ink)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// What a row that opens a page holds where it leads the day: one line and
 /// one button that opens the page.
 struct PageRowCardView: View {
@@ -424,8 +478,6 @@ struct TaskCardView: View {
     var chips: Chips = .none
     /// What keeps this card's open lines apart from another's.
     var scope: String
-    /// On the task's own page, which draws all of its description.
-    var whole = false
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.colorScheme) private var scheme
@@ -436,7 +488,9 @@ struct TaskCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ChipsView(chips: card.chips.isEmpty ? chips : card.chips)
-            if let quote = card.quote { QuoteText(quote, whole: whole) }
+            if let details = card.details {
+                Folded(brief: card.brief, id: "details:" + scope) { all in DetailsText(all ? details : card.brief?.text ?? details) }
+            }
             if let left = card.left {
                 VStack(alignment: .leading, spacing: 3) {
                     SectionLabel(left.heading)

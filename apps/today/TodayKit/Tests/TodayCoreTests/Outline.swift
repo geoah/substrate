@@ -20,7 +20,7 @@ func outline(_ pane: PanePresentation) -> String {
                 "earlier: \(earlier.count) - "
                     + earlier.entries.map { entry in
                         switch entry {
-                        case let .row(row): "\(row.title) (\(row.line ?? ""))"
+                        case let .row(row): "\(row.title) (\(row.line ?? row.opening ?? ""))"
                         case let .meeting(meeting): "\(meeting.end) \(meeting.title)"
                         case let .line(line): "\(line.time) \(line.text)"
                         }
@@ -30,7 +30,7 @@ func outline(_ pane: PanePresentation) -> String {
                 "happening: \(h.time ?? "") \(h.line) {\(h.groups.map { "\($0.name):\($0.items.count)" }.joined(separator: ","))}")
         case let .row(row):
             out.append(
-                "row[\(row.state.rawValue)] \(row.id): \(row.title) | \(row.line ?? "") | \(row.stripe.flag?.rawValue ?? "-")\(row.stripe.suggested ? "?" : "") | pills=\(row.chips.pills.map(\.word))"
+                "row[\(row.state.rawValue)] \(row.id): \(row.title) | \(row.line ?? row.opening ?? "") | \(row.stripe.flag?.rawValue ?? "-")\(row.stripe.suggested ? "?" : "") | pills=\(row.chips.pills.map(\.word))"
             )
         case let .meeting(m): out.append("meeting\(m.leads ? "*" : "")\(m.live ? "!" : ""): \(m.start)-\(m.end) \(m.title) \(m.until ?? "") | \(m.line ?? "")")
         case let .overlap(o):

@@ -12,7 +12,7 @@ enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
         ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
-        ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
+        ("card", 2500), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900), ("finish", 2300),
     ]
 
@@ -380,6 +380,15 @@ enum ComponentSheets {
                         trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done("t-vigil"))),
                         body: .task(h.vigilCard)))
             }
+            Case(caption: "The current item with a long description: its opening words, and a button that shows all of it in place", carded: false) {
+                RowView(row: described(state: .now, brief: true))
+            }
+            Case(caption: "A task with a description, closed: its opening words are its line", carded: false) {
+                RowView(row: described(state: .next)).soft()
+            }
+            Case(caption: "The same task opened: all of its description, and the head does not say its opening twice", carded: false) {
+                RowView(row: described(state: .next)).environment(opened("row:task:t-ledger"))
+            }
             Case(caption: "A routine of several: each item has its tick, and Skip stands beside the button for the rest", carded: false) {
                 RowView(
                     row: Row(
@@ -395,6 +404,42 @@ enum ComponentSheets {
                                 notLogged: "Not logged since 17 October."))))
             }
         }
+    }
+
+    static let ledger = """
+        Asked in the finance channel whether the October ledger was checked against the bank export, and you said you would look before the quarter closes.
+
+        The working notes list **four accounts** that did not match, two of them by less than a euro, and one with no export at all for the second week.
+
+        Start with the one that has no export: [the export page](https://example.com/exports) shows who ran the others.
+        """
+
+    /// A task whose description is longer than a line: with a reason of
+    /// its own where it leads, and none where it is a row of the list.
+    static func described(state: Row.State, brief: Bool = false) -> Row {
+        Row(
+            id: "task:t-ledger", glyph: .task, title: "Check the October ledger against the bank export", line: brief ? "Due today." : nil,
+            opening: brief ? nil : "Asked in the finance channel whether the October ledger was checked against the\u{2026}", stripe: Stripe(.medium),
+            state: state, chips: Chips(project: h.lantern),
+            trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done("t-ledger"))),
+            body: .task(
+                TaskCard(
+                    id: "t-ledger", chips: Chips(project: h.lantern), details: ledger,
+                    brief: brief
+                        ? Brief(
+                            text:
+                                "Asked in the finance channel whether the October ledger was checked against the bank export, and you said you would look before the quarter closes. The\u{2026}"
+                        ) : nil,
+                    doors: [h.flagDoor(.medium), h.whenDoor],
+                    done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-ledger")),
+                    moss: h.moss("this task", asks: ["Break it into steps"]))))
+    }
+
+    /// The view's own state with one thing open in place.
+    static func opened(_ id: String) -> PaneViewState {
+        let state = PaneViewState()
+        state.opened = [id]
+        return state
     }
 
     static var strip: some View {

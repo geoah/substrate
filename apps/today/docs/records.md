@@ -318,7 +318,11 @@ A suggested task is a `tasks/task` in `proposed`. Beyond what the tasks section 
   age, for the fade after a week and the end after two, is counted from `originAt` where it is set.
 - **`description`** as Markdown. A record's path in brackets, such as `(source: <authority>/<package>/<kind>/<id>)`,
   is not shown: where the words came from is the task's `origin`. A bare path in a sentence is drawn as that
-  record's pill, as the kit draws one. A writer should put no path in the prose at all.
+  record's pill, as the kit draws one. A writer should put no path in the prose at all. A task that is
+  open (not `proposed`) shows all of its description once its row is opened, and on its own page; a closed
+  row says its first 80 letters or so where the task has no other line; the current item, which is open
+  without being asked, shows the first 160 or so of a description longer than 240, with a button for the
+  rest. So what an assistant writes into `description` is read where the task is.
 - **`today/advice`** for the same task id: its `answer` starts selected and marks the option, and orders
   the suggestion in its project's group (`task` first, none next, `done` and `dismiss` last).
 

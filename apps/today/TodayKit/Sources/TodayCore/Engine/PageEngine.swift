@@ -149,8 +149,7 @@ extension DayEngine: PageMaking {
         var eyebrow: String?
         if task.status == .done { eyebrow = task.completedAt.map { "Done at \(clock($0))" } ?? "Done" }
         if task.status == .abandoned { eyebrow = "Dropped" }
-        // A task's own page is where all of its description is.
-        var card = taskCard(task, whole: true)
+        var card = taskCard(task)
         // The line above the title already says when it was done.
         if task.status == .done { card.said = nil }
         let told = task.isProposed ? toldItem(task, alone: true) : nil

@@ -200,6 +200,10 @@ public struct Row: Codable, Equatable, Sendable, Identifiable {
     public var title: String
     /// Why it matters now, or what it holds.
     public var line: String?
+    /// The opening words of what the open row shows in full under its
+    /// head (a task's description): a closed row's line where it has no
+    /// other, and not drawn on an open one, which would say them twice.
+    public var opening: String?
     public var stripe: Stripe
     public var state: State
     public var chips: Chips
@@ -207,13 +211,14 @@ public struct Row: Codable, Equatable, Sendable, Identifiable {
     public var body: RowBody
 
     public init(
-        id: String, glyph: Glyph, title: String, line: String? = nil, stripe: Stripe = .none, state: State, chips: Chips = .none,
-        trailing: Trailing = .opens, body: RowBody
+        id: String, glyph: Glyph, title: String, line: String? = nil, opening: String? = nil, stripe: Stripe = .none, state: State,
+        chips: Chips = .none, trailing: Trailing = .opens, body: RowBody
     ) {
         self.id = id
         self.glyph = glyph
         self.title = title
         self.line = line
+        self.opening = opening
         self.stripe = stripe
         self.state = state
         self.chips = chips

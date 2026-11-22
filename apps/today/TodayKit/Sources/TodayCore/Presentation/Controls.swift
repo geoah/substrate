@@ -209,3 +209,20 @@ public struct Door: Codable, Equatable, Hashable, Sendable, Identifiable {
         self.notes = notes
     }
 }
+
+/// A long text where it stands without having been asked for: its opening
+/// words, shown until all of it is asked for, and the words of the button
+/// that shows all of it in place and of the one that puts it back.
+public struct Brief: Codable, Equatable, Hashable, Sendable {
+    public var text: String
+    /// "Show all".
+    public var more: String
+    /// "Show less".
+    public var less: String
+
+    public init(text: String, more: String = "Show all", less: String = "Show less") {
+        self.text = text
+        self.more = more
+        self.less = less
+    }
+}

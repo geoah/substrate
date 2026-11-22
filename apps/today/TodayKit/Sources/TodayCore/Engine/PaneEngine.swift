@@ -155,6 +155,11 @@ extension DayEngine {
                     rows = []
                 } else if lead == nil, let first = rows.first {
                     rows[0].state = .now
+                    // Open without being asked: a long description is its opening words until all of it is asked for.
+                    if case var .task(card) = first.body, let task = day.task(card.id) {
+                        card.brief = brief(task)
+                        rows[0].body = .task(card)
+                    }
                     lead = "row:" + first.id
                     ground = self.ground(for: first)
                     place()
