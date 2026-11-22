@@ -96,7 +96,16 @@ task ──origin (any kind)──► the record it was made from
 | `status` | state: `proposed`, `open`, `done`, `abandoned` | Born `open`; an agent's suggestion waits as `proposed`. |
 | `completedAt` | datetime | Stamped by the move to `done`. |
 | `origin` | reference to any kind | The record the task was made from, such as a message or an issue. Version 3. |
+| `originAt` | datetime | When what the task was made from was said or happened, where its maker knows it. Version 5. |
 | `people` | repeated reference to `substrate.reamde.dev/core/contact`, `mustExist` | The people the task involves. Version 3. |
+| `notBefore` | datetime | Hidden until then, for a task put off to tonight or next week. Version 4. |
+| `deferrals` | int | How many times it was put off. Version 4. |
+| `prioritySetBy` | enum: `owner`, `assistant`, `automation`, `api` | Who set the priority it has now; absent means the owner. Version 4. |
+| `priorityReason` | string | Why, in one sentence from whoever set it. Version 4. |
+| `priorityWas` | enum: `none`, `low`, `medium`, `high` | The priority it had before it was marked urgent. Version 4. |
+| `urgentCheckedAt` | datetime | When the assistant looked at an urgent mark and agreed. Version 4. |
+| `urgentHeldAt` | datetime | When the assistant looked at an urgent mark and thought it can wait. Version 4. |
+| `urgentHeldReason` | string | Why it can wait, in one sentence. Version 4. |
 
 Notes:
 
@@ -152,6 +161,34 @@ Notes:
   who it is for. Not an assignee: every task in a repository is its owner's.
   Each must exist when it is written; deleting a contact later leaves the
   value pointing at nothing, as any reference without `onDelete` does.
+- **Put off, and how often (version 4).** `notBefore` hides a task until
+  a moment, and `deferrals` counts how often it was moved later. Nothing on
+  the server counts: whoever moves `notBefore` or the due day later adds one
+  in the same write. Substrate Tasks reads neither; an app that plans a day
+  does ([what Substrate Today reads and writes](../../today/docs/records.md)).
+- **Whose word a priority is (version 4).** `urgent` is the one step an
+  assistant, an automation or the API may put on a task without the owner
+  asking, so a reader has to know whose word it is, why, and what to put
+  back. Whoever sets `urgent` writes `prioritySetBy`, `priorityReason` and
+  `priorityWas` in the same write, and whoever takes it off writes
+  `priority` back to `priorityWas`. An urgent mark someone else set is
+  checked by the assistant, which writes `urgentCheckedAt` where it agrees,
+  or `urgentHeldAt` and `urgentHeldReason` where it thinks the task can
+  wait, and never takes the mark off. With neither stamp, nobody has checked
+  it.
+- **How old the matter is (version 5).** `originAt` is when what the task
+  was made from was said or happened. A task is often written later than
+  its words: an agent reads a day's messages at night, and an importer
+  carries months of them over in a minute. The row's creation time then
+  says when it was written, so a reader that says "heard on Thursday", and
+  a rule that lets an unanswered suggestion fade, count from `originAt`
+  and fall back to the creation time only where it is absent. Nothing on
+  the server fills it: whoever writes `origin` writes it in the same write.
+- **Versions 4 and 5 declare no default.** Each new property is optional and
+  absent on every task written before it, and an absent `prioritySetBy`
+  reads as the owner's. A default would be a narrowing a repository takes
+  only with its owner's review, so the version carries none and a
+  repository takes it without one.
 - **Reopening clears `completedAt` by hand.** The stamp is written on the
   way in and nothing removes it on the way out, so the app's reopen patch is
   `{"properties": {"status": "open", "completedAt": null}}`, one write.
@@ -170,6 +207,8 @@ title `{name}`, trait `substrate.reamde.dev/core/lifecycle` (version 3).
 | `position` | decimal | Its place among the lists, lowest first, as a task's is. |
 | `description` | markdown | What the list is for and where its work stands. Version 3. |
 | `status` | state: `active`, `done`, `abandoned` | Born `active`. Version 3. |
+| `priority` | enum: `none`, `low`, `medium`, `high` | How much the list's work matters now; absent means none. Version 4. |
+| `sources` | repeated reference to any kind | Where the list's work happens, such as a tracker's project, a channel or a repository. Version 4. |
 
 Notes:
 
@@ -182,6 +221,13 @@ Notes:
   The app shows a list's status, and a closed list while it still holds
   open tasks. A list is not one of the app's collections: its own task is
   the collection, and the list is what it groups by.
+- **A list as a project (version 4).** A list that holds a piece of work is
+  a project to an app that plans a day: it has a `priority` of its own, apart
+  from its tasks', on the task's ladder without `urgent`, which is a task's
+  step alone. `sources` are the records its work happens in, unpinned as a
+  task's `origin` is, because a tracker's project, a channel and a
+  repository are three providers' kinds. Both are optional and neither has
+  a default.
 - **Not the sample's `project`.** The sample's project also waits `onhold`,
   and its prose is a `summary`. A list has no on-hold state, and its prose
   is `description`, the word the task already uses.
@@ -206,8 +252,7 @@ properties are optional, or a new kind.
   through `origin` instead.
 - **A reminder time apart from the due time.** Notifications fire at `dueAt`,
   or at the app's chosen hour on a task due on a day; both are the device's.
-- **Subtasks, tags, a start date, a list's colour or icon, a list's links**
-  to the records its work is about.
+- **Subtasks, tags, a list's colour or icon.**
 - **Indices.** None is declared. A list's tasks are a reverse read through
   the `refs` table, and every single reference gets an index on its path
   without a declaration; a personal list is hundreds of tasks. Declaring one

@@ -1,0 +1,65 @@
+# what came in for one project since the owner last looked: one record per
+# project, the id the project's own, or `unfiled` for what belongs to none.
+# Whatever keeps the owner's memory writes it (a package of their own, or the
+# assistant); this package only declares the shape, so a reader of the day
+# depends on nobody's memory kinds.
+#
+# A reader shows the items newer than the project's `reviewmark`, and a
+# writer may drop the ones at or before it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/digest
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    What happened on one of your projects since you last looked: the latest
+    thing in one sentence, how many more, and each item with when it happened
+    and where it came from.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: digest
+  label:
+    singular: Project digest
+    plural: Project digests
+  displayTemplate: "{line}"
+  properties:
+    # Pinned at core's lifecycle trait, which a task list binds (see
+    # today.yaml). Absent on the `unfiled` digest.
+    project:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      mustExist: true
+      onDelete: cascade
+      description: the task list this is about; absent for what belongs to
+        no project
+    since:
+      type: datetime
+      description: the start of what it covers
+    until:
+      type: datetime
+      description: the end of what it covers, which Got it marks as read
+    line:
+      type: string
+      description: the latest thing, in one sentence
+    count:
+      type: int
+      min: 0
+      description: how many items it covers
+    items:
+      type: json
+      description: "the items, newest first, at most 30: a list of {at: datetime,
+        text, sources: [path], people: [path]}"
+    needsOwner:
+      type: bool
+      description: whether something here needs you
+    needsOwnerReason:
+      type: string
+      description: what needs you, in one sentence
+    sources:
+      type: reference
+      kind: any
+      repeated: true
+      description: the records it was written from

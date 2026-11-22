@@ -1,0 +1,63 @@
+# one occurrence of any series, done or skipped: a routine's, a medication
+# schedule's, or any other kind's that binds the `series` trait. The name
+# says routine because that is what every series is to the person ticking
+# it. The id is the occurrence's
+# own, `<series id>_<slot>` with the slot as UTC `YYYYMMDDTHHMMSSZ`, which is
+# the id a window read gives the computed occurrence: so an occurrence has at
+# most one log, and a tick made twice offline lands on one record. That is
+# why the ids are named.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/routines/routinelog
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  description: >-
+    The done or skipped mark for one time a routine, a dose or anything else
+    on a rule came round. The series keeps repeating, so it is the occurrences
+    that are marked, and one with no log was missed.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: routinelog
+  label:
+    singular: Routine log
+    plural: Routine logs
+  # `at` is when the occurrence was done or the skip was recorded.
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/routines/occurrencelog
+  displayTemplate: "{series.name} {status}"
+  properties:
+    series:
+      type: reference
+      trait: substrate.reamde.dev/routines/series
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the routine, schedule or other series this marks an occurrence
+        of
+    scheduledAt:
+      type: datetime
+      description: the occurrence this log answers, as the rule gave it
+    status:
+      type: state
+      description: done or skipped; correcting a mistaken tap flips it back
+      states:
+        - done
+        - skipped
+      initial: done
+      transitions:
+        - from: done
+          to: skipped
+        - from: skipped
+          to: done
+    evidence:
+      type: reference
+      kind: any
+      description: the record that shows it was done, such as a dose a health
+        app recorded or a training session; absent when ticked by hand
+    details:
+      type: markdown
+      description: anything worth saying about this occurrence, as prose

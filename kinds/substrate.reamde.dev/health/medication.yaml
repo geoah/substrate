@@ -1,0 +1,100 @@
+# a medicine, supplement or skincare product you take or use: what it is, not
+# when. A `medicationschedule` points at one and says when a dose is due.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/health/medication
+data:
+  authority: substrate.reamde.dev
+  package: health
+  description: >-
+    A medicine, supplement or skincare product you take or use, such as Vitamin
+    D 1,000 IU tablets: what it is, its form and its strength. When a dose
+    is due is a medication schedule that points at it.
+  purpose: primary
+  names:
+    singular: medication
+  label:
+    singular: Medication
+    plural: Medications
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what you call it, such as Vitamin D
+    activeIngredient:
+      type: string
+      description: the substance that acts, where the name is a brand
+    form:
+      type: enum
+      description: the form it comes in
+      values:
+        - value: tablet
+          label: Tablet
+        - value: capsule
+          label: Capsule
+        - value: liquid
+          label: Liquid
+        - value: injection
+          label: Injection
+        - value: inhaler
+          label: Inhaler
+        - value: patch
+          label: Patch
+        - value: drops
+          label: Drops
+        - value: cream
+          label: Cream
+        - value: spray
+          label: Spray
+        - value: gel
+          label: Gel
+        - value: ointment
+          label: Ointment
+        - value: solution
+          label: Solution
+        - value: powder
+          label: Powder
+        - value: suppository
+          label: Suppository
+        - value: pen
+          label: Pen
+        - value: gummy
+          label: Gummy
+    strengthAmount:
+      type: float
+      description: how strong one unit is, as a number, such as 1000
+    strengthUnit:
+      type: enum
+      description: the unit of the strength
+      values:
+        - value: mg
+          label: mg
+        - value: mcg
+          label: mcg
+        - value: g
+          label: g
+        - value: iu
+          label: IU
+        - value: units
+          label: units
+        - value: ml
+          label: ml
+        - value: percent
+          label: "%"
+    category:
+      type: enum
+      description: whether it is prescribed, bought over the counter, a supplement
+        or skincare
+      values:
+        - value: prescription
+          label: Prescription
+        - value: otc
+          label: Over the counter
+        - value: supplement
+          label: Supplement
+        - value: skincare
+          label: Skincare
+    notes:
+      type: markdown
+      description: anything worth keeping about it, as prose

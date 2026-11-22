@@ -1,10 +1,10 @@
 # The apps
 
-Five apps: the console in a native shell, Substrate Chat, Substrate Sync,
-Substrate Workouts and Substrate Tasks (each below), all on Apple systems
-and Tasks on Android too; and the template `mise run apps:new` copies, a
-whole app that nothing releases ([A new app](#a-new-app)). Each is a folder
-here named by its [app.json](#an-apps-appjson), six in all, beside the kit
+Six apps: the console in a native shell, Substrate Chat, Substrate Sync,
+Substrate Workouts, Substrate Tasks and Substrate Today (each below), all on
+Apple systems and Tasks on Android too; and the template `mise run apps:new`
+copies, a whole app that nothing releases ([A new app](#a-new-app)). Each is a folder
+here named by its [app.json](#an-apps-appjson), seven in all, beside the kit
 they share ([kit/](kit/README.md)) and the two build roots, `xcode/` and
 `gradle/`. Tasks is on the web too ([tasks/web](tasks/web/README.md)), on the
 web kit ([kit/web](kit/web/README.md)) in the pnpm workspace rooted here
@@ -1145,6 +1145,28 @@ mise run apple:test:tasks    # TasksKit's tests and the views over its fixtures,
 mise run android:build       # every Android module, the Tasks app's :tasks among them
 ```
 
+## Substrate Today
+
+A sixth app, built on the kit: `SubstrateToday` (bundle id
+`dev.reamde.substrate.today`) on iPhone, iPad and Mac from one target, its
+screens in the `SubstrateTodayUI` framework, its core the portable
+`TodayKit` (`today/TodayKit`) under the kit's link. Its whole interface is
+one pane, the order of the day: the projects the owner flagged on top, then
+the night, what is happening, the current item in full and what comes next,
+with a field to add a task or ask the assistant at the bottom. It asks for
+`full`, alone, as Substrate Chat does, since the pane reads across every
+package and talks to the assistant; so it publishes nothing and its
+approval sets nothing up. The records it reads and writes are in
+[today/docs/records.md](today/docs/records.md), the seam between its core
+and its views in [today/docs/seam.md](today/docs/seam.md), and its
+components, its debug hooks and its gallery in
+[today/apple/README.md](today/apple/README.md).
+
+```bash
+mise run apple:build:today   # the Mac app and the simulator app, registering nothing with Apple
+mise run apple:test:today    # TodayKit's tests, then the views and the design guide's components drawn on the Mac
+```
+
 ## A new app
 
 `mise run apps:new <id>` makes `apps/<id>/` from `template/`, and every app
@@ -1287,8 +1309,8 @@ every reader parses it with no dependency: the server's first-party reach
 test (`internal/catalog/firstparty_reach_test.go`) reads the scopes and
 asked-for packages of every app that asks for packages, and a Swift test holds each
 app's manifest to its file (Sync's `ReachTests`, Workouts' `CoachTests`,
-Chat's `AppJSON`, Tasks' `AppTests` and the template's
-`TemplateAppTests`), so the two never drift. `mise run lint:apps` refuses an
+Chat's `AppJSON`, Tasks' `AppTests`, Today's `TodayAppTests` and the
+template's `TemplateAppTests`), so the two never drift. `mise run lint:apps` refuses an
 app folder without one, or one missing a field below.
 
 | Field | What |
@@ -1377,7 +1399,7 @@ outside Gradle's resolution and so outside this file.
 <app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, the packages it publishes and asks for, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
-xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat, Workouts, Tasks and the template; the Apple AppIcon sets and the Android adaptive icon
+xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat, Workouts, Tasks, Today and the template; the Apple AppIcon sets and the Android adaptive icon
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest, for every platform
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
@@ -1400,5 +1422,8 @@ tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (Su
 tasks/package/                      its published tasks package
 tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders) and TasksAndroid (its roots over the Android bridge, the SubstrateTasks library), with their tests; portable
 tasks/android/                      Substrate Tasks on Android: the Gradle module :tasks, its Compose UI, its bridge.json and generated Kotlin, fixtures/tasks.json
+today/apple/                        Substrate Today: Sources/ (the app), UI/ (SubstrateTodayUI: the shell, the design guide's components, the pane and its pages), Tests/ (the views and the components drawn)
+today/TodayKit/                     its Swift package: TodayCore (the day's model, the order of the day, its presentations and commands, its root under the link), with its tests; portable
+today/docs/                         the records it reads and writes, and the seam between its core and its views
 template/                           what `mise run apps:new` copies: a whole app named `template` (app.json, TemplateKit/, apple/, package/), released by nothing
 ```

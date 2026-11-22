@@ -37,7 +37,16 @@ data:
   # `lifecycle` with a status (active, done, abandoned) and gains
   # `description`. A list that existed is entered at
   # `active` when the version is admitted (decision record 0082).
-  version: 3
+  # 4: what an app that plans a day needs. task gains `notBefore` and
+  # `deferrals` (put off, and how often), and who set its priority and why
+  # (`prioritySetBy`, `priorityReason`, `priorityWas`, and the assistant's
+  # check of an urgent mark: `urgentCheckedAt`, `urgentHeldAt`,
+  # `urgentHeldReason`); list gains `priority` and `sources`. Optional
+  # properties only, none with a default.
+  # 5: task gains `originAt`, when what it was made from was said or
+  # happened: a suggestion's age, which the row's creation time is not for
+  # a task written later than its words. Optional, with no default.
+  version: 5
 ---
 # ---- the bundle document -----------------------------------------------------
 #

@@ -19,9 +19,17 @@ public enum TasksCodec {
     /// lifecycle trait as any group's is. A suggestion's page lists `origin`
     /// and `people` under Details; an accepted task's page does not yet,
     /// because naming them needs read access to contacts and to the
-    /// origin's kind, which the app does not ask for.
-    public static let unwrittenTaskProperties = ["origin", "people"]
-    public static let unwrittenListProperties = ["description", "status"]
+    /// origin's kind, which the app does not ask for. Version 4 adds what
+    /// Substrate Today reads and writes: when a task is put off to and how
+    /// often, who set its priority and why, what an urgent mark replaced
+    /// and whether the assistant checked it, and a list's own priority and
+    /// sources. Version 5 adds `originAt`, when what a task was made from
+    /// was said, which the maker of a suggestion writes beside `origin`.
+    public static let unwrittenTaskProperties = [
+        "origin", "originAt", "people", "notBefore", "deferrals", "prioritySetBy", "priorityReason", "priorityWas", "urgentCheckedAt",
+        "urgentHeldAt", "urgentHeldReason",
+    ]
+    public static let unwrittenListProperties = ["description", "status", "priority", "sources"]
 
     /// A create's body: what the task holds, never its state, so a create
     /// sent again after the task was done never moves it back.

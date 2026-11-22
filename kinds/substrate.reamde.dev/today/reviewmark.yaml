@@ -1,0 +1,32 @@
+# how far the owner has read one project's news: one record per project, the
+# id the project's own, or `unfiled`. Moved only by Got it; opening, asking
+# and Later leave it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/reviewmark
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    How far you have read what happened on one of your projects. News up to
+    this moment is read, and what came in after it is new.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: reviewmark
+  label:
+    singular: Review mark
+    plural: Review marks
+  displayTemplate: "Read through {through}"
+  properties:
+    project:
+      type: reference
+      trait: substrate.reamde.dev/core/lifecycle
+      onDelete: cascade
+      description: the task list this is about; absent for what belongs to
+        no project
+    through:
+      type: datetime
+      required: true
+      description: the moment you have read up to

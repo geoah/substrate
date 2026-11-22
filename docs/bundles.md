@@ -143,8 +143,9 @@ creates a package only in its repository's local namespace, `~`
 ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
 [decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), so `substratectl add` is the one door. A
 copy a repository already holds as `installed`, applied by hand before that
-rule, stays editable until adding it again promotes it. The four well-known
-catalogues under `substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
+rule, stays editable until adding it again promotes it. The six well-known
+catalogues under `substrate.reamde.dev` (`health`, `labs`, `environment`,
+`clinical`, `routines` and `today`) take
 the same door and land published the same way ([the catalog](#the-catalog)).
 
 The upgrade has a read-only **preview** beside it: the catalog compares the
@@ -843,9 +844,9 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 The **catalog** lists everything shipped in the binary, in the two sorts
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the eleven **providers** under `kinds/providers.substrate.reamde.dev`, the
-four well-known **catalogues** under `kinds/substrate.reamde.dev`
-(`health`, `labs`, `environment` and `clinical`), which are added the same
-way and are no providers, and the
+six well-known **catalogues** under `kinds/substrate.reamde.dev`
+(`health`, `labs`, `environment`, `clinical`, `routines` and `today`),
+which are added the same way and are no providers, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
 `readinglist` and `pebble`). A catalogue is a first-party package:

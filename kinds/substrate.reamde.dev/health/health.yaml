@@ -9,6 +9,12 @@
 # Every provider that reports health data (applehealth, whoop) requires this
 # package and maps into it. Health never edits a base kind: health-only
 # context is a `qualifiers` code on an observation.
+#
+# What you take is here too: a `medication`, and a `medicationschedule` that
+# says when a dose is due. The schedule binds the routines package's `series`
+# trait, so a dose is shown and ticked like any routine and its log is a
+# `routines/routinelog`: that is why this requires `routines`, which is traits and
+# kinds only and so adds nothing to what a provider's approval reaches.
 kind: substrate.reamde.dev/core/package
 metadata:
   id: substrate.reamde.dev/health
@@ -19,10 +25,12 @@ data:
   # (sleep, workout, 33 metrics, the glucose units and two record views).
   # 2: mindful minutes, water, eleven nutrients and basal body temperature, as
   # 13 metrics (46).
-  version: 2
+  # 3: medication and medicationschedule, the schedule bound to the routines
+  # package's series trait, which this now requires.
+  version: 3
 ---
 # ---- the bundle document: the install unit ------------------------------------
-# Two kinds, and the metric catalogue (metrics.yaml) with the glucose units
+# Four kinds, and the metric catalogue (metrics.yaml) with the glucose units
 # (analyte_units.yaml) and the record views (views.yaml) as data. An upgrade
 # replaces a shipped record only where its owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
@@ -34,7 +42,11 @@ data:
   description: >-
     Your body, sleep and workouts: nights, training sessions, and the metrics
     wearables, scales and meters measure, which every health provider maps
-    into.
+    into. Also your medications and when each dose is due.
+  requires:
+    - substrate.reamde.dev/routines
   installs:
     - substrate.reamde.dev/health/sleep
     - substrate.reamde.dev/health/workout
+    - substrate.reamde.dev/health/medication
+    - substrate.reamde.dev/health/medicationschedule

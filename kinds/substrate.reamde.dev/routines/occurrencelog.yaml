@@ -1,0 +1,20 @@
+# the done-or-skipped mark against one occurrence of something that repeats
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/routines/occurrencelog
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  description: "one occurrence of something that repeats, marked done or skipped;
+    an occurrence with no log is what missed means"
+  # ABSENCE MEANS MISSED: there is deliberately no missed state, so a reader
+  # computes missed by reading the occurrences and subtracting the logs.
+  #
+  # The trait contracts presence and datatype only, never the state VALUES:
+  # each binding kind declares its own flip machine (done, skipped) on
+  # `status`. `scheduledAt` is the occurrence the log answers, and `details`
+  # is free prose.
+  properties:
+    status: state
+    scheduledAt: datetime
+    details: markdown

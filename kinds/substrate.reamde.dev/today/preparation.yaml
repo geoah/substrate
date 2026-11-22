@@ -1,0 +1,53 @@
+# one thing the `prepare` function asked for, and when. The function computes
+# what is missing and writes the ask; a trigger on this kind (triggers.yaml)
+# runs the preparer (preparer.yaml) with the record as its message, on the
+# preparer's own budget and deadline, which a function calling an agent
+# inside its own sixty seconds could not give it.
+#
+# The id says what it is for (`d<YYYYMMDD>` the morning, `a…` advice, `u…`
+# an urgent check), so asking twice for the same thing is one record and one
+# run. `fade` deletes the records after two weeks.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/preparation
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    One thing your assistant was asked to prepare for your day, such as advice
+    on suggested tasks or what to know before today's meetings, and when it
+    was asked.
+  purpose: supporting
+  ids:
+    type: named
+  names:
+    singular: preparation
+  label:
+    singular: Preparation
+    plural: Preparations
+  displayTemplate: "{reason} for {day}"
+  properties:
+    day:
+      type: date
+      required: true
+      description: the day it is for
+    reason:
+      type: enum
+      required: true
+      description: what was asked for
+      values:
+        - value: morning
+          label: The morning
+        - value: advice
+          label: Advice on suggested tasks
+        - value: urgent
+          label: A check of an urgent mark
+    ask:
+      type: text
+      required: true
+      description: what was asked for, in full
+    subjects:
+      type: reference
+      kind: any
+      repeated: true
+      description: the records it is about, such as the suggested tasks

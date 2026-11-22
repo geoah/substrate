@@ -1,0 +1,39 @@
+# what the owner said was wrong with something the assistant suggested, or
+# what to do instead, in their words. A day planner writes one when the owner
+# answers a suggestion with neither yes nor no; the words also go to the
+# assistant, which acts on them (the instruction `today-correct`). The record
+# is what stays: whoever suggests things reads the latest ones, so the same
+# mistake is not suggested twice, and whoever maintains a suggester reads them
+# to see what it gets wrong.
+#
+# `subject` is unpinned and carries no `mustExist`: it is a suggested task
+# today and may be an advice or a digest tomorrow, and the words outlive what
+# they were about (a suggestion that fades is abandoned, and a purged one
+# leaves the correction standing with nothing to name).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/today/correction
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    What you said was wrong with something your assistant suggested, or what
+    to do instead, in your words. Whoever suggests things for you reads these,
+    so the same mistake is not made twice.
+  purpose: primary
+  names:
+    singular: correction
+  label:
+    singular: Correction
+    plural: Corrections
+  displayTemplate: "{text}"
+  properties:
+    subject:
+      type: reference
+      kind: any
+      required: true
+      description: what you corrected, such as a suggested task
+    text:
+      type: string
+      required: true
+      description: what is wrong with it, or what to do instead, in your words

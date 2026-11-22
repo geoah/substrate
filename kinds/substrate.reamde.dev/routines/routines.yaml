@@ -1,0 +1,42 @@
+# The `routines` catalogue: what you do on a rule, and whether you did it.
+# A habit, a chore, a dose and a planned workout are one thing to whoever
+# shows a day: something with a rule, a time of day, and a done or skipped
+# mark against each occurrence. The `series` trait is that contract, bound
+# beside core's `temporal(point)` and `recurring`, which give the
+# occurrences: a read that bounds `at` computes them, and nothing is ever
+# expanded into rows.
+#
+# There is one log kind for every series. Its `series` reference is pinned at
+# the trait (decision record 0034), so a log points at a routine, a medication
+# schedule or any other kind that binds it, and at nothing else. A reader
+# ticks an occurrence without knowing what kind its series is.
+#
+# Traits and kinds only: no function, trigger or agent, so a package that
+# requires this one (health does, for its medication schedules) takes on no
+# reach.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/routines
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  # 1: the series and occurrencelog traits, the general routine and the one
+  # log kind.
+  version: 1
+---
+# ---- the bundle document: the install unit ------------------------------------
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: substrate.reamde.dev/routines
+data:
+  authority: substrate.reamde.dev
+  package: routines
+  description: >-
+    What you do on a rule, such as a habit, a chore or a skincare step, with
+    a done or skipped mark for each time it comes round. Other packages add
+    their own, such as a medication schedule.
+  installs:
+    - substrate.reamde.dev/routines/series
+    - substrate.reamde.dev/routines/occurrencelog
+    - substrate.reamde.dev/routines/routine
+    - substrate.reamde.dev/routines/routinelog

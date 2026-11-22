@@ -196,14 +196,33 @@ def check_lock(app: str, built: dict[str, tuple[int, str]]) -> None:
             raise ClosureError(f"{package_id}: the closure changed under the published version {version}; bump data.version, a published version never changes")
 
 
+def earlier_versions(folder: Path, name: str, below: int) -> list[dict]:
+    """The closures of earlier versions this folder already holds, as the
+    document lists them: `<name>-<n>.yaml` with n below the version built
+    now. A local server that holds version 4 takes version 5 only from a
+    document that still lists 4, as the live document does ("the publisher
+    no longer lists held version 4" otherwise), and the folder a tree
+    builds into keeps the file each earlier build wrote."""
+    out = []
+    for path in folder.glob(f"{name}-*.yaml"):
+        number = path.stem[len(name) + 1:]
+        if number.isdigit() and int(number) < below:
+            out.append({"version": int(number), "closure": path.name, "sha256": sha256(path.read_text(encoding="utf-8"))})
+    return sorted(out, key=lambda entry: entry["version"])
+
+
 def write_authority(folder: Path, authority: str, built: dict[str, tuple[int, str]]) -> None:
     """The authority document a local server reads from a file: every
-    closure written beside it, by its file name, with its digest."""
-    packages = [
-        {"package": package_id.rsplit("/", 1)[1], "versions": [{"version": version, "closure": f"{package_id.rsplit('/', 1)[1]}-{version}.yaml", "sha256": sha256(closure)}]}
-        for package_id, (version, closure) in sorted(built.items())
-        if package_id.split("/", 1)[0] == authority
-    ]
+    closure written beside it, by its file name, with its digest, after the
+    earlier versions the folder still holds."""
+    packages = []
+    for package_id, (version, closure) in sorted(built.items()):
+        if package_id.split("/", 1)[0] != authority:
+            continue
+        name = package_id.rsplit("/", 1)[1]
+        versions = earlier_versions(folder, name, version)
+        versions.append({"version": version, "closure": f"{name}-{version}.yaml", "sha256": sha256(closure)})
+        packages.append({"package": name, "versions": versions})
     document = {"authority": authority, "name": authority, "packages": packages}
     (folder / "authority.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 

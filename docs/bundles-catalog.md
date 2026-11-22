@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-five bundles, in the two sorts
+The catalog in the binary serves twenty-seven bundles, in the two sorts
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fifteen published packages (eleven providers and four well-known
+draws: seventeen published packages (eleven providers and six well-known
 catalogues) and ten samples. `keptBy` says only who keeps a package; each
 entry also says whether it is a provider, what it brings and which provider
 an add-on extends
@@ -10,8 +10,8 @@ an add-on extends
 [0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)),
 so the console lists the providers on Providers and offers the catalogues as
 standard collections under Add a collection. This page covers the eleven
-providers and four of the samples; the catalogues (`health`, `labs`, `environment` and
-`clinical`, under `substrate.reamde.dev`,
+providers and four of the samples; the catalogues (`health`, `labs`, `environment`,
+`clinical`, `routines` and `today`, under `substrate.reamde.dev`,
 [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md),
 [0193](decisions/0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md))
 and the vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and

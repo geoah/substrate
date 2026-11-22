@@ -1,0 +1,30 @@
+{
+  "id": "today",
+  "name": "Substrate Today",
+  "platforms": [
+    "ios",
+    "macos"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.today",
+    "scheme": "SubstrateToday",
+    "extensions": [],
+    "clientIDKey": "SubstrateTodayClientID",
+    "redirectKey": "SubstrateTodayRedirect"
+  },
+  "publishes": [],
+  "asks": [],
+  "scopes": [
+    "full"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "accent": {
+    "light": "#C77D00",
+    "dark": "#FFC857",
+    "text": {
+      "light": "#8F5B00",
+      "dark": "#FFC857"
+    }
+  },
+  "feed": "today"
+}

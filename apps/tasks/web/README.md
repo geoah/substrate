@@ -94,7 +94,7 @@ pnpm dev            # http://127.0.0.1:5173, a local app to any substrate
 pnpm typecheck
 ```
 
-The approval installs `substrate.reamde.dev/tasks` at version 3. Against a
+The approval installs `substrate.reamde.dev/tasks` at version 5. Against a
 development substrate before that version is published, build the closure
 and an authority document listing it, and start the server reading it:
 

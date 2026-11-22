@@ -1,0 +1,98 @@
+# ---- the preparer's verdict, stamped on the task -------------------------------
+# Fired by `today-stamp-on-urgentcheck` (triggers.yaml) when the preparer
+# writes its verdict on an urgent mark. The preparer is a model reading what
+# other people wrote, so it holds no write on a task: this body is the only
+# hand between its verdict and the task, and it writes two stamps and a
+# sentence, on a task whose mark is still unchecked, and nothing else.
+#
+# The tasks package is named by a glob because this package cannot require
+# it (today.yaml): on a repository without it nothing reaches here.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/today/stampurgent
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Stamp a task whose urgent mark was checked: checked where it cannot wait,
+    or held with the reason where it can. It changes nothing else on the task
+    and never takes the mark off.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  permissions:
+    reads:
+      kinds:
+        - substrate.reamde.dev/tasks/*
+      budgets:
+        calls: 4
+        rows: 4
+    writes:
+      - substrate.reamde.dev/tasks/*
+  source: |
+    """The verdict on an urgent mark becomes the task's stamp.
+
+    One delivery is one `urgentcheck` record. The task it names is stamped
+    only while its mark is still one an automation or the API set and
+    nobody has checked: a verdict that arrives after the owner took the mark
+    off, or for a task already stamped, writes nothing.
+    """
+
+    import datetime
+
+    TASK = "substrate.reamde.dev/tasks/task"
+
+
+    def unchecked(task):
+        props = (task or {}).get("properties") or {}
+        return (props.get("priority") == "urgent"
+                and props.get("prioritySetBy") in ("automation", "api")
+                and not props.get("urgentCheckedAt") and not props.get("urgentHeldAt"))
+
+
+    # The reason is drawn beside the task's urgent pill, so one that runs on
+    # is cut at a word and says so.
+    REASON = 240
+
+
+    def sentence(text):
+        text = " ".join((text or "").split())
+        if len(text) <= REASON:
+            return text
+        return text[:REASON].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
+    def stamps(verdict, reason, now):
+        """What a verdict writes on the task, or None for a verdict nobody
+        declared."""
+        if verdict == "cannotwait":
+            return {"urgentCheckedAt": now}
+        if verdict == "canwait":
+            props = {"urgentHeldAt": now}
+            reason = sentence(reason)
+            if reason:
+                props["urgentHeldReason"] = reason
+            return props
+        return None
+
+
+    def main(input, host):
+        check = (input.get("envelope") or {}).get("record") or {}
+        props = check.get("properties") or {}
+        id = host.observed.ref_id(props.get("task"), TASK)
+        if not id:
+            return {"output": {"skipped": "not a task"}}
+        try:
+            task = host.records.get(TASK, id)
+        except Exception as error:  # noqa: BLE001
+            if "unknown type" not in str(error):
+                host.log("stampurgent: %s/%s is not read: %s" % (TASK, id, error))
+            return {"output": {"skipped": "no task"}}
+        if not unchecked(task):
+            return {"output": {"skipped": "the mark is not waiting for a check"}}
+        now = host.observed.instant(datetime.datetime.now(datetime.timezone.utc))
+        write = stamps(props.get("verdict"), props.get("reason"), now)
+        if write is None:
+            return {"output": {"skipped": "no verdict"}}
+        host.effects.patch(TASK, id, properties=write, if_version=host.version(task), on_conflict="yield")
+        return {"output": {"stamped": sorted(write)}}

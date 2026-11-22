@@ -3,9 +3,9 @@ import type { Declaration } from "./sources"
 /** The package version this build was written against: the floor its
  * approval asks for, as app.json's `asks` and the closure the Apple and
  * Android builds carry say. A test holds the three together. */
-export const packageVersion = 3
+export const packageVersion = 5
 
-/** The app's own package as version 3 declares it (apps/tasks/package):
+/** The app's own package as version 5 declares it (apps/tasks/package):
  * what the app reads its own kinds by before the server's implementors
  * answer, and where they do not. A test holds it to the contract's copy. */
 export const ownDeclarations: Declaration[] = [
@@ -120,6 +120,11 @@ export const ownDeclarations: Declaration[] = [
           description:
             "the record this task was made from, such as the message, mail, issue or meeting it answers; absent for a task you typed",
         },
+        originAt: {
+          type: "datetime",
+          description:
+            "when what this task was made from was said or happened, which is how old a suggestion is; absent where its maker did not know",
+        },
         people: {
           type: "reference",
           kind: "substrate.reamde.dev/core/contact",
@@ -127,6 +132,47 @@ export const ownDeclarations: Declaration[] = [
           mustExist: true,
           description:
             "the people this task involves, such as who asked for it or who is waiting on it",
+        },
+        notBefore: {
+          type: "datetime",
+          description:
+            "hidden until then, for a task you put off to tonight or next week",
+        },
+        deferrals: {
+          type: "int",
+          description:
+            "how many times it was put off, counted by whoever moves it later, in the same write",
+        },
+        prioritySetBy: {
+          type: "enum",
+          description: "who set the priority it has now; absent means you did",
+          values: ["owner", "assistant", "automation", "api"],
+        },
+        priorityReason: {
+          type: "string",
+          description:
+            "why it has this priority, in one sentence from whoever set it",
+        },
+        priorityWas: {
+          type: "enum",
+          description:
+            "the priority it had before it was marked urgent, written in that same write, so taking urgent off puts it back",
+          values: ["none", "low", "medium", "high"],
+        },
+        urgentCheckedAt: {
+          type: "datetime",
+          description:
+            "when the assistant looked at an urgent mark and agreed it cannot wait",
+        },
+        urgentHeldAt: {
+          type: "datetime",
+          description:
+            "when the assistant looked at an urgent mark and thought it can wait",
+        },
+        urgentHeldReason: {
+          type: "string",
+          description:
+            "why the assistant thinks an urgent task can wait, in one sentence",
         },
       },
     },
@@ -194,6 +240,19 @@ export const ownDeclarations: Declaration[] = [
               to: "active",
             },
           ],
+        },
+        priority: {
+          type: "enum",
+          description:
+            "how much the list's work matters now, from none to high; absent means none",
+          values: ["none", "low", "medium", "high"],
+        },
+        sources: {
+          type: "reference",
+          kind: "any",
+          repeated: true,
+          description:
+            "where the list's work happens, such as an issue tracker's project, a channel or a code repository",
         },
       },
     },

@@ -1,0 +1,166 @@
+import SubstrateUI
+import SwiftUI
+import TodayCore
+
+/// The app's whole screen from one presentation: the pane on its ground,
+/// the page a route names in its place, and the field fixed at the bottom.
+/// On a wide screen it is the same pane with the page beside it, so the
+/// day stays in view. Navigation is the screen's own: a path of routes,
+/// one level deep in what it shows, with back returning to where it was.
+struct DayScreen<Notices: View>: View {
+    var app: TodayPresentation
+    /// What a view may do. A drawing's go nowhere.
+    var send: @MainActor @Sendable (TodayCommand) -> Void
+    var openSettings: (() -> Void)?
+    @ViewBuilder var notices: () -> Notices
+
+    @State private var path: [TodayRoute]
+    @State private var state: PaneViewState
+    @Environment(\.colorScheme) private var system
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// - Parameters:
+    ///   - path: the pages open at first, for a gallery that draws one.
+    ///   - opened: what is opened in place at first, likewise.
+    ///   - showsDone: whether what is done is shown, for a gallery; nil is
+    ///     the choice the device kept.
+    ///   - finishing: finishes that began at an instant, drawn at another
+    ///     with no clock running, for a gallery.
+    init(
+        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [], showsDone: Bool? = nil,
+        finishing: (commands: [TodayCommand], began: Date, at: Date)? = nil,
+        send: @escaping @MainActor @Sendable (TodayCommand) -> Void = { _ in }, openSettings: (() -> Void)? = nil,
+        @ViewBuilder notices: @escaping () -> Notices
+    ) {
+        self.app = app
+        self.send = send
+        self.openSettings = openSettings
+        self.notices = notices
+        _path = State(initialValue: path)
+        let state = PaneViewState(showsDone: showsDone)
+        state.opened = opened
+        if let finishing {
+            for command in finishing.commands { state.draw(command, began: finishing.began, at: finishing.at) }
+        }
+        _state = State(initialValue: state)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let wide = proxy.size.width >= 900
+            ZStack {
+                GroundView(ground: app.pane.ground)
+                if wide { wideLayout } else { narrowLayout }
+            }
+        }
+        .environment(state)
+        .environment(\.pane, actions)
+        .environment(\.words, app.words)
+        .environment(\.ground, app.pane.ground)
+        .environment(\.colorScheme, app.pane.ground.scheme(in: system))
+        .tint(TodayLook.ink.color)
+        // A finish waits a few seconds so it can be taken back; leaving
+        // the app or the screen sends what waits, so none is lost.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { state.flush() }
+        }
+        .onDisappear { state.flush() }
+        .sensoryFeedback(.impact(weight: .light), trigger: state.begun)
+        .sensoryFeedback(.success, trigger: state.sent)
+    }
+
+    private var actions: PaneActions {
+        let openURL = openURL
+        let state = state
+        return PaneActions(
+            send: { command in
+                // What finishes a thing waits where it can be taken back, and is sent when its time is up.
+                if command.finishing != nil { return state.finish(command, deliver: send) }
+                // What was typed under "Other" is the view's until its Save: it goes with that Save, and is the view's no more.
+                guard case let .saveSuggested(ids, _) = command else { return send(command) }
+                send(.saveSuggested(ids, words: state.words.filter { ids.contains($0.key) }))
+                for id in ids { state.words[id] = nil }
+            },
+            open: { route in
+                guard path.last != route else { return }
+                withAnimation(.snappy(duration: 0.25)) { path.append(route) }
+            },
+            openURL: { address in
+                if let url = URL(string: address) { openURL(url) }
+            })
+    }
+
+    private func back() {
+        guard !path.isEmpty else { return }
+        withAnimation(.snappy(duration: 0.25)) { _ = path.removeLast() }
+    }
+
+    // MARK: A phone
+
+    @ViewBuilder private var narrowLayout: some View {
+        if let route = path.last {
+            PageView(page: app.page(route), back: back) { field }
+                .id(route)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else {
+            day
+        }
+    }
+
+    private var day: some View {
+        PaneView(pane: app.pane, openSettings: openSettings, header: notices)
+            .safeAreaInset(edge: .bottom, spacing: 0) { field }
+            .safeAreaInset(edge: .top, spacing: 0) { WindowControlsRoom() }
+            .edgeFade(.top)
+    }
+
+    @ViewBuilder private var field: some View {
+        // Above the keyboard it would lie over the field being typed in.
+        if !state.writing { ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom) }
+    }
+
+    // MARK: A wide screen
+
+    private var wideLayout: some View {
+        HStack(alignment: .top, spacing: 0) {
+            day.frame(minWidth: 420, idealWidth: 640, maxWidth: 700)
+            Group {
+                if let route = path.last {
+                    side(for: app.page(route), back: back).id(route)
+                } else {
+                    side(for: app.page(.projects), back: nil)
+                }
+            }
+            .frame(minWidth: 340, idealWidth: 420, maxWidth: 520)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// A page beside the day: the same page, without a field of its own.
+    /// With no page open it is the list of projects, with no bar: the strip
+    /// beside it already holds the way to the priorities.
+    @ViewBuilder private func side(for page: PagePresentation, back: (() -> Void)?) -> some View {
+        if back == nil, case let .projects(projects) = page {
+            PageScaffold(back: nil) {
+                ProjectsPageView(page: projects)
+            } bottom: {
+                EmptyView()
+            }
+        } else {
+            PageView(page: page, back: back) { EmptyView() }
+        }
+    }
+}
+
+extension DayScreen where Notices == EmptyView {
+    init(
+        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [], showsDone: Bool? = nil,
+        finishing: (commands: [TodayCommand], began: Date, at: Date)? = nil,
+        send: @escaping @MainActor @Sendable (TodayCommand) -> Void = { _ in }, openSettings: (() -> Void)? = nil
+    ) {
+        self.init(app: app, path: path, opened: opened, showsDone: showsDone, finishing: finishing, send: send, openSettings: openSettings) {
+            EmptyView()
+        }
+    }
+}
