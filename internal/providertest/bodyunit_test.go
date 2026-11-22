@@ -78,6 +78,21 @@ func TestBodyHelpersBeeper(t *testing.T) {
 	runBodyCases(t, bodyPython(t, dir), "py/test_beeper_offline.py", dir)
 }
 
+// TestBodyHelpersNotion runs internal/providertest/py/test_notion_blocks.py
+// over the shipped notionsync body: a block payload declared as an object is
+// written in the shapes its declaration admits, a decimal as a string.
+func TestBodyHelpersNotion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	written := writeBodies(t, providersDir+"/notion/bundle.yaml", dir, func(name string) bool {
+		return name == "notionsync"
+	})
+	if written != 1 {
+		t.Fatalf("wrote %d notion bodies, want notionsync alone", written)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_notion_blocks.py", dir)
+}
+
 // TestBodyHelpersFirecrawl runs internal/providertest/py/test_firecrawl_api.py
 // over the shipped firecrawl_api module: the origin the key may go to, that
 // a call with no baseUrl (what the operator's key arrives with) goes to the

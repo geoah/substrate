@@ -141,7 +141,10 @@ data:
   #    longer has, which nothing can fetch again. The header states no
   #    retention, and `config` and `account` no longer state the `all` that
   #    absence reads as (decision record 0333).
-  version: 25
+  # 26: a column's `widthRatio` is written as a decimal's string. Notion sends
+  #    a bare number, which the engine refuses for a decimal, so a page with a
+  #    sized column parked the whole sync.
+  version: 26
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2108,9 +2111,11 @@ data:
     """
     import datetime as _dt
     import errno
+    import math
     import ssl
     import json as _json
     import socket
+    from decimal import Decimal
     from urllib.parse import urlparse
 
     import requests
@@ -2661,6 +2666,22 @@ data:
         return v if "://" in v else None
 
 
+    def _decimal(value):
+        # A `decimal` is written as a STRING: the engine refuses a bare JSON
+        # number, which rides float64 and may already be rounded. A value that
+        # is no number is not written.
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            # No exponent: `repr(1e-05)` is not a decimal's spelling.
+            return format(Decimal(repr(value)), "f") if math.isfinite(value) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+
     def _email(value):
         v = str(value or "").strip()
         if v.count("@") != 1:
@@ -3051,7 +3072,7 @@ data:
         "child_database": (("title", "databaseTitle", None),),
         "equation": (("expression", "expression", None),),
         "link_preview": (("url", "url", _url),),
-        "column": (("width_ratio", "widthRatio", None),),
+        "column": (("width_ratio", "widthRatio", _decimal),),
         "table_of_contents": (("color", "color", None),),
         "table": (("table_width", "tableWidth", None),
                   ("has_column_header", "hasColumnHeader", bool),
