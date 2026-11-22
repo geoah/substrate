@@ -96,8 +96,9 @@ struct DayScreen<Notices: View>: View {
             .edgeFade(.top)
     }
 
-    private var field: some View {
-        ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom)
+    @ViewBuilder private var field: some View {
+        // Above the keyboard it would lie over the field being typed in.
+        if !state.writing { ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom) }
     }
 
     // MARK: A wide screen

@@ -37,6 +37,7 @@ struct MossBoxView: View {
                         .lineLimit(1 ... 4)
                         .textFieldStyle(.plain)
                         .focused($focused)
+                        .writes(focused)
                         .onSubmit(send)
                         .submitLabel(.send)
                         .padding(.leading, 14)

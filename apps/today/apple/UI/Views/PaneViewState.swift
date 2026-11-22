@@ -12,6 +12,9 @@ final class PaneViewState {
     var ticked: Set<String> = []
     /// What is typed under "Other", by the suggested task's id.
     var words: [String: String] = [:]
+    /// A field of a card or a page holds the keyboard: the day's own field,
+    /// fixed at the bottom, steps aside so it does not cover what is typed.
+    var writing = false
 
     func isOpen(_ id: String) -> Bool { opened.contains(id) }
 
@@ -51,4 +54,23 @@ struct OpensInPlace<Label: View>: View {
         .buttonStyle(.plain)
         .accessibilityHint(state.isOpen(id) ? "Closes" : hint)
     }
+}
+
+/// A field of a card or a page while it holds the keyboard: the day's own
+/// field steps aside. A scroll puts the keyboard away, as everywhere in
+/// the app; a bar of its own over the keyboard would cover the field.
+private struct Writes: ViewModifier {
+    var focused: Bool
+
+    @Environment(PaneViewState.self) private var state
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: focused) { _, now in state.writing = now }
+            .onDisappear { if focused { state.writing = false } }
+    }
+}
+
+extension View {
+    func writes(_ focused: Bool) -> some View { modifier(Writes(focused: focused)) }
 }

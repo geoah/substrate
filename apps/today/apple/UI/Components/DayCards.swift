@@ -211,6 +211,7 @@ struct SuggestedOtherField: View {
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.colorScheme) private var scheme
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -218,6 +219,8 @@ struct SuggestedOtherField: View {
                 .font(TodayLook.Text.body)
                 .lineLimit(2 ... 6)
                 .textFieldStyle(.plain)
+                .focused($focused)
+                .writes(focused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .frame(minHeight: TodayLook.target)
