@@ -376,10 +376,10 @@ struct SaveCardTests {
         await harness.deliver(.answer(exchange.id, .done("I asked Marco for the dates and dismissed the suggestion.")))
         guard case let .suggested(answered) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
         #expect(answered.groups.last?.told.first?.told?.answer?.text == "I asked Marco for the dates and dismissed the suggestion.")
-        // On its own page it says the same, and the box under it holds the exchange.
+        // On its own page it says the same, once: the box under it does not hold that exchange a second time.
         guard case let .task(own) = await harness.presentation.page(.task("p-marco")) else { return #expect(Bool(false)) }
-        #expect(own.suggestion?.told?.answer == nil && own.suggestion?.told?.words.hasPrefix("Marco asked") == true)
-        #expect(own.card.moss?.exchanges.count == 1)
+        #expect(own.suggestion?.told?.answer?.state == .done && own.suggestion?.told?.words.hasPrefix("Marco asked") == true)
+        #expect(own.suggestion?.options.isEmpty == true && own.card.moss?.exchanges.isEmpty == true)
         // Closed, it leaves the page; the record stays for whoever suggests tasks.
         await harness.send(.closeAnswer(exchange.id))
         guard case let .suggested(closed) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }

@@ -153,8 +153,11 @@ extension DayEngine: PageMaking {
         var card = taskCard(task, whole: true)
         // The line above the title already says when it was done.
         if task.status == .done { card.said = nil }
+        let told = task.isProposed ? toldItem(task, alone: true) : nil
+        // What was said about the suggestion is drawn with its answer once: not again in the box under it.
+        if let answered = told?.told?.answer { card.moss?.exchanges.removeAll { $0.id == answered.id } }
         return TaskPage(
             id: task.id, eyebrow: eyebrow, glyph: task.status == .done ? .done : .task, title: task.name, line: reason(task), stripe: stripe(task),
-            card: card, suggestion: task.isProposed ? toldItem(task, alone: true) ?? suggestedItem(task, own: true, whole: true) : nil)
+            card: card, suggestion: task.isProposed ? told ?? suggestedItem(task, own: true, whole: true) : nil)
     }
 }

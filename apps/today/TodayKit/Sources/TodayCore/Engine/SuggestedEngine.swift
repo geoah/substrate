@@ -72,9 +72,8 @@ extension DayEngine {
     /// A suggestion answered in words, drawn while its exchange is here:
     /// what was said and what the assistant answered, and no options.
     /// - Parameters:
-    ///   - alone: on the task's own page, whose box shows the exchange:
-    ///     there it is drawn with or without one, and without the answer a
-    ///     second time.
+    ///   - alone: on the task's own page, where it is drawn with or
+    ///     without an exchange: the words were said either way.
     ///   - grouped: under its project's header, which names the project.
     func toldItem(_ task: TaskItem, alone: Bool = false, grouped: Bool = false) -> SuggestedItem? {
         guard let correction = correction(of: task) else { return nil }
@@ -83,7 +82,7 @@ extension DayEngine {
         return SuggestedItem(
             id: task.id, title: task.name, origin: origin(task), fade: fade(task),
             chips: Chips(project: grouped ? nil : chip(task.list), people: people(task)), stripe: stripe(task), options: .empty, pending: false,
-            told: SuggestedItem.Told(words: correction.text, answer: alone ? nil : exchange.map(answerCard)))
+            told: SuggestedItem.Told(words: correction.text, answer: exchange.map(answerCard)))
     }
 
     /// The owner's pick for a suggestion, as the draft has it. "Other" is
