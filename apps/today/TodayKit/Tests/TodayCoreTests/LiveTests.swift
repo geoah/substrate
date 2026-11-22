@@ -58,6 +58,29 @@ struct LiveTests {
         }
     }
 
+    /// The calendars the meetings name come back with the window read, and
+    /// what is on a calendar that is not the owner's is read and not drawn.
+    /// The seed's day holds a colleague's calendar with two events on it.
+    @Test func eventsOnACalendarThatIsNotTheOwnersAreReadAndNotDrawn() async throws {
+        guard let client = Self.client else { return }
+        let state = try await Self.state(client)
+        let named = state.windows.meetings.filter { $0["calendar"]?.referencePath != nil }
+        guard !named.isEmpty else { return }
+        let read = Set(state.windows.calendars.map { "\($0.kind)/\($0.id)" })
+        #expect(named.allSatisfy { ($0["calendar"]?.referencePath).map(read.contains) == true }, "every calendar a meeting names was read")
+        let own = Set(state.windows.ownMeetings.map(\.id))
+        let theirs = state.windows.meetings.filter { !own.contains($0.id) }
+        print(
+            "LIVE calendars:", state.windows.calendars.count, "meetings read:", state.windows.meetings.count, "on a calendar not the owner's:", theirs.count)
+        let day = TodayPresenter.day(state, now: Date(), calendar: Self.calendar)
+        let drawn = Set(day.meetings.flatMap { [$0.id] + $0.also })
+        #expect(theirs.allSatisfy { !drawn.contains($0.id) })
+        if state.windows.calendars.contains(where: { $0["summary"]?.text == "stefan@example.com" }) {
+            #expect(theirs.compactMap(\.title).sorted() == ["Stefan / Wes", "Stefan's vendor call"])
+            #expect(!DayEngine(day).todaysMeetings.contains { $0.title.hasPrefix("Stefan") })
+        }
+    }
+
     @Test func theReadsAnswerADay() async throws {
         guard let client = Self.client else { return }
         let state = try await Self.state(client)

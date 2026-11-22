@@ -48,12 +48,12 @@ PREFERENCE, PLAN, ADVICE = f"{S}/today/preference", f"{S}/today/plan", f"{S}/tod
 DIGEST, REVIEWMARK, DOSSIER = f"{S}/today/digest", f"{S}/today/reviewmark", f"{S}/today/dossier"
 RETURNPOINT, RULE, PREPARATION = f"{S}/today/returnpoint", f"{S}/today/rule", f"{S}/today/preparation"
 CONTACT, REQUEST, TRIGGER = f"{S}/core/contact", f"{S}/core/recordpatchrequest", f"{S}/core/trigger"
-EVENT, SERIES = "~/calendar/event", "~/calendar/series"
+EVENT, SERIES, CALENDAR = "~/calendar/event", "~/calendar/series", "~/calendar/calendar"
 
 # What a wipe purges whole: the kinds the day is written into and the app
 # writes into. Contacts and patch requests are purged by the ids below only,
 # because a repository holds others (the owner's own contact).
-WIPED = [ADVICE, DOSSIER, DIGEST, REVIEWMARK, RETURNPOINT, PLAN, PREFERENCE, PREPARATION, RULE, LOG, TASK, LIST, SCHEDULE, MEDICATION, ROUTINE, EVENT, SERIES]
+WIPED = [ADVICE, DOSSIER, DIGEST, REVIEWMARK, RETURNPOINT, PLAN, PREFERENCE, PREPARATION, RULE, LOG, TASK, LIST, SCHEDULE, MEDICATION, ROUTINE, EVENT, SERIES, CALENDAR]
 
 NAMESPACE = uuid.UUID("5f6b7a00-0000-4000-8000-746f64617921")
 
@@ -185,6 +185,19 @@ MEETINGS = [
     ("groups", "20:00", "20:30", "Groups and permissions sync", "security", ["hao", "ned"], "Google Meet", "Work"),
     ("cloud", "21:00", "21:30", "Cloud standup (external)", "other", ["rahul"], "Google Meet", "Work"),
     ("audit", "21:00", "21:30", "Audit tiger team", "security", ["patrick", "ned"], "Google Meet", "Work"),
+]
+# The calendars the account can see. Work is its own and Personal a second one
+# it owns; Stefan's is a colleague's it may read, and nothing on it is drawn.
+CALENDARS = {
+    "Work": {"summary": "Work", "primary": True, "accessRole": "owner"},
+    "Personal": {"summary": "Personal", "accessRole": "owner", "dataOwner": "you@example.com"},
+    "Stefan": {"summary": "stefan@example.com", "accessRole": "reader"},
+}
+# What Stefan's calendar holds today, one of them across the owner's own 14:20.
+# (key, start, end, summary, people, where)
+NOT_MINE = [
+    ("stefan-vendor", "14:20", "15:00", "Stefan's vendor call", ["rahul"], "Google Meet"),
+    ("stefan-wes", "16:00", "16:30", "Stefan / Wes", ["wes"], "Room 2"),
 ]
 # The two that repeat: read back as computed occurrences of a series.
 REPEATING = {"standup": "FREQ=DAILY", "weekly": "FREQ=WEEKLY"}
@@ -432,11 +445,22 @@ def write_day(server: Server, day: Day, assistant: bool, morning_done: bool) -> 
         me = {"value": OWNER_EMAIL, "displayName": "George", "self": True, "responseStatus": "accepted"}
         return [me] + [{"value": email(person), "displayName": PEOPLE[person], "responseStatus": "accepted"} for person in people]
 
+    for name, properties in CALENDARS.items():
+        server.put(CALENDAR, uid("calendar/" + name), properties)
+    # On a colleague's calendar `self` marks the colleague, not the owner.
+    for key, start, end, summary, people, where in NOT_MINE:
+        theirs = [{"value": email("stefan"), "displayName": PEOPLE["stefan"], "self": True, "responseStatus": "accepted"}]
+        theirs += [{"value": email(person), "displayName": PEOPLE[person], "responseStatus": "accepted"} for person in people]
+        server.put(EVENT, uid("event/" + key), {
+            "summary": summary, "location": where, "calendarName": "Stefan", "calendar": path(CALENDAR, "calendar/Stefan"),
+            "attendees": theirs, "status": "confirmed", "at": day.instant(start), "endsAt": day.instant(end)})
+
     occurrence = {}  # key -> the id a window read gives it
     # A calendar event names no project: `project` in the table is only what
     # the day's story files each meeting under.
     for key, start, end, summary, _project, people, where, calendar in MEETINGS:
-        properties = {"summary": summary, "location": where, "calendarName": calendar, "attendees": attendees(people)}
+        properties = {"summary": summary, "location": where, "calendarName": calendar, "calendar": path(CALENDAR, "calendar/" + calendar),
+                      "attendees": attendees(people)}
         if where == "Google Meet":
             properties["hangoutLink"] = "https://meet.example.com/" + key
         if key in REPEATING:

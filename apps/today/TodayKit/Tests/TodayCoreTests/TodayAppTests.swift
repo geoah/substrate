@@ -168,6 +168,59 @@ struct OrderTests {
         #expect(happening.gotIt?.title == "Got it")
     }
 
+    @Test func anEventOnACalendarThatIsNotTheOwnersIsDrawnNowhere() throws {
+        let kind = "providers.substrate.reamde.dev/google/calendar"
+        func calendar(_ id: String, _ properties: [String: JSONValue]) -> Record { Record(id: id, kind: kind, properties: properties, version: 1) }
+        func on(_ calendar: String, _ event: Record) -> Record {
+            var event = event
+            event.properties["calendar"] = .object(["ref": .string("\(kind)/\(calendar)")])
+            return event
+        }
+        // Whose a calendar is, by what its record says.
+        let mine = calendar("mine", ["primary": true, "accessRole": "owner"])
+        let second = calendar("second", ["accessRole": "owner", "dataOwner": .object(["ref": "providers.substrate.reamde.dev/google/emailaddress/me"])])
+        let colleague = calendar("colleague", ["accessRole": "reader"])
+        #expect(Meeting.isOwn(calendar: mine) && Meeting.isOwn(calendar: second))
+        #expect(!Meeting.isOwn(calendar: colleague) && !Meeting.isOwn(calendar: calendar("team", ["accessRole": "writer"])))
+        #expect(!Meeting.isOwn(calendar: calendar("partner", ["accessRole": "owner"])), "another person's calendar, with an owner's rights on it")
+        #expect(!Meeting.isOwn(calendar: calendar("put-away", ["primary": true, "accessRole": "owner", "hidden": true])))
+        #expect(Meeting.isOwn(calendar: calendar("home", ["title": "Home"])) && !Meeting.isOwn(calendar: calendar("feed", ["isSubscribed": true])))
+
+        // A colleague's calendar the account can see holds two events today, one past and one across a meeting of the owner's.
+        func state(at clock: String) -> TodayApp.State {
+            TodayFixtures.state(at: clock) { state in
+                state.windows.calendars = [mine, second, colleague]
+                state.windows.meetings = state.windows.meetings.map { on("mine", $0) }
+                state.windows.meetings += [
+                    on("colleague", TodayFixtures.event("x-early", "09:00", "09:30", "Their standup", people: ["Stefan"])),
+                    on("colleague", TodayFixtures.event("x-across", "14:20", "14:50", "Their vendor call", people: ["Stefan"])),
+                    on("second", TodayFixtures.event("x-mine", "21:30", "21:45", "Collect the parcel", meet: false)),
+                    on("never-read", TodayFixtures.event("x-unknown", "21:50", "21:55", "On a calendar that was not read")),
+                ]
+            }
+        }
+        let engine = DayEngine(TodayPresenter.day(state(at: "11:30"), now: TodayFixtures.at("11:30"), calendar: TodayFixtures.calendar))
+        let titles = Set(engine.todaysMeetings.map(\.title))
+        #expect(titles.contains("Collect the parcel"), "a second calendar of the owner's own")
+        #expect(titles.isDisjoint(with: ["Their standup", "Their vendor call", "On a calendar that was not read"]))
+        // And what the fixture holds is all there: its events are on the owner's calendar.
+        let plain = DayEngine(TodayPresenter.day(TodayFixtures.state(at: "11:30"), now: TodayFixtures.at("11:30"), calendar: TodayFixtures.calendar))
+        #expect(titles.subtracting(["Collect the parcel"]) == Set(plain.todaysMeetings.map(\.title)))
+        #expect(engine.overlaps.map { $0.meetings.map(\.id) } == plain.overlaps.map { $0.meetings.map(\.id) }, "no overlap with what is not theirs")
+        // Nowhere in the day or on a page, before it or after it.
+        for clock in ["11:30", "18:00"] {
+            let app = TodayFixtures.present(state(at: clock), at: clock)
+            var words: [String] = []
+            collect(String.self, in: app.pane, into: &words)
+            for route in [TodayRoute.plan, .priorities, .projects] { collect(String.self, in: app.page(route), into: &words) }
+            #expect(!words.contains { $0.contains("Their standup") || $0.contains("Their vendor call") || $0.contains("was not read") }, "at \(clock)")
+            #expect(words.contains { $0.contains("Collect the parcel") }, "at \(clock)")
+        }
+        // What an earlier build kept holds no calendars, and is read.
+        let kept = try JSONDecoder().decode(Windows.self, from: Data(#"{"meetings":[],"occurrences":[]}"#.utf8))
+        #expect(kept.calendars.isEmpty && kept.ownMeetings.isEmpty)
+    }
+
     @Test func overlapsArePairsAndAChoiceMakesTheOtherMeetingOff() {
         let morning = pane("08:30")
         let blocks = morning.items.compactMap { if case let .overlap(block) = $0 { block } else { nil } }

@@ -12,7 +12,7 @@ enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
         ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
-        ("card", 900), ("strip", 620), ("happening", 1300), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
+        ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900),
     ]
 
@@ -271,12 +271,28 @@ enum ComponentSheets {
     }
 
     static var card: some View {
-        Case(caption: "The current item: a task", carded: false) {
-            RowView(
-                row: Row(
-                    id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
-                    line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high), state: .now,
-                    chips: Chips(project: h.security), trailing: .flag(h.flagControl(.high)), body: .task(h.vigilCard)))
+        Group {
+            Case(caption: "The current item: a task", carded: false) {
+                RowView(
+                    row: Row(
+                        id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
+                        line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
+                        state: .now, chips: Chips(project: h.security), trailing: .flag(h.flagControl(.high)), body: .task(h.vigilCard)))
+            }
+            Case(caption: "A routine of several: each item has its tick, and Skip stands beside the button for the rest", carded: false) {
+                RowView(
+                    row: Row(
+                        id: "r-evening", glyph: .routine, title: "Evening medication", line: "1 of 3 logged.", state: .now,
+                        body: .routine(
+                            RoutineCard(
+                                items: [
+                                    h.dose("e1", "Magnesium", "200 mg", taken: "21:02"), h.dose("e2", "Zinc", "15 mg"),
+                                    h.dose("e3", "Probiotic", "1 capsule"),
+                                ],
+                                done: ButtonPresentation("All taken", glyph: .done, role: .primary, wide: true, command: .log(row: "r-evening", done: true)),
+                                skip: ButtonPresentation("Skip", role: .quiet, command: .log(row: "r-evening", done: false)),
+                                notLogged: "Not logged since 17 October."))))
+            }
         }
     }
 
