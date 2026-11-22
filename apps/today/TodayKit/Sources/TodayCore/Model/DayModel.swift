@@ -558,11 +558,12 @@ public struct Person: Equatable, Sendable {
     }
 
     /// A `core/contact`. Its `name` is absent on some and a handle in
-    /// lower case on others, so the name is worked out (`Words.personName`).
+    /// lower case on others, and its given name can be a handle or an
+    /// address too, so each is worked out (`Words.personName`).
     init(_ record: Record) {
         path = "\(record.kind)/\(record.id)"
         let given = record["givenName"]?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.given = given?.isEmpty == false ? given : nil
+        self.given = given?.isEmpty == false ? given.map(Words.written) : nil
         name =
             Words.personName(
                 name: record["name"]?.text ?? record["displayName"]?.text, given: record["givenName"]?.text, family: record["familyName"]?.text,

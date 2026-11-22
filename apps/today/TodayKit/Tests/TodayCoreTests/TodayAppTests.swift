@@ -838,6 +838,14 @@ struct ReadTests {
         #expect(name(["name": "rsato", "title": "rsato"]).name == "Rsato" && name(["name": "rsato"]).short == "Rsato")
         #expect(name(["nickname": "odi", "title": "odi"]).name == "Odi" && name(["title": "rsato@example.com"]).name == "Rsato")
         #expect(name([:]).name == "Someone")
+        // A given name a source filled with a handle or an address is read as one: never "for christopher".
+        let handle = name(["givenName": "odile"])
+        #expect(handle.name == "Odile" && handle.short == "Odile")
+        let address = name(["name": "pilar@example.com", "givenName": "pilar@example.com"])
+        #expect(address.name == "Pilar" && address.short == "Pilar")
+        #expect(
+            name(["givenName": "ines.castel@example.com"]).name == "Ines Castel"
+                && name(["givenName": "odile", "familyName": "marchetti"]).name == "Odile Marchetti")
         // The short name is the given name where there is one, else the first word.
         #expect(name(["name": "Dr Ines Castel", "givenName": "Ines"]).short == "Ines" && name(["name": "Ines Castel"]).short == "Ines")
 
