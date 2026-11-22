@@ -45,7 +45,14 @@ enum Words {
     /// and ended with an ellipsis. A card or a row shows this much of a
     /// description; the whole of it is on the thing's own page.
     static func excerpt(_ text: String, limit: Int = excerptLimit) -> String {
-        let words = text.split(whereSeparator: \.isWhitespace)
+        // A description is Markdown, and what someone said is kept as a
+        // quote: the mark at the head of each quoted line is not a word.
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
+            var rest = line.drop(while: { $0 == " " })
+            while rest.first == ">" { rest = rest.dropFirst().drop(while: { $0 == " " }) }
+            return rest
+        }
+        let words = lines.joined(separator: "\n").split(whereSeparator: \.isWhitespace)
         let flat = words.joined(separator: " ")
         guard flat.count > limit else { return flat }
         var out = ""

@@ -306,6 +306,7 @@ struct SaveCardTests {
         let short = "Asked in the finance channel whether the October ledger was checked against the bank export, and you said you would look\u{2026}"
         #expect(Words.excerpt(long) == short && short.count <= Words.excerptLimit + 1)
         #expect(Words.excerpt("One line.\n\nAnother.") == "One line. Another.", "a short text is one paragraph, not cut")
+        #expect(Words.excerpt("> But yes.\n> > Fixing it") == "But yes. Fixing it", "a quote's marks are not words")
         #expect(Words.excerpt(String(repeating: "a", count: 300)).count == Words.excerptLimit + 1, "a run with no word to cut at is still cut")
         // A suggested task in the card, and on a project's or a person's page.
         guard case let .suggested(card) = try #require(row(pane("08:30", edit: TodayFixtures.crowd), "suggested")).body else {
