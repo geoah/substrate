@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.124.1](https://github.com/geoah/substrate/compare/v0.124.0...v0.124.1) (2026-11-22)
+
+
+### Fixed
+
+* **apps:** read a bundle id's capabilities without a limit, which App Store Connect refuses there ([35060b9](https://github.com/geoah/substrate/commit/35060b9e26ad3b6c38736f69f75031f0365a4486))
+* **notion:** write a column's width ratio as a decimal's string, so a page with a sized column no longer parks its sync ([8d217e8](https://github.com/geoah/substrate/commit/8d217e8683a490166d3c393a0832b9f429dc7aa4))
+
 ## [0.124.0](https://github.com/geoah/substrate/compare/v0.123.1...v0.124.0) (2026-11-22)
 
 
