@@ -18,8 +18,18 @@ own against the kit.
   is typed under "Other" on a suggested task (`SuggestedItem.other`), until its Save. A view sends that Save
   as `saveSuggested(ids, words:)` with the words of those ids, whatever `words` the button's own command carries.
 - **Ticks under "To raise"** on a meeting.
+- **What was finished a moment ago.** A command that finishes something (`TodayCommand.finishing` is not
+  nil: `done`, `log(row:done:)`, `logOccurrence(_:done:)`) is not sent on the tap. The view keeps it in a
+  `Finishing`: for `Finishing.countdown` (3 seconds) the control that was pressed is a countdown and the way
+  back, for `Finishing.settle` (2 more) the thing is drawn finished where it stands and a tap on its tick
+  still takes it back, then the command is sent. Leaving the foreground, or the screen going away, sends
+  everything that waits at once. `Finishing` is a value with no clock: the view says what time it is. A
+  command that takes a finish back (`reopen`, `unlog`, `unlogRow`) is sent at once.
+- **Whether what is done is shown.** The header of "Earlier today" shows or hides its entries. The device
+  keeps the choice across launches, and it starts shown.
 
-When a flag list is closed the view sends `settleFlags`, so the order follows the flags only then.
+A task's flag is changed in its opened row (the card's Flag door); a closed row has no flag control. When
+that list is closed, or the card is, the view sends `settleFlags`, so the order follows the flags only then.
 
 ## Presentation types, and what each draws
 
@@ -30,10 +40,10 @@ When a flag list is closed the view sends `settleFlags`, so the order follows th
 | `PaneItem`                                                   | One thing in the timeline: night, earlier, happening, row, meeting, overlap, parked, unfinished, note   |
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |
 | `NightPresentation`, `NightItem`, `NightDecision`            | The night: one line folded; open, by project, with "Got it"                                             |
-| `EarlierPresentation`                                        | "Earlier today": one line with a count, opening to its lines                                            |
+| `EarlierPresentation`                                        | "Earlier today": a header with a count, and its `entries` in one order by when they happened: a `row` for what was finished (`Row.State.done`: crossed out, its filled tick takes it back), a `meeting` that ended (`MeetingRow.ended`: dimmed), a `line` for bookkeeping |
 | `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, every project with its lines, flagged first, nothing folded   |
 | `MarkedBlock`                                                | Something marked urgent and held back: who marked it and its options                                    |
-| `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line. `.page(route)` is a right chevron, and a tap on the line opens the page |
+| `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line. `.tick(button)` ends a task's and a routine's: open it finishes the thing, filled (role `primary`, on a row whose `state` is `.done`) it takes that back. `.page(route)` is a right chevron, and a tap on the line opens the page |
 | `RoutineCard`                                                | A routine row, open: its items each with a tick, All taken or All done, Skip beside it, a line if stale |
 | `YesterdayCard`                                              | What was not logged yesterday: each routine with its option list, acting on a tap                       |
 | `SuggestedItem`                                              | One suggested task wherever it is drawn: `save` set when drawn alone, `other` while "Other" is the pick, `told` once the owner answered it in words |
@@ -65,7 +75,7 @@ assistant's sentence under it.
 
 | Command                                                                                     | When                                                                                   |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `log(row:done:)`, `logOccurrence(_:done:)`, `unlog(_:)`, `later(row:)`                      | A routine row: Taken or Done, Skip, one item, taken back, the notification's Later     |
+| `log(row:done:)`, `logOccurrence(_:done:)`, `unlog(_:)`, `unlogRow(_:)`, `later(row:)`      | A routine row: Taken or Done, Skip, one item, an item taken back, the whole row taken back, the notification's Later |
 | `answerYesterday(item:option:)`                                                             | An option of a routine not logged yesterday; takes effect at once                      |
 | `readNight`, `gotIt(project:)`, `answerNight(project:option:)`                              | The night and what is happening                                                        |
 | `suggest(_:_:)`, `saveSuggested(_:words:)`, `showSuggested(group:)`                         | A draft pick on a suggested task; Save for the ids a group or one item draws, with what was typed under "Other"; the rest of a group |

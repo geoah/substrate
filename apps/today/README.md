@@ -38,6 +38,17 @@ priorities, the list of projects, a project, a person, a meeting, a task,
 the plan and the suggested tasks are pages; everything else opens in place.
 A row of the day that opens a page ends with a right chevron.
 
+A task's and a routine's closed row ends with a tick, and a task's flag is
+its colour stripe alone: the flag is changed from the opened row. Finishing
+a thing is taken back, not confirmed: the tick, Done, Taken, All taken, All
+done and Skip write nothing on the tap. For three seconds the control is a
+countdown and the way back, for two more the thing is drawn crossed out
+where it stands, and then it is written; leaving the app writes it at once.
+What is finished stays in the day under "Earlier today" as a closed,
+crossed-out row whose filled tick takes it back, with a meeting that ended
+as a dimmed row. That header shows or hides them, and the device keeps the
+choice.
+
 The rules are the engine's, and a test pins each:
 
 - **Tasks and suggested tasks, nothing else.** A suggested task is a task in

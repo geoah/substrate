@@ -123,7 +123,7 @@ struct RowView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(opensPage ? "Opens its page" : "Opens in place")
-                    .accessibilityValue(row.state == .done ? "Done" : "")
+                    .accessibilityValue(row.state == .done ? "Finished" : "")
                     // What is done is one closed line: its chips are in its card.
                     if !row.chips.isEmpty, row.state != .done {
                         ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))

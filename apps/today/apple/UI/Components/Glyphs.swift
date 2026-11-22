@@ -29,6 +29,8 @@ extension Glyph {
     /// The SF Symbol the kit names for it (`KindGlyphSpec`, `DesignTokens.Control`).
     var systemName: String {
         switch self {
+        // Not a check in a circle: a task's row ends with a real tick, and
+        // its kind's mark must not read as a second one.
         case .task: "list.clipboard"
         case .meeting: "calendar"
         case .routine: "repeat"

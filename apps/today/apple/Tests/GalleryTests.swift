@@ -88,8 +88,11 @@ import TodayCore
     @Test func finishingDraws() async throws {
         guard let working = TodayFixtures.all.first(where: { $0.name == "today-working" }) else { return }
         let began = Date(timeIntervalSince1970: 1_800_000_000)
+        // The first task that is a closed row: it is in view under the current item.
         guard
-            let task = working.app.pane.items.compactMap({ item -> Row? in if case let .row(row) = item, row.id.hasPrefix("task:") { row } else { nil } }).last
+            let task = working.app.pane.items.compactMap({ item -> Row? in
+                if case let .row(row) = item, row.id.hasPrefix("task:"), row.state != .now { row } else { nil }
+            }).first
         else { return }
         let command = TodayCommand.done(String(task.id.dropFirst("task:".count)))
         for (name, after) in [("counting", 1.2), ("counted", 4.0)] {

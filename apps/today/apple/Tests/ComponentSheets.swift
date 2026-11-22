@@ -11,7 +11,7 @@ import TodayCore
 enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
-        ("tile", 420), ("badge", 380), ("glyph", 1300), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
+        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
         ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900), ("finish", 2300),
     ]
@@ -189,22 +189,6 @@ enum ComponentSheets {
             }
             Case(caption: "On the current item") {
                 HStack(spacing: 12) { ForEach([Glyph.task, .meeting, .routine], id: \.self) { GlyphView(glyph: $0, size: .lead) } }
-            }
-            Case(caption: "CANDIDATES for the task glyph, beside a tick") {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(
-                        [
-                            "list.clipboard", "clipboard", "checklist.unchecked", "diamond", "circle.dashed", "pencil.and.list.clipboard",
-                        ], id: \.self
-                    ) { name in
-                        HStack(spacing: 10) {
-                            Image(systemName: name).font(.system(size: 17, weight: .medium)).foregroundStyle(.inkSecond).frame(width: 26, height: 26)
-                            Text("Test the drive caddies  (\(name))").font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                            Spacer()
-                            IconButton(Glyph.done, label: "Done", small: true, look: .quiet) {}
-                        }
-                    }
-                }
             }
             Case(caption: "Chevrons: a page, in place, open") {
                 HStack(spacing: 16) {
