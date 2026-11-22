@@ -75,6 +75,7 @@ const WORDS = new Set([
   "contact",
   "conversation",
   "conversion",
+  "correction",
   "credential",
   "cycle",
   "data",

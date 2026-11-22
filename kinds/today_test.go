@@ -55,10 +55,11 @@ func TestThePreparerWritesOnlyItsOwnRecords(t *testing.T) {
 }
 
 // THE TODAY PACKAGE'S BODIES HOLD RULES ABOUT TIME. `fade` abandons a
-// suggested task two weeks after it was written, `prepare` asks for the
+// suggested task two weeks after what it came from was said, `prepare` asks for the
 // morning once the owner's clock passes their hour, in their zone, once a
-// day, and for advice at most every two hours, and `stampurgent` stamps a
-// task only while its urgent mark is unchecked. A record's `createdAt` is
+// day, and for advice at most every two hours, `stampurgent` stamps a
+// task only while its urgent mark is unchecked, and `stamporigin` stamps a
+// task with its origin's own time and nothing else. A record's `createdAt` is
 // the engine's and a schedule's fire is the clock's, so no install test can
 // reach these rules. This runs the shipped sources, as the tree holds them,
 // over a host that answers from a dictionary and a fire time the test names.
@@ -72,6 +73,7 @@ func TestTodayBodiesHoldTheirRules(t *testing.T) {
 		"substrate.reamde.dev/today/fade":        "fade_body.py",
 		"substrate.reamde.dev/today/prepare":     "prepare_body.py",
 		"substrate.reamde.dev/today/stampurgent": "stampurgent_body.py",
+		"substrate.reamde.dev/today/stamporigin": "stamporigin_body.py",
 	}
 	for _, d := range readTreeDocuments(t) {
 		name, ok := want[d.ID]
@@ -212,10 +214,10 @@ def delivery(changed):
     return {"mode": "record", "envelope": {"change": {"op": "update", "kind": changed["kind"], "id": changed["id"]}, "record": changed}}
 
 
-fade, prepare, stampurgent = load("fade"), load("prepare"), load("stampurgent")
+fade, prepare, stampurgent, stamporigin = load("fade"), load("prepare"), load("stampurgent"), load("stamporigin")
 SET_UP = {"default": record(PREFERENCE, "default", "2026-11-01T00:00:00Z", timezone="Europe/London")}
 
-# ---- fade: two weeks, by when the suggestion was written -----------------------
+# ---- fade: two weeks, by when what the suggestion came from was said ------------
 store = {
     PREFERENCE: SET_UP,
     TASK: {
@@ -223,6 +225,16 @@ store = {
         "edge": record(TASK, "edge", "2026-11-07T03:10:00Z", status="proposed", name="exactly two weeks"),
         "new": record(TASK, "new", "2026-11-08T09:00:00Z", status="proposed", name="thirteen days"),
         "open": record(TASK, "open", "2026-10-01T09:00:00Z", status="open", name="an old task that is not a suggestion"),
+        # Written down yesterday, by an importer, from words three weeks old:
+        # its age is the words', so it is the oldest of all.
+        "carried": record(TASK, "carried", "2026-11-20T22:59:00Z", status="proposed", name="said three weeks ago",
+                          originAt="2026-10-30T15:06:00Z"),
+        # Written three weeks ago with the time of words said last week, and
+        # with the time of words not said yet, which is not believed.
+        "kept": record(TASK, "kept", "2026-11-01T09:00:00Z", status="proposed", name="said last week",
+                       originAt="2026-11-14T09:00:00Z"),
+        "ahead": record(TASK, "ahead", "2026-11-01T08:00:00Z", status="proposed", name="a time after now",
+                        originAt="2026-12-01T00:00:00Z"),
     },
     PREPARATION: {
         "d20261101": record(PREPARATION, "d20261101", "2026-11-01T06:30:00Z", reason="morning"),
@@ -231,9 +243,9 @@ store = {
 }
 host = Host(store)
 out = fade.main(fire("2026-11-21T03:10:00Z"), host)
-assert out == {"output": {"abandoned": 2, "deleted": 1}}, out
+assert out == {"output": {"abandoned": 4, "deleted": 1}}, out
 patches = [e for e in host.effects.staged if e[0] == "patch"]
-assert [e[2] for e in patches] == ["old", "edge"], patches
+assert [e[2] for e in patches] == ["carried", "ahead", "old", "edge"], patches
 for e in patches:
     # Under the version it read, and losing that race is a skip: a task the
     # owner answered meanwhile is never abandoned.
@@ -346,6 +358,19 @@ prepare.main(fire("2026-11-21T12:00:00Z"), host)
 assert prepare.MAX_ADVICE == 8
 assert host.effects.staged[0][3]["subjects"] == [TASK + "/t%02d" % i for i in range(12, 20)], host.effects.staged[0][3]["subjects"]
 
+# The most lately SAID first, which is not the most lately written: a
+# suggestion carried over this morning from words a week old waits behind
+# one written yesterday about yesterday.
+said = {
+    "x": record(TASK, "x", "2026-11-21T08:00:00Z", status="proposed", name="Carried over", originAt="2026-11-13T10:00:00Z"),
+    "y": record(TASK, "y", "2026-11-20T09:00:00Z", status="proposed", name="Said yesterday", originAt="2026-11-20T08:55:00+00:00"),
+    "z": record(TASK, "z", "2026-11-19T09:00:00Z", status="proposed", name="No time of its own"),
+}
+host = Host(day({"timezone": "Europe/London"}, said, asked=asked))
+prepare.main(fire("2026-11-21T12:00:00Z"), host)
+ask = host.effects.staged[0][3]["ask"]
+assert ask.index("Said yesterday") < ask.index("No time of its own") < ask.index("Carried over"), ask
+
 # A suggested task arriving asks for nothing by itself: the half-hourly pass does.
 host = Host(day({"timezone": "Europe/London"}, tasks, advice, asked))
 assert prepare.main(delivery(tasks["a"]), host) == {"output": {"asked": []}}
@@ -431,5 +456,51 @@ for task, verdict, target in [
 # A repository without the tasks package: nothing read, nothing written, no failure.
 host = Host({})
 assert stampurgent.main(delivery(check("canwait")), host) == {"output": {"skipped": "no task"}}
+
+# ---- stamporigin: a task's originAt is its origin's own time ---------------------
+MESSAGE = "ada.example.com/chat/message"
+NOTE = "ada.example.com/notes/note"
+
+
+def made(origin, **properties):
+    return record(TASK, "m", "2026-11-21T22:59:00Z", status="proposed", name="Send the list", origin=origin, **properties)
+
+
+said_at = {"s1": record(MESSAGE, "s1", "2026-11-21T22:58:00Z", at="2026-11-18T16:06:00+01:00", text="Fixing it")}
+# Written down on the 21st from words of the 18th: the stamp is the words'
+# time, in UTC, under the version the task has now, and nothing else.
+for origin in ({"ref": MESSAGE + "/s1"}, MESSAGE + "/s1"):
+    task = made(origin)
+    host = Host({TASK: {"m": task}, MESSAGE: said_at})
+    assert stamporigin.main(delivery(task), host) == {"output": {"stamped": "2026-11-18T15:06:00Z"}}
+    assert host.effects.staged == [("patch", TASK, "m", {"originAt": "2026-11-18T15:06:00Z"}, {"if_version": 3, "on_conflict": "yield"})], host.effects.staged
+# Two clocks: a message stamped a minute after the task made from it is still its origin.
+task = made(MESSAGE + "/s3")
+host = Host({TASK: {"m": task}, MESSAGE: {"s3": record(MESSAGE, "s3", "2026-11-21T23:00:00Z", at="2026-11-21T23:00:30Z")}})
+assert stamporigin.main(delivery(task), host) == {"output": {"stamped": "2026-11-21T23:00:30Z"}}
+# An id may hold slashes: the kind is the first three segments.
+assert stamporigin.split("whoop.example/health/sleep/ada/1047392") == ("whoop.example/health/sleep", "ada/1047392")
+assert stamporigin.split("ada.example.com/chat/message") == (None, None)
+# Nothing is written for a task that has its time, one stamped since the
+# delivery was made, one whose origin changed meanwhile, an origin that is
+# gone, one on no timeline (its own createdAt is when a mirror wrote it down,
+# never when it was said), one of a kind this repository does not hold, an
+# origin later than the task itself (a meeting that had not happened when
+# the task was written), or a task with no origin.
+for task, now, store in [
+    (made(MESSAGE + "/s1", originAt="2026-11-18T15:06:00Z"), None, {MESSAGE: said_at}),
+    (made(MESSAGE + "/s1"), made(MESSAGE + "/s1", originAt="2026-11-17T09:00:00Z"), {MESSAGE: said_at}),
+    (made(MESSAGE + "/s1"), made(MESSAGE + "/s2"), {MESSAGE: said_at}),
+    (made(MESSAGE + "/gone"), None, {MESSAGE: said_at}),
+    (made(NOTE + "/n1"), None, {NOTE: {"n1": record(NOTE, "n1", "2026-11-01T09:00:00Z", text="No time of its own")}}),
+    (made("elsewhere.example/chat/message/s1"), None, {MESSAGE: said_at}),
+    (made(MESSAGE + "/later"), None, {MESSAGE: {"later": record(MESSAGE, "later", "2026-11-21T22:58:00Z", at="2026-11-24T10:00:00Z")}}),
+    (record(TASK, "m", "2026-11-21T22:59:00Z", status="open", name="Typed"), None, {MESSAGE: said_at}),
+]:
+    store = dict(store)
+    store[TASK] = {"m": now or task}
+    host = Host(store)
+    out = stamporigin.main(delivery(task), host)
+    assert "skipped" in out["output"] and host.effects.staged == [], (out, host.effects.staged)
 print("ok")
 `

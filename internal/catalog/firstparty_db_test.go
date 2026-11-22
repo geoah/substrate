@@ -273,8 +273,8 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 		moss            = "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss"
 	)
 	shipped := []string{
-		"today-suggest", "today-suggested-task", "today-add", "today-existing", "today-urgent", "today-durations",
-		"today-object-once", "today-sources", "today-voice", "today-glance",
+		"today-suggest", "today-suggested-task", "today-add", "today-correct", "today-existing", "today-urgent",
+		"today-durations", "today-dates", "today-object-once", "today-sources", "today-voice", "today-glance",
 	}
 	for _, id := range shipped {
 		row, err := ds.Get(ctx, instructionKind, id)
@@ -292,6 +292,7 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 		"today-prepare-on-urgent":       "substrate.reamde.dev/core/function/" + todayID + "/prepare",
 		"today-preparer-on-preparation": "substrate.reamde.dev/core/agent/" + todayID + "/preparer",
 		"today-stamp-on-urgentcheck":    "substrate.reamde.dev/core/function/" + todayID + "/stampurgent",
+		"today-stamp-on-origin":         "substrate.reamde.dev/core/function/" + todayID + "/stamporigin",
 	} {
 		row, err := ds.Get(ctx, triggerKind, id)
 		if err != nil {

@@ -19,6 +19,8 @@
 #
 #   fade         daily: a suggested task nobody answered in two weeks is
 #                abandoned. The owner's rule carried out by an automation.
+#                The two weeks run from when what it came from was said (the
+#                task's `originAt`), not from when the suggestion was written.
 #   prepare      works out what has not been prepared yet and asks for it,
 #                as a `preparation` record. It calls no model itself.
 #   preparer     an agent, run by a trigger on `preparation` with the record
@@ -27,6 +29,8 @@
 #                else: it reads what other people wrote, so it holds no write
 #                on a task or a list.
 #   stampurgent  stamps a task with the preparer's verdict on its urgent mark.
+#   stamporigin  stamps a task that names its origin with when that was said,
+#                where its maker left `originAt` out.
 #
 # THE PREPARER IS NOT THE OWNER'S ASSISTANT. It runs on a mid-priced model
 # under a daily cap of its own, on the provider bound to this bundle's
@@ -52,10 +56,16 @@ data:
   # 3: the instruction `today-add`: a to-do the owner gives the assistant is
   # an open task for today, since a day planner's field sends all it is given
   # to the assistant.
-  version: 3
+  # 4: `correction`, the owner's words on a suggestion that was wrong, with
+  # the instruction `today-correct`; a suggestion's age is counted from the
+  # task's `originAt` (tasks 5), when what it came from was said, in `fade`
+  # and in the order `prepare` asks for advice, and `stamporigin` writes it
+  # from the origin where a task's maker did not; the instruction
+  # `today-dates` and the preparer write a day as its date.
+  version: 4
 ---
 # ---- the bundle document: the install unit ------------------------------------
-# Ten kinds, three functions and one agent. The triggers (triggers.yaml) and
+# Eleven kinds, four functions and one agent. The triggers (triggers.yaml) and
 # the assistant's instructions (instructions.yaml) are data: an upgrade
 # replaces one only where its owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
@@ -84,7 +94,9 @@ data:
     - substrate.reamde.dev/today/rule
     - substrate.reamde.dev/today/preparation
     - substrate.reamde.dev/today/urgentcheck
+    - substrate.reamde.dev/today/correction
     - substrate.reamde.dev/today/fade
     - substrate.reamde.dev/today/prepare
     - substrate.reamde.dev/today/stampurgent
+    - substrate.reamde.dev/today/stamporigin
     - substrate.reamde.dev/today/preparer

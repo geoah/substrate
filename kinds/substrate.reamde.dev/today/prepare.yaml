@@ -55,8 +55,8 @@ data:
 
     A schedule fire is the half-hourly pass: once the owner's clock passes
     their `prepareAt`, one `preparation` record for the day (meetings and
-    flags); and, at most every two hours, one for the newest suggested tasks
-    that have no advice. A record delivery names one task whose urgent mark
+    flags); and, at most every two hours, one for the suggested tasks most
+    lately said that have no advice. A record delivery names one task whose urgent mark
     nobody has checked. Every ask says exactly what to write and where.
     """
 
@@ -134,12 +134,23 @@ data:
         return out
 
 
-    def without_advice(tasks, advised):
-        """The suggested tasks no advice names, newest first: the oldest are
-        the ones about to fade."""
+    EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+    def _said(host, task):
+        """When a suggestion's matter dates from, as `fade` counts it: the
+        task's `originAt`, the time of what it was made from, and else when
+        the row was written."""
+        origin = host.observed.parse_instant((task.get("properties") or {}).get("originAt") or "")
+        return origin or host.observed.parse_instant(task.get("createdAt") or "") or EPOCH
+
+
+    def without_advice(host, tasks, advised):
+        """The suggested tasks no advice names, the most lately said first:
+        the oldest are the ones about to fade."""
         have = set(advised)
         waiting = [t for t in tasks if t.get("id") not in have]
-        waiting.sort(key=lambda t: (t.get("createdAt") or "", t.get("id") or ""), reverse=True)
+        waiting.sort(key=lambda t: (_said(host, t), t.get("id") or ""), reverse=True)
         return waiting
 
 
@@ -161,7 +172,7 @@ data:
         tasks = _all(host, [TASK], {"status": {"eq": "proposed"}}, limit=MAX_SUGGESTED, order="createdAt:desc,id")
         if not tasks:
             return []
-        return without_advice(tasks, _advised(host, tasks))
+        return without_advice(host, tasks, _advised(host, tasks))
 
 
     def _name(task):

@@ -1,9 +1,18 @@
 # ---- suggestions nobody answered ---------------------------------------------
 # Fired by `today-fade-daily` (triggers.yaml). A suggested task is one whose
-# status is `proposed`; one still there two weeks after it was written was
+# status is `proposed`; one still there two weeks after it was said was
 # never answered, and is abandoned. What was said stays where it was said:
 # only the suggestion goes. An automation carrying out the owner's rule, not
 # the assistant.
+#
+# TWO WEEKS FROM WHEN IT WAS SAID, NOT FROM WHEN IT WAS WRITTEN (today 4). A
+# suggestion is often written later than its words: an agent reads a day's
+# messages at night, and an importer carries months of them over in a
+# minute, after which every one of them was two weeks from fading whatever
+# its age. So the age is counted from the task's `originAt` (tasks 5), the
+# time of what it was made from, and from the row's `createdAt` only where
+# the task carries none. An `originAt` later than now is not believed, and
+# reads as the creation time.
 #
 # IT DOES NOTHING UNTIL AN APP HAS BEEN OPENED. The rule is the day
 # planner's, so it holds only where one is in use: a repository that added
@@ -20,9 +29,9 @@ data:
   authority: substrate.reamde.dev
   package: today
   description: >-
-    Abandon each suggested task nobody answered within two weeks of its being
-    suggested, and delete the day planner's own preparation records of that
-    age. It does nothing until the owner has opened a day planner.
+    Abandon each suggested task nobody answered within two weeks of what it
+    came from being said, and delete the day planner's own preparation records
+    of that age. It does nothing until the owner has opened a day planner.
   runtime: python
   timeout: PT30S
   effect: write
@@ -42,11 +51,12 @@ data:
     """Suggested tasks nobody answered fade after two weeks.
 
     One schedule fire reads the tasks still `proposed` and abandons each one
-    created more than AFTER ago, under the version it read: a task the owner
-    answers while this runs is left alone (`on_conflict="yield"` settles the
-    whole fire as a skip, and the next day's fire takes what is left). It
-    also deletes this package's own `preparation` records of that age. It
-    does neither until the owner's `preference` record exists.
+    said more than AFTER ago (its `originAt`, else when it was created),
+    under the version it read: a task the owner answers while this runs is
+    left alone (`on_conflict="yield"` settles the whole fire as a skip, and
+    the next day's fire takes what is left). It also deletes this package's
+    own `preparation` records of that age. It does neither until the owner's
+    `preference` record exists.
     """
 
     import datetime
@@ -64,9 +74,15 @@ data:
         return at or datetime.datetime.now(datetime.timezone.utc)
 
 
-    def _old(host, record, cutoff):
+    def said(host, record, now):
+        """When a record's matter dates from: a task's `originAt`, the time
+        of what it was made from, and else when the row was created. An
+        `originAt` after `now` is a writer's mistake and is not believed."""
         created = host.observed.parse_instant(record.get("createdAt") or "")
-        return created is not None and created <= cutoff
+        origin = host.observed.parse_instant((record.get("properties") or {}).get("originAt") or "")
+        if origin is not None and origin <= now:
+            return origin
+        return created
 
 
     def _pages(host, kinds, where=None):
@@ -90,11 +106,14 @@ data:
                 return
 
 
-    def faded(host, records, cutoff):
-        """The records created at or before `cutoff`, oldest first."""
-        old = [r for r in records if _old(host, r, cutoff)]
-        old.sort(key=lambda r: r.get("createdAt") or "")
-        return old
+    def faded(host, records, now):
+        """The records whose matter is AFTER old or more at `now`, oldest
+        first."""
+        cutoff = now - AFTER
+        dated = [(said(host, r, now), r) for r in records]
+        old = [(at, r) for at, r in dated if at is not None and at <= cutoff]
+        old.sort(key=lambda pair: (pair[0], pair[1].get("id") or ""))
+        return [r for _, r in old]
 
 
     def in_use(host):
@@ -110,12 +129,12 @@ data:
     def main(input, host):
         if not in_use(host):
             return {"output": {"skipped": "no day preference yet"}}
-        cutoff = _now(host, input) - AFTER
-        tasks = faded(host, _pages(host, [TASK], {"status": {"eq": "proposed"}}), cutoff)[:LIMIT]
+        now = _now(host, input)
+        tasks = faded(host, _pages(host, [TASK], {"status": {"eq": "proposed"}}), now)[:LIMIT]
         for task in tasks:
             host.effects.patch(TASK, task["id"], properties={"status": "abandoned"},
                                if_version=host.version(task), on_conflict="yield")
-        asked = faded(host, _pages(host, [PREPARATION]), cutoff)[:LIMIT]
+        asked = faded(host, _pages(host, [PREPARATION]), now)[:LIMIT]
         for record in asked:
             host.effects.delete(PREPARATION, record["id"])
         return {"output": {"abandoned": len(tasks), "deleted": len(asked)}}

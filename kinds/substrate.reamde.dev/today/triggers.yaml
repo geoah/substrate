@@ -106,3 +106,26 @@ data:
           - update
         when: record != null
     callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/stampurgent
+---
+# A task that names what it was made from and not when that was said: the
+# time is read off the origin (stamporigin.yaml). The guard stops passing
+# once the stamp is there, and a task whose origin has no time is tried
+# again only when the task next changes.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: today-stamp-on-origin
+data:
+  properties:
+    enabled: true
+    label: A task made from something is stamped with when that was said
+    source:
+      record:
+        kinds:
+          - substrate.reamde.dev/tasks/task
+        ops:
+          - create
+          - update
+        when: >-
+          record != null && "origin" in record.properties && !("originAt"
+          in record.properties)
+    callable: substrate.reamde.dev/core/function/substrate.reamde.dev/today/stamporigin

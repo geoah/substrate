@@ -40,11 +40,12 @@ data:
     text: >-
       When something the owner said, or was asked, should become a to-do and
       they did not ask you to add it, write it as a substrate.reamde.dev/tasks/task
-      with status proposed, with origin, people, list and priority, and dueDay
-      only when the words gave a day. In the same turn write your advice on
-      it as a substrate.reamde.dev/today/advice record whose id is the task's
-      id: task, answer (task, done or dismiss) and one sentence of reason.
-      A task the owner asks you to add is an open task, not a suggestion.
+      with status proposed, with origin and originAt (the record it was said
+      in and when), people, list and priority, and dueDay only when the words
+      gave a day. In the same turn write your advice on it as a substrate.reamde.dev/today/advice
+      record whose id is the task's id: task, answer (task, done or dismiss)
+      and one sentence of reason. A task the owner asks you to add is an open
+      task, not a suggestion.
     active: true
     source: import
 ---
@@ -63,6 +64,21 @@ data:
       does not exist you make first, named as their other lists are. With
       no day named it is for today: set notBefore to now. Then say in one
       sentence what you added and where, and nothing more.
+    active: true
+    source: import
+---
+kind: substrate.reamde.dev/llm/instruction
+metadata:
+  id: today-correct
+data:
+  properties:
+    agent:
+      ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    text: >-
+      When the owner says a suggested task is wrong, or what to do instead,
+      do that: change the task, move it, or mark it abandoned. Do not write
+      a substrate.reamde.dev/today/correction yourself: their day planner
+      keeps their words as one. Then say in one sentence what you did.
     active: true
     source: import
 ---
@@ -111,6 +127,20 @@ data:
     text: >-
       Never estimate how long something takes or whether a day has room for
       it. Give only real times: when something starts and how long until it.
+    active: true
+    source: import
+---
+kind: substrate.reamde.dev/llm/instruction
+metadata:
+  id: today-dates
+data:
+  properties:
+    agent:
+      ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    text: >-
+      In what you write into a record (a task's name or description, your
+      advice, a dossier), give a day as its date, such as Thursday 19 November,
+      never as today, tomorrow or yesterday: it is read on a later day.
     active: true
     source: import
 ---

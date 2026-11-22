@@ -133,9 +133,9 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 			kinds: []string{
 				todayPackage + "/preference", todayPackage + "/plan", todayPackage + "/advice", todayPackage + "/digest",
 				todayPackage + "/reviewmark", todayPackage + "/dossier", todayPackage + "/returnpoint", todayPackage + "/rule",
-				todayPackage + "/preparation", todayPackage + "/urgentcheck",
+				todayPackage + "/preparation", todayPackage + "/urgentcheck", todayPackage + "/correction",
 			},
-			functions: []string{todayPackage + "/fade", todayPackage + "/prepare", todayPackage + "/stampurgent"},
+			functions: []string{todayPackage + "/fade", todayPackage + "/prepare", todayPackage + "/stampurgent", todayPackage + "/stamporigin"},
 			// What is asked for is prepared by the package's own agent,
 			// never the owner's assistant: its spend and its writes are
 			// its own.
@@ -145,6 +145,7 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 				"today-prepare-on-urgent":       vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/prepare",
 				"today-preparer-on-preparation": vocabulary.CoreKind(vocabulary.DocAgent) + "/" + todayPackage + "/preparer",
 				"today-stamp-on-urgentcheck":    vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/stampurgent",
+				"today-stamp-on-origin":         vocabulary.CoreKind(vocabulary.DocFunction) + "/" + todayPackage + "/stamporigin",
 			},
 		},
 		{

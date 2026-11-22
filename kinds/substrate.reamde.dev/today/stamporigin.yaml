@@ -1,0 +1,110 @@
+# ---- when a task's origin was said, stamped on the task -------------------------
+# Fired by `today-stamp-on-origin` (triggers.yaml) for a task that names an
+# `origin` and carries no `originAt` (tasks 5). Whoever writes `origin` is
+# meant to write `originAt` beside it; a model writing a suggestion does not
+# always, and an older writer never did. So the rule is held here, by a body
+# and not by a prompt: the time is read off the origin itself.
+#
+# THE TIME OF A RECORD IS ITS `at`: the point every kind on the timeline
+# carries (core's `temporal`), which is when a message was sent, a mail
+# arrived, a meeting began. An origin with no `at` has no time of its own,
+# and the task is left without one: a reader then falls back to when the
+# task was written, and says so. The origin's own `createdAt` is never used:
+# it is when a mirror wrote the row down, which for a backfilled year of
+# mail is one afternoon.
+#
+# A TASK IS WRITTEN AFTER ITS WORDS, NEVER BEFORE THEM. An origin whose time
+# is later than the task (a meeting next week that someone asked the owner
+# to prepare for) is not when the matter was said, and stamps nothing.
+#
+# The origin is any kind, so the read grant is every kind; the write is the
+# one stamp on the task, under the version this body read.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/today/stamporigin
+data:
+  authority: substrate.reamde.dev
+  package: today
+  description: >-
+    Stamp a task that names what it was made from with when that was said
+    or happened, read off that record, where the task's maker left it out.
+    It changes nothing else on the task.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  permissions:
+    reads:
+      kinds:
+        - "*"
+      budgets:
+        calls: 4
+        rows: 4
+    writes:
+      - substrate.reamde.dev/tasks/*
+  source: |
+    """A task's `originAt` is its origin's own time.
+
+    One delivery is one task that names an `origin` and carries no
+    `originAt`. The origin is read by its full reference and its `at` is
+    written on the task as `originAt`, under the version the task had when
+    this body read it. Nothing is written where the origin is gone, sits on
+    no timeline, or says a time later than the task itself.
+    """
+
+    import datetime
+
+    # Two clocks: an origin may say a few minutes later than the task made
+    # from it and still be what the task was made from.
+    SLACK = datetime.timedelta(minutes=5)
+
+
+    def split(path):
+        """A record's full reference as (kind, id): the kind is its first
+        three segments and the id the rest, which may hold slashes itself."""
+        parts = (path or "").split("/")
+        if len(parts) < 4 or not all(parts[:3]) or not "/".join(parts[3:]):
+            return None, None
+        return "/".join(parts[:3]), "/".join(parts[3:])
+
+
+    def path_of(value):
+        """A stored reference in either spelling: {"ref": path} or the path."""
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return value if isinstance(value, str) else ""
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        task = envelope.get("record") or {}
+        change = envelope.get("change") or {}
+        kind, id = task.get("kind") or change.get("kind"), task.get("id") or change.get("id")
+        props = task.get("properties") or {}
+        if not kind or not id or props.get("originAt"):
+            return {"output": {"skipped": "nothing to stamp"}}
+        origin_kind, origin_id = split(path_of(props.get("origin")))
+        if not origin_kind:
+            return {"output": {"skipped": "no origin"}}
+        try:
+            origin = host.records.get(origin_kind, origin_id)
+            # The delivery carries the task as it was when it changed: the
+            # stamp is written under the version it has now, and not at all
+            # where someone has stamped it since.
+            current = host.records.get(kind, id)
+        except Exception as error:  # noqa: BLE001
+            if "unknown type" not in str(error):
+                host.log("stamporigin: %s/%s is not read: %s" % (kind, id, error))
+            return {"output": {"skipped": "not read"}}
+        if current is None or (current.get("properties") or {}).get("originAt"):
+            return {"output": {"skipped": "nothing to stamp"}}
+        if path_of((current.get("properties") or {}).get("origin")) != path_of(props.get("origin")):
+            return {"output": {"skipped": "the origin changed"}}
+        at = host.observed.parse_instant(((origin or {}).get("properties") or {}).get("at") or "")
+        if at is None:
+            return {"output": {"skipped": "the origin has no time"}}
+        written = host.observed.parse_instant(current.get("createdAt") or "")
+        if at > (written or datetime.datetime.now(datetime.timezone.utc)) + SLACK:
+            return {"output": {"skipped": "the origin is later than the task"}}
+        host.effects.patch(kind, id, properties={"originAt": host.observed.instant(at)},
+                           if_version=host.version(current), on_conflict="yield")
+        return {"output": {"stamped": host.observed.instant(at)}}
