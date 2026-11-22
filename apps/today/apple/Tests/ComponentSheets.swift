@@ -111,28 +111,16 @@ enum ComponentSheets {
     static var finish: some View {
         Group {
             Case(caption: "A task's closed row ends with its tick; its flag is the stripe alone", carded: false) {
-                VStack(spacing: 0) {
-                    RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
-                    RowView(row: finishing("f2", "Renew the passport"), first: false)
-                }
-                .soft()
+                PaneItemsView(items: [.row(finishing("f1", "Test the drive caddies", flag: .high)), .row(finishing("f2", "Renew the passport"))])
             }
             Case(caption: "Pressed: for three seconds the tick is a ring that drains around the undo arrow", carded: false) {
                 Finishes([.done("f1")], after: 1.2) {
-                    VStack(spacing: 0) {
-                        RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
-                        RowView(row: finishing("f2", "Renew the passport"), first: false)
-                    }
-                    .soft()
+                    PaneItemsView(items: [.row(finishing("f1", "Test the drive caddies", flag: .high)), .row(finishing("f2", "Renew the passport"))])
                 }
             }
             Case(caption: "Counted down: crossed out with its tick filled for two more seconds, and still taken back by a tap", carded: false) {
                 Finishes([.done("f1")], after: 4) {
-                    VStack(spacing: 0) {
-                        RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
-                        RowView(row: finishing("f2", "Renew the passport"), first: false)
-                    }
-                    .soft()
+                    PaneItemsView(items: [.row(finishing("f1", "Test the drive caddies", flag: .high)), .row(finishing("f2", "Renew the passport"))])
                 }
             }
             Case(caption: "A button with a word, pressed: it reads Undo and its fill drains; the other way waits") {
@@ -301,57 +289,48 @@ enum ComponentSheets {
     static var row: some View {
         Group {
             Case(caption: "Task, routine", carded: false) {
-                VStack(spacing: 0) {
-                    RowView(
-                        row: h.taskRow(
+                PaneItemsView(items: [
+                    .row(
+                        h.taskRow(
                             "t1", "File the IT ticket for the stopped VMs", "Kenji needs it before Monday.", flag: .high, state: .next,
-                            chips: Chips(project: h.security)))
-                    RowView(
-                        row: Row(
+                            chips: Chips(project: h.security))),
+                    .row(
+                        Row(
                             id: "r", glyph: .routine, title: "Skincare", line: "5 steps", state: .next,
                             trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true)),
-                            body: .routine(RoutineCard(items: [], done: nil, skip: nil))),
-                        first: false)
-                }
-                .soft()
+                            body: .routine(RoutineCard(items: [], done: nil, skip: nil)))),
+                ])
             }
             Case(caption: "A task with no line: its chips stand under its name", carded: false) {
-                VStack(spacing: 0) {
-                    RowView(row: bare("t2", "Test the drive caddies", chips: Chips(project: h.lantern)))
-                    RowView(
-                        row: bare("t3", "Tidy up the hardware shelf", chips: Chips(project: h.lantern, people: [person("maya", "for Maya", "MA")])),
-                        first: false)
-                    RowView(row: bare("t4", "Renew the passport"), first: false)
-                }
-                .soft()
+                PaneItemsView(items: [
+                    .row(bare("t2", "Test the drive caddies", chips: Chips(project: h.lantern))),
+                    .row(bare("t3", "Tidy up the hardware shelf", chips: Chips(project: h.lantern, people: [person("maya", "for Maya", "MA")]))),
+                    .row(bare("t4", "Renew the passport")),
+                ])
             }
             Case(caption: "Meeting: the next fixed point", carded: false) {
-                VStack(spacing: 0) {
-                    MeetingRowView(
-                        meeting: h.meeting(
-                            "m1", "14:20", "14:40", "Tomas", people: ["TV"], line: "Your task: fix the 1:1 clash with Tomas.", until: "in 2 h 50"))
-                    MeetingRowView(meeting: h.meeting("m2", "14:40", "15:00", "Viktor", people: ["VL"], line: "Weekly 1:1.", project: h.lantern), first: false)
-                }
-                .soft()
+                PaneItemsView(items: [
+                    .meeting(
+                        h.meeting("m1", "14:20", "14:40", "Tomas", people: ["TV"], line: "Your task: fix the 1:1 clash with Tomas.", until: "in 2 h 50")),
+                    .meeting(h.meeting("m2", "14:40", "15:00", "Viktor", people: ["VL"], line: "Weekly 1:1.", project: h.lantern)),
+                ])
             }
             Case(caption: "Page: a row that opens a page") {
                 TaskLines(lines: [TaskLine(id: "t", title: "Read the incident write-up", line: "Today.", stripe: Stripe(.medium), opens: .task("t"))])
             }
             Case(caption: "Page, in the day: the suggested tasks and the saved plan", carded: false) {
-                VStack(spacing: 0) {
-                    RowView(
-                        row: Row(
+                PaneItemsView(items: [
+                    .row(
+                        Row(
                             id: "suggested", glyph: .moss, title: "Thirteen suggested tasks to answer",
                             line: "Four on your priorities. Moss would make twelve tasks.", state: .next, trailing: .page(.suggested),
-                            body: .suggested(PageRowCard(line: "", open: ButtonPresentation("Open the suggested tasks", opens: .suggested)))))
-                    RowView(
-                        row: Row(
+                            body: .suggested(PageRowCard(line: "", open: ButtonPresentation("Open the suggested tasks", opens: .suggested))))),
+                    .row(
+                        Row(
                             id: "plan", glyph: .plan, title: "Today's plan", line: "Saved at 08:44. Thirteen tasks. One is left from yesterday.",
                             state: .next, trailing: .page(.plan),
-                            body: .plan(PageRowCard(line: "", open: ButtonPresentation("Open the plan", opens: .plan)))),
-                        first: false)
-                }
-                .soft()
+                            body: .plan(PageRowCard(line: "", open: ButtonPresentation("Open the plan", opens: .plan))))),
+                ])
             }
             Case(caption: "Closed, then open in place", carded: false) {
                 VStack(spacing: 8) {
@@ -384,7 +363,7 @@ enum ComponentSheets {
                 RowView(row: described(state: .now, brief: true))
             }
             Case(caption: "A task with a description, closed: its opening words are its line", carded: false) {
-                RowView(row: described(state: .next)).soft()
+                RowView(row: described(state: .next))
             }
             Case(caption: "The same task opened: all of its description, and the head does not say its opening twice", carded: false) {
                 RowView(row: described(state: .next)).environment(opened("row:task:t-ledger"))

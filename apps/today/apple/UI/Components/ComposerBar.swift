@@ -25,10 +25,12 @@ struct ComposerBar: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(14)
                 .glass(in: RoundedRectangle(cornerRadius: TodayLook.listRadius, style: .continuous), dense: true)
+                .transition(.arrive)
             }
             if let notKept = composer.notKept {
                 Text(notKept).font(TodayLook.Text.footnote).foregroundStyle(.urgentWords)
                     .padding(.horizontal, 14)
+                    .transition(.unfold)
             }
             HStack(spacing: 2) {
                 IconButton(Symbol.add, label: words.add, action: submit)

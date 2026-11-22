@@ -158,18 +158,23 @@ extension ShapeStyle where Self == Color {
     static var cautionFill: Color { TodayLook.cautionFill.color }
 }
 
-/// A card's shadow: soft under a card on a ground.
+/// A card's shadow: soft under a card on a ground. A surface that is a card
+/// only while it is open keeps the shadow and draws it clear while closed
+/// (`shown`), so it comes and goes with the card.
 struct CardShadow: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     var small = false
+    var shown = true
 
     func body(content: Content) -> some View {
         content
-            .shadow(color: .black.opacity(scheme == .dark ? 0.30 : 0.04), radius: 0.5, y: 1)
-            .shadow(color: .black.opacity(scheme == .dark ? 0.36 : (small ? 0.07 : 0.10)), radius: small ? 7 : 14, y: small ? 4 : 10)
+            .shadow(color: .black.opacity(shown ? (scheme == .dark ? 0.30 : 0.04) : 0), radius: shown ? 0.5 : 0, y: shown ? 1 : 0)
+            .shadow(
+                color: .black.opacity(shown ? (scheme == .dark ? 0.36 : (small ? 0.07 : 0.10)) : 0), radius: shown ? (small ? 7 : 14) : 0,
+                y: shown ? (small ? 4 : 10) : 0)
     }
 }
 
 extension View {
-    func cardShadow(small: Bool = false) -> some View { modifier(CardShadow(small: small)) }
+    func cardShadow(small: Bool = false, shown: Bool = true) -> some View { modifier(CardShadow(small: small, shown: shown)) }
 }

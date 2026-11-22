@@ -38,6 +38,7 @@ public enum TodayPresenter {
                 appName: TodayApp.appName, version: build.version, channel: build.channel, offered: state.offered,
                 privacyPolicy: build.privacyPolicy), reminders: reminds ? engine.reminders : [], nextChange: engine.nextChange)
         out.moss = TodaySettings.moss(day)
+        out.writing = state.exchanges.contains { $0.state == .writing }
         return out
     }
 

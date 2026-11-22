@@ -25,8 +25,17 @@ own against the kit.
   still takes it back, then the command is sent. Leaving the foreground, or the screen going away, sends
   everything that waits at once. `Finishing` is a value with no clock: the view says what time it is. A
   command that takes a finish back (`reopen`, `unlog`, `unlogRow`) is sent at once.
+  After a command is sent the view goes on drawing the thing finished until the presentation no longer
+  holds it as something that can be finished, and while it leaves its place, so it is never seen open again
+  between its command and its record.
 - **Whether what is done is shown.** The header of "Earlier today" shows or hides its entries. The device
   keeps the choice across launches, and it starts shown.
+
+- **How it moves.** A view draws every change of the presentation as a move and not a cut: an item of the
+  day keeps one place whatever it is drawn as (`PaneItem.id`), so the row that becomes the current item is
+  the same row growing, and what is finished leaves while the rest closes up. The core says nothing about
+  motion but one fact: `TodayPresentation.writing` is true while an answer from the assistant is arriving a
+  few words at a time, and the view then draws each change at once.
 
 A task's flag is changed in its opened row (the card's Flag door); a closed row has no flag control. When
 that list is closed, or the card is, the view sends `settleFlags`, so the order follows the flags only then.
@@ -35,7 +44,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 
 | Type                                                         | Draws                                                                                                   |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `TodayPresentation`                                          | The root: `pane`, `page(_:)`, the kit's notices, problem, settings, storage and about                   |
+| `TodayPresentation`                                          | The root: `pane`, `page(_:)`, the kit's notices, problem, settings, storage and about, and `writing`    |
 | `PanePresentation`                                           | The day: `strip`, `items` in the order drawn, `ground`, `composer`, `answer`                            |
 | `PaneItem`                                                   | One thing in the timeline: night, earlier, happening, row, meeting, overlap, parked, unfinished, note   |
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |

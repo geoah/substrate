@@ -110,7 +110,7 @@ struct PriorityEntryView: View {
                     controls
                 }
             }
-            if flagOpen { FlagOptionsView(control: entry.flag) }
+            if flagOpen { FlagOptionsView(control: entry.flag).transition(.unfold) }
         }
         .padding(.vertical, 6)
         .rowLine(!first)
@@ -143,7 +143,7 @@ struct PriorityEntryView: View {
         IconButton(
             Symbol.flag, label: "Flag: \(entry.flag.word). Show the three options", small: true, look: flagOpen ? .pressed : .quiet
         ) {
-            withAnimation(.snappy(duration: 0.2)) { state.toggle(flagID) }
+            state.toggle(flagID)
         }
         if let remove = entry.remove { PaneButton(remove).fixedSize() }
     }
@@ -235,11 +235,11 @@ struct ProjectPageView: View {
                     Symbol.flag, label: "Flag: \(flag.word). Show the three options", small: true,
                     look: state.isOpen(flagID) || flag.open ? .pressed : .quiet
                 ) {
-                    withAnimation(.snappy(duration: 0.2)) { state.toggle(flagID) }
+                    state.toggle(flagID)
                 }
             }
         }
-        if let flag = page.flag, state.isOpen(flagID) || flag.open { FlagOptionsView(control: flag) }
+        if let flag = page.flag, state.isOpen(flagID) || flag.open { FlagOptionsView(control: flag).transition(.unfold) }
         if let make = page.makePriority { PaneButton(make) }
         if let stale = page.stale { StaleNoteView(note: stale) }
         if let summary = page.summary { PageText(summary) }
@@ -567,7 +567,7 @@ struct PlanGroupView: View {
                 .frame(minHeight: TodayLook.target)
                 if state.isOpen(moreID) {
                     ForEach(Array(group.more.enumerated()), id: \.element.id) { index, item in
-                        PlanItemView(item: item, first: index == 0)
+                        PlanItemView(item: item, first: index == 0).transition(.unfold)
                     }
                 }
             }
@@ -642,10 +642,10 @@ struct PlanItemView: View {
                 IconButton(
                     Symbol.flag, label: "Flag: \(item.flag.word). Show the three options", small: true, look: flagOpen ? .pressed : .quiet
                 ) {
-                    withAnimation(.snappy(duration: 0.2)) { state.toggle(flagID) }
+                    state.toggle(flagID)
                 }
             }
-            if flagOpen { FlagOptionsView(control: item.flag) }
+            if flagOpen { FlagOptionsView(control: item.flag).transition(.unfold) }
         }
         .padding(.vertical, 8)
         .rowLine(!first)

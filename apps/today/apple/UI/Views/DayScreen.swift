@@ -1,3 +1,4 @@
+import SubstrateScreens
 import SubstrateUI
 import SwiftUI
 import TodayCore
@@ -19,6 +20,7 @@ struct DayScreen<Notices: View>: View {
     @Environment(\.colorScheme) private var system
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduced
 
     /// - Parameters:
     ///   - path: the pages open at first, for a gallery that draws one.
@@ -47,13 +49,21 @@ struct DayScreen<Notices: View>: View {
     }
 
     var body: some View {
+        let page = path.last.map { app.page($0) }
         GeometryReader { proxy in
             let wide = proxy.size.width >= 900
             ZStack {
                 GroundView(ground: app.pane.ground)
-                if wide { wideLayout } else { narrowLayout }
+                if wide { wideLayout(page) } else { narrowLayout(page) }
             }
         }
+        // What the day changes by itself moves as what a tap changes does (`Motion`): the current item is
+        // finished and the next takes its place, an answer arrives over the field, a line of the night is
+        // read. While an answer is being written the day changes with every word, and is drawn at once.
+        .animation(app.writing ? nil : Motion.panel(still: reduced), value: Drawn(pane: app.pane, page: page, notices: app.notices))
+        .onChange(of: reduced, initial: true) { _, reduced in state.reduced = reduced }
+        // What was just sent is in the day now: it is drawn from its records again.
+        .onChange(of: app.pane) { _, pane in state.followed(open: pane.unfinished) }
         .environment(state)
         .environment(\.pane, actions)
         .environment(\.words, app.words)
@@ -84,7 +94,7 @@ struct DayScreen<Notices: View>: View {
             },
             open: { route in
                 guard path.last != route else { return }
-                withAnimation(.snappy(duration: 0.25)) { path.append(route) }
+                withAnimation(state.motion) { path.append(route) }
             },
             openURL: { address in
                 if let url = URL(string: address) { openURL(url) }
@@ -93,18 +103,26 @@ struct DayScreen<Notices: View>: View {
 
     private func back() {
         guard !path.isEmpty else { return }
-        withAnimation(.snappy(duration: 0.25)) { _ = path.removeLast() }
+        withAnimation(state.motion) { _ = path.removeLast() }
     }
 
     // MARK: A phone
 
-    @ViewBuilder private var narrowLayout: some View {
-        if let route = path.last {
-            PageView(page: app.page(route), back: back) { field }
+    /// A page comes in from the trailing edge over the day and leaves the
+    /// way it came; with Reduce Motion it fades in its place. The day stays
+    /// where it is under the page and fades as the page covers it, so the
+    /// screen is never empty between the two, and going back is to where
+    /// the day was scrolled.
+    @ViewBuilder private func narrowLayout(_ page: PagePresentation?) -> some View {
+        day
+            .opacity(page == nil ? 1 : 0)
+            .allowsHitTesting(page == nil)
+            .accessibilityHidden(page != nil)
+        if let route = path.last, let page {
+            PageView(page: page, back: back) { field }
                 .id(route)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-        } else {
-            day
+                .transition(reduced ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                .zIndex(1)
         }
     }
 
@@ -117,19 +135,20 @@ struct DayScreen<Notices: View>: View {
 
     @ViewBuilder private var field: some View {
         // Above the keyboard it would lie over the field being typed in.
-        if !state.writing { ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom) }
+        if !state.writing { ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom).transition(.opacity) }
     }
 
     // MARK: A wide screen
 
-    private var wideLayout: some View {
+    private func wideLayout(_ page: PagePresentation?) -> some View {
         HStack(alignment: .top, spacing: 0) {
             day.frame(minWidth: 420, idealWidth: 640, maxWidth: 700)
-            Group {
-                if let route = path.last {
-                    side(for: app.page(route), back: back).id(route)
+            // One page fades as the next comes, beside the day.
+            ZStack(alignment: .top) {
+                if let route = path.last, let page {
+                    side(for: page, back: back).id(route).transition(.opacity)
                 } else {
-                    side(for: app.page(.projects), back: nil)
+                    side(for: app.page(.projects), back: nil).transition(.opacity)
                 }
             }
             .frame(minWidth: 340, idealWidth: 420, maxWidth: 520)
@@ -151,6 +170,30 @@ struct DayScreen<Notices: View>: View {
             PageView(page: page, back: back) { EmptyView() }
         }
     }
+}
+
+extension PanePresentation {
+    /// What in the day can still be finished, as a finish names it
+    /// (`TodayCommand.finishing`): every row that is not done, and each
+    /// item of a routine that is not logged.
+    var unfinished: Set<String> {
+        var out: Set<String> = []
+        for case let .row(row) in items where row.state != .done {
+            out.insert(row.id)
+            if case let .routine(card) = row.body {
+                for item in card.items where item.logged == nil { out.insert(item.id) }
+            }
+        }
+        return out
+    }
+}
+
+/// What is on the screen from the day's records: when it changes, what
+/// changed is seen to move (`Motion`).
+private struct Drawn: Equatable {
+    var pane: PanePresentation
+    var page: PagePresentation?
+    var notices: [NoticeLine]
 }
 
 extension DayScreen where Notices == EmptyView {

@@ -17,7 +17,6 @@ struct PaneView<Header: View>: View {
     @Environment(\.words) private var words
 
     var body: some View {
-        let blocks = PaneBlock.blocks(of: pane.items, open: state.opened)
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: TodayLook.gap) {
@@ -27,12 +26,9 @@ struct PaneView<Header: View>: View {
                         Text(empty).font(TodayLook.Text.body).foregroundStyle(.inkSecond)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .card()
+                            .transition(.arrive)
                     }
-                    ForEach(blocks) { block in
-                        PaneBlockView(block: block).id(block.id)
-                    }
-                    // What is finished moves to what is done, and the rest closes up.
-                    .animation(.snappy(duration: 0.3), value: pane.items.map(\.id))
+                    if !pane.items.isEmpty { PaneItemsView(items: pane.items) }
                     if let openSettings {
                         Button(action: openSettings) {
                             HStack(spacing: 6) {
@@ -51,13 +47,11 @@ struct PaneView<Header: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: pane.composer.added) { _, added in
-                // The task the field just made: the day scrolls to its row,
-                // which in a list of closed rows has a name of its own.
-                guard let added, let block = blocks.first(where: { $0.holds("row:" + added) }) else { return }
-                let row = if case .rows = block.kind { PaneBlock.within(added) } else { block.id }
+                // The task the field just made: the day scrolls to its row.
+                guard let row = added.map({ "row:" + $0 }), pane.items.contains(where: { $0.id == row }) else { return }
                 // After this update is laid out: a row drawn in the same
                 // update has no place to scroll to yet.
-                Task { @MainActor in withAnimation { proxy.scrollTo(row, anchor: .center) } }
+                Task { @MainActor in withAnimation(state.motion) { proxy.scrollTo(row, anchor: .center) } }
             }
         }
     }
@@ -69,86 +63,86 @@ extension PaneView where Header == EmptyView {
     }
 }
 
-/// The items as they are drawn: a card for each thing in full, and one
-/// list for each run of lines of a kind, so closed rows share a surface and
-/// a hairline as a list does.
-struct PaneBlock: Identifiable {
-    enum Kind {
-        case item(PaneItem)
-        case rows([Row])
-        case meetings([MeetingRow])
-    }
+/// The run of closed lines a thing of the day belongs to: lines of one run
+/// that follow each other share a surface and a hairline, as a list does.
+enum PaneRun: Equatable {
+    case rows
+    case meetings
+    /// The small lines of what is done.
+    case lines
 
-    var id: String
-    var kind: Kind
-
-    /// What a row inside a list of closed rows is called for scrolling: the
-    /// list itself carries its first row's name.
-    static func within(_ row: String) -> String { "within:" + row }
-
-    func holds(_ item: String) -> Bool {
-        switch kind {
-        case let .item(one): one.id == item
-        case let .rows(rows): rows.contains { "row:" + $0.id == item }
-        case let .meetings(meetings): meetings.contains { "meeting:" + $0.id == item }
+    /// Each thing's place in its run, from what each is: nil for a thing
+    /// drawn by itself, which joins nothing.
+    static func joins(_ runs: [PaneRun?]) -> [Joins] {
+        runs.indices.map { index in
+            guard let run = runs[index] else { return Joins() }
+            return Joins(above: index > 0 && runs[index - 1] == run, below: index + 1 < runs.count && runs[index + 1] == run)
         }
     }
 
-    static func blocks(of items: [PaneItem], open: Set<String>) -> [PaneBlock] {
-        var out: [PaneBlock] = []
-        for item in items {
-            switch item {
-            case let .row(row) where !(row.state == .now || open.contains("row:" + row.id)):
-                if case let .rows(rows)? = out.last?.kind {
-                    out[out.count - 1].kind = .rows(rows + [row])
-                } else {
-                    out.append(PaneBlock(id: item.id, kind: .rows([row])))
-                }
-            case let .meeting(meeting) where meeting.off || !(meeting.leads || open.contains("meeting:" + meeting.id)):
-                if case let .meetings(meetings)? = out.last?.kind {
-                    out[out.count - 1].kind = .meetings(meetings + [meeting])
-                } else {
-                    out.append(PaneBlock(id: item.id, kind: .meetings([meeting])))
-                }
-            default:
-                out.append(PaneBlock(id: item.id, kind: .item(item)))
-            }
+    /// The run an item is drawn in while it is closed.
+    static func of(_ item: PaneItem, open: Set<String>) -> PaneRun? {
+        switch item {
+        case let .row(row) where !(row.state == .now || open.contains("row:" + row.id)): .rows
+        case let .meeting(meeting) where meeting.off || !(meeting.leads || open.contains("meeting:" + meeting.id)): .meetings
+        default: nil
         }
-        return out
     }
 }
 
-struct PaneBlockView: View {
-    var block: PaneBlock
+/// One thing of the day as it is drawn: the item, and where it stands
+/// among the closed lines around it. Every item has a place of its own in
+/// the day and keeps it, opened or closed, a line or the current item: a
+/// list of closed rows is the look of rows that follow each other, not a
+/// view that holds them. So a row that opens, closes or becomes the
+/// current item is the same thing changing, and is seen to change.
+struct PaneSlot: Identifiable {
+    var item: PaneItem
+    var joins = Joins()
+
+    var id: String { item.id }
+
+    static func slots(of items: [PaneItem], open: Set<String>) -> [PaneSlot] {
+        let joins = PaneRun.joins(items.map { PaneRun.of($0, open: open) })
+        return zip(items, joins).map { PaneSlot(item: $0, joins: $1) }
+    }
+}
+
+/// The day's items from top to bottom, one place each, whatever each is
+/// drawn as: what is finished leaves, the next takes its place and grows
+/// into the current item, and the rest closes up (`Motion`).
+struct PaneItemsView: View {
+    var items: [PaneItem]
+
+    @Environment(PaneViewState.self) private var state
 
     var body: some View {
-        switch block.kind {
-        case let .rows(rows):
-            VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    RowView(row: row, first: index == 0).id(PaneBlock.within(row.id))
-                }
+        let slots = PaneSlot.slots(of: items, open: state.opened)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(slots) { slot in
+                PaneSlotView(slot: slot)
+                    .padding(.top, slot.joins.above || slot.id == slots.first?.id ? 0 : TodayLook.gap)
+                    .id(slot.id)
+                    .transition(.arrive)
             }
-            .soft()
-        case let .meetings(meetings):
-            VStack(spacing: 0) {
-                ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
-                    MeetingRowView(meeting: meeting, first: index == 0)
-                }
-            }
-            .soft()
-        case let .item(item):
-            switch item {
-            case let .night(night): NightView(night: night)
-            case let .earlier(earlier): EarlierView(earlier: earlier)
-            case let .happening(happening): HappeningView(happening: happening)
-            case let .row(row): RowView(row: row)
-            case let .meeting(meeting): MeetingRowView(meeting: meeting)
-            case let .overlap(block): OverlapBlockView(block: block)
-            case let .parked(line): ParkedLineView(line: line)
-            case let .unfinished(card): UnfinishedCardView(card: card)
-            case let .note(note): NoteLineView(note: note)
-            }
+        }
+    }
+}
+
+struct PaneSlotView: View {
+    var slot: PaneSlot
+
+    var body: some View {
+        switch slot.item {
+        case let .night(night): NightView(night: night)
+        case let .earlier(earlier): EarlierView(earlier: earlier)
+        case let .happening(happening): HappeningView(happening: happening)
+        case let .row(row): RowView(row: row, joins: slot.joins)
+        case let .meeting(meeting): MeetingRowView(meeting: meeting, joins: slot.joins)
+        case let .overlap(block): OverlapBlockView(block: block)
+        case let .parked(line): ParkedLineView(line: line)
+        case let .unfinished(card): UnfinishedCardView(card: card)
+        case let .note(note): NoteLineView(note: note)
         }
     }
 }

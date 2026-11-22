@@ -321,9 +321,17 @@ struct Folded<Content: View>: View {
         if let brief {
             let all = state.isOpen(id)
             VStack(alignment: .leading, spacing: 6) {
-                content(all)
+                // The opening words and the whole text are two faces: one
+                // fades as the other comes, cut to the room the text has
+                // while that room grows, so nothing is drawn over what
+                // stands under it.
+                Group {
+                    if all { content(true).transition(.face) } else { content(false).transition(.face) }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .clipped()
                 Button {
-                    withAnimation(.snappy(duration: 0.2)) { state.toggle(id) }
+                    state.toggle(id)
                 } label: {
                     HStack(spacing: 6) {
                         Text(all ? brief.less : brief.more)

@@ -221,6 +221,72 @@ struct SoftSurface: ViewModifier {
     }
 }
 
+/// Where a closed line stands among the lines it shares a surface with: a
+/// run of closed rows reads as one list, square where two of them meet.
+struct Joins: Equatable, Sendable {
+    /// A line of the same run stands directly above it.
+    var above = false
+    var below = false
+}
+
+/// The surface of a thing of the day that is a line while it is closed and
+/// a card while it is open. It is one surface whose shape, fill and shadow
+/// change, so opening and closing are seen to happen and nothing is put in
+/// the place of something else. It does not cut what it holds: what opens
+/// under a head waits until the surface has grown over it (`Motion.under`).
+/// The shadow is the surface's own, so nothing on a card casts one.
+struct PanelSurface: ViewModifier {
+    enum Kind: Equatable {
+        /// Closed: the soft surface of a list, square where it joins the
+        /// line above or the line below.
+        case line(Joins)
+        /// Open: a card on the ground. The urgent card's fill and outline
+        /// are the urgent red's.
+        case card(urgent: Bool = false)
+    }
+
+    var kind: Kind
+    /// A closed line's corners where it joins nothing.
+    var radius = TodayLook.listRadius
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
+        content
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background {
+                shape.fill(fill)
+                    .overlay(shape.strokeBorder(Color.urgent.opacity(kind == .card(urgent: true) ? 1 : 0), lineWidth: 1.5))
+                    .cardShadow(shown: isCard)
+            }
+    }
+
+    private var isCard: Bool {
+        if case .card = kind { true } else { false }
+    }
+
+    private var radii: RectangleCornerRadii {
+        switch kind {
+        case .card:
+            return RectangleCornerRadii(
+                topLeading: TodayLook.cardRadius, bottomLeading: TodayLook.cardRadius, bottomTrailing: TodayLook.cardRadius,
+                topTrailing: TodayLook.cardRadius)
+        case let .line(joins):
+            let top = joins.above ? 0 : radius
+            let bottom = joins.below ? 0 : radius
+            return RectangleCornerRadii(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
+        }
+    }
+
+    private var fill: Color {
+        switch kind {
+        case .card(urgent: true): .urgentFill
+        case .card: .card
+        case .line: TodayLook.soft(scheme)
+        }
+    }
+}
+
 /// The control layer: the strip on top of the day and the field at its
 /// bottom. Glass where the system draws it, a translucent fill where it
 /// cannot (a gallery's offscreen window).
@@ -247,6 +313,10 @@ extension View {
     func card(urgent: Bool = false) -> some View { modifier(CardSurface(urgent: urgent)) }
     func soft(radius: CGFloat = TodayLook.listRadius) -> some View { modifier(SoftSurface(radius: radius)) }
     func glass(in shape: some InsettableShape, dense: Bool = false) -> some View { modifier(GlassSurface(shape: shape, dense: dense)) }
+    /// A line while closed, a card while open, on one surface (`PanelSurface`).
+    func panel(_ kind: PanelSurface.Kind, radius: CGFloat = TodayLook.listRadius) -> some View {
+        modifier(PanelSurface(kind: kind, radius: radius))
+    }
 
     /// The hairline between two rows of a list.
     func rowLine(_ show: Bool = true) -> some View { modifier(RowLine(show: show)) }

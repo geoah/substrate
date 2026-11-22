@@ -36,6 +36,8 @@ struct RowHead: View {
                     .strikethrough(struck)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    // The same words at another size are the same words growing, not one title over another.
+                    .contentTransition(.interpolate)
                     .accessibilityAddTraits(size == .line ? [] : .isHeader)
                 if let line {
                     Text(line)
@@ -44,6 +46,8 @@ struct RowHead: View {
                         .multilineTextAlignment(.leading)
                         .lineLimit(lineLimit)
                         .fixedSize(horizontal: false, vertical: true)
+                        // An open row is narrower: its line breaks elsewhere, at once, and no word is seen crossing another.
+                        .contentTransition(.identity)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,12 +76,16 @@ extension Stripe {
 }
 
 /// One row of the day. Closed it is a line of a list; opened in place, or
-/// as the current item, it is a card with its body under its head.
+/// as the current item, it is a card with its body under its head. It is
+/// one view in both: the head stays where it is and grows, the body comes
+/// in under it, and the surface changes from the list's to a card's
+/// (`PanelSurface`), so a row is seen to open, to close, and to become the
+/// current item.
 struct RowView: View {
     @Environment(\.words) private var words
     var row: Row
-    /// Drawn inside a list of lines, which draws the hairline above it.
-    var first = true
+    /// Where it stands among the closed rows around it.
+    var joins = Joins()
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.pane) private var pane
@@ -85,6 +93,8 @@ struct RowView: View {
     private var openID: String { "row:" + row.id }
 
     var isCard: Bool { row.state == .now || state.isOpen(openID) }
+
+    private var lead: Bool { row.state == .now }
 
     /// Crossed out: finished today, or finished a moment ago and not yet
     /// written (`Finishing`), which a tap on its tick still takes back.
@@ -94,88 +104,82 @@ struct RowView: View {
         if case .task = row.body { 3 } else { nil }
     }
 
-    var body: some View {
-        if isCard { card } else { line }
+    /// A row with no flag keeps the stripe's room while it is a line, so
+    /// every row's icon stands on one line down the list.
+    private var insets: EdgeInsets {
+        if isCard { return EdgeInsets(top: TodayLook.inset, leading: TodayLook.inset, bottom: TodayLook.inset, trailing: TodayLook.inset) }
+        return EdgeInsets(top: TodayLook.gap, leading: row.stripe.flag == nil ? 20 : 10, bottom: TodayLook.gap, trailing: 8)
     }
 
-    // MARK: A line
-
-    private var line: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 4) {
                 // The chips stand directly under the words, beside the
                 // trailing control: under it they would wait for its whole
                 // target, a gap on a row with a title and no line.
                 VStack(alignment: .leading, spacing: 4) {
-                    Button {
-                        // A row that opens a page opens it; every other opens in place.
-                        if case let .page(route) = row.trailing {
-                            pane.open(route)
-                        } else {
-                            withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
-                        }
-                    } label: {
-                        // Closed, a row with no line of its own says the opening of what it holds.
-                        RowHead(
-                            icon: .glyph(row.glyph), title: row.title, line: row.line ?? row.opening, stripe: row.stripe, struck: struck,
-                            lineLimit: lineLimit
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(opensPage ? "Opens its page" : "Opens in place")
-                    .accessibilityValue(row.state == .done ? "Finished" : "")
-                    // What is done is one closed line: its chips are in its card.
-                    if !row.chips.isEmpty, row.state != .done {
+                    head
+                    // What is done is one closed line, and an open row says its chips in its card.
+                    if !isCard, !row.chips.isEmpty, row.state != .done {
                         ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))
+                            .transition(.face)
                     }
                 }
                 trailing
             }
+            if isCard { RowBodyView(row: row).transition(.unfold) }
         }
-        // A row with no flag keeps the stripe's room, so every row's icon
-        // stands on one line down the list.
-        .padding(.leading, row.stripe.flag == nil ? 20 : 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, TodayLook.gap)
-        .frame(minHeight: 56, alignment: .top)
-        .rowLine(!first)
+        .padding(insets)
+        .frame(minHeight: isCard ? nil : 56, alignment: .top)
+        .rowLine(!isCard && joins.above)
+        .panel(isCard ? .card(urgent: isUrgent) : .line(joins))
+    }
+
+    // MARK: Its head
+
+    /// The same head closed and open. Closed it is a button over the whole
+    /// line, which opens the row; open it is the card's title and does
+    /// nothing.
+    private var head: some View {
+        Button {
+            guard !isCard else { return }
+            // A row that opens a page opens it; every other opens in place.
+            if case let .page(route) = row.trailing { pane.open(route) } else { state.toggle(openID) }
+        } label: {
+            // Closed, a row with no line of its own says the opening of what it holds.
+            RowHead(
+                icon: .glyph(row.glyph), title: row.title, line: isCard ? (isUrgent ? nil : row.line) : row.line ?? row.opening,
+                stripe: row.stripe, size: isCard ? (lead ? .lead : .open) : .line, struck: struck, lineLimit: lineLimit
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(!isCard)
+        .accessibilityRemoveTraits(isCard ? .isButton : [])
+        .accessibilityHint(isCard ? "" : (opensPage ? "Opens its page" : "Opens in place"))
+        .accessibilityValue(row.state == .done ? "Finished" : "")
     }
 
     @ViewBuilder private var trailing: some View {
-        switch row.trailing {
-        case let .tick(button):
-            PaneButton(button, small: true)
-        case .page:
-            RowChevron(turn: .page).frame(minHeight: 32)
-        case .opens:
-            RowChevron(turn: .closed).frame(minHeight: 32)
+        if isCard {
+            if !lead {
+                IconButton(Symbol.close, label: words.close, small: true) { state.toggle(openID) }.transition(.face)
+            }
+        } else {
+            switch row.trailing {
+            case let .tick(button):
+                PaneButton(button, small: true).transition(.face)
+            case .page:
+                RowChevron(turn: .page).frame(minHeight: 32).transition(.face)
+            case .opens:
+                RowChevron(turn: .closed).frame(minHeight: 32).transition(.face)
+            }
         }
     }
 
     private var opensPage: Bool {
         if case .page = row.trailing { true } else { false }
-    }
-
-    // MARK: A card
-
-    private var card: some View {
-        let lead = row.state == .now
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 4) {
-                RowHead(
-                    icon: .glyph(row.glyph), title: row.title, line: isUrgent ? nil : row.line, stripe: row.stripe,
-                    size: lead ? .lead : .open, struck: struck, lineLimit: lineLimit)
-                if !lead {
-                    IconButton(Symbol.close, label: words.close, small: true) {
-                        withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
-                    }
-                }
-            }
-            RowBodyView(row: row)
-        }
-        .card(urgent: isUrgent)
     }
 
     private var isUrgent: Bool {

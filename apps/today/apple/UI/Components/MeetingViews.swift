@@ -5,11 +5,14 @@ import TodayCore
 /// A meeting. As a line: its time, title and who, whether the owner goes,
 /// one line, its project; only the next fixed point says how long until
 /// it. Opened in place, or leading the day, it is a card with what to know
-/// before it.
+/// before it. The line and the card are two faces on one surface
+/// (`PanelSurface`): one fades as the other comes, and the surface grows
+/// from the list's to a card's.
 struct MeetingRowView: View {
     @Environment(\.words) private var words
     var meeting: MeetingRow
-    var first = true
+    /// Where it stands among the closed meetings around it.
+    var joins = Joins()
     /// Inside an overlap's block: drawn on the block's own card.
     var inBlock = false
 
@@ -19,7 +22,21 @@ struct MeetingRowView: View {
     var isCard: Bool { !meeting.off && (meeting.leads || state.isOpen(openID)) }
 
     var body: some View {
-        if isCard { card } else { line }
+        // No stack of their own around the two faces: a ZStack around a tall one lays out what it holds a line short.
+        let faces = Group {
+            if isCard {
+                card.padding(inBlock ? 12 : TodayLook.inset).transition(.face)
+            } else {
+                line.transition(.face)
+            }
+        }
+        .rowLine(!isCard && joins.above)
+        // Inside an overlap's block the block is the surface.
+        if inBlock {
+            faces.frame(maxWidth: .infinity, alignment: .topLeading).clipped()
+        } else {
+            faces.panel(isCard ? .card() : .line(joins))
+        }
     }
 
     private var line: some View {
@@ -28,7 +45,7 @@ struct MeetingRowView: View {
                 lineBody
             } else {
                 Button {
-                    withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
+                    state.toggle(openID)
                 } label: {
                     lineBody.contentShape(Rectangle())
                 }
@@ -42,7 +59,6 @@ struct MeetingRowView: View {
         .frame(minHeight: 50, alignment: .top)
         // A meeting that ended is a dimmed row of what is done; it still opens.
         .opacity(meeting.ended ? 0.6 : 1)
-        .rowLine(!first)
     }
 
     private var lineBody: some View {
@@ -114,14 +130,13 @@ struct MeetingRowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !meeting.leads {
                     IconButton(Symbol.close, label: words.close, small: true) {
-                        withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
+                        state.toggle(openID)
                     }
                 }
             }
             // Inside an overlap's block the block has said the overlap and holds its options: the meeting does not say them again.
             MeetingCardView(card: meeting.card, scope: meeting.id, showsOverlap: !inBlock)
         }
-        .modifier(MeetingSurface(inBlock: inBlock, live: meeting.live))
     }
 
     private var title: some View {
@@ -136,20 +151,6 @@ struct MeetingRowView: View {
     @ViewBuilder private var until: some View {
         if let until = meeting.until {
             Text(until).font(TodayLook.Text.button).foregroundStyle(meeting.live ? AnyShapeStyle(.urgentWords) : AnyShapeStyle(.ink)).fixedSize()
-        }
-    }
-}
-
-/// A meeting's card on the ground, or flat inside an overlap's block.
-private struct MeetingSurface: ViewModifier {
-    var inBlock: Bool
-    var live: Bool
-
-    func body(content: Content) -> some View {
-        if inBlock {
-            content.padding(12)
-        } else {
-            content.card()
         }
     }
 }
@@ -204,7 +205,7 @@ struct MeetingCardView: View {
                     ForEach(Array(card.raise.enumerated()), id: \.offset) { index, point in
                         let id = "raise:\(scope):\(index)"
                         Button {
-                            if state.ticked.contains(id) { state.ticked.remove(id) } else { state.ticked.insert(id) }
+                            state.tick(id)
                         } label: {
                             HStack(alignment: .top, spacing: TodayLook.gap) {
                                 OptionMark(mark: .square, selected: state.ticked.contains(id))
@@ -290,7 +291,7 @@ struct OverlapBlockView: View {
                 .fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 0) {
                 ForEach(Array(block.meetings.enumerated()), id: \.element.id) { index, meeting in
-                    MeetingRowView(meeting: meeting, first: index == 0, inBlock: true)
+                    MeetingRowView(meeting: meeting, joins: Joins(above: index > 0), inBlock: true)
                 }
             }
             .background(.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

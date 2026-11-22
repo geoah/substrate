@@ -65,7 +65,17 @@ struct NightView: View {
     private var isOpen: Bool { night.leads || state.isOpen("night") }
 
     var body: some View {
-        if isOpen { card } else { line }
+        // The line and the card are two faces on one surface (`PanelSurface`).
+        // The line and the card are two faces on one surface (`PanelSurface`). They stand in no stack of
+        // their own: a ZStack around a tall face lays out what it holds a line short.
+        Group {
+            if isOpen {
+                card.padding(TodayLook.inset).transition(.face)
+            } else {
+                line.transition(.face)
+            }
+        }
+        .panel(isOpen ? .card() : .line(Joins()))
     }
 
     private var line: some View {
@@ -82,7 +92,6 @@ struct NightView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, TodayLook.gap)
         .frame(minHeight: TodayLook.target)
-        .soft()
     }
 
     private var card: some View {
@@ -91,7 +100,7 @@ struct NightView: View {
                 RowHead(icon: .glyph(.night), title: night.title, line: night.headline ?? night.line, size: night.leads ? .lead : .open)
                 if !night.leads {
                     IconButton(Symbol.close, label: words.close, small: true) {
-                        withAnimation(.snappy(duration: 0.2)) { state.toggle("night") }
+                        state.toggle("night")
                     }
                 }
             }
@@ -112,7 +121,6 @@ struct NightView: View {
             if let gotIt = night.gotIt { PaneButton(gotIt) }
             if let read = night.read { SavedLine(read) }
         }
-        .card()
     }
 }
 
@@ -148,14 +156,19 @@ struct NightItemView: View {
             }
             .frame(minHeight: TodayLook.target)
             if state.isOpen(openID) {
-                ForEach(item.lines) { TimelineLineView(line: $0) }
-                if let decision = item.decision { decisionView(decision) }
-                WrapLayout(spacing: TodayLook.betweenButtons) {
-                    if let gotIt = item.gotIt { PaneButton(gotIt) }
-                    if let open = item.open { PaneButton(open) }
+                // One view that arrives, with the spacing of the list it stands in: a transition on several
+                // views at once lays them out as its own.
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(item.lines) { TimelineLineView(line: $0) }
+                    if let decision = item.decision { decisionView(decision) }
+                    WrapLayout(spacing: TodayLook.betweenButtons) {
+                        if let gotIt = item.gotIt { PaneButton(gotIt) }
+                        if let open = item.open { PaneButton(open) }
+                    }
                 }
+                .transition(.unfold)
             } else if let decision = item.decision, decision.chosen == nil {
-                decisionView(decision)
+                decisionView(decision).transition(.unfold)
             }
         }
         .padding(.vertical, 6)
@@ -177,21 +190,23 @@ struct NightItemView: View {
 /// hides it, and the device keeps the choice. Shown, what was finished is
 /// a closed row, crossed out, with a filled tick that takes it back; a
 /// meeting that ended is a dimmed row; the rest are small lines with a
-/// time. All in one order, by when it happened.
+/// time. All in one order, by when it happened. What is done unfolds from
+/// under the header, and the day below moves to make room.
 struct EarlierView: View {
     var earlier: EarlierPresentation
 
     @Environment(PaneViewState.self) private var state
 
     var body: some View {
-        VStack(alignment: .leading, spacing: TodayLook.gap) {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { state.show(done: !state.showsDone) }
+                state.show(done: !state.showsDone)
             } label: {
                 HStack(spacing: 8) {
                     Text(earlier.title).font(TodayLook.font(.subheadline, weight: .semibold)).foregroundStyle(.inkSecond)
                     Spacer(minLength: 8)
                     Text(earlier.count).font(TodayLook.font(.footnote, weight: .medium)).foregroundStyle(.inkSecond)
+                        .contentTransition(.numericText())
                     RowChevron(turn: state.showsDone ? .open : .closed)
                 }
                 .padding(.horizontal, 6)
@@ -201,84 +216,83 @@ struct EarlierView: View {
             .buttonStyle(.plain)
             .accessibilityHint(state.showsDone ? "Hides what is done" : "Shows what is done")
             if state.showsDone {
-                ForEach(EarlierBlock.blocks(of: earlier.entries, open: state.opened)) { block in
-                    switch block.kind {
-                    case let .pane(pane): PaneBlockView(block: pane)
-                    case let .lines(lines): EarlierLinesView(lines: lines)
-                    }
+                ForEach(EarlierSlot.slots(of: earlier.entries, open: state.opened)) { slot in
+                    EarlierSlotView(slot: slot)
+                        .padding(.top, slot.joins.above ? 0 : TodayLook.gap)
+                        .transition(.unfold)
                 }
             }
         }
     }
 }
 
-/// What is done as it is drawn: the rows and the meetings in the blocks
-/// the day draws them in (closed ones share a list, an opened one is a
-/// card), and each run of small lines in a list of its own.
-struct EarlierBlock: Identifiable {
+/// What is done as it is drawn: one place for each row, each meeting and
+/// each small line, in the day's own way (`PaneSlot`): closed rows that
+/// follow each other read as one list, meetings as another, and each run
+/// of small lines as one of its own.
+struct EarlierSlot: Identifiable {
     enum Kind {
-        case pane(PaneBlock)
-        case lines([EarlierPresentation.Line])
+        case pane(PaneSlot)
+        case line(EarlierPresentation.Line)
     }
 
     var id: String
     var kind: Kind
+    var joins: Joins
 
-    static func blocks(of entries: [EarlierPresentation.Entry], open: Set<String>) -> [EarlierBlock] {
-        var out: [EarlierBlock] = []
-        var items: [PaneItem] = []
-        var lines: [EarlierPresentation.Line] = []
-        func flush() {
-            if !items.isEmpty {
-                out += PaneBlock.blocks(of: items, open: open).map { EarlierBlock(id: "done:" + $0.id, kind: .pane($0)) }
-                items = []
-            }
-            if let first = lines.first {
-                out.append(EarlierBlock(id: "lines:" + first.id, kind: .lines(lines)))
-                lines = []
-            }
-        }
-        for entry in entries {
+    static func slots(of entries: [EarlierPresentation.Entry], open: Set<String>) -> [EarlierSlot] {
+        let runs: [PaneRun?] = entries.map { entry in
             switch entry {
-            case let .row(row):
-                if !lines.isEmpty { flush() }
-                items.append(.row(row))
-            case let .meeting(meeting):
-                if !lines.isEmpty { flush() }
-                items.append(.meeting(meeting))
-            case let .line(line):
-                if !items.isEmpty { flush() }
-                lines.append(line)
+            case let .row(row): PaneRun.of(.row(row), open: open)
+            case let .meeting(meeting): PaneRun.of(.meeting(meeting), open: open)
+            case .line: .lines
             }
         }
-        flush()
-        return out
+        return zip(entries, PaneRun.joins(runs)).map { entry, joins in
+            switch entry {
+            case let .row(row): EarlierSlot(id: "done:" + entry.id, kind: .pane(PaneSlot(item: .row(row), joins: joins)), joins: joins)
+            case let .meeting(meeting):
+                EarlierSlot(id: "done:" + entry.id, kind: .pane(PaneSlot(item: .meeting(meeting), joins: joins)), joins: joins)
+            case let .line(line): EarlierSlot(id: entry.id, kind: .line(line), joins: joins)
+            }
+        }
     }
 }
 
-/// The small lines of what is done: a time, what happened, and a way to
-/// open it where there is one.
-struct EarlierLinesView: View {
-    var lines: [EarlierPresentation.Line]
+/// One thing that is done, in its place.
+struct EarlierSlotView: View {
+    var slot: EarlierSlot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(lines) { line in
-                HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
-                    Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
-                        .frame(minWidth: 44, alignment: .leading)
-                    Text(line.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let button = line.button { PaneButton(button, small: true) }
-                }
-                .padding(.vertical, 5)
-            }
+        switch slot.kind {
+        case let .pane(pane): PaneSlotView(slot: pane)
+        case let .line(line): EarlierLineView(line: line, joins: slot.joins)
         }
+    }
+}
+
+/// One small line of what is done: a time, what happened, and a way to
+/// open it where there is one. Lines that follow each other share a
+/// surface.
+struct EarlierLineView: View {
+    var line: EarlierPresentation.Line
+    var joins = Joins()
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
+            Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
+                .frame(minWidth: 44, alignment: .leading)
+            Text(line.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let button = line.button { PaneButton(button, small: true) }
+        }
+        .padding(.vertical, 5)
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .soft(radius: 18)
+        .padding(.top, joins.above ? 0 : 6)
+        .padding(.bottom, joins.below ? 0 : 6)
+        .panel(.line(joins), radius: 18)
     }
 }
 
@@ -309,7 +323,7 @@ struct HappeningView: View {
             .padding(.vertical, TodayLook.gap)
             .frame(minHeight: TodayLook.target)
             .soft()
-            if state.isOpen("happening") { card }
+            if state.isOpen("happening") { card.transition(.arrive) }
         }
     }
 

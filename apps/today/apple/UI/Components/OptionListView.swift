@@ -13,6 +13,8 @@ struct OptionListView: View {
 
     @Environment(\.pane) private var pane
     @Environment(\.colorScheme) private var scheme
+    /// The chosen row's fill is one thing that moves to the row chosen next.
+    @Namespace private var choice
 
     init(_ list: OptionList, onTint: Bool = false) {
         self.list = list
@@ -25,7 +27,7 @@ struct OptionListView: View {
                 Button {
                     pane.send(row.command)
                 } label: {
-                    OptionRowView(row: row, mark: list.mark)
+                    OptionRowView(row: row, mark: list.mark, choice: list.mark == .round ? choice : nil)
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(row.selected ? .isSelected : [])
@@ -44,6 +46,9 @@ struct OptionListView: View {
 struct OptionRowView: View {
     var row: OptionRow
     var mark: OptionList.Mark
+    /// Where one option at most is chosen, the fill of the chosen row is
+    /// the same fill in every row of the list: it moves to the next choice.
+    var choice: Namespace.ID?
 
     @Environment(\.colorScheme) private var scheme
 
@@ -76,9 +81,10 @@ struct OptionRowView: View {
         .frame(minHeight: TodayLook.target)
         .background {
             if row.selected {
-                RoundedRectangle(cornerRadius: TodayLook.optionRadius, style: .continuous)
+                let fill = RoundedRectangle(cornerRadius: TodayLook.optionRadius, style: .continuous)
                     .fill(.card)
                     .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.12), radius: 1.5, y: 1)
+                if let choice { fill.matchedGeometryEffect(id: "chosen", in: choice) } else { fill }
             }
         }
         .contentShape(Rectangle())
@@ -156,9 +162,13 @@ struct DoorView: View {
             .accessibilityValue(door.value)
             .accessibilityHint(open ? "Closes its options" : "Shows its options")
             if open {
-                OptionListView(door.options)
-                    .padding(.bottom, door.notes.isEmpty ? 8 : 4)
-                ForEach(door.notes, id: \.self) { NoteText($0).padding(.bottom, 6) }
+                // One view that arrives (a transition on several views at once lays them out as its own).
+                VStack(alignment: .leading, spacing: 0) {
+                    OptionListView(door.options)
+                        .padding(.bottom, door.notes.isEmpty ? 8 : 4)
+                    ForEach(door.notes, id: \.self) { NoteText($0).padding(.bottom, 6) }
+                }
+                .transition(.unfold)
             }
         }
         .overlay(alignment: .top) { Rectangle().fill(TodayLook.line(scheme)).frame(height: 0.5) }

@@ -35,6 +35,30 @@ import TodayCore
         #expect(state.waiting("r") == nil && state.phase("o1") == nil)
     }
 
+    /// A finish is sent before its record is in the day: between the two
+    /// the thing stays drawn finished, and it leaves its place that way.
+    /// Were it drawn from its records in between, it would be seen open
+    /// again for a moment before it moved.
+    @Test func whatWasSentStaysDrawnFinishedUntilTheDayHasFollowedAndItHasLeft() async throws {
+        let began = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = PaneViewState(showsDone: true)
+        let sent = Sent()
+        state.frozen = began
+        state.finish(.log(row: "meds", done: true)) { sent.commands.append($0) }
+        state.frozen = began.addingTimeInterval(Finishing.countdown + Finishing.settle + 0.1)
+        state.tick()
+        #expect(sent.commands == [.log(row: "meds", done: true)] && state.sent == 1)
+        #expect(state.phase("meds") == .settled && state.waiting("meds") == .log(row: "meds", done: true))
+        // The day is drawn again and the row is still open in it: another change came first.
+        state.followed(open: ["meds", "task:a"])
+        #expect(state.phase("meds") == .settled)
+        // Its record is in the day: it leaves its place still drawn finished, and then is the day's alone.
+        state.followed(open: ["task:a"])
+        #expect(state.phase("meds") == .settled)
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(state.phase("meds") == nil && state.waiting("meds") == nil)
+    }
+
     @Test func aDrawingStandsWhereItsInstantPutsIt() {
         let began = Date(timeIntervalSince1970: 1_800_000_000)
         let state = PaneViewState(showsDone: false)

@@ -28,6 +28,10 @@ public struct TodayPresentation: Codable, Equatable, Sendable {
     /// How the assistant behaves: its standing instructions, each with a
     /// switch and its text to edit. Settings draws it above the rest.
     public var moss = MossSettings()
+    /// An answer from the assistant is arriving, a few words at a time. A
+    /// view moves what changes in the day, and not what changes with every
+    /// word: while this is true it draws each change at once.
+    public var writing = false
 
     public init(
         pane: PanePresentation, pages: PageSource = PageSource(), notices: [NoticeLine] = [], problem: ProblemPresentation? = nil,
