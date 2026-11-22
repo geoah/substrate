@@ -130,10 +130,13 @@ struct OrderTests {
         let tasks = rows(pane).filter { $0.id.hasPrefix("task:") && $0.state != .later }
         #expect(tasks.map(\.stripe.flag) == [.high, .high, .high, .medium, .medium, .medium, .low])
         #expect(tasks[0].state == .now && tasks.dropFirst().allSatisfy { $0.state == .next })
-        // A task's row ends with its flag control, and the list never offers Urgent.
-        guard case let .flag(control) = tasks[0].trailing else { return #expect(Bool(false)) }
-        #expect(control.options.rows.map(\.name) == ["High", "Medium", "Low"])
-        #expect(control.options.selected?.id == "high")
+        // A task's closed row ends with its tick, as a routine's does, and no flag control.
+        guard case let .tick(tick) = tasks[0].trailing else { return #expect(Bool(false)) }
+        #expect(tick.iconOnly && tick.title == "Done" && tick.command == .done("p-vendor") && tick.command?.finishing == "task:p-vendor")
+        // The flag is changed from the opened row, and its list never offers Urgent.
+        guard case let .task(card) = tasks[0].body, let door = card.doors.first(where: { $0.id == "flag" }) else { return #expect(Bool(false)) }
+        #expect(door.options.rows.map(\.name) == ["High", "Medium", "Low"])
+        #expect(door.options.selected?.id == "high")
     }
 
     @Test func aFlagReordersOnlyWhenItsListIsClosed() async throws {
@@ -887,6 +890,83 @@ struct WriteTests {
         #expect(rows(await harness.presentation.pane).first?.id != routine.id)
     }
 
+    @Test func aFinishWaitsAndCanBeTakenBackAndIsNeverLost() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        func at(_ seconds: TimeInterval) -> Date { start.addingTimeInterval(seconds) }
+        var finishing = Finishing()
+        // A command that finishes nothing does not wait.
+        #expect(!finishing.begin(.reopen("a"), at: start) && finishing.isEmpty && TodayCommand.unlog("x").finishing == nil)
+        #expect(finishing.begin(.done("a"), at: start) && finishing.command("task:a") == .done("a"))
+        // For three seconds the control counts down, then for two more the thing is drawn finished; nothing is due.
+        #expect(finishing.phase("task:a", at: at(0)) == .counting && finishing.left("task:a", at: at(1.5)) == 0.5)
+        #expect(finishing.phase("task:a", at: at(2.9)) == .counting && finishing.phase("task:a", at: at(3)) == .settled)
+        #expect(finishing.next(after: at(0)) == at(3) && finishing.next(after: at(3)) == at(5))
+        #expect(finishing.due(at: at(4.9)).isEmpty && finishing.phase("task:a", at: at(4.9)) == .settled)
+        // Then it is sent, once.
+        #expect(finishing.due(at: at(5)) == [.done("a")] && finishing.isEmpty && finishing.due(at: at(9)).isEmpty)
+        #expect(finishing.next(after: at(5)) == nil && finishing.phase("task:a", at: at(5)) == nil)
+
+        // Taken back while it counts, or while it is drawn finished: nothing is ever sent.
+        finishing.begin(.done("b"), at: start)
+        finishing.cancel("task:b")
+        finishing.begin(.log(row: "r", done: true), at: start)
+        #expect(finishing.phase("r", at: at(4)) == .settled)
+        finishing.cancel("r")
+        #expect(finishing.isEmpty && finishing.due(at: at(60)).isEmpty)
+
+        // One item ticked, then the whole group: both are sent, the item first, and what was begun later waits its own time.
+        finishing.begin(.logOccurrence("o1", done: true), at: at(0))
+        finishing.begin(.log(row: "r", done: true), at: at(2))
+        #expect(finishing.due(at: at(5)) == [.logOccurrence("o1", done: true)] && finishing.command("r") != nil)
+        #expect(finishing.due(at: at(7)) == [.log(row: "r", done: true)])
+        // A second way of finishing the same thing takes the place of the first.
+        finishing.begin(.log(row: "r", done: true), at: at(0))
+        finishing.begin(.log(row: "r", done: false), at: at(1))
+        #expect(finishing.pending.count == 1 && finishing.command("r") == .log(row: "r", done: false))
+        // Leaving the app sends everything that waits, in order, at once.
+        finishing.begin(.done("c"), at: at(1.5))
+        #expect(finishing.flush() == [.log(row: "r", done: false), .done("c")] && finishing.isEmpty)
+    }
+
+    @Test func whatIsFinishedStaysInTheDayAsARowThatTakesItBack() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        await load(harness, "07:05")
+        let routine = try #require(rows(await harness.presentation.pane).first)
+        let task = try #require(rows(await harness.presentation.pane).first { $0.id.hasPrefix("task:") })
+        func earlier() async -> EarlierPresentation? {
+            for item in await harness.presentation.pane.items { if case let .earlier(earlier) = item { return earlier } }
+            return nil
+        }
+        #expect(await earlier()?.rows.contains { $0.id == routine.id || $0.id == task.id } != true)
+        await harness.send(.log(row: routine.id, done: true))
+        await harness.send(.done(String(task.id.dropFirst("task:".count))))
+        let done = try #require(await earlier())
+        // Each is a closed row of what is done, with when, and a filled tick that takes it back.
+        let taken = try #require(done.rows.first { $0.id == routine.id })
+        #expect(taken.state == .done && taken.title == routine.title && taken.line == "Taken at 07:05.")
+        guard case let .tick(back) = taken.trailing, case .routine = taken.body else { return #expect(Bool(false)) }
+        #expect(back.role == .primary && back.command == .unlogRow(routine.id) && back.command?.finishing == nil)
+        let finished = try #require(done.rows.first { $0.id == task.id })
+        #expect(
+            finished.state == .done && finished.line == "Done at 07:05."
+                && finished.trailing
+                    == .tick(
+                        ButtonPresentation(
+                            "Open again", glyph: .done, iconOnly: true, role: .primary, command: .reopen(String(task.id.dropFirst("task:".count)))))
+        )
+        #expect(done.count == "\(done.entries.count) done")
+        // Taking the routine back removes every log it has, and it is a row of the day again.
+        let before = writes(harness).flatMap(\.entries).count
+        await harness.send(.unlogRow(routine.id))
+        let removed = writes(harness).flatMap(\.entries).dropFirst(before)
+        #expect(removed.count == 5 && removed.allSatisfy { $0.method == .delete && $0.kind == TodayKinds.log })
+        #expect(rows(await harness.presentation.pane).first?.id == routine.id)
+        #expect(await earlier()?.rows.contains { $0.id == routine.id } != true)
+        // A row skipped says so.
+        await harness.send(.log(row: routine.id, done: false))
+        #expect(await earlier()?.rows.first { $0.id == routine.id }?.line == "Skipped at 07:05.")
+    }
+
     @Test func oneItemOfAGroupIsTickedByItselfAndTheGroupsButtonLogsTheRest() async throws {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
         await load(harness, "07:05")
@@ -1233,7 +1313,8 @@ struct ReadTests {
         // "Earlier today" lists it once, and nothing overlaps itself.
         let pane = pane("11:30")
         guard case let .earlier(earlier)? = pane.items.first(where: { if case .earlier = $0 { true } else { false } }) else { return #expect(Bool(false)) }
-        #expect(earlier.lines.filter { $0.text.lowercased().contains("physiotherapy") }.map(\.id) == ["meeting:physio"])
+        let ended = earlier.entries.compactMap { entry -> MeetingRow? in if case let .meeting(row) = entry { row } else { nil } }
+        #expect(ended.filter { $0.title.lowercased().contains("physiotherapy") }.map(\.id) == ["physio"] && ended.allSatisfy(\.ended))
         let waking = TodayCoreTests.pane("07:52")
         #expect(meetings(waking).filter { $0.start == "08:00" }.map(\.id) == ["physio"])
         #expect(!waking.items.contains { if case let .overlap(block) = $0 { block.meetings.contains { $0.start == "08:00" } } else { false } })

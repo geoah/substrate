@@ -236,8 +236,27 @@ public struct TimelineLine: Codable, Equatable, Hashable, Sendable, Identifiable
 
 // MARK: Earlier today
 
-/// What is done today, folded into one line with a count.
-public struct EarlierPresentation: Codable, Equatable, Hashable, Sendable {
+/// What is done today, under one header with a count. The header shows or
+/// hides it, and the device keeps that choice. What was finished is a row
+/// (`Row.State.done`): a routine done or skipped, a task done, each with a
+/// filled tick that takes it back. A meeting that ended is its own dimmed
+/// row. What is only bookkeeping (the night read, the plan saved) is a
+/// small line with its time. All of it is in one order, by when it happened.
+public struct EarlierPresentation: Codable, Equatable, Sendable {
+    public enum Entry: Codable, Equatable, Sendable, Identifiable {
+        case row(Row)
+        case meeting(MeetingRow)
+        case line(Line)
+
+        public var id: String {
+            switch self {
+            case let .row(row): "row:" + row.id
+            case let .meeting(meeting): "meeting:" + meeting.id
+            case let .line(line): "line:" + line.id
+            }
+        }
+    }
+
     public struct Line: Codable, Equatable, Hashable, Sendable, Identifiable {
         public var id: String
         public var time: String
@@ -257,12 +276,22 @@ public struct EarlierPresentation: Codable, Equatable, Hashable, Sendable {
     public var title: String
     /// "5 done".
     public var count: String
-    public var lines: [Line]
+    public var entries: [Entry]
 
-    public init(title: String = "Earlier today", count: String, lines: [Line]) {
+    public init(title: String = "Earlier today", count: String, entries: [Entry]) {
         self.title = title
         self.count = count
-        self.lines = lines
+        self.entries = entries
+    }
+
+    /// The small lines alone: what is only bookkeeping.
+    public var lines: [Line] {
+        entries.compactMap { if case let .line(line) = $0 { line } else { nil } }
+    }
+
+    /// The finished things alone.
+    public var rows: [Row] {
+        entries.compactMap { if case let .row(row) = $0 { row } else { nil } }
     }
 }
 
@@ -578,12 +607,15 @@ public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
     public var leads: Bool
     /// Moved or skipped: drawn struck through, with nothing under it.
     public var off: Bool
+    /// It ended: a dimmed row of what is done, which still opens.
+    public var ended: Bool
     public var project: ProjectChip?
     public var card: MeetingCard
 
     public init(
         id: String, start: String, end: String, title: String, people: [Badge] = [], attendance: String? = nil, line: String? = nil,
-        until: String? = nil, live: Bool = false, leads: Bool = false, off: Bool = false, project: ProjectChip? = nil, card: MeetingCard
+        until: String? = nil, live: Bool = false, leads: Bool = false, off: Bool = false, ended: Bool = false, project: ProjectChip? = nil,
+        card: MeetingCard
     ) {
         detail = (["to \(end)"] + [card.meta].compactMap { $0 }).joined(separator: ", ")
         self.id = id
@@ -597,6 +629,7 @@ public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
         self.live = live
         self.leads = leads
         self.off = off
+        self.ended = ended
         self.project = project
         self.card = card
     }

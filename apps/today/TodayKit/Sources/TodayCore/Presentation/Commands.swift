@@ -83,6 +83,8 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
     case logOccurrence(String, done: Bool)
     /// A log is taken back: the occurrence is open again.
     case unlog(String)
+    /// Every log of a routine row is taken back: the row is open again.
+    case unlogRow(String)
     /// Later, from a notification: the row's reminder comes again in an hour.
     case later(row: String)
 

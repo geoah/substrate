@@ -15,6 +15,8 @@ enum Symbol: String, Sendable {
     case dismiss = "xmark"
     case settings = "gearshape"
     case tick = "checkmark"
+    /// Takes a finish back while it counts down.
+    case undo = "arrow.uturn.backward"
     case add = "plus"
     case edit = "pencil"
     case dictate = "mic"
@@ -27,7 +29,7 @@ extension Glyph {
     /// The SF Symbol the kit names for it (`KindGlyphSpec`, `DesignTokens.Control`).
     var systemName: String {
         switch self {
-        case .task: "checkmark.circle"
+        case .task: "list.clipboard"
         case .meeting: "calendar"
         case .routine: "repeat"
         case .night: "moon"

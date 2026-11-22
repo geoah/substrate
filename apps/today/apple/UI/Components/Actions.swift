@@ -37,6 +37,8 @@ struct PaneButton: View {
     var beside = false
 
     @Environment(\.pane) private var pane
+    /// Absent where a button is drawn outside the day's screen.
+    @Environment(PaneViewState.self) private var state: PaneViewState?
     @State private var asking = false
 
     init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false, beside: Bool = false) {
@@ -47,17 +49,29 @@ struct PaneButton: View {
     }
 
     var body: some View {
-        Group {
-            if button.iconOnly, let glyph = button.glyph {
-                IconButton(glyph, label: button.title, small: small, look: button.role == .primary ? .filled : .quiet, action: act)
+        // A control that finishes something does not act at once: after its
+        // tap it is a countdown and the way back, for its own command only.
+        // The other way of finishing the same thing waits meanwhile.
+        if let key = button.command?.finishing, let state, let waiting = state.waiting(key) {
+            if waiting == button.command {
+                FinishingControl(button: button, key: key, kind: kind, small: small)
             } else {
-                Button(action: act) {
-                    ButtonWord(text: button.title, glyph: button.glyph, opensPage: button.opens != nil)
-                }
-                .buttonStyle(.today(kind))
+                plain.disabled(true)
             }
+        } else {
+            plain.disabled(!button.enabled)
         }
-        .disabled(!button.enabled)
+    }
+
+    @ViewBuilder private var plain: some View {
+        if button.iconOnly, let glyph = button.glyph {
+            IconButton(glyph, label: button.title, small: small, look: button.role == .primary ? .filled : .quiet, action: act)
+        } else {
+            Button(action: act) {
+                ButtonWord(text: button.title, glyph: button.glyph, opensPage: button.opens != nil)
+            }
+            .buttonStyle(.today(kind))
+        }
     }
 
     private var kind: TodayButtonStyle.Kind {
@@ -73,6 +87,95 @@ struct PaneButton: View {
         if let command = button.command { pane.send(command) }
         if let route = button.opens { pane.open(route) }
         if let url = button.url { pane.openURL(url) }
+    }
+}
+
+/// A control that finishes something, after its tap and until its command
+/// is sent (`Finishing`). While it counts, an icon tick is a ring draining
+/// around the undo arrow and a button with a word reads "Undo" over a fill
+/// that drains; a tap takes the finish back. When the count is over the
+/// tick is filled and the button stays "Undo" a moment longer: nothing is
+/// written until then, so a tap still takes it back. With Reduce Motion
+/// nothing drains, and the state lasts as long.
+struct FinishingControl: View {
+    var button: ButtonPresentation
+    var key: String
+    var kind: TodayButtonStyle.Kind
+    var small = false
+
+    @Environment(PaneViewState.self) private var state
+    @Environment(\.accessibilityReduceMotion) private var still
+    @Environment(\.colorScheme) private var scheme
+    @State private var left = 1.0
+
+    private var phase: Finishing.Phase { state.phase(key) ?? .settled }
+
+    var body: some View {
+        Group {
+            if button.iconOnly {
+                if phase == .counting { ring } else { IconButton(Glyph.done, label: "Undo", small: small, look: .filled, action: back) }
+            } else {
+                Button(action: back) {
+                    // The word it stands for, unseen under "Undo": the button keeps its width.
+                    ZStack {
+                        ButtonWord(text: button.title, glyph: button.glyph).hidden()
+                        HStack(spacing: 6) {
+                            Image(systemName: Symbol.undo.systemName).font(TodayLook.font(.footnote, weight: .bold))
+                            Text("Undo")
+                        }
+                    }
+                }
+                .buttonStyle(.today(kind, left: phase == .counting ? left : 0))
+            }
+        }
+        .onAppear(perform: run)
+        .onChange(of: phase) { _, now in
+            if now == .settled { left = 0 }
+        }
+        .accessibilityLabel("Undo")
+        .accessibilityHint("\(button.title) in a few seconds unless you undo")
+    }
+
+    /// The tick while it counts: the undo arrow in the tick's circle, and a
+    /// ring around it that drains.
+    private var ring: some View {
+        let side: CGFloat = small ? 32 : 36
+        let ink = TodayLook.ink.color
+        return Button(action: back) {
+            ZStack {
+                Circle().fill(ink.opacity(scheme == .dark ? 0.12 : 0.07))
+                Circle().trim(from: 0, to: max(0, min(1, left)))
+                    .stroke(ink, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .padding(1.25)
+                Image(systemName: Symbol.undo.systemName)
+                    .font(.system(size: small ? 12 : 14, weight: .bold))
+                    .foregroundStyle(.ink)
+            }
+            .frame(width: side, height: side)
+            .frame(minWidth: TodayLook.target, minHeight: TodayLook.target)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func back() { state.takeBack(key) }
+
+    /// The drain runs for what is left of the wait. A drawing stands where
+    /// its fixed instant puts it, and with Reduce Motion nothing moves.
+    private func run() {
+        guard phase == .counting else {
+            left = 0
+            return
+        }
+        let remains = state.left(key)
+        if still {
+            left = 1
+            return
+        }
+        left = remains
+        guard state.frozen == nil else { return }
+        withAnimation(.linear(duration: remains * Finishing.countdown)) { left = 0 }
     }
 }
 

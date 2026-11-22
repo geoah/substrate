@@ -28,6 +28,11 @@ struct TodayButtonStyle: ButtonStyle {
     }
 
     var kind: Kind = .secondary
+    /// The button is a countdown and the way back: how much of the wait is
+    /// left, from 1 to 0. It keeps its size and is drawn as a quiet fill
+    /// with a darker one draining out of it, so its word reads on both.
+    /// Nil for a button that is not counting.
+    var left: Double?
     @Environment(\.isEnabled) private var enabled
     @Environment(\.colorScheme) private var scheme
 
@@ -35,13 +40,26 @@ struct TodayButtonStyle: ButtonStyle {
         configuration.label
             .font(kind == .wide || kind == .beside ? TodayLook.Text.wideButton : TodayLook.Text.button)
             .multilineTextAlignment(.center)
-            .foregroundStyle(words)
+            .foregroundStyle(left == nil ? words : .ink)
             .padding(.horizontal, kind == .small ? 13 : kind == .beside ? 20 : 16)
             .padding(.vertical, 6)
             .frame(maxWidth: kind == .wide ? .infinity : nil, minHeight: height)
-            .background { fill }
+            .background {
+                if let left { drain(left) } else { fill }
+            }
             .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.35)
             .touchTarget()
+    }
+
+    /// The countdown: the quiet fill, and over it a darker one whose
+    /// trailing edge runs back to the start as the wait runs out.
+    private func drain(_ left: Double) -> some View {
+        let ink = TodayLook.ink.color
+        return Capsule().fill(ink.opacity(scheme == .dark ? 0.12 : 0.07))
+            .overlay {
+                Capsule().fill(ink.opacity(scheme == .dark ? 0.30 : 0.20))
+                    .mask(alignment: .leading) { Rectangle().scaleEffect(x: max(0, min(1, left)), anchor: .leading) }
+            }
     }
 
     private var height: CGFloat {
@@ -101,6 +119,7 @@ struct CapsuleOutline: InsettableShape {
 
 extension ButtonStyle where Self == TodayButtonStyle {
     static func today(_ kind: TodayButtonStyle.Kind) -> TodayButtonStyle { TodayButtonStyle(kind: kind) }
+    static func today(_ kind: TodayButtonStyle.Kind, left: Double) -> TodayButtonStyle { TodayButtonStyle(kind: kind, left: left) }
 }
 
 /// A button's word with the glyph of what it does before it, or the right

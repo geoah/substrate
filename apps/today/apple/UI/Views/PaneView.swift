@@ -31,6 +31,8 @@ struct PaneView<Header: View>: View {
                     ForEach(blocks) { block in
                         PaneBlockView(block: block).id(block.id)
                     }
+                    // What is finished moves to what is done, and the rest closes up.
+                    .animation(.snappy(duration: 0.3), value: pane.items.map(\.id))
                     if let openSettings {
                         Button(action: openSettings) {
                             HStack(spacing: 6) {

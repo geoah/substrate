@@ -40,6 +40,8 @@ struct MeetingRowView: View {
         .padding(.trailing, 10)
         .padding(.vertical, TodayLook.gap)
         .frame(minHeight: 50, alignment: .top)
+        // A meeting that ended is a dimmed row of what is done; it still opens.
+        .opacity(meeting.ended ? 0.6 : 1)
         .rowLine(!first)
     }
 

@@ -173,49 +173,112 @@ struct NightItemView: View {
     }
 }
 
-/// What is done today, folded into one line with a count.
+/// What is done today, under one header with a count. The header shows or
+/// hides it, and the device keeps the choice. Shown, what was finished is
+/// a closed row, crossed out, with a filled tick that takes it back; a
+/// meeting that ended is a dimmed row; the rest are small lines with a
+/// time. All in one order, by when it happened.
 struct EarlierView: View {
     var earlier: EarlierPresentation
 
     @Environment(PaneViewState.self) private var state
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: TodayLook.gap) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { state.toggle("earlier") }
+                withAnimation(.snappy(duration: 0.2)) { state.show(done: !state.showsDone) }
             } label: {
                 HStack(spacing: 8) {
                     Text(earlier.title).font(TodayLook.font(.subheadline, weight: .semibold)).foregroundStyle(.inkSecond)
                     Spacer(minLength: 8)
                     Text(earlier.count).font(TodayLook.font(.footnote, weight: .medium)).foregroundStyle(.inkSecond)
-                    RowChevron(turn: state.isOpen("earlier") ? .open : .closed)
+                    RowChevron(turn: state.showsDone ? .open : .closed)
                 }
                 .padding(.horizontal, 6)
                 .frame(minHeight: TodayLook.target)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint(state.isOpen("earlier") ? "Closes" : "Opens in place")
-            if state.isOpen("earlier") {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(earlier.lines) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
-                            Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
-                                .frame(minWidth: 44, alignment: .leading)
-                            Text(line.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if let button = line.button { PaneButton(button, small: true) }
-                        }
-                        .padding(.vertical, 5)
+            .accessibilityHint(state.showsDone ? "Hides what is done" : "Shows what is done")
+            if state.showsDone {
+                ForEach(EarlierBlock.blocks(of: earlier.entries, open: state.opened)) { block in
+                    switch block.kind {
+                    case let .pane(pane): PaneBlockView(block: pane)
+                    case let .lines(lines): EarlierLinesView(lines: lines)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .soft(radius: 18)
             }
         }
+    }
+}
+
+/// What is done as it is drawn: the rows and the meetings in the blocks
+/// the day draws them in (closed ones share a list, an opened one is a
+/// card), and each run of small lines in a list of its own.
+struct EarlierBlock: Identifiable {
+    enum Kind {
+        case pane(PaneBlock)
+        case lines([EarlierPresentation.Line])
+    }
+
+    var id: String
+    var kind: Kind
+
+    static func blocks(of entries: [EarlierPresentation.Entry], open: Set<String>) -> [EarlierBlock] {
+        var out: [EarlierBlock] = []
+        var items: [PaneItem] = []
+        var lines: [EarlierPresentation.Line] = []
+        func flush() {
+            if !items.isEmpty {
+                out += PaneBlock.blocks(of: items, open: open).map { EarlierBlock(id: "done:" + $0.id, kind: .pane($0)) }
+                items = []
+            }
+            if let first = lines.first {
+                out.append(EarlierBlock(id: "lines:" + first.id, kind: .lines(lines)))
+                lines = []
+            }
+        }
+        for entry in entries {
+            switch entry {
+            case let .row(row):
+                if !lines.isEmpty { flush() }
+                items.append(.row(row))
+            case let .meeting(meeting):
+                if !lines.isEmpty { flush() }
+                items.append(.meeting(meeting))
+            case let .line(line):
+                if !items.isEmpty { flush() }
+                lines.append(line)
+            }
+        }
+        flush()
+        return out
+    }
+}
+
+/// The small lines of what is done: a time, what happened, and a way to
+/// open it where there is one.
+struct EarlierLinesView: View {
+    var lines: [EarlierPresentation.Line]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines) { line in
+                HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
+                    Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
+                        .frame(minWidth: 44, alignment: .leading)
+                    Text(line.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let button = line.button { PaneButton(button, small: true) }
+                }
+                .padding(.vertical, 5)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .soft(radius: 18)
     }
 }
 

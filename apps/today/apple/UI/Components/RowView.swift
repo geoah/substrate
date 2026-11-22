@@ -83,9 +83,12 @@ struct RowView: View {
     @Environment(\.pane) private var pane
 
     private var openID: String { "row:" + row.id }
-    private var flagID: String { "flag:" + row.id }
 
     var isCard: Bool { row.state == .now || state.isOpen(openID) }
+
+    /// Crossed out: finished today, or finished a moment ago and not yet
+    /// written (`Finishing`), which a tap on its tick still takes back.
+    private var struck: Bool { row.state == .done || state.phase(row.id) == .settled }
 
     private var lineLimit: Int? {
         if case .task = row.body { 3 } else { nil }
@@ -112,20 +115,21 @@ struct RowView: View {
                             withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
                         }
                     } label: {
-                        RowHead(icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, lineLimit: lineLimit)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                        RowHead(
+                            icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, struck: struck, lineLimit: lineLimit
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(opensPage ? "Opens its page" : "Opens in place")
-                    if !row.chips.isEmpty {
+                    .accessibilityValue(row.state == .done ? "Done" : "")
+                    // What is done is one closed line: its chips are in its card.
+                    if !row.chips.isEmpty, row.state != .done {
                         ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))
                     }
                 }
                 trailing
-            }
-            if case let .flag(control) = row.trailing, state.isOpen(flagID) || control.open {
-                FlagOptionsView(control: control).padding(.top, 8)
             }
         }
         // A row with no flag keeps the stripe's room, so every row's icon
@@ -139,16 +143,6 @@ struct RowView: View {
 
     @ViewBuilder private var trailing: some View {
         switch row.trailing {
-        case let .flag(control):
-            IconButton(
-                Symbol.flag, label: "Flag: \(control.word). Show the three options", small: true,
-                look: state.isOpen(flagID) || control.open ? .pressed : .quiet
-            ) {
-                let wasOpen = state.isOpen(flagID)
-                withAnimation(.snappy(duration: 0.2)) { state.toggle(flagID) }
-                // The order of the day follows the flags once the list is closed.
-                if wasOpen { pane.send(.settleFlags) }
-            }
         case let .tick(button):
             PaneButton(button, small: true)
         case .page:
@@ -170,7 +164,7 @@ struct RowView: View {
             HStack(alignment: .top, spacing: 4) {
                 RowHead(
                     icon: .glyph(row.glyph), title: row.title, line: isUrgent ? nil : row.line, stripe: row.stripe,
-                    size: lead ? .lead : .open, lineLimit: lineLimit)
+                    size: lead ? .lead : .open, struck: struck, lineLimit: lineLimit)
                 if !lead {
                     IconButton(Symbol.close, label: words.close, small: true) {
                         withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
@@ -193,7 +187,7 @@ struct RowBodyView: View {
 
     var body: some View {
         switch row.body {
-        case let .routine(card): RoutineCardView(card: card)
+        case let .routine(card): RoutineCardView(card: card, scope: row.id)
         case let .yesterday(card): YesterdayCardView(card: card)
         case let .suggested(card): PageRowCardView(card: card)
         case let .heard(item): SuggestedItemView(item: item, first: true, headed: false)

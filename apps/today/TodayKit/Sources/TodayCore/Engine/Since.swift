@@ -157,25 +157,28 @@ extension DayEngine {
 
     // MARK: Earlier today
 
+    /// What is done today, in one order by when it happened: what was
+    /// finished as rows, a meeting that ended as its own row, and what is
+    /// only bookkeeping as small lines.
     var earlier: EarlierPresentation? {
+        var entries: [(at: Date, entry: EarlierPresentation.Entry)] = []
         var lines: [(at: Date, line: EarlierPresentation.Line)] = []
-        for task in day.tasks where task.status == .done {
-            guard let at = task.completedAt, isToday(at), at <= now else { continue }
-            lines.append(
-                (at, .init(id: "task:" + task.id, time: clock(at), text: task.name, button: ButtonPresentation("Open", role: .quiet, opens: .task(task.id)))))
+        // A suggestion answered "Already done" is finished, but not something done today.
+        let answered = day.notes.suggestedDone ?? []
+        for task in day.tasks where task.status == .done && !answered.contains(task.id) {
+            // Marked here a moment ago: the server's stamp has not come back yet.
+            guard let at = task.completedAt ?? day.notes.doneAt?[task.id], isToday(at), at <= now else { continue }
+            entries.append((at, .row(doneRow(task, at: at))))
         }
         for row in todaysRoutines {
             guard let at = doneAt(row) else { continue }
-            lines.append((at, .init(id: row.id, time: clock(at), text: row.title)))
+            entries.append((at, .row(doneRow(row, at: at))))
         }
         for meeting in todaysMeetings where meeting.end <= now && attends(meeting) != false {
-            lines.append(
-                (
-                    meeting.end,
-                    .init(
-                        id: "meeting:" + meeting.id, time: clock(meeting.end), text: meeting.title,
-                        button: ButtonPresentation("Open", role: .quiet, opens: .meeting(meeting.id)))
-                ))
+            var row = meetingRow(meeting, leads: false)
+            row.ended = true
+            row.until = nil
+            entries.append((meeting.end, .meeting(row)))
         }
         if let read = nightReadAt { lines.append((read, .init(id: "night", time: clock(read), text: "Read the night."))) }
         if let saved = day.notes.suggestedSavedAt {
@@ -189,8 +192,9 @@ extension DayEngine {
             lines.append((at, .init(id: "y:" + item.id, time: clock(at), text: line)))
         }
         if let closed = day.plan?.wrapSavedAt { lines.append((closed, .init(id: "wrap", time: clock(closed), text: "Day closed."))) }
-        guard !lines.isEmpty else { return nil }
-        lines.sort { ($0.at, $0.line.id) < ($1.at, $1.line.id) }
-        return EarlierPresentation(count: "\(lines.count) done", lines: lines.map(\.line))
+        entries += lines.map { ($0.at, .line($0.line)) }
+        guard !entries.isEmpty else { return nil }
+        entries.sort { ($0.at, $0.entry.id) < ($1.at, $1.entry.id) }
+        return EarlierPresentation(count: "\(entries.count) done", entries: entries.map(\.entry))
     }
 }

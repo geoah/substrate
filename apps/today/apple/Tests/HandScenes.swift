@@ -118,13 +118,28 @@ enum HandScenes {
         ],
         quiet: "Three had nothing: Hiring, Tally and Home.", gotIt: ButtonPresentation("Got it, all read", glyph: .done, role: .primary, command: .readNight))
 
+    /// A thing finished today, as "Earlier today" holds it: closed, crossed
+    /// out, with a filled tick that takes it back.
+    static func doneRow(_ id: String, _ glyph: Glyph, _ title: String, _ line: String, flag: Flag? = nil) -> Row {
+        Row(
+            id: id, glyph: glyph, title: title, line: line, stripe: Stripe(flag), state: .done,
+            trailing: .tick(
+                ButtonPresentation(
+                    glyph == .task ? "Open again" : "Take it back", glyph: .done, iconOnly: true, role: .primary,
+                    command: glyph == .task ? .reopen(id) : .unlogRow(id))),
+            body: glyph == .task ? .task(TaskCard(id: id, said: line)) : .routine(RoutineCard(items: [], done: nil, skip: nil, said: line)))
+    }
+
     static let earlier = EarlierPresentation(
         count: "16 done",
-        lines: [
-            EarlierPresentation.Line(id: "e1", time: "07:33", text: "Morning medication, 5 items. Taken."),
-            EarlierPresentation.Line(
-                id: "e2", time: "08:38", text: "Thirteen suggested tasks answered.", button: ButtonPresentation("Open", role: .quiet, command: .refresh)),
-            EarlierPresentation.Line(id: "e3", time: "10:40", text: "Verify the safety vendor endpoint claims. Done."),
+        entries: [
+            .row(doneRow("r-morning", .routine, "Morning medication", "Taken at 07:33.")),
+            .row(doneRow("r-skin", .routine, "Morning skincare", "Skipped at 07:40.")),
+            .line(
+                EarlierPresentation.Line(
+                    id: "e2", time: "08:38", text: "Thirteen suggested tasks answered.", button: ButtonPresentation("Open", role: .quiet, command: .refresh)
+                )),
+            .row(doneRow("t-vendor", .task, "Verify the safety vendor endpoint claims", "Done at 10:40.", flag: .high)),
         ])
 
     static func happening(marked: Bool = false) -> HappeningPresentation {
@@ -201,7 +216,7 @@ enum HandScenes {
     static func taskRow(_ id: String, _ title: String, _ line: String, flag: Flag?, state: Row.State, chips: Chips = .none, suggested: Bool = false) -> Row {
         Row(
             id: id, glyph: .task, title: title, line: line, stripe: Stripe(flag, suggested: suggested), state: state, chips: chips,
-            trailing: .flag(flagControl(suggested ? nil : flag, suggested: suggested ? flag : nil)),
+            trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done(id))),
             body: .task(
                 TaskCard(
                     id: id, chips: chips, doors: [flagDoor(flag), whenDoor],
@@ -280,7 +295,9 @@ enum HandScenes {
                     Row(
                         id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
                         line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
-                        state: .now, chips: Chips(project: security), trailing: .flag(flagControl(.high)), body: .task(vigilCard))),
+                        state: .now, chips: Chips(project: security),
+                        trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done("t-vigil"))),
+                        body: .task(vigilCard))),
                 .row(
                     taskRow(
                         "t-it", "File the IT ticket for the stopped VMs", "Kenji needs it before Monday.", flag: .high, state: .next,
@@ -451,7 +468,7 @@ enum HandScenes {
     static let gate = pane(
         .planning, strip: true,
         [
-            .night(nightRead), .earlier(EarlierPresentation(count: "8 done", lines: [])),
+            .night(nightRead), .earlier(EarlierPresentation(count: "8 done", entries: [])),
             .row(
                 Row(
                     id: "gate", glyph: .moss, title: "Thirteen suggested tasks to answer",
@@ -513,7 +530,7 @@ enum HandScenes {
     static let premeet = pane(
         .meeting,
         [
-            .night(nightRead), .earlier(EarlierPresentation(count: "22 done", lines: [])),
+            .night(nightRead), .earlier(EarlierPresentation(count: "22 done", entries: [])),
             .parked(ParkedLine(id: "p1", what: "The Vigil triage", rest: "waits until you are out.")),
             .happening(
                 HappeningPresentation(line: "Two more people accepted your 19:30 call. Eight are coming.", time: "13:05", tile: tile("EU"))),
@@ -562,7 +579,7 @@ enum HandScenes {
     static let closing = pane(
         .closing,
         [
-            .night(nightRead), .earlier(EarlierPresentation(count: "31 done", lines: [])),
+            .night(nightRead), .earlier(EarlierPresentation(count: "31 done", entries: [])),
             .row(
                 Row(
                     id: "wrap", glyph: .night, title: "Wrap the day", line: "Two things carry over. One is flagged High.", state: .now,

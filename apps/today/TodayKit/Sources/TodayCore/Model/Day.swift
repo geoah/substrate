@@ -71,6 +71,14 @@ public struct DayNotes: Codable, Equatable, Sendable {
     public var suggestedSavedAt: Date?
     /// How the suggested tasks were saved: made tasks, already done, dismissed.
     public var suggestedSaved: [Int] = [0, 0, 0]
+    /// The suggested tasks answered "Already done" today: finished, but not
+    /// something done today. Optional, so the notes an earlier build kept
+    /// still read.
+    public var suggestedDone: Set<String>?
+    /// When each task was marked done here today, by its id: the server
+    /// stamps `completedAt` only once the write reaches it, and the task is
+    /// a row of what is done from the moment it is marked. Optional, as above.
+    public var doneAt: [String: Date]?
     /// Urgent things the owner took now, and the ones left where they are.
     public var urgentTaken: [String: Date] = [:]
     public var urgentLeft: [String: Date] = [:]

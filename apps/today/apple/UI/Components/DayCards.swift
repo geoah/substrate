@@ -9,7 +9,11 @@ import TodayCore
 /// what is still open, with Skip beside it.
 struct RoutineCardView: View {
     var card: RoutineCard
+    /// The row it belongs to: while the whole row is being finished
+    /// (`Finishing`), its items wait with it.
+    var scope: String = ""
     @Environment(\.colorScheme) private var scheme
+    @Environment(PaneViewState.self) private var state
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -30,7 +34,8 @@ struct RoutineCardView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityElement(children: .combine)
-                            if let tick = item.tick { PaneButton(tick, small: true) }
+                            // While the whole row waits to be finished, an item is not ticked by itself.
+                            if let tick = item.tick { PaneButton(tick, small: true).disabled(state.waiting(scope) != nil) }
                         }
                         // A line with a tick is as tall as the tick's target.
                         .padding(.vertical, item.tick == nil ? 8 : 1)
@@ -51,11 +56,17 @@ struct RoutineCardView: View {
         }
     }
 
+    /// Crossed out: logged, or finished a moment ago and not yet written,
+    /// by its own tick or with its whole row.
+    private func struck(_ item: RoutineCard.Item) -> Bool {
+        item.logged != nil || state.phase(item.id) == .settled || state.phase(scope) == .settled
+    }
+
     private func name(_ item: RoutineCard.Item) -> some View {
         Text(item.name)
             .font(TodayLook.font(.callout, weight: .medium))
-            .foregroundStyle(item.logged == nil ? AnyShapeStyle(.ink) : AnyShapeStyle(.inkSecond))
-            .strikethrough(item.logged != nil)
+            .foregroundStyle(struck(item) ? AnyShapeStyle(.inkSecond) : AnyShapeStyle(.ink))
+            .strikethrough(struck(item))
             .multilineTextAlignment(.leading)
     }
 
@@ -418,6 +429,9 @@ struct TaskCardView: View {
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.pane) private var pane
+
+    private var flagDoor: String { "door:\(scope):flag" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -445,6 +459,14 @@ struct TaskCardView: View {
             if let done = card.done { PaneButton(done) }
             if let said = card.said { SavedLine(said) }
             if let moss = card.moss { MossBoxView(box: moss) }
+        }
+        // The flag is changed here, in the opened row. The order of the
+        // day follows it once its list is closed, or the card is.
+        .onChange(of: state.isOpen(flagDoor)) { _, open in
+            if !open { pane.send(.settleFlags) }
+        }
+        .onDisappear {
+            if state.isOpen(flagDoor) { pane.send(.settleFlags) }
         }
     }
 }

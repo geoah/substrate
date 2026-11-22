@@ -71,6 +71,7 @@ public extension TodayApp {
                     ask(.task(task.id), said)
                 } else {
                     wrote(writes.answer(task, answer))
+                    if answer == .done { notes.suggestedDone = (notes.suggestedDone ?? []).union([task.id]) }
                 }
                 counts[index] += 1
                 drafts.suggested[task.id] = nil
@@ -94,6 +95,9 @@ public extension TodayApp {
             wrote(writes.log(occurrence, done: done))
         case let .unlog(id):
             wrote(writes.unlog(id))
+        case let .unlogRow(row):
+            guard let routine = engine.routine(row) else { break }
+            for occurrence in routine.occurrences where day.logs[occurrence.id] != nil { wrote(writes.unlog(occurrence.id)) }
         case let .later(row):
             guard let routine = engine.routine(row) else { break }
             let count = engine.open(routine).count
@@ -272,9 +276,11 @@ public extension TodayApp {
         case let .done(id):
             guard let task = day.task(id) else { break }
             wrote(writes.status(task, .done))
+            notes.doneAt = (notes.doneAt ?? [:]).merging([id: now]) { _, new in new }
         case let .reopen(id):
             guard let task = day.task(id) else { break }
             wrote(writes.status(task, .open))
+            notes.doneAt?[id] = nil
 
         // MARK: Urgent
         case let .urgent(id, choice):

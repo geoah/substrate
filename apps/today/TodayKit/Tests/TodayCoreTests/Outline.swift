@@ -15,7 +15,16 @@ func outline(_ pane: PanePresentation) -> String {
             out.append(
                 "night\(night.leads ? "*" : ""): \(night.line) [\(night.groups.map { "\($0.label): \($0.items.map(\.name).joined(separator: ","))" }.joined(separator: "; "))]"
             )
-        case let .earlier(earlier): out.append("earlier: \(earlier.count) - " + earlier.lines.map { "\($0.time) \($0.text)" }.joined(separator: " / "))
+        case let .earlier(earlier):
+            out.append(
+                "earlier: \(earlier.count) - "
+                    + earlier.entries.map { entry in
+                        switch entry {
+                        case let .row(row): "\(row.title) (\(row.line ?? ""))"
+                        case let .meeting(meeting): "\(meeting.end) \(meeting.title)"
+                        case let .line(line): "\(line.time) \(line.text)"
+                        }
+                    }.joined(separator: " / "))
         case let .happening(h):
             out.append(
                 "happening: \(h.time ?? "") \(h.line) {\(h.groups.map { "\($0.name):\($0.items.count)" }.joined(separator: ","))}")

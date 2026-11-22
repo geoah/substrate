@@ -18,12 +18,18 @@ struct DayScreen<Notices: View>: View {
     @State private var state: PaneViewState
     @Environment(\.colorScheme) private var system
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     /// - Parameters:
     ///   - path: the pages open at first, for a gallery that draws one.
     ///   - opened: what is opened in place at first, likewise.
+    ///   - showsDone: whether what is done is shown, for a gallery; nil is
+    ///     the choice the device kept.
+    ///   - finishing: finishes that began at an instant, drawn at another
+    ///     with no clock running, for a gallery.
     init(
-        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [],
+        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [], showsDone: Bool? = nil,
+        finishing: (commands: [TodayCommand], began: Date, at: Date)? = nil,
         send: @escaping @MainActor @Sendable (TodayCommand) -> Void = { _ in }, openSettings: (() -> Void)? = nil,
         @ViewBuilder notices: @escaping () -> Notices
     ) {
@@ -32,8 +38,11 @@ struct DayScreen<Notices: View>: View {
         self.openSettings = openSettings
         self.notices = notices
         _path = State(initialValue: path)
-        let state = PaneViewState()
+        let state = PaneViewState(showsDone: showsDone)
         state.opened = opened
+        if let finishing {
+            for command in finishing.commands { state.draw(command, began: finishing.began, at: finishing.at) }
+        }
         _state = State(initialValue: state)
     }
 
@@ -51,6 +60,14 @@ struct DayScreen<Notices: View>: View {
         .environment(\.ground, app.pane.ground)
         .environment(\.colorScheme, app.pane.ground.scheme(in: system))
         .tint(TodayLook.ink.color)
+        // A finish waits a few seconds so it can be taken back; leaving
+        // the app or the screen sends what waits, so none is lost.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { state.flush() }
+        }
+        .onDisappear { state.flush() }
+        .sensoryFeedback(.impact(weight: .light), trigger: state.begun)
+        .sensoryFeedback(.success, trigger: state.sent)
     }
 
     private var actions: PaneActions {
@@ -58,6 +75,8 @@ struct DayScreen<Notices: View>: View {
         let state = state
         return PaneActions(
             send: { command in
+                // What finishes a thing waits where it can be taken back, and is sent when its time is up.
+                if command.finishing != nil { return state.finish(command, deliver: send) }
                 // What was typed under "Other" is the view's until its Save: it goes with that Save, and is the view's no more.
                 guard case let .saveSuggested(ids, _) = command else { return send(command) }
                 send(.saveSuggested(ids, words: state.words.filter { ids.contains($0.key) }))
@@ -136,9 +155,12 @@ struct DayScreen<Notices: View>: View {
 
 extension DayScreen where Notices == EmptyView {
     init(
-        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [],
+        app: TodayPresentation, path: [TodayRoute] = [], opened: Set<String> = [], showsDone: Bool? = nil,
+        finishing: (commands: [TodayCommand], began: Date, at: Date)? = nil,
         send: @escaping @MainActor @Sendable (TodayCommand) -> Void = { _ in }, openSettings: (() -> Void)? = nil
     ) {
-        self.init(app: app, path: path, opened: opened, send: send, openSettings: openSettings) { EmptyView() }
+        self.init(app: app, path: path, opened: opened, showsDone: showsDone, finishing: finishing, send: send, openSettings: openSettings) {
+            EmptyView()
+        }
     }
 }

@@ -83,6 +83,24 @@ import TodayCore
         }
     }
 
+    /// The day with something being finished, at a fixed instant of its
+    /// wait, and with what is done shown and hidden.
+    @Test func finishingDraws() async throws {
+        guard let working = TodayFixtures.all.first(where: { $0.name == "today-working" }) else { return }
+        let began = Date(timeIntervalSince1970: 1_800_000_000)
+        guard
+            let task = working.app.pane.items.compactMap({ item -> Row? in if case let .row(row) = item, row.id.hasPrefix("task:") { row } else { nil } }).last
+        else { return }
+        let command = TodayCommand.done(String(task.id.dropFirst("task:".count)))
+        for (name, after) in [("counting", 1.2), ("counted", 4.0)] {
+            try await write(
+                "finish-\(name)", DayScreen(app: working.app, showsDone: true, finishing: ([command], began, began.addingTimeInterval(after))),
+                size: CGSize(width: 393, height: 2600))
+        }
+        try await both("done-shown", size: CGSize(width: 393, height: 2600)) { DayScreen(app: working.app, showsDone: true) }
+        try await write("done-hidden", DayScreen(app: working.app, showsDone: false), size: CGSize(width: 393, height: 2600))
+    }
+
     // MARK: Hand-made scenes
 
     @Test func theDayAtEachMoment() async throws {

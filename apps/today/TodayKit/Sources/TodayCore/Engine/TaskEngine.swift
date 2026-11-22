@@ -231,7 +231,17 @@ extension DayEngine {
     func taskRow(_ task: TaskItem, state: Row.State) -> Row {
         Row(
             id: "task:" + task.id, glyph: .task, title: task.name, line: why(task), stripe: stripe(task), state: state, chips: taskChips(task),
-            trailing: .flag(flagControl(task)), body: .task(taskCard(task)))
+            trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done(task.id))),
+            body: .task(taskCard(task)))
+    }
+
+    /// A task done today, as a row of what is done: crossed out, with when,
+    /// and a filled tick that opens it again.
+    func doneRow(_ task: TaskItem, at: Date) -> Row {
+        Row(
+            id: "task:" + task.id, glyph: .task, title: task.name, line: "Done at \(clock(at)).", stripe: stripe(task), state: .done,
+            trailing: .tick(ButtonPresentation("Open again", glyph: .done, iconOnly: true, role: .primary, command: .reopen(task.id))),
+            body: .task(taskCard(task)))
     }
 
     // MARK: What cannot wait

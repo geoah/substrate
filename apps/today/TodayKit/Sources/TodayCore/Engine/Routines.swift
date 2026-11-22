@@ -125,6 +125,18 @@ extension DayEngine {
             body: .routine(routineCard(routine)))
     }
 
+    /// A routine row finished today, as a row of what is done: crossed out,
+    /// with when, and a filled tick that takes every log of it back.
+    func doneRow(_ routine: RoutineRow, at: Date) -> Row {
+        let logs = routine.occurrences.compactMap { day.logs[$0.id] }
+        let skipped = !logs.isEmpty && logs.allSatisfy { !$0.done }
+        let word = skipped ? "Skipped" : routine.isDose ? "Taken" : "Done"
+        return Row(
+            id: routine.id, glyph: .routine, title: routine.title, line: "\(word) at \(clock(at)).", state: .done,
+            trailing: .tick(ButtonPresentation("Take it back", glyph: .done, iconOnly: true, role: .primary, command: .unlogRow(routine.id))),
+            body: .routine(routineCard(routine)))
+    }
+
     /// The routine row an id names, among yesterday's and today's.
     func routine(_ id: String) -> RoutineRow? { (todaysRoutines + yesterdaysRoutines).first { $0.id == id } }
 

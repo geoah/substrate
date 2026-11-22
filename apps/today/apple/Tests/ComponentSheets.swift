@@ -11,9 +11,9 @@ import TodayCore
 enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
-        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
+        ("tile", 420), ("badge", 380), ("glyph", 1300), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
         ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
-        ("ground", 900),
+        ("ground", 900), ("finish", 2300),
     ]
 
     @ViewBuilder static func sheet(_ name: String) -> some View {
@@ -35,6 +35,7 @@ enum ComponentSheets {
             case "bar": bar
             case "moss": moss
             case "page": page
+            case "finish": finish
             default: ground
             }
         }
@@ -42,7 +43,7 @@ enum ComponentSheets {
 
     struct Sheet<Content: View>: View {
         @ViewBuilder var content: () -> Content
-        @State private var state = PaneViewState()
+        @State private var state = PaneViewState(showsDone: true)
 
         var body: some View {
             ZStack(alignment: .top) {
@@ -69,6 +70,88 @@ enum ComponentSheets {
     }
 
     static let h = HandScenes.self
+
+    /// A fixed state of what is being finished: what was pressed, and how
+    /// long ago, with no clock running. And whether what is done is shown.
+    struct Finishes<Content: View>: View {
+        @State private var state: PaneViewState
+        private var content: () -> Content
+
+        init(_ commands: [TodayCommand] = [], after seconds: TimeInterval = 0, showsDone: Bool = true, @ViewBuilder content: @escaping () -> Content) {
+            let state = PaneViewState(showsDone: showsDone)
+            let began = Date(timeIntervalSince1970: 1_800_000_000)
+            for command in commands { state.draw(command, began: began, at: began.addingTimeInterval(seconds)) }
+            _state = State(initialValue: state)
+            self.content = content
+        }
+
+        var body: some View { content().environment(state) }
+    }
+
+    static func finishing(_ id: String, _ title: String, flag: Flag? = nil) -> Row {
+        Row(
+            id: "task:" + id, glyph: .task, title: title, stripe: Stripe(flag), state: .next, chips: Chips(project: h.lantern),
+            trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done(id))),
+            body: .task(TaskCard(id: id)))
+    }
+
+    static let doses = RoutineCard(
+        items: [
+            RoutineCard.Item(
+                id: "d1", name: "Magnesium", detail: "200 mg",
+                tick: ButtonPresentation("Taken", glyph: .done, iconOnly: true, role: .secondary, command: .logOccurrence("d1", done: true))),
+            RoutineCard.Item(
+                id: "d2", name: "Vitamin D", detail: "1,000 IU",
+                tick: ButtonPresentation("Taken", glyph: .done, iconOnly: true, role: .secondary, command: .logOccurrence("d2", done: true))),
+        ],
+        done: ButtonPresentation("All taken", glyph: .done, role: .primary, wide: true, command: .log(row: "meds", done: true)),
+        skip: ButtonPresentation("Skip", role: .quiet, command: .log(row: "meds", done: false)))
+
+    /// Finishing a thing with a way back, and what is done kept in the day.
+    static var finish: some View {
+        Group {
+            Case(caption: "A task's closed row ends with its tick; its flag is the stripe alone", carded: false) {
+                VStack(spacing: 0) {
+                    RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
+                    RowView(row: finishing("f2", "Renew the passport"), first: false)
+                }
+                .soft()
+            }
+            Case(caption: "Pressed: for three seconds the tick is a ring that drains around the undo arrow", carded: false) {
+                Finishes([.done("f1")], after: 1.2) {
+                    VStack(spacing: 0) {
+                        RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
+                        RowView(row: finishing("f2", "Renew the passport"), first: false)
+                    }
+                    .soft()
+                }
+            }
+            Case(caption: "Counted down: crossed out with its tick filled for two more seconds, and still taken back by a tap", carded: false) {
+                Finishes([.done("f1")], after: 4) {
+                    VStack(spacing: 0) {
+                        RowView(row: finishing("f1", "Test the drive caddies", flag: .high))
+                        RowView(row: finishing("f2", "Renew the passport"), first: false)
+                    }
+                    .soft()
+                }
+            }
+            Case(caption: "A button with a word, pressed: it reads Undo and its fill drains; the other way waits") {
+                Finishes([.log(row: "meds", done: true)], after: 1.2) { RoutineCardView(card: doses, scope: "meds") }
+            }
+            Case(caption: "The same, counted down: every item is crossed out") {
+                Finishes([.log(row: "meds", done: true)], after: 4) { RoutineCardView(card: doses, scope: "meds") }
+            }
+            Case(caption: "One item ticked by itself, counting, and Skip pressed after it") {
+                Finishes([.logOccurrence("d1", done: true), .log(row: "meds", done: false)], after: 0.9) { RoutineCardView(card: doses, scope: "meds") }
+            }
+            Case(caption: "Earlier today, shown: what was finished is a closed row whose filled tick takes it back", carded: false) {
+                Finishes(showsDone: true) { EarlierView(earlier: h.earlier) }
+            }
+            Case(caption: "Earlier today, hidden: the header is the toggle", carded: false) {
+                Finishes(showsDone: false) { EarlierView(earlier: h.earlier) }
+            }
+        }
+    }
 
     static var tile: some View {
         Group {
@@ -106,6 +189,22 @@ enum ComponentSheets {
             }
             Case(caption: "On the current item") {
                 HStack(spacing: 12) { ForEach([Glyph.task, .meeting, .routine], id: \.self) { GlyphView(glyph: $0, size: .lead) } }
+            }
+            Case(caption: "CANDIDATES for the task glyph, beside a tick") {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(
+                        [
+                            "list.clipboard", "clipboard", "checklist.unchecked", "diamond", "circle.dashed", "pencil.and.list.clipboard",
+                        ], id: \.self
+                    ) { name in
+                        HStack(spacing: 10) {
+                            Image(systemName: name).font(.system(size: 17, weight: .medium)).foregroundStyle(.inkSecond).frame(width: 26, height: 26)
+                            Text("Test the drive caddies  (\(name))").font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
+                            Spacer()
+                            IconButton(Glyph.done, label: "Done", small: true, look: .quiet) {}
+                        }
+                    }
+                }
             }
             Case(caption: "Chevrons: a page, in place, open") {
                 HStack(spacing: 16) {
@@ -293,7 +392,9 @@ enum ComponentSheets {
                     row: Row(
                         id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
                         line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
-                        state: .now, chips: Chips(project: h.security), trailing: .flag(h.flagControl(.high)), body: .task(h.vigilCard)))
+                        state: .now, chips: Chips(project: h.security),
+                        trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true, role: .secondary, command: .done("t-vigil"))),
+                        body: .task(h.vigilCard)))
             }
             Case(caption: "A routine of several: each item has its tick, and Skip stands beside the button for the rest", carded: false) {
                 RowView(

@@ -1,10 +1,12 @@
 import Observation
 import SwiftUI
+import TodayCore
 
 /// What the views keep to themselves: which lines are opened in place,
-/// which of a meeting's points to raise are ticked, and what is typed
-/// under "Other" on a suggested task until its Save. Nothing here is a
-/// record or a choice; closing the app forgets it.
+/// which of a meeting's points to raise are ticked, what is typed under
+/// "Other" on a suggested task until its Save, what was finished a moment
+/// ago and can still be taken back, and whether what is done is shown.
+/// None of it is a record; only the last is kept across launches.
 @MainActor
 @Observable
 final class PaneViewState {
@@ -15,6 +17,125 @@ final class PaneViewState {
     /// A field of a card or a page holds the keyboard: the day's own field,
     /// fixed at the bottom, steps aside so it does not cover what is typed.
     var writing = false
+
+    // MARK: What is done, shown or hidden
+
+    private static let showsDoneKey = "today.showsDone"
+
+    /// Whether "Earlier today" shows what is done. The device keeps the
+    /// choice across launches, and it starts shown.
+    private(set) var showsDone: Bool
+    /// False for a drawing: its choice is its own and nothing is kept.
+    private let keeps: Bool
+
+    /// - Parameter showsDone: a drawing's fixed choice; nil reads the one the device kept.
+    init(showsDone: Bool? = nil) {
+        keeps = showsDone == nil
+        self.showsDone = showsDone ?? (UserDefaults.standard.object(forKey: Self.showsDoneKey) as? Bool ?? true)
+    }
+
+    func show(done: Bool) {
+        showsDone = done
+        if keeps { UserDefaults.standard.set(done, forKey: Self.showsDoneKey) }
+    }
+
+    // MARK: Finishing, with a way back
+
+    /// What was finished and can still be taken back (`Finishing`): the
+    /// command of each waits here and is sent when its time is up.
+    private(set) var finishing = Finishing()
+    /// How many finishes began and how many were sent: what a haptic answers.
+    private(set) var begun = 0
+    private(set) var sent = 0
+    /// A drawing's fixed instant: no clock runs, and a count stands where
+    /// this puts it.
+    var frozen: Date?
+
+    private var deliver: @MainActor (TodayCommand) -> Void = { _ in }
+    private var wake: Task<Void, Never>?
+    /// Moved when a phase ends, so what reads a phase is drawn again.
+    private var beat = 0
+
+    private var now: Date { frozen ?? Date() }
+
+    /// A control that finishes something was pressed: its command waits,
+    /// and `deliver` is where it goes when its time is up. A command that
+    /// finishes nothing goes at once.
+    func finish(_ command: TodayCommand, deliver: @escaping @MainActor (TodayCommand) -> Void) {
+        self.deliver = deliver
+        guard finishing.begin(command, at: now) else { return deliver(command) }
+        begun += 1
+        announce(command)
+        schedule()
+    }
+
+    /// A drawing's state: a finish that began at an instant, with no clock.
+    func draw(_ command: TodayCommand, began: Date, at instant: Date) {
+        frozen = instant
+        finishing.begin(command, at: began)
+    }
+
+    /// It is taken back: nothing was written.
+    func takeBack(_ key: String) {
+        finishing.cancel(key)
+        beat += 1
+        schedule()
+    }
+
+    func phase(_ key: String) -> Finishing.Phase? {
+        _ = beat
+        return finishing.phase(key, at: now)
+    }
+
+    /// The command that waits for a thing: a control shows the count only
+    /// for its own command, and the other way of finishing the thing waits.
+    func waiting(_ key: String) -> TodayCommand? { finishing.command(key) }
+
+    /// How much of a thing's countdown is left, from 1 to 0.
+    func left(_ key: String) -> Double { finishing.left(key, at: now) }
+
+    /// The app is leaving the foreground, or the screen is going away:
+    /// everything that waits is sent now. A finish is never lost.
+    func flush() {
+        wake?.cancel()
+        wake = nil
+        for command in finishing.flush() {
+            deliver(command)
+            sent += 1
+        }
+        beat += 1
+    }
+
+    private func schedule() {
+        wake?.cancel()
+        wake = nil
+        guard frozen == nil, let next = finishing.next(after: now) else { return }
+        wake = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.02))
+            guard !Task.isCancelled else { return }
+            self?.tick()
+        }
+    }
+
+    private func tick() {
+        let due = finishing.due(at: now)
+        beat += 1
+        for command in due {
+            deliver(command)
+            sent += 1
+        }
+        schedule()
+    }
+
+    /// A screen reader hears what the press began, and that it can be undone.
+    private func announce(_ command: TodayCommand) {
+        let what: String =
+            switch command {
+            case .log(_, false): "Skipped"
+            default: "Marked done"
+            }
+        AccessibilityNotification.Announcement("\(what) in three seconds. The same button undoes it.").post()
+    }
 
     func isOpen(_ id: String) -> Bool { opened.contains(id) }
 

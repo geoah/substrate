@@ -177,14 +177,17 @@ public struct Row: Codable, Equatable, Sendable, Identifiable {
         case carried
         /// A meeting is about to start: it waits until the owner is out.
         case parked
+        /// Finished today, done or skipped: a closed row of what is done
+        /// ("Earlier today"), crossed out, whose filled tick takes it back.
+        case done
     }
 
     /// What ends a closed row.
     public enum Trailing: Codable, Equatable, Hashable, Sendable {
-        /// A task: the flag icon button, which opens the three options
-        /// under the row.
-        case flag(FlagControl)
-        /// A routine: the tick icon button.
+        /// A task or a routine: the tick icon button. Open, it finishes the
+        /// thing (a view counts down first, `Finishing`); filled, on a row
+        /// that is done, it takes that back at once. A task's flag is not
+        /// here: it is changed from the opened row.
         case tick(ButtonPresentation)
         /// It opens a page: a right chevron, and a tap on the row opens it.
         case page(TodayRoute)
