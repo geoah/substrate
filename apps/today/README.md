@@ -30,7 +30,10 @@ never fails because one is missing.
 From top to bottom: the strip (the projects with a flag, in flag order), the
 night, what is done earlier today, what is happening since the last look
 (directly above the current item), the current item in full, what comes next
-in the order it is acted on, and "Add or ask" fixed at the bottom. The
+in the order it is acted on, and "Add or ask" fixed at the bottom. What is
+typed there goes to the assistant, which adds a task where the words are one
+and answers where they ask; where it cannot be reached, the words can be
+kept as a task. The
 priorities, the list of projects, a project, a person, a meeting, a task and
 the plan are pages; everything else opens in place.
 

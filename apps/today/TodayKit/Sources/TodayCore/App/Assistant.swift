@@ -13,6 +13,9 @@ public enum AssistantEvent: Codable, Equatable, Sendable {
     case thread(String)
     /// More of the answer.
     case delta(String)
+    /// The assistant began a step of work: what it said before it is a
+    /// paragraph of its own.
+    case step
     /// The turn settled: the whole reply, where the server gives it.
     case done(String?)
     /// It could not be asked, or the turn failed: why, in the app's words.
@@ -42,13 +45,14 @@ enum Assistant {
             timeout: quiet)
     }
 
-    /// One stream line as an event; nil for a heartbeat, a tool's line or
+    /// One stream line as an event; nil for a heartbeat, a tool's result or
     /// anything this build does not name.
     static func parse(_ line: String) -> AssistantEvent? {
         guard let data = line.data(using: .utf8), let value = try? JSONValue(data: data), let kind = value["kind"]?.text else { return nil }
         switch kind {
         case "thread": return value["thread"]?.text.map(AssistantEvent.thread)
         case "delta": return value["text"]?.string.map(AssistantEvent.delta)
+        case "toolStarted": return .step
         case "done":
             if let result = value["result"] {
                 let status = result["status"]?.text

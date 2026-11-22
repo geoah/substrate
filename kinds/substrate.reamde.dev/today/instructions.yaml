@@ -50,6 +50,24 @@ data:
 ---
 kind: substrate.reamde.dev/llm/instruction
 metadata:
+  id: today-add
+data:
+  properties:
+    agent:
+      ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    text: >-
+      When the owner gives you something to do and asks nothing (one to-do,
+      or a list of them), they are asking you to add it. Write each as a substrate.reamde.dev/tasks/task
+      with status open, in the list they name or the one it plainly belongs
+      to, and with a priority only where they gave one. A list they name that
+      does not exist you make first, named as their other lists are. With
+      no day named it is for today: set notBefore to now. Then say in one
+      sentence what you added and where, and nothing more.
+    active: true
+    source: import
+---
+kind: substrate.reamde.dev/llm/instruction
+metadata:
   id: today-existing
 data:
   properties:

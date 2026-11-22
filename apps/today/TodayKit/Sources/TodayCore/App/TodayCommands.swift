@@ -43,6 +43,17 @@ public extension TodayApp {
             out.append(.asked(exchange, message: Assistant.message(subject, question, day: day), context: Assistant.context(subject, day: day)))
         }
 
+        /// Words as a task at once: one name on one line, where the
+        /// assistant would have kept their lines.
+        func add(_ text: String) {
+            let typed = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                .joined(separator: " ")
+            guard !typed.isEmpty else { return }
+            let id = writes.writes.newID()
+            wrote(writes.add(Words.cap(typed), id: id))
+            notes.added.append(id)
+        }
+
         /// Each suggested task that has an answer, the owner's or the
         /// assistant's, is written with it; one with none is left as it is.
         func answer(_ tasks: [TaskItem]) {
@@ -308,15 +319,11 @@ public extension TodayApp {
 
         // MARK: Add or ask
         case let .addOrAsk(text):
-            let typed = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !typed.isEmpty else { break }
-            if typed.hasSuffix("?") {
-                ask(.day, typed)
-            } else {
-                let id = writes.writes.newID()
-                wrote(writes.add(Words.cap(typed), id: id))
-                notes.added.append(id)
-            }
+            ask(.day, text)
+        case let .addUnanswered(id):
+            guard let exchange = day.exchanges.first(where: { $0.id == id && $0.subject == .day && $0.state == .failed }) else { break }
+            add(exchange.question)
+            out.append(.kept(id))
         case let .ask(subject, text):
             ask(subject, text)
         case let .closeAnswer(id):

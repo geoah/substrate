@@ -3,8 +3,8 @@ import SwiftUI
 import TodayCore
 
 /// "Add or ask": the one field, fixed at the bottom of the day and of every
-/// page. What is typed is a task at once; text that ends with a question
-/// mark is a question to the assistant, answered in place over the field.
+/// page. What is typed goes to the assistant, which adds a task where the
+/// words are one and answers where they ask, in place over the field.
 struct ComposerBar: View {
     var composer: ComposerPresentation
     var answer: AnswerCard?

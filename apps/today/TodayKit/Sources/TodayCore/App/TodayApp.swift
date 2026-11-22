@@ -43,6 +43,9 @@ public struct TodayApp: LinkedRecordsApp {
         case asked(Exchange, message: String, context: [String])
         case answer(String, AssistantEvent)
         case answerClosed(String)
+        /// The words of an exchange that failed were kept as a task: its
+        /// card says so in place.
+        case kept(String)
         case stopped
         case later(ReminderPlan)
         case usage([AreaUsage])

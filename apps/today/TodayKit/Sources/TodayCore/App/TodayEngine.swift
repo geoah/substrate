@@ -71,6 +71,9 @@ public extension TodayApp {
                 next.exchanges[index].text += text
                 next.exchanges[index].state = .writing
                 next.reachable = true
+            case .step:
+                let said = next.exchanges[index].text
+                if !said.isEmpty, !said.hasSuffix("\n") { next.exchanges[index].text += "\n\n" }
             case let .done(reply):
                 if let reply, !reply.isEmpty { next.exchanges[index].text = reply }
                 next.exchanges[index].state = .done
@@ -82,6 +85,10 @@ public extension TodayApp {
             }
         case let .answerClosed(id):
             next.exchanges.removeAll { $0.id == id }
+        case let .kept(id):
+            guard let index = next.exchanges.firstIndex(where: { $0.id == id }) else { break }
+            next.exchanges[index].text = "Added as a task. Moss did not see it."
+            next.exchanges[index].state = .done
         case .stopped:
             for index in next.exchanges.indices where next.exchanges[index].state == .waiting || next.exchanges[index].state == .writing {
                 next.exchanges[index].state = .done

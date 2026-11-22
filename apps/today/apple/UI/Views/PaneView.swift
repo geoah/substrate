@@ -49,9 +49,13 @@ struct PaneView<Header: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: pane.composer.added) { _, added in
-                // The task the field just made: the day scrolls to its row.
+                // The task the field just made: the day scrolls to its row,
+                // which in a list of closed rows has a name of its own.
                 guard let added, let block = blocks.first(where: { $0.holds("row:" + added) }) else { return }
-                withAnimation { proxy.scrollTo(block.id, anchor: .center) }
+                let row = if case .rows = block.kind { PaneBlock.within(added) } else { block.id }
+                // After this update is laid out: a row drawn in the same
+                // update has no place to scroll to yet.
+                Task { @MainActor in withAnimation { proxy.scrollTo(row, anchor: .center) } }
             }
         }
     }
@@ -75,6 +79,10 @@ struct PaneBlock: Identifiable {
 
     var id: String
     var kind: Kind
+
+    /// What a row inside a list of closed rows is called for scrolling: the
+    /// list itself carries its first row's name.
+    static func within(_ row: String) -> String { "within:" + row }
 
     func holds(_ item: String) -> Bool {
         switch kind {
@@ -116,7 +124,7 @@ struct PaneBlockView: View {
         case let .rows(rows):
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    RowView(row: row, first: index == 0)
+                    RowView(row: row, first: index == 0).id(PaneBlock.within(row.id))
                 }
             }
             .soft()

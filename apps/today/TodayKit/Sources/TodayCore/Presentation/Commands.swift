@@ -164,9 +164,14 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
 
     // MARK: Add or ask, and the assistant
 
-    /// What was typed or dictated into the field. Text that ends with a
-    /// question mark is a question; anything else is a task at once.
+    /// What was typed or dictated into the field. All of it goes to the
+    /// assistant, which adds a task where the words are one and answers
+    /// where they ask.
     case addOrAsk(String)
+    /// The words of an exchange about the day that the assistant could not
+    /// take become a task at once, so they are not lost: by the exchange's
+    /// id. Its card says so.
+    case addUnanswered(String)
     /// A question or an instruction about one thing, from its box.
     case ask(MossSubject, String)
     /// The answer in place is closed.

@@ -124,9 +124,14 @@ extension DayEngine {
             case .waiting, .writing: ButtonPresentation("Stop", role: .quiet, command: .stopAnswer)
             case .done, .failed: ButtonPresentation("Close", role: .quiet, command: .closeAnswer(exchange.id))
             }
+        // Words about the day that could not be sent are kept as a task
+        // where the owner says so: the field is where a task is added too.
+        let keep: ButtonPresentation? =
+            exchange.state == .failed && exchange.subject == .day
+            ? ButtonPresentation("Add as a task", role: .secondary, command: .addUnanswered(exchange.id)) : nil
         return AnswerCard(
             id: exchange.id, heading: exchange.question.hasSuffix("?") ? "You asked Moss" : "You said to Moss", question: exchange.question,
-            text: exchange.text, state: exchange.state, button: button)
+            text: exchange.text, state: exchange.state, button: button, keep: keep)
     }
 
     // MARK: A task, open

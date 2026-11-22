@@ -48,7 +48,11 @@ data:
   # 1: preference, plan, advice, digest, reviewmark, dossier, returnpoint,
   # rule, preparation and urgentcheck; fade, prepare and stampurgent with
   # their triggers; the preparer; the assistant's standing instructions.
-  version: 2
+  # 2: the morning ask names the two kinds a flag is suggested on.
+  # 3: the instruction `today-add`: a to-do the owner gives the assistant is
+  # an open task for today, since a day planner's field sends all it is given
+  # to the assistant.
+  version: 3
 ---
 # ---- the bundle document: the install unit ------------------------------------
 # Ten kinds, three functions and one agent. The triggers (triggers.yaml) and

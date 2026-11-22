@@ -205,7 +205,9 @@ extension DayEngine {
         let asked = day.exchanges.last { $0.subject == .day }
         return PanePresentation(
             strip: strip, items: items, ground: ground,
-            composer: ComposerPresentation(added: day.notes.added.last),
+            // Named once its row is drawn: the write reaches the records a
+            // moment after the note of it, and a view scrolls when this changes.
+            composer: ComposerPresentation(added: day.notes.added.last.flatMap { day.task($0) == nil ? nil : "task:" + $0 }),
             answer: asked.map(answerCard), lead: lead,
             empty: day.discovery.present.isEmpty && day.discovery.series.isEmpty
                 ? "Nothing to draw a day from yet. Add the tasks, routines and today packages to this repository." : nil)

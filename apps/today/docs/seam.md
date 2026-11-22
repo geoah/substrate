@@ -72,7 +72,7 @@ assistant's sentence under it.
 | `urgent(task:_:)`                                                                           | Take it now, leave it here, not urgent                                                 |
 | `setPriority(project:_:)`, `togglePriority(project:)`, `removePriority(project:)`           | The priorities page, and a project's own page                                          |
 | `carry(task:option:)`, `saveWrap`                                                           | The wrap: a draft until `saveWrap`                                                     |
-| `addOrAsk(_:)`, `ask(_:_:)`, `closeAnswer(_:)`, `stopAnswer`                                | The field and the assistant's boxes                                                    |
+| `addOrAsk(_:)`, `addUnanswered(_:)`, `ask(_:_:)`, `closeAnswer(_:)`, `stopAnswer`           | The field and the assistant's boxes                                                    |
 | `send(_:)`                                                                                  | Send, under a message that is ready                                                    |
 | `instruction(_:on:)`, `rewriteInstruction(_:text:)`, `settings(_:)`                         | Settings: an instruction on or off, its text, a row of the app's own                   |
 | `looked`, `refresh`, `foreground`, `clearSaved`, `offered(_:)`, `dismissProblem`, `notificationsAsked` | The app's own                                                                |

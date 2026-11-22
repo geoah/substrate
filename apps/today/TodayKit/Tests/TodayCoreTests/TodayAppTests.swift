@@ -617,25 +617,49 @@ struct WriteTests {
         #expect(writes(night).flatMap(\.entries).last?.properties == ["nightReadAt": "2026-11-19T08:20:00Z"])
     }
 
-    @Test func whatIsTypedIsATaskAtOnceAndAQuestionGoesToTheAssistant() async throws {
+    @Test func whatIsTypedGoesToTheAssistantAndIsKeptAsATaskWhereItCannotBeSent() async throws {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
         await load(harness, "11:30")
-        await harness.send(.addOrAsk(" send Callum the snapshot restore numbers "))
+        // A task's name is sent as it was typed, lines and all, and nothing is written here.
+        await harness.send(.addOrAsk(" send Callum the snapshot restore numbers\nand the runbook "))
+        guard case let .ask(told, words, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        #expect(told.subject == .day && words == "send Callum the snapshot restore numbers\nand the runbook" && writes(harness).isEmpty)
+        #expect(await harness.presentation.pane.answer?.heading == "You said to Moss")
+        #expect(await harness.presentation.pane.answer?.keep == nil, "nothing is kept while the assistant has the words")
+        // Where the assistant could not take them, they are kept as a task the owner asks for.
+        await harness.deliver(.answer(told.id, .failed("Moss could not be reached. This iPhone is offline.")))
+        let failed = try #require(await harness.presentation.pane.answer)
+        #expect(failed.state == .failed && failed.keep?.title == "Add as a task" && failed.keep?.command == .addUnanswered(told.id))
+        await harness.send(.addUnanswered(told.id))
         let entry = try #require(writes(harness).flatMap(\.entries).first)
-        #expect(entry.kind == TodayKinds.task && entry.method == .put && entry.properties == ["name": "Send Callum the snapshot restore numbers"])
+        #expect(
+            entry.kind == TodayKinds.task && entry.method == .put
+                && entry.properties == ["name": "Send Callum the snapshot restore numbers and the runbook"])
         let pane = await harness.presentation.pane
         let added = try #require(row(pane, "task:" + entry.recordID))
         #expect(added.stripe == .none && added.line == "You added it at 11:30.")
+        #expect(pane.composer.added == "task:" + entry.recordID, "the day scrolls to the row")
+        #expect(pane.answer?.state == .done && pane.answer?.text == "Added as a task. Moss did not see it." && pane.answer?.keep == nil)
+        await harness.send(.addUnanswered(told.id))
+        #expect(writes(harness).flatMap(\.entries).count == 1, "an exchange is kept once")
+
         await harness.send(.addOrAsk("What can I drop this afternoon?"))
         guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }
         #expect(exchange.subject == .day && message == "What can I drop this afternoon?" && context.isEmpty)
         #expect(await harness.presentation.pane.answer?.state == .waiting)
+        // What it says before a step of work is a paragraph of its own.
+        await harness.deliver(.answer(exchange.id, .step))
+        await harness.deliver(.answer(exchange.id, .delta("Reading the afternoon.")))
+        await harness.deliver(.answer(exchange.id, .step))
+        await harness.deliver(.answer(exchange.id, .step))
         await harness.deliver(.answer(exchange.id, .delta("Callum is at the standup too.")))
         await harness.deliver(.answer(exchange.id, .done(nil)))
         let answer = try #require(await harness.presentation.pane.answer)
-        #expect(answer.text == "Callum is at the standup too." && answer.state == .done)
+        #expect(answer.text == "Reading the afternoon.\n\nCallum is at the standup too." && answer.state == .done && answer.keep == nil)
     }
 
     @Test func aQuestionAboutATaskCarriesItsRecordAndAFailureIsSaidInPlace() async throws {
@@ -656,7 +680,8 @@ struct WriteTests {
         #expect(Assistant.parse(#"{"kind":"thread","thread":"t1"}"#) == .thread("t1"))
         #expect(Assistant.parse(#"{"kind":"delta","turn":1,"text":"Two "}"#) == .delta("Two "))
         #expect(Assistant.parse("{}") == nil)
-        #expect(Assistant.parse(#"{"kind":"toolStarted","name":"query"}"#) == nil)
+        #expect(Assistant.parse(#"{"kind":"toolStarted","name":"query"}"#) == .step)
+        #expect(Assistant.parse(#"{"kind":"toolFinished","name":"query"}"#) == nil)
         #expect(Assistant.parse(#"{"kind":"done","result":{"reply":"Two things.","status":"completed"}}"#) == .done("Two things."))
         #expect(Assistant.parse(#"{"kind":"error","text":"The provider refused."}"#) == .failed("The provider refused."))
         let body = Assistant.body(message: "Why?", context: (0 ..< 12).map { "a.b/c/d/\($0)" }, timezone: "Europe/Lisbon", messageID: "m1")

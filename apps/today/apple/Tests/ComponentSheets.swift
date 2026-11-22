@@ -12,7 +12,7 @@ enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
         ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 1500), ("row", 900),
-        ("card", 900), ("strip", 620), ("happening", 1300), ("urgent", 2100), ("save", 1700), ("bar", 520), ("moss", 760), ("page", 1500),
+        ("card", 900), ("strip", 620), ("happening", 1300), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900),
     ]
 
@@ -309,6 +309,14 @@ enum ComponentSheets {
                     answer: AnswerCard(
                         id: "a", heading: "You asked Moss", question: "What can I drop this afternoon?", text: "Four slots are double-booked.", state: .done,
                         button: ButtonPresentation("Close", role: .quiet)))
+            }
+            Case(caption: "Words the assistant could not take, kept as a task", carded: false) {
+                ComposerBar(
+                    composer: ComposerPresentation(),
+                    answer: AnswerCard(
+                        id: "b", heading: "You said to Moss", question: "Order the SSD caddies",
+                        text: "Moss could not be reached. This iPhone is offline.", state: .failed,
+                        button: ButtonPresentation("Close", role: .quiet), keep: ButtonPresentation("Add as a task", role: .secondary)))
             }
         }
     }

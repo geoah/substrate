@@ -80,6 +80,9 @@ struct AnswerCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("\(Text(answer.heading + ": ").foregroundStyle(.inkSecond))\(Text(answer.question).foregroundStyle(.ink))")
                 .font(TodayLook.Text.footnote.weight(.semibold))
+                // The owner's words open the card and the answer is its
+                // body: a long message is cut, since they just wrote it.
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             switch answer.state {
             case .waiting:
@@ -95,7 +98,12 @@ struct AnswerCardView: View {
                     ForEach(answer.sources, id: \.self) { PillView(Pill(.neutral, $0)) }
                 }
             }
-            if let button = answer.button { PaneButton(button, onTint: inBox, small: true) }
+            if answer.button != nil || answer.keep != nil {
+                HStack(spacing: 8) {
+                    if let keep = answer.keep { PaneButton(keep, onTint: inBox, small: true) }
+                    if let button = answer.button { PaneButton(button, onTint: inBox, small: true) }
+                }
+            }
         }
         .padding(.top, inBox ? 10 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -241,13 +241,15 @@ public enum RowBody: Codable, Equatable, Sendable {
 // MARK: The field
 
 /// "Add or ask", fixed at the bottom of the day and of every page. What is
-/// typed is the view's until it is sent with `TodayCommand.addOrAsk`.
+/// typed is the view's until it is sent with `TodayCommand.addOrAsk`, and
+/// all of it goes to the assistant.
 public struct ComposerPresentation: Codable, Equatable, Hashable, Sendable {
     /// "Add or ask".
     public var placeholder: String
     /// Why the last add was not kept on this device, said beside the field.
     public var notKept: String?
-    /// The task the last add made: a view scrolls to its row.
+    /// The row of the task the last add made, by its `RowPresentation.id`:
+    /// a view scrolls to it.
     public var added: String?
 
     public init(placeholder: String = "Add or ask", notKept: String? = nil, added: String? = nil) {
@@ -281,9 +283,13 @@ public struct AnswerCard: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var sources: [String]
     /// "Close", once it is done or failed; "Stop" while it is written.
     public var button: ButtonPresentation?
+    /// "Add as a task": what keeps the words where the assistant could not
+    /// take them, on an exchange about the day that failed.
+    public var keep: ButtonPresentation?
 
     public init(
-        id: String, heading: String, question: String, text: String, state: State, sources: [String] = [], button: ButtonPresentation? = nil
+        id: String, heading: String, question: String, text: String, state: State, sources: [String] = [], button: ButtonPresentation? = nil,
+        keep: ButtonPresentation? = nil
     ) {
         self.id = id
         self.heading = heading
@@ -292,6 +298,7 @@ public struct AnswerCard: Codable, Equatable, Hashable, Sendable, Identifiable {
         self.state = state
         self.sources = sources
         self.button = button
+        self.keep = keep
     }
 }
 
