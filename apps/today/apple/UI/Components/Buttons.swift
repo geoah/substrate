@@ -19,6 +19,8 @@ struct TodayButtonStyle: ButtonStyle {
         case onTint
         /// Outlined: Not now.
         case outlined
+        /// Outlined at the wide button's height, beside it: Skip.
+        case beside
         /// Tinted and lower, with the same target: All projects, Open.
         case small
         /// Outlined in the urgent red: Remove.
@@ -31,10 +33,10 @@ struct TodayButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(kind == .wide ? TodayLook.Text.wideButton : TodayLook.Text.button)
+            .font(kind == .wide || kind == .beside ? TodayLook.Text.wideButton : TodayLook.Text.button)
             .multilineTextAlignment(.center)
             .foregroundStyle(words)
-            .padding(.horizontal, kind == .small ? 13 : 16)
+            .padding(.horizontal, kind == .small ? 13 : kind == .beside ? 20 : 16)
             .padding(.vertical, 6)
             .frame(maxWidth: kind == .wide ? .infinity : nil, minHeight: height)
             .background { fill }
@@ -44,7 +46,7 @@ struct TodayButtonStyle: ButtonStyle {
 
     private var height: CGFloat {
         switch kind {
-        case .wide: 52
+        case .wide, .beside: 52
         case .small: 34
         default: TodayLook.target
         }
@@ -53,7 +55,7 @@ struct TodayButtonStyle: ButtonStyle {
     private var words: Color {
         switch kind {
         case .primary, .wide: .onAction
-        case .secondary, .onTint, .outlined, .small: .ink
+        case .secondary, .onTint, .outlined, .beside, .small: .ink
         case .destructive: .urgentWords
         }
     }
@@ -65,7 +67,7 @@ struct TodayButtonStyle: ButtonStyle {
         case .secondary, .small: shape.fill(TodayLook.ink.color.opacity(scheme == .dark ? 0.12 : 0.07))
         case .onTint:
             shape.fill(.card).shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
-        case .outlined: CapsuleOutline().strokeBorder(TodayLook.ink.color.opacity(0.28), lineWidth: 1.5)
+        case .outlined, .beside: CapsuleOutline().strokeBorder(TodayLook.ink.color.opacity(0.28), lineWidth: 1.5)
         case .destructive: CapsuleOutline().strokeBorder(TodayLook.urgent.color.opacity(0.55), lineWidth: 1.5)
         }
     }

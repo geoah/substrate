@@ -220,7 +220,8 @@ struct EarlierView: View {
 }
 
 /// What came in since the last look, directly above the current item.
-/// Closed it is one line; open, a group for each project in flag order.
+/// Closed it is one line; open, every project that has something with its
+/// lines under it, and nothing folded inside.
 struct HappeningView: View {
     var happening: HappeningPresentation
 
@@ -259,24 +260,6 @@ struct HappeningView: View {
             }
             ForEach(Array(happening.groups.enumerated()), id: \.element.id) { index, group in
                 HappeningGroupView(group: group, first: index == 0 && happening.settled == nil)
-            }
-            if let rest = happening.rest {
-                VStack(alignment: .leading, spacing: 6) {
-                    OpensInPlace(id: "happening:rest") {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(rest.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                            Text(rest.line).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                        }
-                    }
-                    .frame(minHeight: TodayLook.target)
-                    if state.isOpen("happening:rest") {
-                        ForEach(Array(rest.groups.enumerated()), id: \.element.id) { index, group in
-                            HappeningGroupView(group: group, first: index == 0)
-                        }
-                    }
-                }
-                .rowLine(!happening.groups.isEmpty)
-                .padding(.top, 2)
             }
             if let gotIt = happening.gotIt { PaneButton(gotIt) }
             if let nothing = happening.nothingNew { NoteText(nothing) }

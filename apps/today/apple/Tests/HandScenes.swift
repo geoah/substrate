@@ -162,14 +162,13 @@ enum HandScenes {
                 HappeningGroup(
                     id: "hiring", tile: tile("HI"), name: "Hiring", stripe: Stripe(.medium), opens: .project("hiring"),
                     items: [HappeningItem(id: "h4", time: "10:15", text: "Grant's CV was updated before tonight's interview.", source: "Mail.")]),
+                HappeningGroup(
+                    id: "home", tile: tile("HO"), name: "Home", opens: .project("home"),
+                    items: [HappeningItem(id: "h5", time: "10:02", text: "A parcel is out for delivery.", source: "Mail.", isNew: true)]),
+                HappeningGroup(
+                    id: "unfiled", tile: nil, name: "On no project", opens: nil,
+                    items: [HappeningItem(id: "h6", time: "09:50", text: "The dentist confirmed Thursday at 08:30.", source: "Mail.")]),
             ],
-            rest: HappeningRest(
-                line: "Three more things, one new",
-                groups: [
-                    HappeningGroup(
-                        id: "home", tile: tile("HO"), name: "Home", opens: .project("home"),
-                        items: [HappeningItem(id: "h5", time: "10:02", text: "A parcel is out for delivery.", source: "Mail.", isNew: true)])
-                ]),
             gotIt: ButtonPresentation("Got it", glyph: .done, role: .primary, command: .gotIt(project: nil)))
     }
 
@@ -312,6 +311,15 @@ enum HandScenes {
             ], answer: answer)
     }
 
+    /// One item of a medication group, open with its tick or taken.
+    static func dose(_ id: String, _ name: String, _ detail: String, taken: String? = nil) -> RoutineCard.Item {
+        RoutineCard.Item(
+            id: id, name: name, detail: detail, logged: taken.map { "Taken at \($0)." },
+            tick: taken == nil
+                ? ButtonPresentation("Taken", glyph: .done, iconOnly: true, role: .secondary, command: .logOccurrence(id, done: true))
+                : ButtonPresentation("Undo", glyph: .done, iconOnly: true, role: .primary, command: .unlog(id)))
+    }
+
     /// 07:05: waking.
     static let wake = pane(
         .waking, strip: true,
@@ -323,13 +331,12 @@ enum HandScenes {
                     body: .routine(
                         RoutineCard(
                             items: [
-                                RoutineCard.Item(id: "o1", name: "Vitamin D", detail: "1,000 IU"),
-                                RoutineCard.Item(id: "o2", name: "Magnesium", detail: "200 mg"),
-                                RoutineCard.Item(id: "o3", name: "Omega-3", detail: "1 capsule"), RoutineCard.Item(id: "o4", name: "Zinc", detail: "15 mg"),
-                                RoutineCard.Item(id: "o5", name: "Probiotic", detail: "1 capsule"),
+                                dose("o1", "Vitamin D", "1,000 IU", taken: "07:02"), dose("o2", "Magnesium", "200 mg"),
+                                dose("o3", "Omega-3", "1 capsule"), dose("o4", "Zinc", "15 mg"), dose("o5", "Probiotic", "1 capsule"),
                             ],
-                            done: ButtonPresentation("Taken", glyph: .done, role: .primary, wide: true, command: .log(row: "r-morning", done: true)),
-                            skip: nil, stale: StaleNote("Nothing has been logged since 17 October. A tick here is the log."))))),
+                            done: ButtonPresentation("All taken", glyph: .done, role: .primary, wide: true, command: .log(row: "r-morning", done: true)),
+                            skip: ButtonPresentation("Skip", role: .quiet, command: .log(row: "r-morning", done: false)),
+                            notLogged: "Not logged since 17 October.")))),
             .row(
                 Row(
                     id: "y-b12", glyph: .routine, title: "From yesterday: Vitamin B12", line: "Weekly, due Wednesday morning. Not logged.",

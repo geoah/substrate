@@ -33,14 +33,17 @@ struct PaneButton: View {
     var onTint = false
     /// Lower, with the same target: the strip's All projects, a line's Open.
     var small = false
+    /// An outlined button that stands beside a wide one, at its height: Skip.
+    var beside = false
 
     @Environment(\.pane) private var pane
     @State private var asking = false
 
-    init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false) {
+    init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false, beside: Bool = false) {
         self.button = button
         self.onTint = onTint
         self.small = small
+        self.beside = beside
     }
 
     var body: some View {
@@ -61,7 +64,7 @@ struct PaneButton: View {
         switch button.role {
         case .primary: button.wide ? .wide : .primary
         case .secondary: small ? .small : (onTint ? .onTint : .secondary)
-        case .quiet: small ? .small : .outlined
+        case .quiet: small ? .small : (beside ? .beside : .outlined)
         case .destructive: .destructive
         }
     }

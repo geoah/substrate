@@ -124,12 +124,14 @@ extension DayEngine {
             byKey[key, default: []].insert(item, at: 0)
         }
         guard !byKey.isEmpty else { return nil }
+        // Every project with something in it is listed whole, with nothing
+        // folded inside: the flagged ones in flag order, then the others by
+        // name, then what is on no project.
         let flaggedKeys = priorities.map(\.id).filter { byKey[$0] != nil }
-        let restKeys = byKey.keys.filter { !flaggedKeys.contains($0) }.sorted { name(of: $0) < name(of: $1) }
-        let groups = flaggedKeys.map { happeningGroup($0, items: byKey[$0] ?? []) }
-        let restGroups = restKeys.map { happeningGroup($0, items: byKey[$0] ?? []) }
-        let restCount = restGroups.map(\.items.count).reduce(0, +)
-        let restNew = restGroups.flatMap(\.items).filter(\.isNew).count
+        let restKeys = byKey.keys.filter { !flaggedKeys.contains($0) }.sorted {
+            (day.list($0) == nil ? 1 : 0, name(of: $0), $0) < (day.list($1) == nil ? 1 : 0, name(of: $1), $1)
+        }
+        let groups = (flaggedKeys + restKeys).map { happeningGroup($0, items: byKey[$0] ?? []) }
         // The latest new thing leads the closed line, a flagged project's first.
         fresh.sort { (priorityOrder($0.key), $1.at) < (priorityOrder($1.key), $0.at) }
         let lead = fresh.first
@@ -148,10 +150,6 @@ extension DayEngine {
             line: line.trimmingCharacters(in: .whitespaces), time: waiting.isEmpty ? lead.map { clock($0.at) } : nil,
             tile: waiting.isEmpty ? lead.flatMap { day.list($0.key) }.map { tile($0) } : nil, pill: waiting.isEmpty ? nil : .urgent, quiet: fresh.isEmpty,
             groups: groups,
-            rest: restGroups.isEmpty
-                ? nil
-                : HappeningRest(
-                    line: Words.things(restCount, "more thing") + (restNew > 0 ? ", \(Words.low(Words.num(restNew))) new" : ""), groups: restGroups),
             gotIt: fresh.isEmpty ? nil : ButtonPresentation("Got it", glyph: .done, role: .primary, command: .gotIt(project: nil)),
             // Said once: the closed line already says it when nothing urgent waits there.
             nothingNew: fresh.isEmpty && !waiting.isEmpty ? "Nothing new since you last looked." : nil)

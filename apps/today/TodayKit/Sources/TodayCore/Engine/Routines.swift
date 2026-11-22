@@ -70,9 +70,16 @@ extension DayEngine {
         return last
     }
 
-    /// One pill and one sentence, when nothing has been logged for a week.
-    func stale(_ row: RoutineRow) -> StaleNote? {
-        loggingStopped.map { StaleNote("Nothing has been logged since \(Words.dayMonth($0, calendar)). A tick here is the log.") }
+    /// One plain line, when nothing has been logged for a week.
+    func notLogged(_ row: RoutineRow) -> String? {
+        loggingStopped.map { "Not logged since \(Words.dayMonth($0, calendar))." }
+    }
+
+    /// What logs a whole row: "Taken" or "Done" for one thing, "All taken"
+    /// or "All done" for a group of several.
+    func allWord(_ row: RoutineRow) -> String {
+        let word = row.isDose ? "taken" : "done"
+        return row.occurrences.count > 1 ? "All \(word)" : Words.cap(word)
     }
 
     func routineCard(_ row: RoutineRow) -> RoutineCard {
@@ -84,16 +91,22 @@ extension DayEngine {
             : row.occurrences.map { occurrence -> RoutineCard.Item in
                 let series = day.series[occurrence.series]
                 let log = day.logs[occurrence.id]
+                // Each line is ticked by itself: a tick logs that one, and a filled tick takes its log back.
+                let tick =
+                    log?.done == true
+                    ? ButtonPresentation("Undo", glyph: .done, iconOnly: true, role: .primary, command: .unlog(occurrence.id))
+                    : ButtonPresentation(word, glyph: .done, iconOnly: true, role: .secondary, command: .logOccurrence(occurrence.id, done: true))
                 return RoutineCard.Item(
                     id: occurrence.id, name: series?.name ?? "Untitled routine", detail: series.flatMap(detail),
-                    logged: log.map { $0.done ? "\(word) at \(clock($0.at))." : "Skipped." })
+                    logged: log.map { $0.done ? "\(word) at \(clock($0.at))." : "Skipped." }, tick: tick)
             }
         let done = doneAt(row)
         return RoutineCard(
             items: items,
-            done: done == nil ? ButtonPresentation(word, glyph: .done, role: .primary, wide: true, command: .log(row: row.id, done: true)) : nil,
+            done: done == nil
+                ? ButtonPresentation(allWord(row), glyph: .done, role: .primary, wide: true, command: .log(row: row.id, done: true)) : nil,
             skip: done == nil ? ButtonPresentation("Skip", role: .quiet, command: .log(row: row.id, done: false)) : nil,
-            said: done.map { "\(word) at \(clock($0))." }, stale: done == nil ? stale(row) : nil)
+            said: done.map { "\(word) at \(clock($0))." }, notLogged: done == nil ? notLogged(row) : nil)
     }
 
     func row(_ routine: RoutineRow, state: Row.State) -> Row {
@@ -105,10 +118,10 @@ extension DayEngine {
         } else {
             line = day.series[routine.occurrences[0].series].flatMap(detail) ?? "At \(clock(routine.slot))."
         }
-        let word = routine.isDose ? "Taken" : "Done"
         return Row(
             id: routine.id, glyph: .routine, title: routine.title, line: line, state: state,
-            trailing: .tick(ButtonPresentation(word, glyph: .done, iconOnly: true, role: .secondary, command: .log(row: routine.id, done: true))),
+            trailing: .tick(
+                ButtonPresentation(allWord(routine), glyph: .done, iconOnly: true, role: .secondary, command: .log(row: routine.id, done: true))),
             body: .routine(routineCard(routine)))
     }
 
@@ -142,7 +155,7 @@ extension DayEngine {
             if let option = answered[id] {
                 out.append(Left(id: id, kind: .routine(row), answered: option, at: day.notes.yesterdayAt[id]))
             } else if loggingStopped == nil, !open(row).isEmpty {
-                // Where logging has stopped, yesterday's routines are not asked after: today's rows say it is stale.
+                // Where logging has stopped, yesterday's routines are not asked after: today's rows say since when.
                 out.append(Left(id: id, kind: .routine(row)))
             }
         }

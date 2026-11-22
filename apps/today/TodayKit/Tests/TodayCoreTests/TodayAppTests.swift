@@ -58,15 +58,18 @@ struct OrderTests {
         #expect(routine.title == "Morning medication" && routine.line == "5 items.")
         guard case let .routine(card) = routine.body else { return #expect(Bool(false)) }
         #expect(card.items.map(\.name).sorted() == ["Magnesium", "Omega-3", "Probiotic", "Vitamin D", "Zinc"])
-        #expect(card.done?.title == "Taken" && card.done?.command == .log(row: routine.id, done: true))
-        #expect(card.stale == nil, "yesterday's were logged")
+        #expect(card.done?.title == "All taken" && card.done?.command == .log(row: routine.id, done: true))
+        #expect(card.skip?.title == "Skip" && card.skip?.command == .log(row: routine.id, done: false))
+        // Each item has a tick of its own, which logs that one.
+        #expect(card.items.allSatisfy { $0.tick?.iconOnly == true && $0.tick?.title == "Taken" && $0.tick?.command == .logOccurrence($0.id, done: true) })
+        if case let .tick(all) = routine.trailing { #expect(all.title == "All taken") } else { #expect(Bool(false), "a closed routine ends with its tick") }
+        #expect(card.notLogged == nil, "yesterday's were logged")
     }
 
     @Test func whereLoggingStoppedTheRoutineSaysSoAndYesterdayIsNotAskedAfter() throws {
         let pane = try #require(TodayFixtures.all.first { $0.name == "today-wake-stale" }).app.pane
         guard case let .routine(card) = rows(pane)[0].body else { return #expect(Bool(false)) }
-        #expect(card.stale?.pill == .stale)
-        #expect(card.stale?.text == "Nothing has been logged since 17 October. A tick here is the log.")
+        #expect(card.notLogged == "Not logged since 17 October.")
         guard case let .yesterday(left) = try #require(row(pane, "yesterday")).body else { return #expect(Bool(false)) }
         #expect(left.items.map(\.glyph) == [.task], "only the task that was due, not a month of doses")
     }
@@ -133,10 +136,36 @@ struct OrderTests {
         #expect(pane.items[index + 1].id == pane.lead)
         #expect(index > 0, "not at the top of the page")
         guard case let .happening(happening) = pane.items[index] else { return }
-        // Grouped by project in flag order; the rest is one count.
+        // Grouped by project in flag order.
         #expect(happening.groups.map(\.name) == ["Lantern", "Security hardening", "Hiring"])
         #expect(happening.time == "09:10" && happening.gotIt?.command == .gotIt(project: nil))
         #expect(happening.line == "Callum accepted Friday at 16:30. The 17:20 slot is free. And three more on two projects.")
+    }
+
+    @Test func whatIsHappeningListsEveryProjectWithNothingFoldedInside() throws {
+        // Something came in on a project with no flag, and something on no project.
+        let pane = pane("18:00") { state in
+            state.linked.records[RecordFold.key(TodayKinds.digest, "northfield")] = TodayFixtures.digest(
+                "northfield", line: "Stefan gave the go-ahead on one node.",
+                [("06:23", "Stefan gave the go-ahead on one node."), ("10:40", "Stefan asked when the cable swap can start.")])
+        }
+        guard case let .happening(happening)? = pane.items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false), "something came in today")
+        }
+        // The flagged projects in flag order, then the others by name, then what is on no project: each with its own lines.
+        #expect(
+            happening.groups.map(\.name) == [
+                "EU AI Act", "External API reliability", "Lantern", "Security hardening", "Hiring", "Northfield bring-up", "On no project",
+            ])
+        let flagged = happening.groups.map { $0.stripe.flag != nil }
+        #expect(flagged == flagged.sorted { $0 && !$1 }, "no flagged project after one with no flag")
+        let northfield = try #require(happening.groups.first { $0.id == "northfield" })
+        #expect(northfield.stripe.flag == nil && northfield.opens == .project("northfield"))
+        #expect(northfield.items.map(\.text) == ["Stefan asked when the cable swap can start."])
+        let unfiled = try #require(happening.groups.last)
+        #expect(unfiled.name == "On no project" && unfiled.tile == nil && unfiled.opens == nil)
+        #expect(unfiled.items.map(\.text) == ["The Product Review moved to next Thursday."])
+        #expect(happening.gotIt?.title == "Got it")
     }
 
     @Test func overlapsArePairsAndAChoiceMakesTheOtherMeetingOff() {
@@ -505,6 +534,36 @@ struct WriteTests {
                 "series": "substrate.reamde.dev/health/medicationschedule/vitd", "scheduledAt": "2026-11-19T07:33:00Z", "at": "2026-11-19T07:05:00Z",
             ])
         // The row is done at once, laid over before the server answers.
+        #expect(rows(await harness.presentation.pane).first?.id != routine.id)
+    }
+
+    @Test func oneItemOfAGroupIsTickedByItselfAndTheGroupsButtonLogsTheRest() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        await load(harness, "07:05")
+        let routine = try #require(rows(await harness.presentation.pane).first)
+        func card() async throws -> RoutineCard {
+            let row = try #require(rows(await harness.presentation.pane).first { $0.id == routine.id })
+            guard case let .routine(card) = row.body else { throw CancellationError() }
+            return card
+        }
+        let item = try #require(try await card().items.first { $0.name == "Vitamin D" })
+        await harness.send(try #require(item.tick?.command))
+        let first = writes(harness).flatMap(\.entries)
+        #expect(first.count == 1 && first[0].recordID == item.id && first[0].method == .put && first[0].kind == TodayKinds.log)
+        // Its line shows as taken with a filled tick that takes the log back; the row counts it and stays open.
+        #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "1 of 5 logged.")
+        let ticked = try #require(try await card().items.first { $0.id == item.id })
+        #expect(ticked.logged == "Taken at 07:05." && ticked.tick?.role == .primary && ticked.tick?.command == .unlog(item.id))
+        #expect(try await card().done?.title == "All taken")
+        await harness.send(.unlog(item.id))
+        #expect(writes(harness).flatMap(\.entries).last?.method == .delete)
+        #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "5 items.")
+        // The group's button logs what is not ticked yet, and the row is done.
+        await harness.send(.logOccurrence(item.id, done: true))
+        let before = writes(harness).flatMap(\.entries).count
+        await harness.send(.log(row: routine.id, done: true))
+        let rest = writes(harness).flatMap(\.entries).dropFirst(before)
+        #expect(rest.count == 4 && !rest.contains { $0.recordID == item.id })
         #expect(rows(await harness.presentation.pane).first?.id != routine.id)
     }
 
