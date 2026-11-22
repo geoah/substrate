@@ -273,7 +273,7 @@ func TestTheTodayCatalogueInstallsWithoutTasksAndKeepsTheOwnersInstructions(t *t
 		moss            = "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss"
 	)
 	shipped := []string{
-		"today-suggest", "today-suggested-task", "today-existing", "today-urgent", "today-durations",
+		"today-suggest", "today-suggested-task", "today-add", "today-existing", "today-urgent", "today-durations",
 		"today-object-once", "today-sources", "today-voice", "today-glance",
 	}
 	for _, id := range shipped {
