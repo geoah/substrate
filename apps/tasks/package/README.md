@@ -96,6 +96,7 @@ task ──origin (any kind)──► the record it was made from
 | `status` | state: `proposed`, `open`, `done`, `abandoned` | Born `open`; an agent's suggestion waits as `proposed`. |
 | `completedAt` | datetime | Stamped by the move to `done`. |
 | `origin` | reference to any kind | The record the task was made from, such as a message or an issue. Version 3. |
+| `originAt` | datetime | When what the task was made from was said or happened, where its maker knows it. Version 5. |
 | `people` | repeated reference to `substrate.reamde.dev/core/contact`, `mustExist` | The people the task involves. Version 3. |
 | `notBefore` | datetime | Hidden until then, for a task put off to tonight or next week. Version 4. |
 | `deferrals` | int | How many times it was put off. Version 4. |
@@ -175,7 +176,15 @@ Notes:
   or `urgentHeldAt` and `urgentHeldReason` where it thinks the task can
   wait, and never takes the mark off. With neither stamp, nobody has checked
   it.
-- **Version 4 declares no default.** Each new property is optional and
+- **How old the matter is (version 5).** `originAt` is when what the task
+  was made from was said or happened. A task is often written later than
+  its words: an agent reads a day's messages at night, and an importer
+  carries months of them over in a minute. The row's creation time then
+  says when it was written, so a reader that says "heard on Thursday", and
+  a rule that lets an unanswered suggestion fade, count from `originAt`
+  and fall back to the creation time only where it is absent. Nothing on
+  the server fills it: whoever writes `origin` writes it in the same write.
+- **Versions 4 and 5 declare no default.** Each new property is optional and
   absent on every task written before it, and an absent `prioritySetBy`
   reads as the owner's. A default would be a narrowing a repository takes
   only with its owner's review, so the version carries none and a

@@ -161,6 +161,18 @@ data:
       kind: any
       description: the record this task was made from, such as the message,
         mail, issue or meeting it answers; absent for a task you typed
+    # `originAt` (version 5): when that was said or happened, where the
+    # task's maker knows it. A task is often written later than the words it
+    # came from (an agent reads a day's messages at night, an importer
+    # carries a year of them over), so the row's own creation time says when
+    # it was written, not how old the matter is. A reader that says "heard
+    # on Thursday", and a rule that lets an unanswered suggestion fade, count
+    # from here. Nothing on the server fills it: whoever writes `origin`
+    # writes it in the same write, from the time the origin itself carries.
+    originAt:
+      type: datetime
+      description: when what this task was made from was said or happened,
+        which is how old a suggestion is; absent where its maker did not know
     # `people` (version 3): who asked, who is waiting, who it is for. Every
     # task in a repository is its owner's, so there is no assignee.
     people:

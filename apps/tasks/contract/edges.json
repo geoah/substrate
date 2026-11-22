@@ -129,6 +129,10 @@
             "kind": "any",
             "description": "the record this task was made from, such as the message, mail, issue or meeting it answers; absent for a task you typed"
           },
+          "originAt": {
+            "type": "datetime",
+            "description": "when what this task was made from was said or happened, which is how old a suggestion is; absent where its maker did not know"
+          },
           "people": {
             "type": "reference",
             "kind": "substrate.reamde.dev/core/contact",

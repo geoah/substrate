@@ -3,9 +3,9 @@ import type { Declaration } from "./sources"
 /** The package version this build was written against: the floor its
  * approval asks for, as app.json's `asks` and the closure the Apple and
  * Android builds carry say. A test holds the three together. */
-export const packageVersion = 4
+export const packageVersion = 5
 
-/** The app's own package as version 4 declares it (apps/tasks/package):
+/** The app's own package as version 5 declares it (apps/tasks/package):
  * what the app reads its own kinds by before the server's implementors
  * answer, and where they do not. A test holds it to the contract's copy. */
 export const ownDeclarations: Declaration[] = [
@@ -119,6 +119,11 @@ export const ownDeclarations: Declaration[] = [
           kind: "any",
           description:
             "the record this task was made from, such as the message, mail, issue or meeting it answers; absent for a task you typed",
+        },
+        originAt: {
+          type: "datetime",
+          description:
+            "when what this task was made from was said or happened, which is how old a suggestion is; absent where its maker did not know",
         },
         people: {
           type: "reference",

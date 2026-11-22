@@ -43,7 +43,10 @@ data:
   # check of an urgent mark: `urgentCheckedAt`, `urgentHeldAt`,
   # `urgentHeldReason`); list gains `priority` and `sources`. Optional
   # properties only, none with a default.
-  version: 4
+  # 5: task gains `originAt`, when what it was made from was said or
+  # happened: a suggestion's age, which the row's creation time is not for
+  # a task written later than its words. Optional, with no default.
+  version: 5
 ---
 # ---- the bundle document -----------------------------------------------------
 #

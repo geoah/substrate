@@ -23,10 +23,11 @@ public enum TasksCodec {
     /// Substrate Today reads and writes: when a task is put off to and how
     /// often, who set its priority and why, what an urgent mark replaced
     /// and whether the assistant checked it, and a list's own priority and
-    /// sources.
+    /// sources. Version 5 adds `originAt`, when what a task was made from
+    /// was said, which the maker of a suggestion writes beside `origin`.
     public static let unwrittenTaskProperties = [
-        "origin", "people", "notBefore", "deferrals", "prioritySetBy", "priorityReason", "priorityWas", "urgentCheckedAt", "urgentHeldAt",
-        "urgentHeldReason",
+        "origin", "originAt", "people", "notBefore", "deferrals", "prioritySetBy", "priorityReason", "priorityWas", "urgentCheckedAt",
+        "urgentHeldAt", "urgentHeldReason",
     ]
     public static let unwrittenListProperties = ["description", "status", "priority", "sources"]
 
