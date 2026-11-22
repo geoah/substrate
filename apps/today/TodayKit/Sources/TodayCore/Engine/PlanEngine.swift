@@ -7,8 +7,13 @@ import SubstrateCore
 
 extension DayEngine {
     /// Everything that could be for today: every open task not hidden past
-    /// today, and every suggested task not answered.
-    var candidates: [TaskItem] { day.tasks.filter { ($0.isOpen || $0.isProposed) && !hidden($0) } }
+    /// today, and the suggested tasks the card draws. With a long backlog
+    /// that is twelve, so the page is not flooded and its Save never makes
+    /// a task of a suggestion the owner has not seen.
+    var candidates: [TaskItem] {
+        let shown = Set(shownSuggested.map(\.id))
+        return day.tasks.filter { ($0.isOpen || ($0.isProposed && shown.contains($0.id))) && !hidden($0) }
+    }
 
     /// Whether the assistant suggests a thing for today. Where it prepared
     /// the day (`today/plan.picked` with no `savedAt`), that; else what is

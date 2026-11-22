@@ -270,6 +270,17 @@ struct SaveCardTests {
         #expect(next.save.button?.title == "Save 0 answers" && next.save.button?.enabled == false)
     }
 
+    @Test func thePlanListsOnlyTheSuggestedTasksTheCardDraws() throws {
+        // With a hundred waiting, the plan page holds the card's twelve and no other suggestion,
+        // so its Save can never make a task of one the owner has not seen.
+        let pane = pane("08:30", edit: TodayFixtures.crowd)
+        guard case let .suggested(card) = try #require(row(pane, "suggested")).body else { return #expect(Bool(false)) }
+        guard case let .plan(plan) = page("08:30", .plan, edit: TodayFixtures.crowd) else { return #expect(Bool(false)) }
+        let listed = Set(plan.groups.flatMap { $0.items + $0.more }.map(\.id))
+        let backlog = listed.filter { $0.hasPrefix("b-") }
+        #expect(!backlog.isEmpty && backlog.isSubset(of: Set(card.items.map(\.id))))
+    }
+
     @Test func oneHeardInTheDayIsARowOfItsOwnOnlyWhileFewWait() throws {
         // At 16:35 one suggestion was heard after the card was saved: it is its own row, with its own Save.
         let few = pane("16:35")
