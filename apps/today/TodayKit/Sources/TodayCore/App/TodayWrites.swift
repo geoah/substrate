@@ -50,7 +50,18 @@ struct TodayWrites {
         return LocalWrite(entries: create.entries + writes.change(TodayKinds.log, occurrence.id, properties: status, version: nil).entries)
     }
 
-    func unlog(_ id: String) -> LocalWrite { writes.delete(TodayKinds.log, id, version: version(TodayKinds.log, id)) }
+    /// A log taken back is purged, not kept as deleted. Its id is its
+    /// occurrence's, and the server refuses a create over a record it
+    /// keeps (a version conflict, which reads as the create's own earlier
+    /// try): ticked again after a delete, the occurrence would show as
+    /// logged for a moment and then stand open again. The purge takes the
+    /// place of the record's writes still waiting, as a delete does.
+    func unlog(_ id: String) -> LocalWrite {
+        let batch = LocalWrite.batch(TodayKinds.log, id)
+        let purge = OutboxEntry(
+            id: writes.mint(), method: .purge, kind: TodayKinds.log, recordID: id, guarded: version(TodayKinds.log, id) != nil, batch: batch)
+        return LocalWrite(entries: [purge], replacing: batch)
+    }
 
     // MARK: Tasks
 

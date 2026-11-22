@@ -88,6 +88,8 @@ Traits and kinds only: no functions, so a package that requires it brings no rea
   absent when ticked by hand), `details` (markdown).
   - Its id is `<series id>_<slot>`, the slot as UTC `YYYYMMDDTHHMMSSZ`: the id the window read gives the
     occurrence. So one occurrence has at most one log, and a tick made twice offline is one record.
+  - A log taken back is purged, not kept as deleted: the server refuses a create over a record it keeps, so
+    a kept one would stand in the way of the same occurrence being ticked again.
   - A slot with no log is what missed means.
 
 `substrate.reamde.dev/health` version 3 requires `routines` and adds:

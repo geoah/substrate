@@ -1000,7 +1000,7 @@ struct WriteTests {
         let before = writes(harness).flatMap(\.entries).count
         await harness.send(.unlogRow(routine.id))
         let removed = writes(harness).flatMap(\.entries).dropFirst(before)
-        #expect(removed.count == 5 && removed.allSatisfy { $0.method == .delete && $0.kind == TodayKinds.log })
+        #expect(removed.count == 5 && removed.allSatisfy { $0.method == .purge && $0.kind == TodayKinds.log })
         #expect(rows(await harness.presentation.pane).first?.id == routine.id)
         #expect(await earlier()?.rows.contains { $0.id == routine.id } != true)
         // A row skipped says so.
@@ -1027,10 +1027,14 @@ struct WriteTests {
         #expect(ticked.logged == "Taken at 07:05." && ticked.tick?.role == .primary && ticked.tick?.command == .unlog(item.id))
         #expect(try await card().done?.title == "All taken")
         await harness.send(.unlog(item.id))
-        #expect(writes(harness).flatMap(\.entries).last?.method == .delete)
+        // Taken back, the log is purged: kept as deleted, the server would refuse the next tick's create.
+        #expect(writes(harness).flatMap(\.entries).last?.method == .purge)
         #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "5 items.")
-        // The group's button logs what is not ticked yet, and the row is done.
+        // Ticked again, it is a create like the first, and the group's button logs what is not ticked yet: the row is done.
         await harness.send(.logOccurrence(item.id, done: true))
+        let again = try #require(writes(harness).flatMap(\.entries).last)
+        #expect(again.method == .put)
+        #expect(again.baseVersion == 0 && again.recordID == item.id)
         let before = writes(harness).flatMap(\.entries).count
         await harness.send(.log(row: routine.id, done: true))
         let rest = writes(harness).flatMap(\.entries).dropFirst(before)
