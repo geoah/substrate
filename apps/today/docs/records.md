@@ -183,8 +183,10 @@ The package also holds:
 - **Function `stampurgent`**, when a `today/urgentcheck` is written: it writes `urgentCheckedAt`, or
   `urgentHeldAt` with `urgentHeldReason`, on the task, only while its mark is still unchecked, and nothing
   else.
-- **The assistant's standing instructions**, as nine `llm/instruction` records with ids that start `today-`
-  and `source: import`, for where the owner talks to their assistant. They name the agent, so they hold
+- **The assistant's standing instructions**, as ten `llm/instruction` records with ids that start `today-`
+  and `source: import`, for where the owner talks to their assistant. One of them, `today-add`, is what the
+  app's field relies on: a to-do the owner gives the assistant is written as an open task with `notBefore`
+  now, which is what puts it in today's list, in the list named, and a list that does not exist is made. They name the agent, so they hold
   wherever it works. The owner edits or retires one like their own, and an upgrade never writes over a
   record the owner changed.
 
