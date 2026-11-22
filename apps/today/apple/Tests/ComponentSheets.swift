@@ -11,8 +11,8 @@ import TodayCore
 enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
-        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 1500), ("row", 900),
-        ("card", 900), ("strip", 620), ("happening", 1300), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
+        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
+        ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900),
     ]
 
@@ -193,7 +193,26 @@ enum ComponentSheets {
             }
             Case(caption: "Chosen: what you chose") { OptionListView(h.flags(chosen: .medium)) }
             Case(caption: "Several: square marks, nothing ticked for you") { OptionListView(h.planPage.sends) }
+            Case(caption: "Under chips that fit one line") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ChipsView(chips: Chips(project: h.lantern, people: [person("callum", "for Callum", "CA")]))
+                    OptionListView(h.flags(chosen: nil))
+                }
+            }
+            Case(caption: "Under chips that wrap to a second line") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ChipsView(
+                        chips: Chips(
+                            project: h.security,
+                            people: [person("tomas", "for Tomas", "TV"), person("maya", "for Maya", "MA"), person("kenji", "for Kenji", "KE")]))
+                    OptionListView(h.flags(chosen: nil))
+                }
+            }
         }
+    }
+
+    static func person(_ id: String, _ label: String, _ initials: String) -> PersonChip {
+        PersonChip(id: id, label: label, badge: h.badge(initials))
     }
 
     static var row: some View {
@@ -210,6 +229,16 @@ enum ComponentSheets {
                             trailing: .tick(ButtonPresentation("Done", glyph: .done, iconOnly: true)),
                             body: .routine(RoutineCard(items: [], done: nil, skip: nil))),
                         first: false)
+                }
+                .soft()
+            }
+            Case(caption: "A task with no line: its chips stand under its name", carded: false) {
+                VStack(spacing: 0) {
+                    RowView(row: bare("t2", "Test the drive caddies", chips: Chips(project: h.lantern)))
+                    RowView(
+                        row: bare("t3", "Tidy up the hardware shelf", chips: Chips(project: h.lantern, people: [person("maya", "for Maya", "MA")])),
+                        first: false)
+                    RowView(row: bare("t4", "Renew the passport"), first: false)
                 }
                 .soft()
             }
@@ -234,13 +263,36 @@ enum ComponentSheets {
         }
     }
 
+    /// A task's row with a title and no line.
+    static func bare(_ id: String, _ title: String, chips: Chips = .none) -> Row {
+        var row = h.taskRow(id, title, "", flag: nil, state: .next, chips: chips)
+        row.line = nil
+        return row
+    }
+
     static var card: some View {
-        Case(caption: "The current item: a task", carded: false) {
-            RowView(
-                row: Row(
-                    id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
-                    line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high), state: .now,
-                    chips: Chips(project: h.security), trailing: .flag(h.flagControl(.high)), body: .task(h.vigilCard)))
+        Group {
+            Case(caption: "The current item: a task", carded: false) {
+                RowView(
+                    row: Row(
+                        id: "t-vigil", glyph: .task, title: "Triage the Vigil findings and review the four lockdown PRs",
+                        line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
+                        state: .now, chips: Chips(project: h.security), trailing: .flag(h.flagControl(.high)), body: .task(h.vigilCard)))
+            }
+            Case(caption: "A routine of several: each item has its tick, and Skip stands beside the button for the rest", carded: false) {
+                RowView(
+                    row: Row(
+                        id: "r-evening", glyph: .routine, title: "Evening medication", line: "1 of 3 logged.", state: .now,
+                        body: .routine(
+                            RoutineCard(
+                                items: [
+                                    h.dose("e1", "Magnesium", "200 mg", taken: "21:02"), h.dose("e2", "Zinc", "15 mg"),
+                                    h.dose("e3", "Probiotic", "1 capsule"),
+                                ],
+                                done: ButtonPresentation("All taken", glyph: .done, role: .primary, wide: true, command: .log(row: "r-evening", done: true)),
+                                skip: ButtonPresentation("Skip", role: .quiet, command: .log(row: "r-evening", done: false)),
+                                notLogged: "Not logged since 17 October."))))
+            }
         }
     }
 

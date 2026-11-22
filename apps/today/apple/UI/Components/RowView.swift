@@ -100,22 +100,24 @@ struct RowView: View {
     private var line: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 4) {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
+                // The chips stand directly under the words, beside the
+                // trailing control: under it they would wait for its whole
+                // target, a gap on a row with a title and no line.
+                VStack(alignment: .leading, spacing: 4) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
+                    } label: {
                         RowHead(icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, lineLimit: lineLimit)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens in place")
+                    if !row.chips.isEmpty {
+                        ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens in place")
                 trailing
-            }
-            if !row.chips.isEmpty {
-                ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))
-                    .padding(.top, 4)
             }
             if case let .flag(control) = row.trailing, state.isOpen(flagID) || control.open {
                 FlagOptionsView(control: control).padding(.top, 8)

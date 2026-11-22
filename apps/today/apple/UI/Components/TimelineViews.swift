@@ -220,7 +220,8 @@ struct EarlierView: View {
 }
 
 /// What came in since the last look, directly above the current item.
-/// Closed it is one line; open, a group for each project in flag order.
+/// Closed it is one line; open, every project that has something with its
+/// lines under it, and nothing folded inside.
 struct HappeningView: View {
     var happening: HappeningPresentation
 
@@ -260,24 +261,6 @@ struct HappeningView: View {
             ForEach(Array(happening.groups.enumerated()), id: \.element.id) { index, group in
                 HappeningGroupView(group: group, first: index == 0 && happening.settled == nil)
             }
-            if let rest = happening.rest {
-                VStack(alignment: .leading, spacing: 6) {
-                    OpensInPlace(id: "happening:rest") {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(rest.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                            Text(rest.line).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                        }
-                    }
-                    .frame(minHeight: TodayLook.target)
-                    if state.isOpen("happening:rest") {
-                        ForEach(Array(rest.groups.enumerated()), id: \.element.id) { index, group in
-                            HappeningGroupView(group: group, first: index == 0)
-                        }
-                    }
-                }
-                .rowLine(!happening.groups.isEmpty)
-                .padding(.top, 2)
-            }
             if let gotIt = happening.gotIt { PaneButton(gotIt) }
             if let nothing = happening.nothingNew { NoteText(nothing) }
         }
@@ -286,7 +269,8 @@ struct HappeningView: View {
 }
 
 /// A project's group in what is happening. Its header is a row that opens
-/// the project's page: stripe, tile and name, and no pill.
+/// the project's page: stripe, tile and name, and no pill. What is on no
+/// project has a header that opens nothing: its name alone.
 struct HappeningGroupView: View {
     var group: HappeningGroup
     var first = true
@@ -294,28 +278,34 @@ struct HappeningGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button {
-                if let route = group.opens { pane.open(route) }
-            } label: {
-                HStack(spacing: 8) {
-                    if let tile = group.tile { TileView(tile: tile, size: .row) }
-                    Text(group.name).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                        .multilineTextAlignment(.leading)
-                    Spacer(minLength: 4)
-                    if group.opens != nil { RowChevron(turn: .page) }
+            if let route = group.opens {
+                Button {
+                    pane.open(route)
+                } label: {
+                    header.contentShape(Rectangle())
                 }
-                .stripe(group.stripe, inset: 4)
-                .frame(minHeight: TodayLook.target)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityValue(group.stripe.spoken)
+                .accessibilityHint("Opens its page")
+            } else {
+                header.accessibilityAddTraits(.isHeader)
             }
-            .buttonStyle(.plain)
-            .disabled(group.opens == nil)
-            .accessibilityValue(group.stripe.spoken)
-            .accessibilityHint(group.opens == nil ? "" : "Opens its page")
             ForEach(group.items) { HappeningItemView(item: $0).padding(.leading, group.stripe.flag == nil ? 0 : 10) }
         }
         .padding(.top, first ? 0 : 6)
         .rowLine(!first)
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            if let tile = group.tile { TileView(tile: tile, size: .row) }
+            Text(group.name).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 4)
+            if group.opens != nil { RowChevron(turn: .page) }
+        }
+        .stripe(group.stripe, inset: 4)
+        .frame(minHeight: TodayLook.target)
     }
 }
 

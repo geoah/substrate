@@ -29,10 +29,10 @@ When a flag list is closed the view sends `settleFlags`, so the order follows th
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |
 | `NightPresentation`, `NightItem`, `NightDecision`            | The night: one line folded; open, by project, with "Got it"                                             |
 | `EarlierPresentation`                                        | "Earlier today": one line with a count, opening to its lines                                            |
-| `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, a group per project in flag order, the rest as one count      |
+| `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, every project with its lines, flagged first, nothing folded   |
 | `MarkedBlock`                                                | Something marked urgent and held back: who marked it and its options                                    |
 | `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line       |
-| `RoutineCard`                                                | A routine row, open: its items, Taken or Done, Skip, a stale note                                       |
+| `RoutineCard`                                                | A routine row, open: its items each with a tick, All taken or All done, Skip beside it, a line if stale |
 | `YesterdayCard`                                              | What yesterday left: each thing with its option list, acting on a tap                                   |
 | `SuggestedCard`, `SuggestedItem`                             | The suggested tasks save card, twelve at a time (`batch` says so where more wait), and one suggested task wherever it is drawn (`save` set when drawn alone) |
 | `PlanRowCard`                                                | "Plan the day" in the day: one line and "Open the plan"                                                 |

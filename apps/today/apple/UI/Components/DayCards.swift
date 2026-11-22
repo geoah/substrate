@@ -5,7 +5,8 @@ import TodayCore
 // What an open row holds, one view for each card of the design guide.
 
 /// A routine, open: its items (names and doses, shown only inside the app),
-/// one primary button across the card, and Skip.
+/// each with a tick of its own, then one primary button across the card for
+/// what is still open, with Skip beside it.
 struct RoutineCardView: View {
     var card: RoutineCard
     @Environment(\.colorScheme) private var scheme
@@ -15,30 +16,38 @@ struct RoutineCardView: View {
             if !card.items.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                name(item)
-                                Spacer(minLength: 12)
-                                detail(item)
+                        HStack(alignment: .center, spacing: 8) {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                    name(item)
+                                    Spacer(minLength: 12)
+                                    detail(item)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    name(item)
+                                    detail(item)
+                                }
                             }
-                            VStack(alignment: .leading, spacing: 2) {
-                                name(item)
-                                detail(item)
-                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .combine)
+                            if let tick = item.tick { PaneButton(tick, small: true) }
                         }
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // A line with a tick is as tall as the tick's target.
+                        .padding(.vertical, item.tick == nil ? 8 : 1)
                         .overlay(alignment: .top) {
                             if index > 0 { Rectangle().fill(TodayLook.line(scheme)).frame(height: 0.5) }
                         }
-                        .accessibilityElement(children: .combine)
                     }
                 }
             }
-            if let done = card.done { PaneButton(done) }
-            if let skip = card.skip { PaneButton(skip) }
+            if card.done != nil || card.skip != nil {
+                HStack(spacing: TodayLook.betweenButtons) {
+                    if let done = card.done { PaneButton(done) }
+                    if let skip = card.skip { PaneButton(skip, beside: card.done?.wide == true).fixedSize() }
+                }
+            }
             if let said = card.said { SavedLine(said) }
-            if let stale = card.stale { StaleNoteView(note: stale) }
+            if let notLogged = card.notLogged { NoteText(notLogged) }
         }
     }
 

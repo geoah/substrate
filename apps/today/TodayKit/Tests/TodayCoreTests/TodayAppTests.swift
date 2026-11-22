@@ -58,15 +58,18 @@ struct OrderTests {
         #expect(routine.title == "Morning medication" && routine.line == "5 items.")
         guard case let .routine(card) = routine.body else { return #expect(Bool(false)) }
         #expect(card.items.map(\.name).sorted() == ["Magnesium", "Omega-3", "Probiotic", "Vitamin D", "Zinc"])
-        #expect(card.done?.title == "Taken" && card.done?.command == .log(row: routine.id, done: true))
-        #expect(card.stale == nil, "yesterday's were logged")
+        #expect(card.done?.title == "All taken" && card.done?.command == .log(row: routine.id, done: true))
+        #expect(card.skip?.title == "Skip" && card.skip?.command == .log(row: routine.id, done: false))
+        // Each item has a tick of its own, which logs that one.
+        #expect(card.items.allSatisfy { $0.tick?.iconOnly == true && $0.tick?.title == "Taken" && $0.tick?.command == .logOccurrence($0.id, done: true) })
+        if case let .tick(all) = routine.trailing { #expect(all.title == "All taken") } else { #expect(Bool(false), "a closed routine ends with its tick") }
+        #expect(card.notLogged == nil, "yesterday's were logged")
     }
 
     @Test func whereLoggingStoppedTheRoutineSaysSoAndYesterdayIsNotAskedAfter() throws {
         let pane = try #require(TodayFixtures.all.first { $0.name == "today-wake-stale" }).app.pane
         guard case let .routine(card) = rows(pane)[0].body else { return #expect(Bool(false)) }
-        #expect(card.stale?.pill == .stale)
-        #expect(card.stale?.text == "Nothing has been logged since 17 October. A tick here is the log.")
+        #expect(card.notLogged == "Not logged since 17 October.")
         guard case let .yesterday(left) = try #require(row(pane, "yesterday")).body else { return #expect(Bool(false)) }
         #expect(left.items.map(\.glyph) == [.task], "only the task that was due, not a month of doses")
     }
@@ -133,10 +136,89 @@ struct OrderTests {
         #expect(pane.items[index + 1].id == pane.lead)
         #expect(index > 0, "not at the top of the page")
         guard case let .happening(happening) = pane.items[index] else { return }
-        // Grouped by project in flag order; the rest is one count.
+        // Grouped by project in flag order.
         #expect(happening.groups.map(\.name) == ["Lantern", "Security hardening", "Hiring"])
         #expect(happening.time == "09:10" && happening.gotIt?.command == .gotIt(project: nil))
         #expect(happening.line == "Callum accepted Friday at 16:30. The 17:20 slot is free. And three more on two projects.")
+    }
+
+    @Test func whatIsHappeningListsEveryProjectWithNothingFoldedInside() throws {
+        // Something came in on a project with no flag, and something on no project.
+        let pane = pane("18:00") { state in
+            state.linked.records[RecordFold.key(TodayKinds.digest, "northfield")] = TodayFixtures.digest(
+                "northfield", line: "Stefan gave the go-ahead on one node.",
+                [("06:23", "Stefan gave the go-ahead on one node."), ("10:40", "Stefan asked when the cable swap can start.")])
+        }
+        guard case let .happening(happening)? = pane.items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false), "something came in today")
+        }
+        // The flagged projects in flag order, then the others by name, then what is on no project: each with its own lines.
+        #expect(
+            happening.groups.map(\.name) == [
+                "EU AI Act", "External API reliability", "Lantern", "Security hardening", "Hiring", "Northfield bring-up", "On no project",
+            ])
+        let flagged = happening.groups.map { $0.stripe.flag != nil }
+        #expect(flagged == flagged.sorted { $0 && !$1 }, "no flagged project after one with no flag")
+        let northfield = try #require(happening.groups.first { $0.id == "northfield" })
+        #expect(northfield.stripe.flag == nil && northfield.opens == .project("northfield"))
+        #expect(northfield.items.map(\.text) == ["Stefan asked when the cable swap can start."])
+        let unfiled = try #require(happening.groups.last)
+        #expect(unfiled.name == "On no project" && unfiled.tile == nil && unfiled.opens == nil)
+        #expect(unfiled.items.map(\.text) == ["The Product Review moved to next Thursday."])
+        #expect(happening.gotIt?.title == "Got it")
+    }
+
+    @Test func anEventOnACalendarThatIsNotTheOwnersIsDrawnNowhere() throws {
+        let kind = "providers.substrate.reamde.dev/google/calendar"
+        func calendar(_ id: String, _ properties: [String: JSONValue]) -> Record { Record(id: id, kind: kind, properties: properties, version: 1) }
+        func on(_ calendar: String, _ event: Record) -> Record {
+            var event = event
+            event.properties["calendar"] = .object(["ref": .string("\(kind)/\(calendar)")])
+            return event
+        }
+        // Whose a calendar is, by what its record says.
+        let mine = calendar("mine", ["primary": true, "accessRole": "owner"])
+        let second = calendar("second", ["accessRole": "owner", "dataOwner": .object(["ref": "providers.substrate.reamde.dev/google/emailaddress/me"])])
+        let colleague = calendar("colleague", ["accessRole": "reader"])
+        #expect(Meeting.isOwn(calendar: mine) && Meeting.isOwn(calendar: second))
+        #expect(!Meeting.isOwn(calendar: colleague) && !Meeting.isOwn(calendar: calendar("team", ["accessRole": "writer"])))
+        #expect(!Meeting.isOwn(calendar: calendar("partner", ["accessRole": "owner"])), "another person's calendar, with an owner's rights on it")
+        #expect(!Meeting.isOwn(calendar: calendar("put-away", ["primary": true, "accessRole": "owner", "hidden": true])))
+        #expect(Meeting.isOwn(calendar: calendar("home", ["title": "Home"])) && !Meeting.isOwn(calendar: calendar("feed", ["isSubscribed": true])))
+
+        // A colleague's calendar the account can see holds two events today, one past and one across a meeting of the owner's.
+        func state(at clock: String) -> TodayApp.State {
+            TodayFixtures.state(at: clock) { state in
+                state.windows.calendars = [mine, second, colleague]
+                state.windows.meetings = state.windows.meetings.map { on("mine", $0) }
+                state.windows.meetings += [
+                    on("colleague", TodayFixtures.event("x-early", "09:00", "09:30", "Their standup", people: ["Stefan"])),
+                    on("colleague", TodayFixtures.event("x-across", "14:20", "14:50", "Their vendor call", people: ["Stefan"])),
+                    on("second", TodayFixtures.event("x-mine", "21:30", "21:45", "Collect the parcel", meet: false)),
+                    on("never-read", TodayFixtures.event("x-unknown", "21:50", "21:55", "On a calendar that was not read")),
+                ]
+            }
+        }
+        let engine = DayEngine(TodayPresenter.day(state(at: "11:30"), now: TodayFixtures.at("11:30"), calendar: TodayFixtures.calendar))
+        let titles = Set(engine.todaysMeetings.map(\.title))
+        #expect(titles.contains("Collect the parcel"), "a second calendar of the owner's own")
+        #expect(titles.isDisjoint(with: ["Their standup", "Their vendor call", "On a calendar that was not read"]))
+        // And what the fixture holds is all there: its events are on the owner's calendar.
+        let plain = DayEngine(TodayPresenter.day(TodayFixtures.state(at: "11:30"), now: TodayFixtures.at("11:30"), calendar: TodayFixtures.calendar))
+        #expect(titles.subtracting(["Collect the parcel"]) == Set(plain.todaysMeetings.map(\.title)))
+        #expect(engine.overlaps.map { $0.meetings.map(\.id) } == plain.overlaps.map { $0.meetings.map(\.id) }, "no overlap with what is not theirs")
+        // Nowhere in the day or on a page, before it or after it.
+        for clock in ["11:30", "18:00"] {
+            let app = TodayFixtures.present(state(at: clock), at: clock)
+            var words: [String] = []
+            collect(String.self, in: app.pane, into: &words)
+            for route in [TodayRoute.plan, .priorities, .projects] { collect(String.self, in: app.page(route), into: &words) }
+            #expect(!words.contains { $0.contains("Their standup") || $0.contains("Their vendor call") || $0.contains("was not read") }, "at \(clock)")
+            #expect(words.contains { $0.contains("Collect the parcel") }, "at \(clock)")
+        }
+        // What an earlier build kept holds no calendars, and is read.
+        let kept = try JSONDecoder().decode(Windows.self, from: Data(#"{"meetings":[],"occurrences":[]}"#.utf8))
+        #expect(kept.calendars.isEmpty && kept.ownMeetings.isEmpty)
     }
 
     @Test func overlapsArePairsAndAChoiceMakesTheOtherMeetingOff() {
@@ -508,6 +590,36 @@ struct WriteTests {
         #expect(rows(await harness.presentation.pane).first?.id != routine.id)
     }
 
+    @Test func oneItemOfAGroupIsTickedByItselfAndTheGroupsButtonLogsTheRest() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        await load(harness, "07:05")
+        let routine = try #require(rows(await harness.presentation.pane).first)
+        func card() async throws -> RoutineCard {
+            let row = try #require(rows(await harness.presentation.pane).first { $0.id == routine.id })
+            guard case let .routine(card) = row.body else { throw CancellationError() }
+            return card
+        }
+        let item = try #require(try await card().items.first { $0.name == "Vitamin D" })
+        await harness.send(try #require(item.tick?.command))
+        let first = writes(harness).flatMap(\.entries)
+        #expect(first.count == 1 && first[0].recordID == item.id && first[0].method == .put && first[0].kind == TodayKinds.log)
+        // Its line shows as taken with a filled tick that takes the log back; the row counts it and stays open.
+        #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "1 of 5 logged.")
+        let ticked = try #require(try await card().items.first { $0.id == item.id })
+        #expect(ticked.logged == "Taken at 07:05." && ticked.tick?.role == .primary && ticked.tick?.command == .unlog(item.id))
+        #expect(try await card().done?.title == "All taken")
+        await harness.send(.unlog(item.id))
+        #expect(writes(harness).flatMap(\.entries).last?.method == .delete)
+        #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "5 items.")
+        // The group's button logs what is not ticked yet, and the row is done.
+        await harness.send(.logOccurrence(item.id, done: true))
+        let before = writes(harness).flatMap(\.entries).count
+        await harness.send(.log(row: routine.id, done: true))
+        let rest = writes(harness).flatMap(\.entries).dropFirst(before)
+        #expect(rest.count == 4 && !rest.contains { $0.recordID == item.id })
+        #expect(rows(await harness.presentation.pane).first?.id != routine.id)
+    }
+
     @Test func anAnswerToWhatYesterdayLeftStaysWithItsChoiceAndTheChoiceMoves() async throws {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
         await load(harness, "07:05")
@@ -779,6 +891,14 @@ struct ReadTests {
         #expect(name(["name": "rsato", "title": "rsato"]).name == "Rsato" && name(["name": "rsato"]).short == "Rsato")
         #expect(name(["nickname": "odi", "title": "odi"]).name == "Odi" && name(["title": "rsato@example.com"]).name == "Rsato")
         #expect(name([:]).name == "Someone")
+        // A given name a source filled with a handle or an address is read as one: never "for christopher".
+        let handle = name(["givenName": "odile"])
+        #expect(handle.name == "Odile" && handle.short == "Odile")
+        let address = name(["name": "pilar@example.com", "givenName": "pilar@example.com"])
+        #expect(address.name == "Pilar" && address.short == "Pilar")
+        #expect(
+            name(["givenName": "ines.castel@example.com"]).name == "Ines Castel"
+                && name(["givenName": "odile", "familyName": "marchetti"]).name == "Odile Marchetti")
         // The short name is the given name where there is one, else the first word.
         #expect(name(["name": "Dr Ines Castel", "givenName": "Ines"]).short == "Ines" && name(["name": "Ines Castel"]).short == "Ines")
 

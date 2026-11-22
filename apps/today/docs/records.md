@@ -265,13 +265,39 @@ One event synced from two accounts is one meeting: two events with the same star
 title (compared without case or surrounding space) are drawn once, with the attendees of both. An event titled
 only "Busy" at the same start and end as a named one is that one's shadow and is not drawn.
 
+### Whose calendar an event is on
+
+An account syncs every calendar it can see: the owner's own, a colleague's, a shared one. Only an event on a
+calendar of the owner's own is a meeting of theirs, and the others are drawn nowhere: not in the day, in what
+is done, in an overlap, on the plan or on a page.
+
+An event names its calendar in a reference property, `calendar`. After the window read the app reads every
+record of the kinds those references name, and keeps them with the meetings. A calendar is the owner's own by
+what its record says, in the Google provider's words:
+
+- it is never one the owner hid (`hidden` is true);
+- it is the account's own calendar (`primary` is true); or
+- it is a second calendar the account owns (`accessRole` is `owner`, and it names a `dataOwner`).
+
+Another person's calendar is neither, whatever the owner may do on it: `reader`, `freebusyreader` and `writer`
+are not the owner's, and nor is a person's own calendar on which the owner was given `owner` rights, which has
+no `dataOwner`. The attendee marked `self` does not help: on someone else's calendar it marks them, not the
+owner. A calendar that states no `accessRole` (another provider's) is the owner's unless it says
+`isSubscribed`.
+
+An event that names no calendar is drawn. An event that names a calendar the read did not return is not, and a
+read of the calendars that fails fails the window read, so meetings are never kept without their calendars.
+
 ## People
 
 A person is a `substrate.reamde.dev/core/contact`, read by reference from a task's `people` and a meeting's
 attendees. The app reads `name`, `givenName`, `familyName`, `nickname` and the reserved `title`. The name it
 shows is `name` when it has an upper-case letter; otherwise `givenName` and `familyName`; otherwise a `title`
-with an upper-case letter; otherwise the nickname, or the handle `name` or `title` holds, with its first letter
-in upper case. Inside a sentence ("for …", "with …") it is the given name, else the first word of the name.
+with an upper-case letter; otherwise the nickname, or the handle `name` or `title` holds, read as a name. A
+handle is read as a name by taking what is before an "@" and giving each of its words (parted by a dot, a dash
+or an underscore) a capital: "Christopher" for "christopher", "Dan" for "dan@example.com". A `givenName` or
+`familyName` with no upper-case letter is a handle too, since a source can fill it with one. Inside a sentence
+("for …", "with …") it is the given name, else the first word of the name.
 
 ## Writes the app makes
 

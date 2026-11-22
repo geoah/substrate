@@ -286,6 +286,31 @@ public struct Meeting: Equatable, Sendable {
         place = record["location"]?.text ?? (record["hangoutLink"]?.text != nil ? "Google Meet" : nil)
     }
 
+    /// Whether an event is the owner's: it is on a calendar of their own.
+    /// An account syncs every calendar it can see, a colleague's and a
+    /// shared one among them, and an event there is not the owner's to go
+    /// to. An event that names no calendar is drawn; one whose calendar is
+    /// not among the records read is not.
+    static func isOwn(_ event: Record, calendars: [String: Record]) -> Bool {
+        guard let path = event["calendar"]?.referencePath else { return true }
+        guard let calendar = calendars[path] else { return false }
+        return isOwn(calendar: calendar)
+    }
+
+    /// Whether a calendar is the owner's own, by what its record says, in
+    /// the Google provider's words: never one they hid (`hidden`); the
+    /// account's own (`primary`); or a second calendar the account owns
+    /// (`accessRole` is `owner` and it names its `dataOwner`). Another
+    /// person's calendar the owner may read or even edit is neither. A
+    /// calendar that states no `accessRole` (another provider's) is the
+    /// owner's unless it is one they subscribed to (`isSubscribed`).
+    static func isOwn(calendar: Record) -> Bool {
+        if calendar["hidden"]?.bool == true { return false }
+        if calendar["primary"]?.bool == true { return true }
+        if let role = calendar["accessRole"]?.text { return role == "owner" && (calendar["dataOwner"] ?? .null) != .null }
+        return calendar["isSubscribed"]?.bool != true
+    }
+
     /// A title as it is compared: without case or surrounding space.
     var titleKey: String { title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
 
@@ -558,11 +583,12 @@ public struct Person: Equatable, Sendable {
     }
 
     /// A `core/contact`. Its `name` is absent on some and a handle in
-    /// lower case on others, so the name is worked out (`Words.personName`).
+    /// lower case on others, and its given name can be a handle or an
+    /// address too, so each is worked out (`Words.personName`).
     init(_ record: Record) {
         path = "\(record.kind)/\(record.id)"
         let given = record["givenName"]?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.given = given?.isEmpty == false ? given : nil
+        self.given = given?.isEmpty == false ? given.map(Words.written) : nil
         name =
             Words.personName(
                 name: record["name"]?.text ?? record["displayName"]?.text, given: record["givenName"]?.text, family: record["familyName"]?.text,

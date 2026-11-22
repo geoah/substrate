@@ -4,13 +4,31 @@ import SubstrateCore
 
 /// What the window reads returned, kept on the device so the pane draws
 /// offline: the occurrences of every series from yesterday to seven days
-/// ahead, and the meetings of today and the two days after.
+/// ahead, the meetings of today and the two days after, and the calendars
+/// those meetings name, which say whose each is.
 public struct Windows: Codable, Equatable, Sendable {
     public var occurrences: [Record] = []
     public var meetings: [Record] = []
+    /// Every record of the kinds the meetings' `calendar` references name.
+    public var calendars: [Record] = []
     public var readAt: Date?
 
     public init() {}
+
+    /// What an earlier build kept holds no calendars: it is read as it is.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        occurrences = try container.decodeIfPresent([Record].self, forKey: .occurrences) ?? []
+        meetings = try container.decodeIfPresent([Record].self, forKey: .meetings) ?? []
+        calendars = try container.decodeIfPresent([Record].self, forKey: .calendars) ?? []
+        readAt = try container.decodeIfPresent(Date.self, forKey: .readAt)
+    }
+
+    /// The meetings on the owner's own calendars: the only ones drawn.
+    public var ownMeetings: [Record] {
+        let byPath = Dictionary(calendars.map { ("\($0.kind)/\($0.id)", $0) }, uniquingKeysWith: { first, _ in first })
+        return meetings.filter { Meeting.isOwn($0, calendars: byPath) }
+    }
 }
 
 /// The reads the pane makes beside the linked kinds: what the repository
@@ -76,9 +94,20 @@ enum TodayReads {
         }
         if !discovery.calendars.isEmpty {
             out.meetings = try await window(client, filter: ["kinds": .array(discovery.calendars.map(JSONValue.string))], from: day(0), to: day(3))
+            out.calendars = try await calendars(client, of: out.meetings)
         }
         out.readAt = now
         return out
+    }
+
+    /// The calendars the meetings name in their `calendar` reference, every
+    /// record of those kinds: whose a calendar is decides whether its events
+    /// are drawn (`Meeting.isOwn`). A read that fails fails the window read,
+    /// so the meetings kept are never without their calendars.
+    static func calendars(_ client: SubstrateClient, of meetings: [Record]) async throws -> [Record] {
+        let kinds = Set(meetings.compactMap { $0["calendar"]?.referencePath }.compactMap { RecordReference(path: $0)?.kind }).sorted()
+        guard !kinds.isEmpty else { return [] }
+        return try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: 1000).records
     }
 
     /// The open requests: what the assistant suggests on records that exist.

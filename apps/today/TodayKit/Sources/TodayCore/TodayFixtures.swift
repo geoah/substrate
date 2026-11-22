@@ -644,7 +644,7 @@ public enum TodayFixtures {
     public static var all: [Fixture] {
         [
             fixture("today-wake", at: "07:05"),
-            // Nothing has been logged since 17 October: the routine says so with one pill.
+            // Nothing has been logged since 17 October: the routine says so in one line.
             fixture("today-wake-stale", at: "07:05") { state in
                 state.linked.records = [:]
                 for record in records(at: at("07:05"), kept: false) where record.kind != TodayKinds.contact {

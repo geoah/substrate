@@ -18,7 +18,7 @@ func outline(_ pane: PanePresentation) -> String {
         case let .earlier(earlier): out.append("earlier: \(earlier.count) - " + earlier.lines.map { "\($0.time) \($0.text)" }.joined(separator: " / "))
         case let .happening(h):
             out.append(
-                "happening: \(h.time ?? "") \(h.line) {\(h.groups.map { "\($0.name):\($0.items.count)" }.joined(separator: ","))} rest=\(h.rest?.line ?? "-")")
+                "happening: \(h.time ?? "") \(h.line) {\(h.groups.map { "\($0.name):\($0.items.count)" }.joined(separator: ","))}")
         case let .row(row):
             out.append(
                 "row[\(row.state.rawValue)] \(row.id): \(row.title) | \(row.line ?? "") | \(row.stripe.flag?.rawValue ?? "-")\(row.stripe.suggested ? "?" : "") | pills=\(row.chips.pills.map(\.word))"

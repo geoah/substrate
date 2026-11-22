@@ -16,31 +16,38 @@ public struct RoutineCard: Codable, Equatable, Hashable, Sendable {
         public var detail: String?
         /// "Taken at 07:33.", "Skipped."; nil while it is open.
         public var logged: String?
+        /// The tick on its line, an icon button: open, it logs this one
+        /// item as taken or done; filled, the item is logged and a tap
+        /// takes the log back.
+        public var tick: ButtonPresentation?
 
-        public init(id: String, name: String, detail: String? = nil, logged: String? = nil) {
+        public init(id: String, name: String, detail: String? = nil, logged: String? = nil, tick: ButtonPresentation? = nil) {
             self.id = id
             self.name = name
             self.detail = detail
             self.logged = logged
+            self.tick = tick
         }
     }
 
     public var items: [Item]
-    /// "Taken" for medication, "Done" otherwise: logs every open item.
+    /// Logs every item still open: "All taken" for medication of more than
+    /// one item and "Taken" for one, "All done" and "Done" otherwise.
     public var done: ButtonPresentation?
-    /// "Skip": logs them as skipped.
+    /// "Skip", beside `done`: logs the items still open as skipped.
     public var skip: ButtonPresentation?
     /// "Taken at 07:33."
     public var said: String?
-    /// One pill and one sentence when nothing has been logged for long.
-    public var stale: StaleNote?
+    /// "Not logged since 17 October.": one plain line when nothing has been
+    /// logged for long.
+    public var notLogged: String?
 
-    public init(items: [Item], done: ButtonPresentation?, skip: ButtonPresentation?, said: String? = nil, stale: StaleNote? = nil) {
+    public init(items: [Item], done: ButtonPresentation?, skip: ButtonPresentation?, said: String? = nil, notLogged: String? = nil) {
         self.items = items
         self.done = done
         self.skip = skip
         self.said = said
-        self.stale = stale
+        self.notLogged = notLogged
     }
 }
 
@@ -261,7 +268,9 @@ public struct EarlierPresentation: Codable, Equatable, Hashable, Sendable {
 // MARK: What is happening
 
 /// What came in since the last look, directly above the current item.
-/// Closed it is one line; open, a group for each project in flag order.
+/// Closed it is one line; open, every project that has something, each
+/// with its lines under it: the flagged ones in flag order, then the others
+/// by name, then what is on no project.
 public struct HappeningPresentation: Codable, Equatable, Sendable {
     /// The closed line: the latest thing, and how many more.
     public var line: String
@@ -278,8 +287,6 @@ public struct HappeningPresentation: Codable, Equatable, Sendable {
     /// "Cannot wait", "Earlier, now settled": the label over `settled`.
     public var settledLabel: String?
     public var groups: [HappeningGroup]
-    /// Projects with no flag, as one count that opens.
-    public var rest: HappeningRest?
     /// "Got it": marks what is shown as read.
     public var gotIt: ButtonPresentation?
     /// "Nothing new since 11:05.", in place of the button.
@@ -287,8 +294,7 @@ public struct HappeningPresentation: Codable, Equatable, Sendable {
 
     public init(
         line: String, time: String? = nil, tile: Tile? = nil, pill: Pill? = nil, quiet: Bool = false, settled: HappeningItem? = nil,
-        settledLabel: String? = nil, groups: [HappeningGroup] = [], rest: HappeningRest? = nil, gotIt: ButtonPresentation? = nil,
-        nothingNew: String? = nil
+        settledLabel: String? = nil, groups: [HappeningGroup] = [], gotIt: ButtonPresentation? = nil, nothingNew: String? = nil
     ) {
         self.line = line
         self.time = time
@@ -298,7 +304,6 @@ public struct HappeningPresentation: Codable, Equatable, Sendable {
         self.settled = settled
         self.settledLabel = settledLabel
         self.groups = groups
-        self.rest = rest
         self.gotIt = gotIt
         self.nothingNew = nothingNew
     }
@@ -348,20 +353,6 @@ public struct HappeningItem: Codable, Equatable, Sendable, Identifiable {
         self.isNew = isNew
         self.pill = pill
         self.marked = marked
-    }
-}
-
-public struct HappeningRest: Codable, Equatable, Sendable {
-    /// "Projects with no flag".
-    public var title: String
-    /// "Three more things, one new".
-    public var line: String
-    public var groups: [HappeningGroup]
-
-    public init(title: String = "Projects with no flag", line: String, groups: [HappeningGroup]) {
-        self.title = title
-        self.line = line
-        self.groups = groups
     }
 }
 

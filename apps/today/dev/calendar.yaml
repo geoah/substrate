@@ -6,7 +6,9 @@
 # properties carry the Google provider's names and shapes (`summary`,
 # `location`, `hangoutLink`, `attendees` as objects with `value`,
 # `displayName`, `self` and `responseStatus`), so what is drawn here is drawn
-# the same from a connected account.
+# the same from a connected account. A `calendar` holds what says whose a
+# calendar is (`primary`, `accessRole`, `hidden`, `dataOwner`), and each event
+# names the one it is on: the app draws only what is on the owner's own.
 #
 # Applied by `server.sh`: substratectl apply -f apps/today/dev/calendar.yaml
 kind: substrate.reamde.dev/core/package
@@ -15,7 +17,48 @@ metadata:
 data:
   authority: "~"
   package: calendar
-  version: 1
+  # 2: the `calendar` kind, and the reference to it on an event and a series.
+  version: 2
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/calendar/calendar
+data:
+  authority: "~"
+  package: calendar
+  description: >-
+    A calendar an account can see: your own, or one somebody shared with you.
+    What it says of your access tells whose it is.
+  purpose: supporting
+  names:
+    singular: calendar
+  label:
+    singular: Calendar
+    plural: Calendars
+  displayTemplate: "{summary}"
+  properties:
+    summary:
+      type: string
+      required: true
+      description: the calendar's name, or its owner's address
+    primary:
+      type: bool
+      description: whether it is the account's own calendar
+    accessRole:
+      type: enum
+      values:
+        - freebusyreader
+        - reader
+        - writer
+        - owner
+      description: what you may do on it
+    hidden:
+      type: bool
+      description: whether you hid it from your list
+    dataOwner:
+      type: email
+      description: who owns a second calendar's data; absent on a person's
+        own calendar
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
@@ -49,6 +92,12 @@ data:
     calendarName:
       type: string
       description: the calendar it is on, such as Work
+    calendar:
+      type: reference
+      kind: ~/calendar/calendar
+      mustExist: true
+      onDelete: cascade
+      description: the calendar it is on
     hangoutLink:
       type: url
       description: the video call's join link
@@ -134,6 +183,12 @@ data:
     calendarName:
       type: string
       description: the calendar it is on, such as Work
+    calendar:
+      type: reference
+      kind: ~/calendar/calendar
+      mustExist: true
+      onDelete: cascade
+      description: the calendar it is on
     hangoutLink:
       type: url
       description: the video call's join link

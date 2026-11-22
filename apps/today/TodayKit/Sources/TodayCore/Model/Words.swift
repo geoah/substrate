@@ -66,26 +66,35 @@ enum Words {
         return out + "\u{2026}"
     }
 
-    /// A person's name from what a contact holds. `name` is the name when
+    /// A person's name from what a contact holds. `name` is taken where
     /// it has a capital; a `name` all in lower case is a handle. Then the
-    /// given and family names, then a `title` that has a capital, then
-    /// the nickname or the handle with its first letter in upper case.
+    /// given and family names, each read as a handle where it has no
+    /// capital, then a `title` that has a capital, then the nickname or the
+    /// handle as a name.
     static func personName(name: String?, given: String?, family: String?, title: String?, nickname: String?) -> String? {
         func kept(_ text: String?) -> String? {
             let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
         }
         if let name = kept(name), name.contains(where: \.isUppercase) { return name }
-        let parts = [kept(given), kept(family)].compactMap { $0 }
+        let parts = [kept(given), kept(family)].compactMap { $0 }.map(written)
         if !parts.isEmpty { return parts.joined(separator: " ") }
         if let title = kept(title), title.contains(where: \.isUppercase) { return title }
         return (kept(nickname) ?? kept(name) ?? kept(title)).map(handleName)
     }
 
-    /// A handle as a name: the part before an address's "@", its first
-    /// letter in upper case.
+    /// A part of a name as it is written, or as a name where a source
+    /// filled it with a handle or an address: one with no capital in it
+    /// ("christopher", "dan@example.com").
+    static func written(_ part: String) -> String { part.contains(where: \.isUppercase) ? part : handleName(part) }
+
+    /// A handle as a name: the part before an address's "@", each of its
+    /// words with a capital. "Christopher" for "christopher", "Dan" for
+    /// "dan@example.com", "Ana Lima" for "ana.lima@example.com".
     static func handleName(_ handle: String) -> String {
-        cap(handle.split(separator: "@").first.map(String.init) ?? handle)
+        let local = handle.split(separator: "@").first.map(String.init) ?? handle
+        let words = local.split(whereSeparator: { ".-_+".contains($0) }).map { cap(String($0)) }
+        return words.isEmpty ? cap(local) : words.joined(separator: " ")
     }
 
     /// A sentence ends with a full stop unless it already ends one.

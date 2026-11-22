@@ -82,3 +82,10 @@ binds core's `temporal(range)` and `override`, and `~/calendar/series` binds
 kind. Their properties carry the Google provider's names and shapes, so
 `attendees` is a list of objects with `value` (the address), `displayName`,
 `self` and `responseStatus`, and a contact is matched by its address.
+
+`~/calendar/calendar` holds what says whose a calendar is, and each event
+names the one it is on. The seed writes three: Work (the account's own),
+Personal (a second one it owns) and a colleague's, Stefan's, which the
+account may only read. Stefan's holds two events today, one across the 14:20
+meeting, and the app draws neither. After a change to `calendar.yaml` a
+server that is already set up takes it with `server.sh restart`.
