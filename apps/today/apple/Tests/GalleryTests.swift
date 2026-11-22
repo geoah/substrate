@@ -150,6 +150,10 @@ import TodayCore
         try await write(
             "large-text-priorities", DayScreen(app: app, path: [.priorities]).environment(\.dynamicTypeSize, .accessibility2),
             size: CGSize(width: 393, height: 2600))
+        // Chips that wrap stand above the list under them, never over it.
+        try await write(
+            "large-text-guide-options", ComponentSheets.sheet("options").environment(\.dynamicTypeSize, .accessibility2),
+            size: CGSize(width: 393, height: 4200))
     }
 
     /// Settings' own part: the assistant's standing instructions, one on,
