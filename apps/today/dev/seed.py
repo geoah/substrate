@@ -47,13 +47,14 @@ MEDICATION, SCHEDULE = f"{S}/health/medication", f"{S}/health/medicationschedule
 PREFERENCE, PLAN, ADVICE = f"{S}/today/preference", f"{S}/today/plan", f"{S}/today/advice"
 DIGEST, REVIEWMARK, DOSSIER = f"{S}/today/digest", f"{S}/today/reviewmark", f"{S}/today/dossier"
 RETURNPOINT, RULE, PREPARATION = f"{S}/today/returnpoint", f"{S}/today/rule", f"{S}/today/preparation"
+CORRECTION = f"{S}/today/correction"
 CONTACT, REQUEST, TRIGGER = f"{S}/core/contact", f"{S}/core/recordpatchrequest", f"{S}/core/trigger"
 EVENT, SERIES = "~/calendar/event", "~/calendar/series"
 
 # What a wipe purges whole: the kinds the day is written into and the app
 # writes into. Contacts and patch requests are purged by the ids below only,
 # because a repository holds others (the owner's own contact).
-WIPED = [ADVICE, DOSSIER, DIGEST, REVIEWMARK, RETURNPOINT, PLAN, PREFERENCE, PREPARATION, RULE, LOG, TASK, LIST, SCHEDULE, MEDICATION, ROUTINE, EVENT, SERIES]
+WIPED = [ADVICE, CORRECTION, DOSSIER, DIGEST, REVIEWMARK, RETURNPOINT, PLAN, PREFERENCE, PREPARATION, RULE, LOG, TASK, LIST, SCHEDULE, MEDICATION, ROUTINE, EVENT, SERIES]
 
 NAMESPACE = uuid.UUID("5f6b7a00-0000-4000-8000-746f64617921")
 
@@ -113,21 +114,36 @@ TASKS = [
 ]
 
 # The thirteen suggested tasks, each with the assistant's answer.
-# (key, name, project, priority, people, where it came from, due today?, answer, reason)
+# (key, name, project, priority, people, where it came from, due today?, answer, reason, said)
+# `said` is when the words were said, as (days ago, time of day): the task's
+# `originAt` (tasks 5), which is how old a suggestion is. `{when}` in the
+# words becomes that moment as a date ("on Wednesday 18 November at 21:37"),
+# never today, tomorrow or a weekday alone: what is written into a record is
+# read on a later day. Most are a day or two old, three are a week or more,
+# and one is past the two weeks after which `fade` abandons it.
 SUGGESTED = [
-    ("p-kenji", "Sync with Kenji about the stopped VMs", "security", "high", ["kenji"], "You said on Wednesday at 21:37: “I will catch Kenji in the morning, we are in the same office”", True, "task", "You said in the morning."),
-    ("p-tomas", "Fix the 1:1 clash with Tomas", "other", "medium", ["tomas"], "You said on Wednesday at 15:06: “Yes. Fixing it.”", False, "task", "You see Tomas at 14:20, and Thursdays at 14:00 are free on your calendar."),
-    ("p-casey", "Get back to Casey on renaming the shared account", "other", "medium", ["casey"], "You said on Wednesday at 15:10: “I will find out what the options are for renaming the account, not making a new one, and come back to you”", False, "task", "Marco finished the rename at 00:42. A two line reply is ready."),
-    ("p-marcus", "Send Marcus a couple of projects people are working on", "lantern", "high", ["marcus"], "You said on 22 October: “I can send you a couple of projects people are working on now and next”", False, "task", "You see Marcus at 17:40."),
-    ("p-dataplatform", "Find the docs for the data platform meeting", "euai", "high", [], "You said on Wednesday at 22:45: “I will try to find the relevant docs”", False, "task", "The call is at 19:30 and the 16:30 gap is the only free time before it."),
-    ("p-ticket", "File an IT ticket about the platform group membership", "security", "medium", ["hao"], "You said on Wednesday at 20:54: “Let me file a ticket and talk to IT to see what is going on.”", False, "task", "The permissions sync is at 20:00."),
-    ("t-stefan", "Reply to Stefan on the inventory, Halden and Brightwell", "northfield", "high", ["stefan"], "Stefan asked you directly on Tuesday.", False, "task", "Halden and Brightwell is Friday at 20:00."),
-    ("t-wei", "Review Wei's refactor, PR 4188", "lantern", "medium", ["wei"], "Wei asked on Slack today at 05:09.", False, "task", "Wei is away from Monday until 22 January."),
-    ("p-marco", "A week of time off and a bottle for Marco", "other", "low", ["marco"], "You said today at 00:36: “A week off and a bottle of something good are yours. What do you drink?”", False, "task", "No day was said."),
-    ("p-origin", "Ask where the encryption requirement came from", "security", "low", [], "You said on Tuesday at 22:29: “I will ask, though”", False, "task", "No day was said."),
-    ("o-farid", "Tell Farid what happened once the announcement is out", "other", "low", ["farid"], "You said on 11 November: “There will be an announcement, and I can give you the short version”", False, "task", "It waits on the announcement."),
-    ("o-ben", "Send Ben the retro action items", "other", "low", ["ben"], "You said on 10 November: “I will send some action items over after the weekend.”", False, "task", "No day was said."),
-    ("o-maya", "Offer Maya any free slot for the urgent candidate interview", "hiring", "low", ["maya"], "You said on 5 November: “Any time my calendar shows free today or tomorrow will do.”", False, "dismiss", "Two weeks old today, and the two days you offered have passed."),
+    ("p-kenji", "Sync with Kenji about the stopped VMs", "security", "high", ["kenji"], "You said {when}: “I will catch Kenji in the morning, we are in the same office”", True, "task", "You said in the morning.", (1, "21:37")),
+    ("p-tomas", "Fix the 1:1 clash with Tomas", "other", "medium", ["tomas"], "You said {when}: “Yes. Fixing it.”", False, "task", "You see Tomas at 14:20, and Thursdays at 14:00 are free on your calendar.", (1, "15:06")),
+    ("p-casey", "Get back to Casey on renaming the shared account", "other", "medium", ["casey"], "You said {when}: “I will find out what the options are for renaming the account, not making a new one, and come back to you”", False, "task", "Marco finished the rename at 00:42. A two line reply is ready.", (1, "15:10")),
+    ("p-marcus", "Send Marcus a couple of projects people are working on", "lantern", "high", ["marcus"], "You said {when}: “I can send you a couple of projects people are working on now and next”", False, "task", "You see Marcus at 17:40.", (12, "10:20")),
+    ("p-dataplatform", "Find the docs for the data platform meeting", "euai", "high", [], "You said {when}: “I will try to find the relevant docs”", False, "task", "The call is at 19:30 and the 16:30 gap is the only free time before it.", (1, "22:45")),
+    ("p-ticket", "File an IT ticket about the platform group membership", "security", "medium", ["hao"], "You said {when}: “Let me file a ticket and talk to IT to see what is going on.”", False, "task", "The permissions sync is at 20:00.", (1, "20:54")),
+    ("t-stefan", "Reply to Stefan on the inventory, Halden and Brightwell", "northfield", "high", ["stefan"], "Stefan asked you directly {when}.", False, "task", "Halden and Brightwell is Friday at 20:00.", (2, "11:05")),
+    ("t-wei", "Review Wei's refactor, PR 4188", "lantern", "medium", ["wei"], "Wei asked on Slack {when}.", False, "task", "Wei is away from Monday until 22 January.", (0, "05:09")),
+    ("p-marco", "A week of time off and a bottle for Marco", "other", "low", ["marco"], "You said {when}: “A week off and a bottle of something good are yours. What do you drink?”", False, "task", "No day was said.", (0, "00:36")),
+    ("p-origin", "Ask where the encryption requirement came from", "security", "low", [], "You said {when}: “I will ask, though”", False, "task", "No day was said.", (2, "22:29")),
+    ("o-farid", "Tell Farid what happened once the announcement is out", "other", "low", ["farid"], "You said {when}: “There will be an announcement, and I can give you the short version”", False, "task", "It waits on the announcement.", (8, "16:12")),
+    ("o-ben", "Send Ben the retro action items", "other", "low", ["ben"], "You said {when}: “I will send some action items over after the weekend.”", False, "task", "No day was said.", (9, "17:48")),
+    ("o-maya", "Offer Maya any free slot for the urgent candidate interview", "hiring", "low", ["maya"], "You said {when}: “Any time my calendar shows free on these two days will do.”", False, "dismiss", "You offered it {day}, and the two days you offered have passed.", (15, "09:30")),
+]
+
+# What the owner wrote about a suggestion that was wrong, kept for whoever
+# suggests tasks to read (`today/correction`, today 4): the suggestion it is
+# about was dismissed, and the words say what not to suggest again.
+# (key, the suggestion's name, project, said, the owner's words)
+CORRECTED = [
+    ("x-standup", "Join the platform standup", "security", (3, "09:02"),
+     "Going to a meeting that is already on my calendar is not a task. Do not suggest these."),
 ]
 
 # (name, strength, unit, category)
@@ -301,6 +317,11 @@ class Server:
             raise SystemExit(f"seed: purge {kind}/{id}: {status} {json.dumps(body)[:400]}")
 
 
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December")
+
+
 class Day:
     """The day being written: its date and zone, and times of day as instants."""
 
@@ -317,6 +338,20 @@ class Day:
 
     def day(self, days: int = 0) -> str:
         return (self.date + datetime.timedelta(days=days)).isoformat()
+
+    def said(self, days_ago: int, clock: str) -> datetime.datetime:
+        """When words were said: that time of day, that many days ago, and
+        a day earlier still where that would be later than now."""
+        at = self.at(clock, -days_ago)
+        return at if at <= self.now else at - datetime.timedelta(days=1)
+
+    def date_words(self, at: datetime.datetime) -> str:
+        """A moment's day as its date, "on Wednesday 18 November"."""
+        local = at.astimezone(self.zone)
+        return f"on {WEEKDAYS[local.weekday()]} {local.day} {MONTHS[local.month - 1]}"
+
+    def when_words(self, at: datetime.datetime) -> str:
+        return f"{self.date_words(at)} at {at.astimezone(self.zone):%H:%M}"
 
 
 def stamp(at: datetime.datetime) -> str:
@@ -380,13 +415,24 @@ def write_day(server: Server, day: Day, assistant: bool, morning_done: bool) -> 
             properties["notBefore"] = day.instant("09:00", extra["notBefore"])
         server.put(TASK, uid("task/" + key), properties)
 
-    for key, name, project, priority, people, source, due_today, answer, reason in SUGGESTED:
-        properties = task(key, name, project, priority, people, source, "proposed")
+    for key, name, project, priority, people, source, due_today, answer, reason, said in SUGGESTED:
+        at = day.said(*said)
+        properties = task(key, name, project, priority, people, source.format(when=day.when_words(at)), "proposed")
         properties["prioritySetBy"] = "assistant"
+        # When the words were said, which is not when this row is written.
+        properties["originAt"] = stamp(at)
         if due_today:
             properties["dueDay"] = day.day()
         server.put(TASK, uid("task/" + key), properties)
-        server.put(ADVICE, uid("task/" + key), {"task": path(TASK, "task/" + key), "answer": answer, "reason": reason})
+        server.put(ADVICE, uid("task/" + key), {"task": path(TASK, "task/" + key), "answer": answer,
+                                                "reason": reason.format(day=day.date_words(at))})
+
+    for key, name, project, said, words in CORRECTED:
+        at = day.said(*said)
+        properties = task(key, name, project, "none", [], f"The standup was on your calendar {day.when_words(at)}.", "abandoned")
+        properties["originAt"] = stamp(at)
+        server.put(TASK, uid("task/" + key), properties)
+        server.put(CORRECTION, uid("correction/" + key), {"subject": path(TASK, "task/" + key), "text": words})
 
     for key, (name, strength, unit, category) in MEDICATIONS.items():
         properties = {"name": name, "category": category, "form": "tablet"}

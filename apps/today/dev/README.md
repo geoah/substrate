@@ -8,7 +8,7 @@ apps/today/dev/server.sh up        # start the server; on a fresh one, set it up
 apps/today/dev/seed.py             # wipe the day's kinds and write the day again, dated today
 apps/today/dev/seed.py urgent checked held unchecked   # an urgent mark in each of its three states
 apps/today/dev/seed.py urgent none
-apps/today/dev/server.sh restart   # after a change under kinds/: rebuild, and add the binary's packages again
+apps/today/dev/server.sh restart   # after a change under kinds/ or a new tasks version: rebuild, and add the packages again
 apps/today/dev/server.sh reset     # drop the database: new repositories and new tokens
 ```
 
@@ -20,6 +20,15 @@ and adds `routines`, `health`, `tasks` and `today` to each:
 | --------------------- | ------------------------------------------------------------- |
 | `day.localhost`       | the invented day, and a stand-in calendar (`calendar.yaml`)   |
 | `rehearsal.localhost` | nothing: the packages alone, for rehearsing a migration into |
+
+The tasks package comes from a local authority document
+(`.dev/authority/authority.json`, built from `apps/tasks/package`), which
+lists the version the tree declares after the earlier versions the folder
+still holds, so `restart` takes a server from one published version to the
+next. A version's bytes never change: a server that added a version while it
+was still being edited holds a digest no file matches any more ("the
+publisher changed the digest of held version 4"), and only `reset` moves it
+on.
 
 `.dev/today-dev.env` (ignored by git) names the server, both repositories and
 a token for each, and `.dev/ctl.yaml` and `.dev/ctl-rehearsal.yaml` are
@@ -39,6 +48,15 @@ projects and one for what belongs to none, three dossiers, two rules, and
 three changes the assistant suggests as patch requests. News later than now
 is left out, so "what is happening" fills as the day goes; `--day` writes a
 named day whole.
+
+Each suggested task carries `originAt`, when its words were said, and says
+that day as a date in its description: most are a day or two old, three are
+a week or more, and one (fifteen days) is past the two weeks after which the
+package's daily `fade` abandons it. The trigger runs at 03:10 UTC on a
+server left up overnight, and `substratectl function call
+substrate.reamde.dev/today/fade` runs it now; `seed.py` puts the suggestion
+back. One dismissed suggestion carries a `today/correction`, what the owner
+wrote about it.
 
 A wipe purges every record of the kinds the day uses in that repository, so
 `seed.py` refuses a server that is not on this machine.

@@ -32,11 +32,11 @@ readonly SERVER="http://localhost:${SUBSTRATE_DEV_PORT}"
 readonly ENV_FILE=".dev/today-dev.env"
 readonly PASSWORD="devpassword1"
 readonly PACKAGES=(routines health tasks today)
-# The ones the binary ships, which adding again brings up to the tree. The
-# tasks package comes from its authority document, where a version's bytes
-# never change: after an edit to apps/tasks/package under a version this
-# server already holds, only `reset` takes it.
-readonly SHIPPED=(routines health today)
+# Adding them again brings each up to the tree: the ones the binary ships
+# (routines, health, today) to what it embeds, and the tasks package to a
+# NEW version of its authority document. A version's bytes never change:
+# after an edit to apps/tasks/package under a version this server already
+# holds, only `reset` takes it.
 
 authority() {
 	.mise/python.sh .mise/closures.py --out .dev/authority --authority substrate.reamde.dev tasks >/dev/null
@@ -115,8 +115,8 @@ restart)
 	authority
 	mise run dev:restart
 	mise run build:cli >/dev/null
-	add_packages ctl.yaml "${SHIPPED[@]}"
-	add_packages ctl-rehearsal.yaml "${SHIPPED[@]}"
+	add_packages ctl.yaml "${PACKAGES[@]}"
+	add_packages ctl-rehearsal.yaml "${PACKAGES[@]}"
 	ctl ctl.yaml apply -f apps/today/dev/calendar.yaml >/dev/null
 	assistant_off
 	echo "today dev: restarted, and the packages added again"

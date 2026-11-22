@@ -154,8 +154,9 @@ never meets a record already there.
 
 The package also holds:
 
-- **Function `fade`**, on a daily schedule: a `tasks/task` still `proposed` two weeks after it was created
-  is abandoned, under the version it read, so a task the owner answers meanwhile is left alone. It also
+- **Function `fade`**, on a daily schedule: a `tasks/task` still `proposed` two weeks after what it came
+  from was said ([`originAt`](#when-a-tasks-words-were-said-originat), else when it was created) is
+  abandoned, under the version it read, so a task the owner answers meanwhile is left alone. It also
   deletes `today/preparation` records of that age. An automation carrying out the owner's rule, not the
   assistant. It does nothing until the app has written `today/preference`, so adding the package alone
   abandons nothing.
@@ -164,8 +165,8 @@ The package also holds:
   record, whose id is derived from what is asked, so asking twice is one record:
   - `d<YYYYMMDD>`, once the owner's clock passes `prepareAt` in their `timezone`: a dossier for at most six
     of the day's meetings, and at most three patch requests for flags.
-  - `a…`: advice for the suggested tasks that have none, at most eight per ask and the newest first, at
-    most every two hours, and only while at least one has none. No trigger fires when a suggestion
+  - `a…`: advice for the suggested tasks that have none, at most eight per ask and the most lately said
+    first, at most every two hours, and only while at least one has none. No trigger fires when a suggestion
     arrives.
   - `u…`: the check of one urgent mark an automation or the API set.
 
@@ -183,8 +184,12 @@ The package also holds:
 - **Function `stampurgent`**, when a `today/urgentcheck` is written: it writes `urgentCheckedAt`, or
   `urgentHeldAt` with `urgentHeldReason`, on the task, only while its mark is still unchecked, and nothing
   else.
-- **The assistant's standing instructions**, as ten `llm/instruction` records with ids that start `today-`
-  and `source: import`, for where the owner talks to their assistant. One of them, `today-add`, is what the
+- **Function `stamporigin`**, when a `tasks/task` names an `origin` and carries no `originAt`: it writes
+  the origin's own `at` on the task as `originAt`, and nothing else
+  ([below](#when-a-tasks-words-were-said-originat)).
+- **The assistant's standing instructions**, as twelve `llm/instruction` records with ids that start `today-`
+  and `source: import`, for where the owner talks to their assistant. `today-correct` and `today-dates` are
+  described [below](#the-owners-corrections-todaycorrection). One of them, `today-add`, is what the
   app's field relies on: a to-do the owner gives the assistant is written as an open task with `notBefore`
   now, which is what puts it in today's list, in the list named, and a list that does not exist is made. They name the agent, so they hold
   wherever it works. The owner edits or retires one like their own, and an upgrade never writes over a
@@ -195,6 +200,60 @@ repository has one provider or one named `default`. Until it resolves, nothing i
 
 Not built: a function that carries out a `today/rule` whose effect is `urgent`. Messages have no trait a
 package could read them by, so it would have to name every provider's message kind.
+
+## When a task's words were said: `originAt`
+
+`tasks/task`, added in version 5 of the tasks package:
+
+| Property   | Type     | What                                                                                              |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `originAt` | datetime | When what the task was made from (`origin`) was said or happened. Absent where its maker did not know. |
+
+A task is often written later than its words: a pass reads a day's messages at night, and a migration
+carries weeks of them over in a minute. The record's `createdAt` is then when it was written down, and a
+reader that counts from it says "heard yesterday" of words a week old. So:
+
+- **A suggestion's age is counted from `originAt`**, and from `createdAt` only where the task has none.
+  That is the rule for the app's "Heard …" line, for the order suggestions are drawn and advised in, and for
+  `fade`. Where a task has no `originAt` the app says when it was suggested, not when it was heard.
+- **Whoever writes `origin` writes `originAt` in the same write**, from the time the origin itself carries
+  (its `at`). The app writes neither: it makes no task from a record.
+- **`stamporigin` holds the rule for a writer that did not.** A trigger (`today-stamp-on-origin`) fires on
+  a task with an `origin` and no `originAt`; the function reads the origin and writes its `at`. It writes
+  nothing where the origin is gone, has no `at`, or is later than the task itself (a meeting next week that
+  someone asked the owner to prepare for is not when the matter was said). The origin's own `createdAt` is
+  never used: that is when a mirror wrote the row down.
+- **An `originAt` after now is not believed** by `fade`, and reads as the creation time.
+- **A day in a name or a description is its date.** What a writer puts into a record is read on a later
+  day, so "tomorrow", "yesterday" and a weekday alone are wrong by the time they are read. The preparer's
+  prompt and the assistant's instruction `today-dates` say so, and Mneme's reflection (version 49) holds
+  its own writers to it: "on Thursday 19 November", never an ISO date, and a record named by a link
+  (`[message](substrate://<kind>/<id>)`), never by its path. Words that are quoted stay as they were said.
+  Text written before this keeps what it has.
+
+## The owner's corrections: `today/correction`
+
+Added in version 4 of the today package. What the owner said was wrong with something the assistant
+suggested, or what to do instead, in their words.
+
+| Kind               | Id     | Properties                                                                                          |
+| ------------------ | ------ | --------------------------------------------------------------------------------------------------- |
+| `today/correction` | minted | `subject` (reference, any kind, required: the record corrected, a suggested task today), `text` (string, required: the owner's words) |
+
+- **The app writes it**, one per answer of "Other" on a suggestion, with an id it chooses (a UUIDv7, as it
+  chooses a task's), `subject` the suggested task's full path and `text` what the owner typed. It is
+  offered only where the repository holds the kind. `createdAt` is when it was said.
+- **The same words go to the assistant** with the task as context, and the instruction `today-correct`
+  has it do what they ask: change the task, move it, or mark it abandoned, and say in one sentence what it
+  did. It writes no correction itself. Where the assistant cannot be reached the record is still written.
+- **Nothing in this package reads a correction.** It is kept for whoever suggests things: Mneme's
+  reflection reads the latest twenty on every pass, each with the name of what it corrects, under a line
+  that says the owner corrected these suggestions and the mistake is not to be made again
+  (`suggestionCorrections` in its window). It is also what a person reads to see what a suggester gets
+  wrong.
+- `subject` carries no `mustExist` and nothing cascades: a suggestion that fades is abandoned, and a
+  correction outlives what it was about.
+- Kept for good, like the package's other records.
 
 ## Meetings
 
