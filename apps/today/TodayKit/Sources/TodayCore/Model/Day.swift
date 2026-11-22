@@ -6,6 +6,10 @@ import SubstrateCore
 public struct Drafts: Codable, Equatable, Sendable {
     /// The pick for each suggested task, by its id.
     public var suggested: [String: SuggestedAnswer] = [:]
+    /// The groups of the suggested tasks' page that draw all they hold,
+    /// by the list's id or `none`: a group draws six until it is asked for
+    /// the rest, and its Save answers only what it draws.
+    public var suggestedShown: Set<String> = []
     /// The plan page's draft; nil while it shows what the assistant suggests.
     public var plan: PlanDraft?
     /// Where each unfinished thing goes, on the wrap.
@@ -17,6 +21,17 @@ public struct Drafts: Codable, Equatable, Sendable {
     public var heldNone: Set<String> = []
 
     public init() {}
+
+    /// What an earlier build kept decodes: a part it did not have is empty.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        suggested = try values.decodeIfPresent([String: SuggestedAnswer].self, forKey: .suggested) ?? [:]
+        suggestedShown = try values.decodeIfPresent(Set<String>.self, forKey: .suggestedShown) ?? []
+        plan = try values.decodeIfPresent(PlanDraft.self, forKey: .plan)
+        carry = try values.decodeIfPresent([String: String].self, forKey: .carry) ?? [:]
+        held = try values.decodeIfPresent([String: Flag].self, forKey: .held) ?? [:]
+        heldNone = try values.decodeIfPresent(Set<String>.self, forKey: .heldNone) ?? []
+    }
 }
 
 public struct PlanDraft: Codable, Equatable, Sendable {
@@ -24,8 +39,20 @@ public struct PlanDraft: Codable, Equatable, Sendable {
     public var flags: [String: Flag] = [:]
     public var overlaps: [String: String] = [:]
     public var sends: [String: Bool] = [:]
+    /// Where each task yesterday left goes, by its id: `today`, `tomorrow`
+    /// or `drop`. None is chosen for the owner.
+    public var left: [String: String] = [:]
 
     public init() {}
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        picked = try values.decodeIfPresent([String: Bool].self, forKey: .picked) ?? [:]
+        flags = try values.decodeIfPresent([String: Flag].self, forKey: .flags) ?? [:]
+        overlaps = try values.decodeIfPresent([String: String].self, forKey: .overlaps) ?? [:]
+        sends = try values.decodeIfPresent([String: Bool].self, forKey: .sends) ?? [:]
+        left = try values.decodeIfPresent([String: String].self, forKey: .left) ?? [:]
+    }
 }
 
 /// What the device keeps of the day that no record holds: when the owner
@@ -94,6 +121,8 @@ public struct Day: Sendable {
     public var lists: [ListItem] = []
     public var tasks: [TaskItem] = []
     public var advice: [String: Advice] = [:]
+    /// The owner's latest correction of each record, by the record's path.
+    public var corrections: [String: Correction] = [:]
     public var series: [String: SeriesItem] = [:]
     /// Each medication's strength in words ("200 mg"), by its path, where
     /// its record gives one.
@@ -153,6 +182,9 @@ public struct Day: Sendable {
             case TodayKinds.list: if let item = ListItem(record) { lists.append(item) }
             case TodayKinds.task: if let item = TaskItem(record) { tasks.append(item) }
             case TodayKinds.advice: if let item = Advice(record) { advice[item.task] = item }
+            case TodayKinds.correction:
+                // The latest stands: one still on its way is the newest there is.
+                if let item = Correction(record), corrections[item.subject].map({ item.isAfter($0.createdAt) }) ?? true { corrections[item.subject] = item }
             case TodayKinds.log: if let item = LogItem(record) { logs[item.id] = item }
             case TodayKinds.medication:
                 if let amount = record["strengthAmount"]?.decimal {

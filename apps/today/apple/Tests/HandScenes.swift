@@ -363,28 +363,85 @@ enum HandScenes {
             .meeting(meeting("physio", "08:00", "08:30", "Physiotherapy call", people: ["DW"], line: "The booking came with no agenda.", until: "in 55 min")),
         ])
 
+    /// - Parameter project: nil inside a project's group, whose header names it.
     static func suggestedItem(
-        _ id: String, _ title: String, origin: String, quote: String?, fade: Int = 0, pick: SuggestedAnswer = .task, own: Bool = false, objection: Bool = false
+        _ id: String, _ title: String, origin: String, quote: String?, fade: Int = 0, pick: SuggestedAnswer = .task, own: Bool = false,
+        objection: Bool = false, project: ProjectChip? = security, people: [PersonChip] = []
     ) -> SuggestedItem {
         SuggestedItem(
             id: id, title: title, origin: origin, quote: quote,
-            fade: SuggestedItem.Fade(level: fade, label: fade == 0 ? "" : fade == 1 ? "Fades tomorrow." : "Gone tonight."),
-            chips: Chips(project: security),
+            fade: SuggestedItem.Fade(
+                level: fade, label: fade == 0 ? "" : fade == 1 ? "Starts to fade tomorrow." : "Past two weeks. It is gone tonight unless you answer."),
+            chips: Chips(project: project, people: people),
             options: OptionList(
                 .round,
                 [
                     option(
                         "task", "Make it a task", "A task for this morning, flagged High.", selected: pick == .task, suggested: true,
                         reason: "You said in the morning."),
-                    option("done", "Already done", "It closes as done.", selected: pick == .done),
-                    option("dismiss", "Dismiss", "It is dropped. What was said stays in memory.", selected: pick == .dismiss),
+                    option("done", "Already done", "Closed. Nothing more is asked.", selected: pick == .done),
+                    option("dismiss", "Dismiss", "Not a task. What was said stays in memory.", selected: pick == .dismiss),
+                    option("other", "Other", "Say what is wrong, or what to do instead.", selected: pick == .other),
                 ]),
+            other: pick == .other
+                ? SuggestedItem.Other(
+                    placeholder: "What is wrong, or what to do instead", note: "Kept for whoever suggests tasks, and sent to Moss with this one.")
+                : nil,
             objection: objection
                 ? SuggestedItem.Objection(line: "Marcus asked twice, and the list is on the agenda at 17:40.", note: "Moss says this once and leaves it.")
                 : nil,
-            save: own ? SaveRow(button: ButtonPresentation("Save this answer", glyph: .done, role: .primary, wide: true, command: .saveSuggested(id))) : nil,
+            save: own
+                ? SaveRow(button: ButtonPresentation("Save", glyph: .done, role: .primary, command: .saveSuggested([id], words: [:]))) : nil,
             pending: true)
     }
+
+    /// A suggestion the owner answered in words, with the exchange that followed.
+    static func toldItem(_ id: String, _ title: String, origin: String, words: String, answer: String?) -> SuggestedItem {
+        SuggestedItem(
+            id: id, title: title, origin: origin, fade: SuggestedItem.Fade(level: 0, label: ""), options: .empty, pending: false,
+            told: SuggestedItem.Told(
+                words: words,
+                answer: AnswerCard(
+                    id: "x-" + id, heading: "You said to Moss", question: words, text: answer ?? "", state: answer == nil ? .waiting : .done,
+                    button: ButtonPresentation(answer == nil ? "Stop" : "Close", role: .quiet))))
+    }
+
+    /// The suggested tasks' page: a flagged project's group with one answered in words, and what is on no project.
+    static let suggestedPage = SuggestedPage(
+        line: "Four on your priorities. Moss would make twelve tasks.",
+        rule: "Not answered, a suggestion fades after a week and is gone after two. What was said stays in memory.",
+        groups: [
+            SuggestedPage.Group(
+                id: "security", tile: tile("SH"), name: "Security hardening", count: "3 suggested", stripe: Stripe(.high), opens: .project("security"),
+                items: [
+                    suggestedItem(
+                        "p-kenji", "Sync with Kenji about the stopped VMs", origin: "Heard yesterday at 21:37, from a message, with Kenji.",
+                        quote: "I will catch **Kenji** in the morning, we are in the same office", project: nil,
+                        people: [PersonChip(id: "kenji", label: "for Kenji", badge: badge("KM"))]),
+                    suggestedItem(
+                        "p-ticket", "File the IT ticket about permissions", origin: "Heard yesterday at 20:54, from a transcript.", quote: nil,
+                        pick: .other, project: nil),
+                ],
+                more: ButtonPresentation("Show the other 4", role: .secondary, command: .showSuggested(group: "security")),
+                told: [
+                    toldItem(
+                        "p-origin", "Ask about the encryption question", origin: "Heard on Tuesday at 22:29, from a message.",
+                        words: "Henrik answered this in the review. Close it, and stop making tasks from that thread.",
+                        answer: "I dismissed it. Henrik's answer is in the review notes from Wednesday.")
+                ],
+                save: SaveRow(
+                    button: ButtonPresentation(
+                        "Save 2 answers", glyph: .done, role: .primary, wide: true, command: .saveSuggested(["p-kenji", "p-ticket"], words: [:])))),
+            SuggestedPage.Group(
+                id: "none", tile: nil, name: "On no project", count: "1 suggested",
+                items: [
+                    suggestedItem(
+                        "p-marcus", "Go through Marcus's list", origin: "Suggested on 22 October, with Marcus.", quote: "I will go over these tomorrow",
+                        fade: 3, pick: .dismiss, objection: true, project: nil)
+                ],
+                save: SaveRow(
+                    button: ButtonPresentation("Save 1 answer", glyph: .done, role: .primary, wide: true, command: .saveSuggested(["p-marcus"], words: [:])))),
+        ])
 
     /// 08:30: the suggested tasks.
     static let gate = pane(
@@ -394,31 +451,17 @@ enum HandScenes {
             .row(
                 Row(
                     id: "gate", glyph: .moss, title: "Thirteen suggested tasks to answer",
-                    line: "Eleven from what you said, two that people asked for. Made a task, each gets a day and a flag.", state: .now,
+                    line: "Four on your priorities. Moss would make twelve tasks.", state: .now, trailing: .page(.suggested),
                     body: .suggested(
-                        SuggestedCard(
-                            rule: "Not answered, a suggestion fades after a week and is gone after two. What was said stays in memory.",
-                            batch: "Showing twelve at a time. The next take their place when you save.",
-                            items: [
-                                suggestedItem(
-                                    "p-kenji", "Sync with Kenji about the stopped VMs", origin: "You said it to Kenji on Wednesday at 21:37.",
-                                    quote: "“I will catch Kenji in the morning, we are in the same office”"),
-                                suggestedItem(
-                                    "p-tomas", "Fix the 1:1 clash with Tomas", origin: "Tomas asked on Tuesday at 15:06.", quote: nil, fade: 1, pick: .done),
-                                suggestedItem(
-                                    "p-marcus", "Go through Marcus's list", origin: "You said it to Marcus on 10 November.",
-                                    quote: "“I will go over these tomorrow”", fade: 3, pick: .dismiss, objection: true),
-                            ],
-                            save: SaveRow(
-                                button: ButtonPresentation(
-                                    "Save 12 answers", glyph: .done, role: .primary, wide: true,
-                                    command: .saveSuggestedCard(["p-kenji", "p-tomas", "p-marcus"]))),
-                            dismissedOlder: "125 older than two weeks were dismissed when the app was set up.")))),
+                        PageRowCard(
+                            line: "They open as a page, grouped by project. Each project has its own Save, and nothing changes until you press it.",
+                            open: ButtonPresentation("Open the suggested tasks", role: .primary, wide: true, opens: .suggested))))),
             .row(
                 Row(
-                    id: "plan", glyph: .plan, title: "Plan the day", line: "Thirteen things are on the table.", state: .next,
+                    id: "plan", glyph: .plan, title: "Plan the day",
+                    line: "What is for today and how much each matters. One is left from yesterday.", state: .next, trailing: .page(.plan),
                     body: .plan(
-                        PlanRowCard(
+                        PageRowCard(
                             line: "It opens as a page, and nothing changes until you save.",
                             open: ButtonPresentation("Open the plan", role: .primary, wide: true, opens: .plan))))),
         ])
@@ -506,6 +549,7 @@ enum HandScenes {
                     ]))
         ],
         unanswered: "One suggested task is still not answered.",
+        answer: ButtonPresentation("Open the suggested tasks", role: .secondary, opens: .suggested),
         dismissed: [WrapCard.Titled(id: "x1", title: "Go through Marcus's list", line: "Dismissed at 08:38.")],
         tomorrow: "Presentation interview at 14:00. All hands at 17:00.",
         save: SaveRow(button: ButtonPresentation("Save and close the day", glyph: .done, role: .primary, wide: true, command: .saveWrap)))
@@ -642,6 +686,28 @@ enum HandScenes {
 
     static let planPage = PlanPage(
         title: "Today's plan", opening: "Free until Tomas at 14:20, then meetings until 21:30, with gaps at 16:30 and 20:30.",
+        leftTitle: "Left from yesterday",
+        left: [
+            PlanPage.Left(
+                id: "l1", title: "Reply to Stefan on the inventory", line: "It was due yesterday. Halden and Brightwell is Friday at 20:00.",
+                chips: Chips(project: lantern, people: [PersonChip(id: "stefan", label: "for Stefan", badge: badge("SK"))]), stripe: Stripe(.high),
+                options: OptionList(
+                    .round,
+                    [
+                        option("today", "Today", "It goes into today's order.", selected: true),
+                        option("tomorrow", "Tomorrow", "It leaves today and comes back tomorrow."), option("drop", "Drop it", "Closed as not done."),
+                    ])),
+            PlanPage.Left(
+                id: "l2", title: "Book the follow-up visit", line: "It was due on Tuesday.",
+                options: OptionList(
+                    .round,
+                    [
+                        option("today", "Today", "It goes into today's order."), option("tomorrow", "Tomorrow", "It leaves today and comes back tomorrow."),
+                        option("drop", "Drop it", "Closed as not done."),
+                    ])),
+        ],
+        suggested: "Thirteen suggested tasks wait for an answer, on a page of their own.",
+        suggestedOpen: ButtonPresentation("Open the suggested tasks", role: .secondary, opens: .suggested),
         groups: [
             PlanPage.Group(
                 id: "api", tile: tile("EA"), name: "External API reliability", count: "2 today", stripe: Stripe(.high), opens: .project("api"),
@@ -673,7 +739,7 @@ enum HandScenes {
     static let pages: [TodayRoute: PagePresentation] = [
         .priorities: .priorities(priorities), .projects: .projects(projects), .project("api"): .project(projectPage),
         .person("tomas"): .person(personPage), .meeting("tomas"): .meeting(meetingPage), .task("t-vigil"): .task(taskPage),
-        .plan: .plan(planPage),
+        .plan: .plan(planPage), .suggested: .suggested(suggestedPage),
     ]
 
     static func app(_ pane: PanePresentation) -> TodayPresentation {

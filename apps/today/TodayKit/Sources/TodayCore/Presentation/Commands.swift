@@ -19,6 +19,8 @@ public enum TodayRoute: Codable, Hashable, Sendable {
     case task(String)
     /// The plan of the day.
     case plan
+    /// The suggested tasks, grouped by project.
+    case suggested
 }
 
 /// What the assistant is asked about: the thing its box sits under. The
@@ -32,7 +34,8 @@ public enum MossSubject: Codable, Hashable, Sendable {
     case day
 }
 
-/// The three answers a suggested task has, always.
+/// The answers a suggested task has, always: the three the assistant may
+/// advise, and the owner's own words.
 public enum SuggestedAnswer: String, Codable, Hashable, Sendable, CaseIterable {
     /// Make it a task.
     case task
@@ -40,6 +43,12 @@ public enum SuggestedAnswer: String, Codable, Hashable, Sendable, CaseIterable {
     case done
     /// Dismiss.
     case dismiss
+    /// Other: the owner says what is wrong, or what to do instead. Offered
+    /// only where the repository keeps such words (`today/correction`).
+    case other
+
+    /// The three the assistant may advise. It never advises the owner's words.
+    public static let advised: [SuggestedAnswer] = [.task, .done, .dismiss]
 }
 
 /// What the owner may choose on something urgent. Urgent is never the
@@ -58,10 +67,10 @@ public enum UrgentChoice: String, Codable, Hashable, Sendable, CaseIterable {
 ///
 /// Three kinds of command, by what the design says of the control:
 /// - **A choice that takes effect at once** (a flag, "When", a project,
-///   what yesterday left, something urgent, a priority): the write is made
-///   when the command arrives.
+///   what was not logged yesterday, something urgent, a priority): the
+///   write is made when the command arrives.
 /// - **A draft above a Save** (`suggest`, the `plan…` commands, `carry`):
-///   nothing is written until the card's Save (`saveSuggestedCard`, `planSave`,
+///   nothing is written until the card's Save (`saveSuggested`, `planSave`,
 ///   `saveWrap`).
 /// - **An action** (`done`, `log`, `send`, `gotIt`, `readNight`).
 public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
@@ -77,9 +86,11 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
     /// Later, from a notification: the row's reminder comes again in an hour.
     case later(row: String)
 
-    // MARK: What yesterday left (a choice, at once)
+    // MARK: What was not logged yesterday (a choice, at once)
 
-    /// One thing yesterday left, and the option chosen for it.
+    /// One routine row yesterday left with nothing logged, and the option
+    /// chosen for it (`took`, `skipped`). A task yesterday left is answered
+    /// on the plan page (`planLeft`).
     case answerYesterday(item: String, option: String)
 
     // MARK: The night and what is happening (actions)
@@ -96,12 +107,14 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
 
     /// The owner's pick for one suggested task. Nothing takes effect.
     case suggest(String, SuggestedAnswer)
-    /// Save, on the suggested tasks card: the ones it draws, by id. The
-    /// card draws twelve at a time, and nothing it does not draw is
-    /// answered.
-    case saveSuggestedCard([String])
-    /// Save, under one suggested task drawn alone.
-    case saveSuggested(String)
+    /// Save, under a project's suggestions on their page or under one
+    /// drawn alone: the ones it draws, by id, and nothing it does not draw
+    /// is answered. `words` is what was typed under "Other", by task: the
+    /// view's until now, as every typed text is.
+    case saveSuggested([String], words: [String: String])
+    /// The rest of a project's suggestions are drawn: the page shows six
+    /// of a group until this. The group's id is the list's, or `none`.
+    case showSuggested(group: String)
 
     // MARK: The plan (a draft, then Save)
 
@@ -113,6 +126,9 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
     case planOverlap(String, option: String)
     /// A message row is ticked or unticked. Never ticked in advance.
     case planSend(String)
+    /// Where a task yesterday left goes (`today`, `tomorrow`, `drop`), on
+    /// the plan page; the option chosen again takes the choice back.
+    case planLeft(String, option: String)
     /// The draft is dropped: the page shows what the assistant suggests again.
     case planReset
     /// Save the plan.

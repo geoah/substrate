@@ -204,7 +204,7 @@ extension DayEngine {
 
     /// A task's one line in a row: why it matters now, else the opening
     /// words of its description.
-    func why(_ task: TaskItem) -> String? { reason(task) ?? task.details.map { Words.excerpt($0, limit: Words.lineExcerptLimit) } }
+    func why(_ task: TaskItem) -> String? { reason(task) ?? task.details.map { Words.excerpt(Words.plain($0), limit: Words.lineExcerptLimit) } }
 
     /// - Parameter whole: on the task's own page, which shows all of its
     ///   description. In the day a card shows its opening words, and none
@@ -220,7 +220,7 @@ extension DayEngine {
         let held = urgentState(task) == .held || urgentState(task) == .unchecked(interrupts: false)
         return TaskCard(
             id: task.id, chips: taskChips(task),
-            quote: whole ? task.details : reason(task) == nil ? nil : task.details.map { Words.excerpt($0) }, left: left,
+            quote: whole ? task.details.map(Words.prose) : reason(task) == nil ? nil : task.details.map { Words.excerpt($0) }, left: left,
             deferred: task.deferrals >= 3 ? "Put off \(Words.low(Words.num(task.deferrals))) times." : nil,
             markedTitle: held ? "Marked urgent, and waiting" : nil, marked: held ? markedBlock(task) : nil, doors: doors,
             done: task.isOpen ? ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)) : nil,

@@ -13,7 +13,7 @@ extension DayEngine {
         let done = mine.filter { $0.status == .done && ($0.completedAt.map(isToday) ?? false) }
         let total = today.count + done.count
         if total > 0 { return "\(done.count) of \(total) done" }
-        let suggested = mine.filter { ($0.isOpen || $0.isProposed) && !hidden($0) && suggestedForToday($0) }.count
+        let suggested = mine.filter { $0.isOpen && !hidden($0) && suggestedForToday($0) }.count
         if !planSaved, suggested > 0 { return "\(suggested) suggested" }
         return "Nothing for today"
     }
@@ -123,6 +123,8 @@ extension DayEngine {
         let nightLeads = nightWaits && urgent.isEmpty && !inRun && !dueFirst && !(stretches.first { $0.index == current }?.near ?? false)
         items.append(.night(night(leads: nightLeads)))
         if let earlier { items.append(.earlier(earlier)) }
+        // The saved plan keeps a row, under what is done: it opens the page and never leads.
+        if let plan = savedPlanRow { items.append(.row(plan)) }
         if nightLeads {
             lead = "night"
             ground = .planning
@@ -217,7 +219,7 @@ extension DayEngine {
     func ground(for row: Row) -> Ground {
         switch row.body {
         case .routine: .waking
-        case let .yesterday(card): card.items.allSatisfy { $0.glyph == .routine } ? .waking : .planning
+        case .yesterday: .waking
         case .suggested, .heard, .plan, .overlap: .planning
         case .urgent: .urgent
         case .task: .working

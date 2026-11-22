@@ -25,6 +25,8 @@ public enum TodayKinds {
     public static let dossier = "\(packageID)/dossier"
     public static let returnpoint = "\(packageID)/returnpoint"
     public static let rule = "\(packageID)/rule"
+    /// What the owner said was wrong with a suggestion (today 4).
+    public static let correction = "\(packageID)/correction"
 
     // Core.
     public static let patchRequest = "\(authority)/core/recordpatchrequest"
@@ -39,7 +41,9 @@ public enum TodayKinds {
 
     /// The kinds read whole and followed through the watch, where the
     /// repository holds them; the series kinds join them once discovered.
-    public static let linkable = [list, task, log, medication, preference, plan, advice, digest, reviewmark, dossier, returnpoint, instruction]
+    public static let linkable = [
+        list, task, log, medication, preference, plan, advice, digest, reviewmark, dossier, returnpoint, instruction, correction,
+    ]
 
     /// The one preference record, and the digest and review mark that
     /// belong to no project.

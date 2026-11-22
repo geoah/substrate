@@ -10,6 +10,9 @@ struct PageScaffold<Content: View, Bottom: View>: View {
     var trailing: ButtonPresentation?
     /// Nil where the page stands beside the day and has nowhere to go back to.
     var back: (() -> Void)?
+    /// False where the page is several cards, each drawn by its content:
+    /// the suggested tasks, a save card for each project.
+    var carded = true
     @ViewBuilder var content: () -> Content
     /// What is fixed at the bottom: the field, or the plan's Save.
     @ViewBuilder var bottom: () -> Bottom
@@ -18,11 +21,16 @@ struct PageScaffold<Content: View, Bottom: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12, content: content)
-                .card()
-                .padding(.horizontal, TodayLook.side)
-                .padding(.top, back == nil && trailing == nil ? 6 : 10)
-                .padding(.bottom, 16)
+            Group {
+                if carded {
+                    VStack(alignment: .leading, spacing: 12, content: content).card()
+                } else {
+                    VStack(alignment: .leading, spacing: TodayLook.gap, content: content)
+                }
+            }
+            .padding(.horizontal, TodayLook.side)
+            .padding(.top, back == nil && trailing == nil ? 6 : 10)
+            .padding(.bottom, 16)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .top, spacing: 0) {

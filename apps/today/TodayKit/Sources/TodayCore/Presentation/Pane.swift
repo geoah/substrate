@@ -185,6 +185,8 @@ public struct Row: Codable, Equatable, Sendable, Identifiable {
         case flag(FlagControl)
         /// A routine: the tick icon button.
         case tick(ButtonPresentation)
+        /// It opens a page: a right chevron, and a tap on the row opens it.
+        case page(TodayRoute)
         /// Everything else opens in place: a down chevron.
         case opens
     }
@@ -220,14 +222,15 @@ public struct Row: Codable, Equatable, Sendable, Identifiable {
 public enum RowBody: Codable, Equatable, Sendable {
     /// A routine, or a group of them at one time.
     case routine(RoutineCard)
-    /// What yesterday left: each thing with its option list, acting on a tap.
+    /// What was not logged yesterday: each routine with its option list,
+    /// acting on a tap.
     case yesterday(YesterdayCard)
-    /// The suggested tasks: a save card.
-    case suggested(SuggestedCard)
+    /// The suggested tasks: one row that opens them as a page.
+    case suggested(PageRowCard)
     /// One suggested task that arrived during the day, with its own Save.
     case heard(SuggestedItem)
-    /// "Plan the day": one row that opens the plan as a page.
-    case plan(PlanRowCard)
+    /// "Plan the day", "Today's plan": one row that opens the plan as a page.
+    case plan(PageRowCard)
     /// An overlap the plan left open, back before it is needed.
     case overlap(OverlapCard)
     /// What cannot wait.

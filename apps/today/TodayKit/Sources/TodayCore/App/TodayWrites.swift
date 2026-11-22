@@ -87,7 +87,9 @@ struct TodayWrites {
 
     func status(_ task: TaskItem, _ status: TaskItem.Status) -> LocalWrite { change(task, ["status": .string(status.rawValue)]) }
 
-    /// A suggested task's answer: a task, already done, or dismissed.
+    /// A suggested task's answer: a task, already done, or dismissed. The
+    /// owner's own words change nothing on the task: they are a record of
+    /// their own (`correction`).
     func answer(_ task: TaskItem, _ answer: SuggestedAnswer) -> LocalWrite {
         switch answer {
         case .task:
@@ -97,7 +99,15 @@ struct TodayWrites {
             return change(task, out)
         case .done: return status(task, .done)
         case .dismiss: return status(task, .abandoned)
+        case .other: return LocalWrite(entries: [])
         }
+    }
+
+    /// What the owner said was wrong with a suggested task, or what to do
+    /// instead: a record of its own under an id the app mints, so whoever
+    /// suggests tasks reads it later.
+    func correction(_ task: TaskItem, _ text: String, id: String) -> LocalWrite {
+        writes.create(TodayKinds.correction, id, properties: ["subject": .object(["ref": .string(task.path)]), "text": .string(text)])
     }
 
     /// A task typed into the field: a task at once, with no flag.

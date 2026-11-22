@@ -131,9 +131,11 @@ extension DayEngine {
         var at: Date?
     }
 
-    /// What yesterday left: a routine row with nothing logged, and a task
-    /// that was due before today and is still open; and each one answered
-    /// today, which stays where it was with its choice.
+    /// What yesterday left, as "Earlier today" and the day's row read it: a
+    /// routine row with nothing logged, and each thing answered today,
+    /// which keeps its choice. A task that was due before today and is
+    /// still open is asked after on the plan page (`leftTasks`), and is
+    /// here only once the plan's Save has answered it.
     var yesterdayLeft: [Left] {
         var out: [Left] = []
         let answered = day.notes.yesterday
@@ -147,16 +149,14 @@ extension DayEngine {
             }
         }
         for task in day.tasks {
-            let id = "y-task:" + task.id
-            if let option = answered[id] {
-                out.append(Left(id: id, kind: .task(task), answered: option, at: day.notes.yesterdayAt[id]))
-                continue
-            }
-            guard task.isOpen, !hidden(task), let due = task.dueDay, due < day.today, (task.notBefore ?? .distantPast) < day.startOfToday else { continue }
-            out.append(Left(id: id, kind: .task(task)))
+            let id = DayEngine.leftID(task)
+            if let option = answered[id] { out.append(Left(id: id, kind: .task(task), answered: option, at: day.notes.yesterdayAt[id])) }
         }
         return out
     }
+
+    /// The id a task yesterday left is noted under once it is answered.
+    static func leftID(_ task: TaskItem) -> String { "y-task:" + task.id }
 
     /// The occurrences of a row an answer of today logged: the ones a
     /// moved choice changes.
@@ -165,45 +165,27 @@ extension DayEngine {
         return row.occurrences.filter { (day.logs[$0.id]?.at ?? .distantPast) >= since.addingTimeInterval(-1) }
     }
 
+    /// The routine rows yesterday left, each with its two options: the
+    /// ones still not logged, and the ones answered today with their choice.
     func yesterdayCard(_ left: [Left]) -> YesterdayCard {
-        let items = left.map { item -> YesterdayCard.Item in
-            let chosen = item.at.map { "Chosen at \(clock($0))." }
-            switch item.kind {
-            case let .routine(row):
-                let verb = row.isDose ? "Took it yesterday" : "Did it yesterday"
-                let count = item.answered == nil ? open(row).count : answeredOccurrences(row, since: item.at).count
-                return YesterdayCard.Item(
-                    id: item.id, glyph: .routine, title: row.title,
-                    text: "\(count == 1 ? "It was" : "\(Words.num(count)) were") due yesterday at \(clock(row.slot))."
-                        + (item.answered == nil ? " Not logged." : ""),
-                    options: OptionList(
-                        .round,
-                        [
-                            OptionRow(
-                                id: "took", name: verb, line: "Logged for yesterday.", selected: item.answered == "took",
-                                command: .answerYesterday(item: item.id, option: "took")),
-                            OptionRow(
-                                id: "skipped", name: "Skipped", line: "Logged as skipped.", selected: item.answered == "skipped",
-                                command: .answerYesterday(item: item.id, option: "skipped")),
-                        ]), chosen: chosen)
-            case let .task(task):
-                return YesterdayCard.Item(
-                    id: item.id, glyph: .task, title: task.name,
-                    text: [item.answered == nil ? "It was due \(dueWord(task))." : nil, task.reason].compactMap { $0 }.joined(separator: " "),
-                    options: OptionList(
-                        .round,
-                        [
-                            OptionRow(
-                                id: "today", name: "Do it today", line: "It goes into today's order.", selected: item.answered == "today",
-                                command: .answerYesterday(item: item.id, option: "today")),
-                            OptionRow(
-                                id: "tomorrow", name: "Tomorrow", line: "It leaves today and comes back tomorrow.", selected: item.answered == "tomorrow",
-                                command: .answerYesterday(item: item.id, option: "tomorrow")),
-                            OptionRow(
-                                id: "drop", name: "Drop it", line: "Closed as not done.", selected: item.answered == "drop",
-                                command: .answerYesterday(item: item.id, option: "drop")),
-                        ]), chosen: chosen)
-            }
+        let items = left.compactMap { item -> YesterdayCard.Item? in
+            guard case let .routine(row) = item.kind else { return nil }
+            let verb = row.isDose ? "Took it yesterday" : "Did it yesterday"
+            let count = item.answered == nil ? open(row).count : answeredOccurrences(row, since: item.at).count
+            return YesterdayCard.Item(
+                id: item.id, glyph: .routine, title: row.title,
+                text: "\(count == 1 ? "It was" : "\(Words.num(count)) were") due yesterday at \(clock(row.slot))."
+                    + (item.answered == nil ? " Not logged." : ""),
+                options: OptionList(
+                    .round,
+                    [
+                        OptionRow(
+                            id: "took", name: verb, line: "Logged for yesterday.", selected: item.answered == "took",
+                            command: .answerYesterday(item: item.id, option: "took")),
+                        OptionRow(
+                            id: "skipped", name: "Skipped", line: "Logged as skipped.", selected: item.answered == "skipped",
+                            command: .answerYesterday(item: item.id, option: "skipped")),
+                    ]), chosen: item.at.map { "Chosen at \(clock($0))." })
         }
         return YesterdayCard(items: items)
     }
@@ -232,21 +214,18 @@ extension DayEngine {
         return Words.weekdays.contains(named) || named.first?.isNumber == true ? "on \(named)" : named
     }
 
-    /// The row of what yesterday left: there while one thing is unanswered,
-    /// and it names those. Its card holds the answered ones too.
+    /// The row of the routines yesterday left with nothing logged: there
+    /// while one is unanswered, and it names them. Its card holds each by
+    /// name with its options, and the ones answered today too.
     func yesterdayRow(_ left: [Left], state: Row.State) -> Row? {
-        let waiting = left.filter { $0.answered == nil }
-        guard !waiting.isEmpty else { return nil }
-        let named = waiting.map { item -> String in
-            switch item.kind {
-            case let .routine(row): Words.low(row.title)
-            case let .task(task): Words.low(task.name)
-            }
+        let routines = left.filter { if case .routine = $0.kind { true } else { false } }
+        let named = routines.filter { $0.answered == nil }.compactMap { item -> String? in
+            if case let .routine(row) = item.kind { row.title } else { nil }
         }
-        let onlyRoutines = waiting.allSatisfy { if case .routine = $0.kind { true } else { false } }
+        guard !named.isEmpty else { return nil }
         return Row(
-            id: "yesterday", glyph: onlyRoutines ? .routine : .task, title: "Left from yesterday",
-            line: "\(Words.things(waiting.count, "thing")): \(Words.list(named)).", state: state, body: .yesterday(yesterdayCard(left)))
+            id: "yesterday", glyph: .routine, title: "Not logged yesterday", line: Words.cap(Words.list(named.map(Words.low))) + ".", state: state,
+            body: .yesterday(yesterdayCard(routines)))
     }
 
     // MARK: Reminders

@@ -263,7 +263,11 @@ public enum TodayFixtures {
             ),
         ]
         for s in suggested {
-            out.append(task(s.0, s.1, list: s.2, flag: s.3, status: "proposed", people: s.4, created: s.5, quote: s.8))
+            // Each says when its words were said: its record was written a few minutes after.
+            out.append(
+                task(
+                    s.0, s.1, list: s.2, flag: s.3, status: "proposed", people: s.4, created: s.5.addingTimeInterval(240), quote: s.8,
+                    extra: ["originAt": .string(stamp(s.5))]))
             out.append(
                 advice(
                     s.0, s.6, s.7,
@@ -446,6 +450,31 @@ public enum TodayFixtures {
         for record in namelessContacts { state.contacts["\(record.kind)/\(record.id)"] = record }
     }
 
+    /// "Other" picked on one suggestion, and another whose description is
+    /// Markdown that names where it came from in brackets.
+    static func other(_ state: inout TodayApp.State) {
+        state.drafts.suggested["p-ticket"] = .other
+        state.linked.records[RecordFold.key(taskKind, "p-kenji")]?.properties["description"] = """
+            Agreed in the sync: you would catch Kenji **in the morning**, since you share an office.
+
+            **Open question:** can the VMs stay stopped until Monday? (source: providers.example.dev/chat/message/chat-51c2a9)
+            """
+    }
+
+    /// One suggestion answered in words, with the assistant's answer.
+    static func told(_ state: inout TodayApp.State) {
+        let words = "Henrik answered this in the review. Close it, and stop making tasks from that thread."
+        let record = Record(
+            id: "c-origin", kind: TodayKinds.correction,
+            properties: ["subject": ["ref": .string("\(taskKind)/p-origin")], "text": .string(words)], version: 1, createdAt: stamp(at("08:29")))
+        state.linked.records[RecordFold.key(record.kind, record.id)] = record
+        state.exchanges = [
+            Exchange(
+                id: "x-origin", subject: .task("p-origin"), question: words,
+                text: "I dismissed it. Henrik's answer is in the review notes from Wednesday.", state: .done, at: at("08:29"))
+        ]
+    }
+
     /// Two tasks with the long description: one due today, which leads,
     /// and one moved to this morning, whose row has no other line.
     static func longTasks(_ state: inout TodayApp.State) {
@@ -492,7 +521,6 @@ public enum TodayFixtures {
         }
         if past("07:41") { set(log(routineKind, "skin", slot: at("07:35"), at: at("07:41"))) }
         if past("07:51") { set(log(routineKind, "meditate", slot: at("07:45"), at: at("07:51"))) }
-        if past("08:19") { change("p-vendor", ["dueDay": "2026-11-19"]) }
         if past("08:27") {
             set(
                 Record(
@@ -536,6 +564,8 @@ public enum TodayFixtures {
                             ],
                         ],
                     ], version: 1))
+            // What yesterday left was answered on the plan page: the vendor check is for today.
+            change("p-vendor", ["dueDay": "2026-11-19"])
             change("p-dataplatform", ["notBefore": ts("16:30")])
             change("p-ticket", ["notBefore": ts("16:30")])
             change("t-contrib", ["notBefore": ts("21:30")])
@@ -570,7 +600,10 @@ public enum TodayFixtures {
         }
         // Heard during the day: a suggested task with its own Save.
         if past("14:31") {
-            set(task("h-tomas-pr", "Review core PR 4127 by Monday", flag: "medium", status: "proposed", people: ["tomas"], created: at("14:31")))
+            set(
+                task(
+                    "h-tomas-pr", "Review core PR 4127 by Monday", flag: "medium", status: "proposed", people: ["tomas"], created: at("14:31"),
+                    extra: ["originAt": ts("14:28")]))
             set(advice("h-tomas-pr", "task", "Tomas said Monday."))
         }
         // Marked urgent by a rule, and the assistant thinks it can wait.
@@ -620,6 +653,10 @@ public enum TodayFixtures {
             notes.suggestedSavedAt = at("08:38")
             notes.suggestedSaved = [12, 0, 1]
         }
+        if now >= at("08:44") {
+            notes.yesterday["y-task:p-vendor"] = "today"
+            notes.yesterdayAt["y-task:p-vendor"] = at("08:44")
+        }
         state.notes = notes
         state.notesRead = true
         state.zone = zone.identifier
@@ -654,10 +691,14 @@ public enum TodayFixtures {
             fixture("today-routine", at: "07:38"),
             fixture("today-precall", at: "07:52"),
             fixture("today-catchup", at: "08:20"),
-            fixture("today-suggested", at: "08:30"),
-            fixture("today-suggested-dismiss", at: "08:30") { $0.drafts.suggested["p-marcus"] = .dismiss },
-            // A repository with over a hundred suggestions: the card draws twelve at a time.
-            fixture("today-backlog", at: "08:30", routes: [.task("b-091"), .person(person("odile"))], edit: crowd),
+            fixture("today-suggested", at: "08:30", routes: [.suggested]),
+            fixture("today-suggested-dismiss", at: "08:30", routes: [.suggested]) { $0.drafts.suggested["p-marcus"] = .dismiss },
+            // "Other" is the pick on one, whose description is Markdown and names its source in brackets.
+            fixture("today-suggested-other", at: "08:30", routes: [.suggested], edit: other),
+            // One was answered in words: it is with the assistant, and its exchange is still here.
+            fixture("today-suggested-told", at: "08:30", routes: [.suggested, .task("p-origin")], edit: told),
+            // A repository with over a hundred suggestions: grouped by project, six of a group at a time.
+            fixture("today-backlog", at: "08:30", routes: [.suggested, .task("b-091"), .person(person("odile"))], edit: crowd),
             fixture("today-plan-row", at: "08:40", routes: [.plan, .priorities]),
             fixture("today-plan-draft", at: "08:40", routes: [.plan]) { state in
                 var draft = PlanDraft()

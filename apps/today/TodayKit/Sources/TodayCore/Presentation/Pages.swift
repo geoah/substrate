@@ -11,6 +11,7 @@ public enum PagePresentation: Codable, Equatable, Sendable {
     case meeting(MeetingPage)
     case task(TaskPage)
     case plan(PlanPage)
+    case suggested(SuggestedPage)
     /// The thing the route names is not in the repository any more.
     case missing(MissingPage)
 }
@@ -322,11 +323,99 @@ public struct TaskPage: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+// MARK: The suggested tasks
+
+/// The suggested tasks, as a page: grouped by project, the flagged projects
+/// first in flag order, then the others by name, then what is on no
+/// project. Each group is a save card of its own: its Save writes that
+/// group's answers and no other's, and an answered group leaves the page.
+public struct SuggestedPage: Codable, Equatable, Sendable {
+    public struct Group: Codable, Equatable, Sendable, Identifiable {
+        /// The list's id, or `none`.
+        public var id: String
+        public var tile: Tile?
+        public var name: String
+        /// "7 suggested".
+        public var count: String
+        public var stripe: Stripe
+        public var opens: TodayRoute?
+        /// The ones drawn: those the assistant advises making a task, then
+        /// those with no advice, then those it advises done or dismissed,
+        /// the newest first within each. Six, until the rest are asked for.
+        public var items: [SuggestedItem]
+        /// "Show the other 4": draws the rest of the group.
+        public var more: ButtonPresentation?
+        /// The ones the owner answered in words, while their exchange is here.
+        public var told: [SuggestedItem]
+        /// "Save 5 answers": the ones `items` holds. Nil where the group
+        /// holds only what was answered in words.
+        public var save: SaveRow?
+
+        public init(
+            id: String, tile: Tile?, name: String, count: String, stripe: Stripe = .none, opens: TodayRoute? = nil, items: [SuggestedItem],
+            more: ButtonPresentation? = nil, told: [SuggestedItem] = [], save: SaveRow? = nil
+        ) {
+            self.id = id
+            self.tile = tile
+            self.name = name
+            self.count = count
+            self.stripe = stripe
+            self.opens = opens
+            self.items = items
+            self.more = more
+            self.told = told
+            self.save = save
+        }
+    }
+
+    public var title: String
+    /// "Thirteen to answer, six on your priorities."
+    public var line: String?
+    /// "Not answered, a suggestion fades after a week and is gone after
+    /// two. What was said stays in memory."
+    public var rule: String
+    public var groups: [Group]
+    /// "Nothing suggested is waiting for an answer."
+    public var empty: String?
+
+    public init(title: String = "Suggested tasks", line: String? = nil, rule: String, groups: [Group], empty: String? = nil) {
+        self.title = title
+        self.line = line
+        self.rule = rule
+        self.groups = groups
+        self.empty = empty
+    }
+}
+
 // MARK: The plan
 
-/// The plan, as a page: everything on the table today, grouped by project.
-/// A draft until it is saved, and saving keeps only what was ticked.
+/// The plan, as a page: what yesterday left, then everything on the table
+/// today, grouped by project. A draft until it is saved, and saving keeps
+/// only what was ticked.
 public struct PlanPage: Codable, Equatable, Sendable {
+    /// One task yesterday left: due before today and still open. Its own
+    /// list, with nothing selected until the owner chooses, and the plan's
+    /// Save writes the choice.
+    public struct Left: Codable, Equatable, Hashable, Sendable, Identifiable {
+        public var id: String
+        public var title: String
+        /// "It was due yesterday.", and why it matters where a record says.
+        public var line: String?
+        public var chips: Chips
+        public var stripe: Stripe
+        /// Today, Tomorrow, Drop it.
+        public var options: OptionList
+
+        public init(id: String, title: String, line: String? = nil, chips: Chips = .none, stripe: Stripe = .none, options: OptionList) {
+            self.id = id
+            self.title = title
+            self.line = line
+            self.chips = chips
+            self.stripe = stripe
+            self.options = options
+        }
+    }
+
     /// One thing that could be for today: a square to tick, its reason and
     /// its flag. What the assistant suggests for today starts ticked and is
     /// marked Suggested. Nothing moves on a tick.
@@ -334,8 +423,7 @@ public struct PlanPage: Codable, Equatable, Sendable {
         public var id: String
         public var title: String
         public var why: String?
-        /// "This morning.", or "Otherwise: Friday morning."; and for a
-        /// suggested task, that ticked it is a task.
+        /// "This morning.", or "Otherwise: Friday morning."
         public var line: String?
         public var ticked: Bool
         /// The assistant suggests it for today.
@@ -415,6 +503,13 @@ public struct PlanPage: Codable, Equatable, Sendable {
     public var hint: String
     /// "Your priorities stand as you set them. They change on their own page."
     public var prioritiesLine: String
+    /// "Left from yesterday": the first section, where anything was left.
+    public var leftTitle: String?
+    public var left: [Left]
+    /// "Twelve suggested tasks wait for an answer.", and the door to their
+    /// page: the plan does not list them a second time.
+    public var suggested: String?
+    public var suggestedOpen: ButtonPresentation?
     public var groups: [Group]
     /// "The four overlaps".
     public var overlapsTitle: String?
@@ -443,7 +538,8 @@ public struct PlanPage: Codable, Equatable, Sendable {
     public init(
         title: String = "Today's plan", opening: String? = nil,
         hint: String = "What Moss suggests for today is ticked. Untick what you do not want. Nothing changes until you save.",
-        prioritiesLine: String = "Your priorities stand as you set them. They change on their own page.", groups: [Group],
+        prioritiesLine: String = "Your priorities stand as you set them. They change on their own page.", leftTitle: String? = nil,
+        left: [Left] = [], suggested: String? = nil, suggestedOpen: ButtonPresentation? = nil, groups: [Group],
         overlapsTitle: String? = nil, overlaps: [Overlap] = [], sendsTitle: String? = nil, sendsHint: String? = nil,
         sends: OptionList = OptionList(.square, []), sent: [String] = [], note: String? = nil, barLine: String, save: ButtonPresentation,
         reset: ButtonPresentation? = nil, saved: String? = nil, empty: String? = nil
@@ -452,6 +548,10 @@ public struct PlanPage: Codable, Equatable, Sendable {
         self.opening = opening
         self.hint = hint
         self.prioritiesLine = prioritiesLine
+        self.leftTitle = leftTitle
+        self.left = left
+        self.suggested = suggested
+        self.suggestedOpen = suggestedOpen
         self.groups = groups
         self.overlapsTitle = overlapsTitle
         self.overlaps = overlaps

@@ -71,8 +71,8 @@ struct StaleNoteView: View {
     }
 }
 
-/// What yesterday left: each thing with its option list. It acts on a tap:
-/// it has no Save.
+/// What was not logged yesterday: each routine by name, with its option
+/// list. It acts on a tap: it has no Save.
 struct YesterdayCardView: View {
     var card: YesterdayCard
     @Environment(\.colorScheme) private var scheme
@@ -81,17 +81,14 @@ struct YesterdayCardView: View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
                 VStack(alignment: .leading, spacing: 8) {
-                    // One thing alone is the row itself: its head has said it.
-                    if card.items.count > 1 {
-                        HStack(alignment: .top, spacing: TodayLook.lead) {
-                            GlyphView(glyph: item.glyph)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
+                    HStack(alignment: .top, spacing: TodayLook.lead) {
+                        GlyphView(glyph: item.glyph)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let text = item.text {
+                                Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if let text = item.text {
-                                    Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
                             }
                         }
                     }
@@ -109,27 +106,10 @@ struct YesterdayCardView: View {
     }
 }
 
-/// The suggested tasks: every list open, the assistant's option selected
-/// and marked Suggested, and one Save. Nothing above the button takes
-/// effect until it is pressed.
-struct SuggestedCardView: View {
-    var card: SuggestedCard
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            NoteText(card.rule)
-            if let batch = card.batch { NoteText(batch) }
-            ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
-                SuggestedItemView(item: item, first: index == 0)
-            }
-            SaveRowView(row: card.save)
-            if let older = card.dismissedOlder { NoteText(older) }
-        }
-    }
-}
-
-/// One suggested task: where it came from and its three options. It dims
-/// as it fades, and says so from the first day it does.
+/// One suggested task: where it came from and its options, with the field
+/// "Other" shows while it is the pick. One the owner answered in words is
+/// drawn with what was said and the exchange that followed, and nothing
+/// else. It dims as it fades, and says so from the first day it does.
 struct SuggestedItemView: View {
     var item: SuggestedItem
     var first = false
@@ -149,30 +129,11 @@ struct SuggestedItemView: View {
                 if let quote = item.quote { QuoteText(quote) }
             }
             .opacity(dim)
-            if item.fade.level > 0 {
-                Text(item.fade.label)
-                    .font(TodayLook.Text.footnote.weight(.medium))
-                    .foregroundStyle(item.fade.level > 1 ? AnyShapeStyle(.urgentWords) : AnyShapeStyle(.cautionWords))
+            if let told = item.told {
+                SuggestedToldView(told: told)
+            } else {
+                SuggestedAnswersView(item: item)
             }
-            ChipsView(chips: item.chips)
-            OptionListView(item.options)
-            if let objection = item.objection {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: Glyph.moss.systemName).font(TodayLook.font(.footnote, weight: .semibold)).accessibilityHidden(true)
-                        Text(objection.heading).font(TodayLook.Text.sectionLabel)
-                    }
-                    .foregroundStyle(.mossWords)
-                    Text(objection.line).font(TodayLook.Text.body).foregroundStyle(.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let note = objection.note { NoteText(note) }
-                    if let ready = objection.ready { ReadyMessageView(message: ready) }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.mossFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-            if let save = item.save { SaveRowView(row: save) }
         }
         .padding(.top, first ? 0 : 12)
         .overlay(alignment: .top) {
@@ -190,10 +151,109 @@ struct SuggestedItemView: View {
     }
 }
 
-/// What was said, where a task came from words. In a card or a row it is
-/// three lines at most, whatever the text size: the core gives its opening
-/// words, and the task's own page draws all of it (`whole`), where a long
-/// path or address breaks onto the next line.
+/// What a suggested task holds under what was said: how far it has faded,
+/// its chips, its options, the field "Other" shows, the assistant's one
+/// objection, and its own Save where it is drawn alone.
+struct SuggestedAnswersView: View {
+    var item: SuggestedItem
+
+    var body: some View {
+        if item.fade.level > 0 {
+            Text(item.fade.label)
+                .font(TodayLook.Text.footnote.weight(.medium))
+                .foregroundStyle(item.fade.level > 1 ? AnyShapeStyle(.urgentWords) : AnyShapeStyle(.cautionWords))
+        }
+        ChipsView(chips: item.chips)
+        OptionListView(item.options)
+        if let other = item.other { SuggestedOtherField(id: item.id, other: other) }
+        if let objection = item.objection {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: Glyph.moss.systemName).font(TodayLook.font(.footnote, weight: .semibold)).accessibilityHidden(true)
+                    Text(objection.heading).font(TodayLook.Text.sectionLabel)
+                }
+                .foregroundStyle(.mossWords)
+                Text(objection.line).font(TodayLook.Text.body).foregroundStyle(.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note = objection.note { NoteText(note) }
+                if let ready = objection.ready { ReadyMessageView(message: ready) }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.mossFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        if let save = item.save { SaveRowView(row: save) }
+    }
+}
+
+/// The field under "Other": what is wrong with the suggestion, or what to
+/// do instead. What is typed is the view's until the Save above which it
+/// stands, which sends it with the answers (`DayScreen` adds it to the
+/// command).
+struct SuggestedOtherField: View {
+    var id: String
+    var other: SuggestedItem.Other
+
+    @Environment(PaneViewState.self) private var state
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(other.placeholder, text: Binding(get: { state.words[id] ?? "" }, set: { state.words[id] = $0 }), axis: .vertical)
+                .font(TodayLook.Text.body)
+                .lineLimit(2 ... 6)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(minHeight: TodayLook.target)
+                .background(TodayLook.bed(scheme), in: RoundedRectangle(cornerRadius: TodayLook.bedRadius, style: .continuous))
+                .accessibilityLabel(other.placeholder)
+            NoteText(other.note).padding(.horizontal, 6)
+        }
+    }
+}
+
+/// A suggestion the owner answered in words: what was said, and the
+/// exchange with the assistant that followed, in its hue.
+struct SuggestedToldView: View {
+    var told: SuggestedItem.Told
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: Glyph.moss.systemName).font(TodayLook.font(.footnote, weight: .semibold)).accessibilityHidden(true)
+                Text(told.heading).font(TodayLook.Text.sectionLabel)
+            }
+            .foregroundStyle(.mossWords)
+            Text(told.words).font(TodayLook.Text.bodyStrong).foregroundStyle(.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            // The heading has said who was told and the words are above: the exchange is its answer alone.
+            if let answer = told.answer {
+                switch answer.state {
+                case .waiting:
+                    ProgressView().controlSize(.small).frame(minHeight: 22)
+                case .writing, .done:
+                    RecordMarkdownText(answer.text).font(TodayLook.Text.body).foregroundStyle(.ink)
+                case .failed:
+                    Text(answer.text).font(TodayLook.Text.body).foregroundStyle(.urgentWords)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let button = answer.button { PaneButton(button, onTint: true, small: true) }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.mossFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+/// What was said, where a task came from words, drawn as Markdown: a mark
+/// of emphasis is its emphasis, and a record it names is the record's
+/// pill. In a card or a row it is three lines at most, whatever the text
+/// size: the core gives its opening words, and the task's own page draws
+/// all of it (`whole`), where a long path or address breaks onto the next
+/// line.
 struct QuoteText: View {
     var text: String
     var whole = false
@@ -204,17 +264,20 @@ struct QuoteText: View {
     }
 
     var body: some View {
-        Text(text).font(TodayLook.Text.second).italic().foregroundStyle(.inkSecond)
+        RecordMarkdownText(text)
+            .font(TodayLook.Text.second)
+            .italic()
+            .foregroundStyle(.inkSecond)
             .multilineTextAlignment(.leading)
             .lineLimit(whole ? nil : 3)
-            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// "Plan the day", in the day: one line and one button that opens the page.
-struct PlanRowCardView: View {
-    var card: PlanRowCard
+/// What a row that opens a page holds where it leads the day: one line and
+/// one button that opens the page.
+struct PageRowCardView: View {
+    var card: PageRowCard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -442,6 +505,7 @@ struct WrapCardView: View {
                 }
             }
             if let unanswered = card.unanswered { NoteText(unanswered) }
+            if let answer = card.answer { PaneButton(answer) }
             if !card.dismissed.isEmpty {
                 section(card.labels.dismissed) { ForEach(card.dismissed) { titled($0) } }
             }

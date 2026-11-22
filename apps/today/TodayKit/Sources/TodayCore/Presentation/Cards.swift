@@ -46,8 +46,9 @@ public struct RoutineCard: Codable, Equatable, Hashable, Sendable {
 
 // MARK: What yesterday left
 
-/// What yesterday left: doses, tasks and things that were expected, each
-/// with its option list. It acts on a tap: it has no Save.
+/// What was not logged yesterday: each routine row with its option list.
+/// It acts on a tap: it has no Save. A task yesterday left is on the plan
+/// page (`PlanPage.Left`).
 public struct YesterdayCard: Codable, Equatable, Hashable, Sendable {
     public struct Item: Codable, Equatable, Hashable, Sendable, Identifiable {
         public var id: String
@@ -387,31 +388,9 @@ public struct MarkedBlock: Codable, Equatable, Hashable, Sendable, Identifiable 
 
 // MARK: Suggested tasks
 
-/// The suggested tasks: every list open, the assistant's option selected and
-/// marked Suggested, one Save. Twelve at a time where more are waiting.
-/// Saved, the row is one line.
-public struct SuggestedCard: Codable, Equatable, Sendable {
-    /// "Not answered, a suggestion fades after a week and is gone after two.
-    /// What was said stays in memory."
-    public var rule: String
-    /// "Showing twelve at a time. The next take their place when you
-    /// save.": only where more are waiting than `items` holds.
-    public var batch: String?
-    public var items: [SuggestedItem]
-    public var save: SaveRow
-    /// "125 older than two weeks were dismissed when the app was set up."
-    public var dismissedOlder: String?
-
-    public init(rule: String, batch: String? = nil, items: [SuggestedItem], save: SaveRow, dismissedOlder: String? = nil) {
-        self.rule = rule
-        self.batch = batch
-        self.items = items
-        self.save = save
-        self.dismissedOlder = dismissedOlder
-    }
-}
-
-/// One suggested task: where it came from and its three options.
+/// One suggested task: where it came from and its options. Above a Save
+/// the assistant's option is selected and marked Suggested, and nothing
+/// takes effect until the Save is pressed.
 public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     /// How far it has faded: 0 fresh, 1 fades tomorrow, 2 fading, 3 gone
     /// tonight. A view dims by level and says `label` from level 1.
@@ -442,27 +421,66 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
+    /// The field "Other" shows while it is the pick: what is typed there is
+    /// the view's until the Save, which sends it with `saveSuggested`.
+    public struct Other: Codable, Equatable, Hashable, Sendable {
+        /// "What is wrong, or what to do instead".
+        public var placeholder: String
+        /// "Kept for whoever suggests tasks, and sent to Moss with the task."
+        public var note: String
+
+        public init(placeholder: String, note: String) {
+            self.placeholder = placeholder
+            self.note = note
+        }
+    }
+
+    /// The owner answered in words: the suggestion is with the assistant
+    /// and is not asked again. It is drawn with what was said and the
+    /// exchange that followed, and no options.
+    public struct Told: Codable, Equatable, Hashable, Sendable {
+        /// "You told Moss".
+        public var heading: String
+        /// The owner's words.
+        public var words: String
+        /// The exchange about it, while this session holds one.
+        public var answer: AnswerCard?
+
+        public init(heading: String = "You told Moss", words: String, answer: AnswerCard? = nil) {
+            self.heading = heading
+            self.words = words
+            self.answer = answer
+        }
+    }
+
     public var id: String
     public var title: String
-    /// "You said it to Kenji on Wednesday at 21:37."
+    /// "Heard on Wednesday at 21:37, from a message, with Kenji.", from
+    /// when it was said; "Suggested …" where the record only says when the
+    /// suggestion was written.
     public var origin: String
-    /// What was said: its opening words (`Words.excerpt`) in a card or a
-    /// row, all of it on the task's own page.
+    /// What was said, as Markdown: its opening words (`Words.excerpt`) in a
+    /// card or a row, all of it on the task's own page.
     public var quote: String?
     public var fade: Fade
     public var chips: Chips
     public var stripe: Stripe
     public var options: OptionList
+    /// Set while "Other" is the pick.
+    public var other: Other?
     public var objection: Objection?
     /// Its own Save, where it is drawn alone: it arrived during the day, or
-    /// it is on a project's or a person's page. Nil inside the card.
+    /// it is on a project's or a person's page. Nil inside a group, whose
+    /// Save is the group's.
     public var save: SaveRow?
     /// Whether Save would change it.
     public var pending: Bool
+    /// Set where the owner answered it in words: nothing else is drawn.
+    public var told: Told?
 
     public init(
         id: String, title: String, origin: String, quote: String? = nil, fade: Fade, chips: Chips = .none, stripe: Stripe = .none,
-        options: OptionList, objection: Objection? = nil, save: SaveRow? = nil, pending: Bool
+        options: OptionList, other: Other? = nil, objection: Objection? = nil, save: SaveRow? = nil, pending: Bool, told: Told? = nil
     ) {
         self.id = id
         self.title = title
@@ -472,16 +490,20 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
         self.chips = chips
         self.stripe = stripe
         self.options = options
+        self.other = other
         self.objection = objection
         self.save = save
         self.pending = pending
+        self.told = told
     }
 }
 
-// MARK: The plan's row, and an overlap
+// MARK: A row that opens a page, and an overlap
 
-/// "Plan the day", in the day: one line and one button that opens the page.
-public struct PlanRowCard: Codable, Equatable, Hashable, Sendable {
+/// What a row that opens a page holds where it leads the day: "Plan the
+/// day", "Today's plan", the suggested tasks. One line and one button that
+/// opens the page. As a line of the day the row itself opens the page.
+public struct PageRowCard: Codable, Equatable, Hashable, Sendable {
     /// "It opens as a page, and nothing changes until you save."
     public var line: String
     /// "Open the plan".
@@ -887,8 +909,10 @@ public struct WrapCard: Codable, Equatable, Sendable {
     /// "Carries over: where does each go?"
     public var carry: [Carry]
     /// "Three suggested tasks are still not answered.": how many, and
-    /// nothing more about them. They are answered on their own card.
+    /// nothing more about them. They are answered on their own page.
     public var unanswered: String?
+    /// "Open the suggested tasks": the door to that page.
+    public var answer: ButtonPresentation?
     /// "Dismissed today".
     public var dismissed: [Titled]
     /// "Tomorrow": what is first.
@@ -899,7 +923,7 @@ public struct WrapCard: Codable, Equatable, Sendable {
 
     public init(
         done: [Done] = [], others: String? = nil, suggested: String? = nil, moved: [Titled] = [], carry: [Carry] = [],
-        unanswered: String? = nil, dismissed: [Titled] = [], tomorrow: String? = nil, save: SaveRow
+        unanswered: String? = nil, answer: ButtonPresentation? = nil, dismissed: [Titled] = [], tomorrow: String? = nil, save: SaveRow
     ) {
         self.done = done
         self.others = others
@@ -907,6 +931,7 @@ public struct WrapCard: Codable, Equatable, Sendable {
         self.moved = moved
         self.carry = carry
         self.unanswered = unanswered
+        self.answer = answer
         self.dismissed = dismissed
         self.tomorrow = tomorrow
         self.save = save

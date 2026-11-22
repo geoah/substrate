@@ -18,6 +18,13 @@ struct PageView<Bottom: View>: View {
             } bottom: {
                 PlanBar(plan: plan)
             }
+        case let .suggested(suggested):
+            // Each project's suggestions are a save card of their own, so the page is cards, not one.
+            PageScaffold(back: back, carded: false) {
+                SuggestedPageView(page: suggested)
+            } bottom: {
+                field()
+            }
         case let .projects(projects):
             PageScaffold(trailing: projects.edit, back: back) {
                 ProjectsPageView(page: projects)
@@ -35,7 +42,7 @@ struct PageView<Bottom: View>: View {
                 case let .missing(missing):
                     PageTitle(title: missing.title)
                     PageText(missing.line, quiet: true)
-                case .plan, .projects: EmptyView()
+                case .plan, .projects, .suggested: EmptyView()
                 }
             } bottom: {
                 field()
@@ -368,9 +375,12 @@ struct TaskPageView: View {
             Text(suggestion.origin).font(TodayLook.Text.footnote).foregroundStyle(.inkSecond)
                 .fixedSize(horizontal: false, vertical: true)
             if let quote = suggestion.quote { QuoteText(quote, whole: true) }
-            ChipsView(chips: suggestion.chips)
-            OptionListView(suggestion.options)
-            if let save = suggestion.save { SaveRowView(row: save) }
+            if let told = suggestion.told {
+                ChipsView(chips: suggestion.chips)
+                SuggestedToldView(told: told)
+            } else {
+                SuggestedAnswersView(item: suggestion)
+            }
             if let moss = page.card.moss { MossBoxView(box: moss) }
         } else {
             TaskCardView(card: page.card, scope: "page:" + page.id, whole: true)
@@ -378,10 +388,70 @@ struct TaskPageView: View {
     }
 }
 
+// MARK: The suggested tasks
+
+/// The suggested tasks, as a page: one card that says what the page is,
+/// then one save card for each project that has any.
+struct SuggestedPageView: View {
+    var page: SuggestedPage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PageTitle(icon: .glyph(.moss), title: page.title)
+            if let line = page.line { PageText(line) }
+            if let empty = page.empty { PageText(empty, quiet: true) }
+            NoteText(page.rule)
+        }
+        .card()
+        ForEach(page.groups) { SuggestedGroupView(group: $0).card() }
+    }
+}
+
+/// One project's suggestions: its header, which opens the project, then
+/// each suggestion with its options, the button that draws the rest, what
+/// was answered in words, and the group's own Save.
+struct SuggestedGroupView: View {
+    var group: SuggestedPage.Group
+
+    @Environment(\.pane) private var pane
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                if let route = group.opens { pane.open(route) }
+            } label: {
+                HStack(spacing: 8) {
+                    if let tile = group.tile { TileView(tile: tile, size: .row) }
+                    Text(group.name).font(TodayLook.font(.headline, weight: .bold)).foregroundStyle(.ink).multilineTextAlignment(.leading)
+                    Spacer(minLength: 4)
+                    Text(group.count).font(TodayLook.Text.footnote.weight(.medium)).foregroundStyle(.inkSecond).fixedSize()
+                    if group.opens != nil { RowChevron(turn: .page) }
+                }
+                .stripe(group.stripe, inset: 4)
+                .frame(minHeight: TodayLook.target)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(group.opens == nil)
+            .accessibilityValue(group.stripe.spoken)
+            .accessibilityAddTraits(.isHeader)
+            ForEach(Array(group.told.enumerated()), id: \.element.id) { index, item in
+                SuggestedItemView(item: item, first: index == 0)
+            }
+            ForEach(Array(group.items.enumerated()), id: \.element.id) { index, item in
+                SuggestedItemView(item: item, first: index == 0 && group.told.isEmpty)
+            }
+            if let more = group.more { PaneButton(more) }
+            if let save = group.save { SaveRowView(row: save) }
+        }
+    }
+}
+
 // MARK: The plan
 
-/// The plan, as a page: everything on the table today, grouped by project.
-/// A draft until it is saved, and saving keeps only what was ticked.
+/// The plan, as a page: what yesterday left, then everything on the table
+/// today, grouped by project. A draft until it is saved, and saving keeps
+/// only what was ticked.
 struct PlanPageView: View {
     var plan: PlanPage
 
@@ -397,7 +467,22 @@ struct PlanPageView: View {
             PageText(plan.hint)
             PageText(plan.prioritiesLine, quiet: true)
         }
+        if !plan.left.isEmpty {
+            PageSection(label: plan.leftTitle) {
+                ForEach(Array(plan.left.enumerated()), id: \.element.id) { index, left in
+                    PlanLeftView(left: left, first: index == 0)
+                }
+            }
+        }
         ForEach(plan.groups) { PlanGroupView(group: $0) }
+        if let suggested = plan.suggested {
+            // The suggested tasks have a page of their own: here, how many wait and the way to them.
+            VStack(alignment: .leading, spacing: 8) {
+                PageText(suggested, quiet: true)
+                if let open = plan.suggestedOpen { PaneButton(open) }
+            }
+            .padding(.top, 8)
+        }
         if !plan.overlaps.isEmpty {
             PageSection(label: plan.overlapsTitle) {
                 ForEach(plan.overlaps) { overlap in
@@ -479,6 +564,24 @@ struct PlanGroupView: View {
             }
         }
         .padding(.top, 8)
+    }
+}
+
+/// One task yesterday left: its name, when it was due and why it matters,
+/// its project and its people, and its own list. Nothing is chosen until
+/// the owner chooses, and the plan's Save writes it.
+struct PlanLeftView: View {
+    var left: PlanPage.Left
+    var first = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RowHead(icon: .glyph(.task), title: left.title, line: left.line, stripe: left.stripe)
+            ChipsView(chips: left.chips)
+            OptionListView(left.options)
+        }
+        .padding(.vertical, 8)
+        .rowLine(!first)
     }
 }
 
