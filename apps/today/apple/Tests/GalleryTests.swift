@@ -52,6 +52,14 @@ import TodayCore
         }
     }
 
+    /// Twelve suggested tasks with every list open are taller than the long
+    /// drawing every scene gets, which ends before the card's Save: this
+    /// one is drawn to its end.
+    @Test func theBacklogCardDrawsDownToItsSave() async throws {
+        guard let backlog = TodayFixtures.all.first(where: { $0.name == "today-backlog" }) else { return }
+        try await write("tall-scene-today-backlog", DayScreen(app: backlog.app), size: CGSize(width: 393, height: 5600))
+    }
+
     /// The wide layout from the core's own day, at an iPad's size and a Mac's.
     @Test func theCoreDayDrawsWide() async throws {
         guard let working = TodayFixtures.all.first(where: { $0.name == "today-working" }) else { return }
