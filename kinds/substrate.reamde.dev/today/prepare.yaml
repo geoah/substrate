@@ -192,7 +192,10 @@ data:
             "Write only what is listed here, and nothing at all if that day is over.",
             "",
             "1. Meetings. Read the day's calendar events: one query over the calendar kinds this "
-            "repository holds, with at bounded from %s to %s. For at most %d of them, the soonest first, "
+            "repository holds, with at bounded from %s to %s. Count only events on the owner's own "
+            "calendars: read the calendar an event names, and leave the event out where that calendar "
+            "is hidden, is not the account's primary one and is not one the account owns (a calendar "
+            "they can only read is someone else's). For at most %d of them, the soonest first, "
             "that have other people in them, have not ended and have no %s record yet, write one with "
             "the write tool: op put, id the id the "
             "read gave that event, and properties event (the path of the event, or of the repeating "
