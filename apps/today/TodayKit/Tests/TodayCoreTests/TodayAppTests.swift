@@ -359,6 +359,16 @@ struct SaveCardTests {
         let written = writes(harness).flatMap(\.entries)
         // The three of that project, and none of the ten on the others.
         #expect(Set(written.map(\.recordID)) == ["p-kenji", "p-ticket", "p-origin"])
+        // The one answered "Already done" is finished, but it is not a row of what was done today,
+        // even once the server has stamped when it was completed. A task marked done by hand is.
+        var state = await harness.state
+        let stamp = JSONValue.string("2026-11-19T08:30:00Z")
+        state.linked.records[RecordFold.key(TodayKinds.task, "p-kenji")]?.properties["completedAt"] = stamp
+        state.linked.records[RecordFold.key(TodayKinds.task, "p-ticket")]?.properties["status"] = "done"
+        state.linked.records[RecordFold.key(TodayKinds.task, "p-ticket")]?.properties["completedAt"] = stamp
+        state.notes?.suggestedDone?.remove("p-ticket")
+        let rows = DayEngine(TodayPresenter.day(state, now: TodayFixtures.at("08:31"), calendar: TodayFixtures.calendar)).earlier?.rows ?? []
+        #expect(!rows.contains { $0.id == "task:p-kenji" } && rows.contains { $0.id == "task:p-ticket" })
         let byID = Dictionary(uniqueKeysWithValues: written.map { ($0.recordID, $0.properties) })
         #expect(byID["p-kenji"] == ["status": "done"])
         #expect(byID["p-ticket"] == ["status": "open", "prioritySetBy": "owner"])
