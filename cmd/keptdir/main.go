@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,26 +134,52 @@ type driver struct {
 
 func (d *driver) kind(pkgKind string) string { return d.authority + "/" + pkgKind }
 
+// pacedAttempts is how many times do sends a request a release answers 429
+// to, and pacedWait the longest it waits between two of them.
+const (
+	pacedAttempts = 30
+	pacedWait     = 30 * time.Second
+)
+
 // do sends one request and returns the status and body; a JSON body is
-// marshaled, a []byte body is sent as it is.
+// marshaled, a []byte body is sent as it is. A release that paces a person's
+// requests answers 429 with a Retry-After, and the capture reads every record
+// with a request of its own: do waits what the answer says and sends the
+// request again, so a paced run is slower and never a failed one.
 func (d *driver) do(method, path string, body any, headers map[string]string) (int, []byte, error) {
-	var r io.Reader
+	var payload []byte
 	switch b := body.(type) {
 	case nil:
 	case []byte:
-		r = bytes.NewReader(b)
+		payload = b
 	default:
 		raw, err := json.Marshal(b)
 		if err != nil {
 			return 0, nil, err
 		}
-		r = bytes.NewReader(raw)
+		payload = raw
+	}
+	for attempt := 1; ; attempt++ {
+		status, raw, wait, err := d.send(method, path, payload, body != nil, headers)
+		if err != nil || status != http.StatusTooManyRequests || attempt == pacedAttempts {
+			return status, raw, err
+		}
+		time.Sleep(wait)
+	}
+}
+
+// send is one attempt of do. It also answers how long a 429 asks to wait: its
+// Retry-After in seconds, a second where it names none, pacedWait at most.
+func (d *driver) send(method, path string, payload []byte, hasBody bool, headers map[string]string) (int, []byte, time.Duration, error) {
+	var r io.Reader
+	if hasBody {
+		r = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequest(method, d.base+path, r)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, 0, err
 	}
-	if body != nil {
+	if hasBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if d.token != "" {
@@ -167,11 +194,15 @@ func (d *driver) do(method, path string, body any, headers map[string]string) (i
 	}
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
-	return resp.StatusCode, raw, err
+	wait := time.Second
+	if seconds, convErr := strconv.Atoi(resp.Header.Get("Retry-After")); convErr == nil && seconds > 0 {
+		wait = min(time.Duration(seconds)*time.Second, pacedWait)
+	}
+	return resp.StatusCode, raw, wait, err
 }
 
 // must is do that refuses anything but a 2xx and decodes the answer into out.
