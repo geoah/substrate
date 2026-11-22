@@ -58,9 +58,13 @@ public struct LinkedRecords: Equatable, Sendable {
         /// on the app's clock: the kinds are read again, once a minute
         /// (`WatchFollower.recovers`).
         case relistNeeded(at: Date)
-        /// The outbox's queue, and the writes it took since it opened.
-        case queueReported([OutboxEntry], landed: Set<UUID>)
-        case enqueued(Set<UUID>, queue: [OutboxEntry], landed: Set<UUID>)
+        /// The outbox's queue, and the writes it took since it opened, as
+        /// one look saw them. `order` is that look's (`OutboxReport.order`);
+        /// 0 where the looks are not ordered, and none is then dropped.
+        case queueReported([OutboxEntry], landed: Set<UUID>, order: Int = 0)
+        /// The answer to queueing the writes `ids`: the queue as a look
+        /// taken after they were queued saw it.
+        case enqueued(Set<UUID>, queue: [OutboxEntry], landed: Set<UUID>, order: Int = 0)
         case notQueued(Set<UUID>, String)
         /// The owner's change, laid over at once.
         case wrote(LocalWrite)
@@ -139,7 +143,8 @@ public struct LinkedRecords: Equatable, Sendable {
         var next = state
         switch event {
         case .opened:
-            break
+            // The outbox counts its looks from when the app started: an order kept from another run says nothing.
+            next.reported = nil
         case let .linked(link):
             let before = state.link
             next.link = link
@@ -158,6 +163,8 @@ public struct LinkedRecords: Equatable, Sendable {
         case let .loaded(records, cursor, stale, queue):
             next.server = keyed(records, in: state)
             next.cursor = cursor
+            // The outbox counts its looks from when it opened: one kept from another run says nothing.
+            next.reported = nil
             // The watch resumes past the rows that marked these, so only a
             // read again brings them up to date.
             let kinds = kinds(in: state)
@@ -201,9 +208,21 @@ public struct LinkedRecords: Equatable, Sendable {
             }
             next.recoveryStarted = at
             next.phase = .reading
-        case let .queueReported(entries, landed):
+        case let .queueReported(entries, landed, order):
+            // A look older than one already applied is dropped: the writes
+            // queued since it was taken are not in it, and it would show
+            // them as gone until the next look.
+            guard newest(order, in: &next) else { break }
             report(entries, confirming: [], landed: landed, into: &next)
-        case let .enqueued(ids, queue, landed):
+        case let .enqueued(ids, queue, landed, order):
+            // The same for an answer older than a look already applied,
+            // which was taken after these writes were queued and so has
+            // seen them: they wait for no answer any more, and the queue
+            // stays as that newer look left it.
+            guard newest(order, in: &next) else {
+                next.unconfirmed.subtract(ids)
+                break
+            }
             report(queue, confirming: ids, landed: landed, into: &next)
         case let .notQueued(ids, _):
             next.queue.removeAll { ids.contains($0.id) }
@@ -293,6 +312,15 @@ public struct LinkedRecords: Equatable, Sendable {
         }
     }
 
+    /// Whether a look at the outbox is the newest so far, which it then
+    /// becomes. A look with no order (0) is always taken.
+    private func newest(_ order: Int, in state: inout State) -> Bool {
+        guard order != 0 else { return true }
+        if let last = state.reported, order < last { return false }
+        state.reported = order
+        return true
+    }
+
     /// The outbox's queue as it reported it. A write that left it and that
     /// the outbox says landed is laid over the server's copy until that
     /// record is read again, so the owner never sees it undone in between;
@@ -341,6 +369,11 @@ public struct LinkedRecords: Equatable, Sendable {
             var keys: [String] = []
             for entry in previous.queue where !kept.contains(entry.id) && !keys.contains(entry.key) { keys.append(entry.key) }
             if !keys.isEmpty { out.append(.reread(keys)) }
+            // An answer that came after a newer look: its writes may have
+            // left the queue before that look, which then kept them as
+            // waiting. The queue is looked at once more, so they are not
+            // shown laid over for longer than they are queued.
+            if case let .enqueued(_, _, _, order) = event, order != 0, let last = previous.reported, order < last { out.append(.reportQueue) }
         case .clearAsked:
             out.append(.clear)
         case .watchOpened, .foregrounded:
@@ -428,11 +461,17 @@ public struct LinkedRecords: Equatable, Sendable {
         case .followOutbox:
             guard let outbox else { return .none }
             return .relay { continuation in
-                for await _ in await outbox.changes() { continuation.yield(.queueReported(await outbox.entries, landed: await outbox.landed)) }
+                for await _ in await outbox.changes() {
+                    let look = await outbox.report()
+                    continuation.yield(.queueReported(look.entries, landed: look.landed, order: look.order))
+                }
             }
         case .reportQueue:
             guard let outbox else { return .none }
-            return .once { .queueReported(await outbox.entries, landed: await outbox.landed) }
+            return .once {
+                let look = await outbox.report()
+                return .queueReported(look.entries, landed: look.landed, order: look.order)
+            }
         case let .read(kinds):
             let limit = limit
             return .relay { continuation in
@@ -539,7 +578,8 @@ public struct LinkedRecords: Equatable, Sendable {
                     } else {
                         try await outbox.enqueue(write.entries)
                     }
-                    return .enqueued(ids, queue: await outbox.entries, landed: await outbox.landed)
+                    let look = await outbox.report()
+                    return .enqueued(ids, queue: look.entries, landed: look.landed, order: look.order)
                 } catch {
                     return .notQueued(ids, "\(words.device.capitalizedFirst) could not keep the change: \(error.localizedDescription)")
                 }

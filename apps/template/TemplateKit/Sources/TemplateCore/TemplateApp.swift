@@ -139,7 +139,7 @@ public struct TemplateApp: LinkedRecordsApp {
     public func apply(_ event: Event, to state: State, from previous: State) throws -> State {
         var next = state
         switch event {
-        case let .records(.enqueued(ids, _, _)):
+        case let .records(.enqueued(ids, _, _, _)):
             if state.adding?.writes(ids) == true {
                 next.draft = ""
                 next.adding = nil

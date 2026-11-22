@@ -42,3 +42,37 @@ public struct OutboxSummary: Equatable, Sendable {
         self.unavailable = unavailable
     }
 }
+
+/// The queue as it stood at one look (`Outbox.report()`): its entries and
+/// the writes that landed, read together, and the order of the look among
+/// every look at this outbox since it opened. A later look has a greater
+/// order. Looks reach a reader along more than one path (the queue's own
+/// changes, the answer to a write it queued), so they can arrive out of
+/// order; a reader drops one older than a look it already has, which would
+/// otherwise show a write as gone that is only not in the older look.
+public struct OutboxReport: Equatable, Sendable {
+    public var entries: [OutboxEntry]
+    public var landed: Set<UUID>
+    public var order: Int
+
+    public init(entries: [OutboxEntry], landed: Set<UUID>, order: Int) {
+        self.entries = entries
+        self.landed = landed
+        self.order = order
+    }
+}
+
+/// The count of the looks taken at every outbox of the app, behind a lock:
+/// each outbox is an actor of its own, and they share the one count.
+final class LookCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    /// The next look's order: one more than the last, never the same twice.
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return count
+    }
+}

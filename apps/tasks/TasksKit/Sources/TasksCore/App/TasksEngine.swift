@@ -15,7 +15,7 @@ public extension TasksApp {
         case let .records(records):
             if Self.shared(records) { next.settingsLinked = settingsLinked.apply(records, to: state.settingsLinked) }
             switch records {
-            case let .enqueued(ids, _, _):
+            case let .enqueued(ids, _, _, _):
                 next.settling.subtract(ids)
                 // The outbox has an editor's write: its editor closes.
                 for (key, save) in state.saves where save.writes(ids) {

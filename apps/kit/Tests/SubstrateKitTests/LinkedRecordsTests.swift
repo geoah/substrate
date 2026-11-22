@@ -188,6 +188,51 @@ struct LinkedRecordsTests {
         #expect(stepper.state.stale == [RecordFold.key(noteKind, "n1"), RecordFold.key(noteKind, "n2")])
     }
 
+    /// Five writes are queued one after another, as one press that logs
+    /// five things makes them. Each answer is a look at the queue taken
+    /// after its own write was queued, and the queue's own reports are
+    /// looks too; they reach the app along different paths. A report taken
+    /// when two were queued arrives after the answer that saw all five: it
+    /// is older, and is dropped, so the three it does not list stay shown.
+    @Test func aLookAtTheQueueOlderThanOneAlreadyAppliedIsDropped() {
+        var stepper = Stepper()
+        _ = stepper.step(.loaded([], cursor: nil, queue: []))
+        let writes = (1 ... 5).map { OutboxEntry(method: .put, kind: noteKind, recordID: "n\($0)", properties: ["title": .string("Note \($0)")]) }
+        for write in writes { _ = stepper.step(.wrote(LocalWrite(entries: [write]))) }
+        #expect(stepper.state.records.count == 5)
+        for (index, write) in writes.enumerated() {
+            _ = stepper.step(.enqueued([write.id], queue: Array(writes.prefix(index + 1)), landed: [], order: 2 * index + 1))
+        }
+        // The queue's own report from when two were queued: look 4, after look 9.
+        #expect(stepper.step(.queueReported(Array(writes.prefix(2)), landed: [], order: 4)).isEmpty)
+        #expect(stepper.state.records.count == 5)
+        #expect(stepper.state.queue.count == 5)
+        // A newer look is taken as before: the first two landed.
+        _ = stepper.step(.queueReported(Array(writes.suffix(3)), landed: [writes[0].id, writes[1].id], order: 10))
+        #expect(stepper.state.queue.count == 3)
+        #expect(stepper.state.records.count == 5)
+    }
+
+    /// An answer older than a look already applied confirms its writes and
+    /// changes nothing else; the queue is looked at once more, in case they
+    /// had left it before that look.
+    @Test func anAnswerOlderThanALookAlreadyAppliedConfirmsItsWritesAndAsksForANewLook() {
+        var stepper = Stepper()
+        _ = stepper.step(.loaded([note("n1", "Milk")], cursor: nil, queue: []))
+        let rename = OutboxEntry(method: .patch, kind: noteKind, recordID: "n1", properties: ["title": "Oat milk"])
+        _ = stepper.step(.wrote(LocalWrite(entries: [rename])))
+        // The queue's report, taken after the write was queued and had landed, comes first.
+        _ = stepper.step(.queueReported([], landed: [rename.id], order: 7))
+        #expect(stepper.state.unconfirmed == [rename.id])
+        #expect(stepper.step(.enqueued([rename.id], queue: [rename], landed: [], order: 6)) == [.reportQueue])
+        #expect(stepper.state.unconfirmed.isEmpty)
+        #expect(stepper.state.records[RecordFold.key(noteKind, "n1")]?.properties["title"] == "Oat milk")
+        // The look that follows sees it gone and landed: laid over the server's copy, and read again.
+        #expect(stepper.step(.queueReported([], landed: [rename.id], order: 8)) == [.reread([RecordFold.key(noteKind, "n1")])])
+        #expect(stepper.state.queue.isEmpty)
+        #expect(stepper.state.records[RecordFold.key(noteKind, "n1")]?.properties["title"] == "Oat milk")
+    }
+
     /// A delayed outbox report lays an older rename over a newer name the
     /// watch already brought, and asks for the record's read again; a new
     /// token comes while that read is out, and its answer is never heard.
@@ -328,6 +373,10 @@ struct LinkedRecordsTests {
         client.pause = { _ in }
         _ = await outbox.flush(client)
         #expect(await outbox.landed == [put.id])
+        // A look reads the queue and what landed together, and a later look has a greater order.
+        let look = await outbox.report()
+        #expect(look.landed == [put.id] && look.entries.map(\.id) == [refused.id])
+        #expect(await outbox.report().order > look.order)
         try await outbox.discard(refused.id)
         #expect(await outbox.landed == [put.id])
     }

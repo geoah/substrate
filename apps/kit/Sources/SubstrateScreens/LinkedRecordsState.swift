@@ -19,6 +19,10 @@ public struct LinkedRecordsState: Codable, Equatable, Sendable {
     public var queue: [OutboxEntry] = []
     /// The ids of writes queued here and not yet seen in a report.
     public var unconfirmed: Set<UUID> = []
+    /// The order of the newest look at the outbox applied here
+    /// (`OutboxReport.order`), nil before any since the app opened: an
+    /// older look that arrives after it is dropped.
+    public var reported: Int?
     public var records: [String: Record] = [:]
     /// The cache and the queue were read from the device.
     public var loaded = false

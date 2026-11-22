@@ -187,6 +187,17 @@ public actor Outbox {
     /// discarded, dropped as stale or reset away, which it does not.
     public var landed: Set<UUID> { Set(landedIDs) }
 
+    /// How many looks were taken at any outbox since the app started: one
+    /// count for all of them, so an order never starts again when another
+    /// outbox takes this one's place (a sign-in).
+    private static let looks = LookCount()
+
+    /// The queue and the landed writes as they stand now, read together,
+    /// with the order of this look: greater than every look before it.
+    public func report() -> OutboxReport {
+        OutboxReport(entries: file.entries, landed: Set(landedIDs), order: Self.looks.next())
+    }
+
     /// The entries the server refused, waiting for the owner.
     public var parked: [OutboxEntry] { file.entries.filter(\.parked) }
 

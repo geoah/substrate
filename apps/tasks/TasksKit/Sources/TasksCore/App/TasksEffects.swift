@@ -22,7 +22,7 @@ public extension TasksApp {
             switch records {
             case .opened:
                 out += [.readSettings, .readPermission, .readDecisions]
-            case let .enqueued(ids, _, _), let .notQueued(ids, _):
+            case let .enqueued(ids, _, _, _), let .notQueued(ids, _):
                 if !ids.isDisjoint(with: previous.settling) { out.append(.forgetDecisions(ids, paths: [])) }
             case .foregrounded:
                 out += [.readUsage, .readPermission]
