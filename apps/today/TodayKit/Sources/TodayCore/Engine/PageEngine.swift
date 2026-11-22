@@ -10,6 +10,7 @@ extension DayEngine: PageMaking {
         case .priorities: return .priorities(prioritiesPage)
         case .projects: return .projects(projectsPage)
         case .plan: return .plan(planPage)
+        case .suggested: return .suggested(suggestedPage)
         case let .project(id): return day.list(id).map { .project(projectPage($0)) } ?? .missing(MissingPage())
         case let .person(id): return day.person(id).map { .person(personPage($0)) } ?? .missing(MissingPage())
         case let .meeting(id): return day.meeting(id).map { .meeting(meetingPage($0)) } ?? .missing(MissingPage())
@@ -110,8 +111,9 @@ extension DayEngine: PageMaking {
                 var line = taskLine(task)
                 if line.line == "Not today." { line.line = nil }
                 return line
-            }, suggested: suggested.map { suggestedItem($0, own: true) },
-            suggestedEmpty: suggested.isEmpty ? "Nothing suggested here that you have not answered." : nil, timeline: timeline,
+            }, suggested: suggested.compactMap(listedSuggestion),
+            suggestedEmpty: suggested.allSatisfy { listedSuggestion($0) == nil } ? "Nothing suggested here that you have not answered." : nil,
+            timeline: timeline,
             timelineEmpty: timeline.isEmpty ? "Nothing is recorded for this project in the sources checked." : nil,
             meetings: coming.map {
                 MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end))" + ($0.start <= now ? ", on now." : "."))
@@ -127,7 +129,7 @@ extension DayEngine: PageMaking {
         return PersonPage(
             id: person.path, badge: person.badge, name: person.name, sees: meetings.first.map { "You see \(person.short) at \(clock($0.start))." },
             tasksTitle: "Tasks with \(person.short)", tasks: open.map(taskLine), tasksEmpty: open.isEmpty ? "No open task involves \(person.short)." : nil,
-            suggested: mine.filter(\.isProposed).map { suggestedItem($0, own: true) },
+            suggested: mine.filter(\.isProposed).compactMap(listedSuggestion),
             meetings: meetings.map { MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end)).") },
             moss: mossBox(.person(person.path), about: person.short, asks: ["What is open between us?", "Draft a message to \(person.short)"]))
     }
@@ -151,8 +153,11 @@ extension DayEngine: PageMaking {
         var card = taskCard(task, whole: true)
         // The line above the title already says when it was done.
         if task.status == .done { card.said = nil }
+        let told = task.isProposed ? toldItem(task, alone: true) : nil
+        // What was said about the suggestion is drawn with its answer once: not again in the box under it.
+        if let answered = told?.told?.answer { card.moss?.exchanges.removeAll { $0.id == answered.id } }
         return TaskPage(
             id: task.id, eyebrow: eyebrow, glyph: task.status == .done ? .done : .task, title: task.name, line: reason(task), stripe: stripe(task),
-            card: card, suggestion: task.isProposed ? suggestedItem(task, own: true, whole: true) : nil)
+            card: card, suggestion: task.isProposed ? told ?? suggestedItem(task, own: true, whole: true) : nil)
     }
 }

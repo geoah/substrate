@@ -55,13 +55,24 @@ public extension TodayApp {
         }
 
         /// Each suggested task that has an answer, the owner's or the
-        /// assistant's, is written with it; one with none is left as it is.
-        func answer(_ tasks: [TaskItem]) {
-            var counts = notes.suggestedSaved.count == 3 ? notes.suggestedSaved : [0, 0, 0]
+        /// assistant's, is written with it; one with none is left as it
+        /// is. "Other" is written as the owner's words (`today/correction`)
+        /// and they go to the assistant about that task; with no words it
+        /// stays as it is, and so does its pick.
+        func answer(_ tasks: [TaskItem], words: [String: String]) {
+            var counts = notes.suggestedSaved
+            while counts.count < SuggestedAnswer.allCases.count { counts.append(0) }
             for task in tasks {
-                guard let answer = engine.pending(task) else { continue }
-                wrote(writes.answer(task, answer))
-                counts[SuggestedAnswer.allCases.firstIndex(of: answer) ?? 0] += 1
+                guard let answer = engine.pending(task), let index = SuggestedAnswer.allCases.firstIndex(of: answer) else { continue }
+                if answer == .other {
+                    let said = (words[task.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !said.isEmpty, engine.keepsCorrections else { continue }
+                    wrote(writes.correction(task, said, id: writes.writes.newID()))
+                    ask(.task(task.id), said)
+                } else {
+                    wrote(writes.answer(task, answer))
+                }
+                counts[index] += 1
                 drafts.suggested[task.id] = nil
             }
             notes.suggestedSaved = counts
@@ -92,33 +103,13 @@ public extension TodayApp {
                         id: "today.later." + row, title: routine.isDose && !routine.title.lowercased().contains("medic") ? "Medication" : routine.title,
                         body: count == 1 ? "1 item" : "\(count) items", fireAt: now.addingTimeInterval(3600), row: row)))
 
-        // MARK: What yesterday left
+        // MARK: What was not logged yesterday
         case let .answerYesterday(item, option):
-            guard let left = engine.yesterdayLeft.first(where: { $0.id == item }), left.answered != option else { break }
-            switch left.kind {
-            case let .routine(routine):
-                // A first answer logs what was open; a moved choice changes the logs that answer made.
-                let occurrences = left.answered == nil ? engine.open(routine) : engine.answeredOccurrences(routine, since: left.at)
-                for occurrence in occurrences { wrote(writes.log(occurrence, done: option == "took")) }
-            case let .task(task):
-                var change: JSONObject = [:]
-                // Dropped by the answer before: it is open again.
-                if task.status == .abandoned, option != "drop" { change["status"] = "open" }
-                switch option {
-                case "today":
-                    change["dueDay"] = .string(day.today.description)
-                    if day.discovery.taskMoves, task.notBefore != nil { change["notBefore"] = .null }
-                case "tomorrow":
-                    change["dueDay"] = .string(day.today.adding(days: 1, in: calendar).description)
-                    if day.discovery.taskMoves {
-                        change["notBefore"] = TodayWrites.stamp(day.startOfTomorrow)
-                        change["deferrals"] = .number(Decimal(task.deferrals + 1))
-                    }
-                case "drop": change = ["status": "abandoned"]
-                default: break
-                }
-                if !change.isEmpty { wrote(writes.change(task, change)) }
-            }
+            guard let left = engine.yesterdayLeft.first(where: { $0.id == item }), left.answered != option, case let .routine(routine) = left.kind
+            else { break }
+            // A first answer logs what was open; a moved choice changes the logs that answer made.
+            let occurrences = left.answered == nil ? engine.open(routine) : engine.answeredOccurrences(routine, since: left.at)
+            for occurrence in occurrences { wrote(writes.log(occurrence, done: option == "took")) }
             notes.yesterday[item] = option
             // The first answer's time stays: it is what "Chosen at" says, and what finds its logs.
             if notes.yesterdayAt[item] == nil { notes.yesterdayAt[item] = now }
@@ -148,11 +139,13 @@ public extension TodayApp {
         // MARK: Suggested tasks
         case let .suggest(id, answer):
             drafts.suggested[id] = answer
-        case let .saveSuggestedCard(ids):
-            answer(engine.proposed.filter { ids.contains($0.id) })
-            notes.suggestedSavedAt = now
-        case let .saveSuggested(id):
-            answer(engine.proposed.filter { $0.id == id })
+        case let .saveSuggested(ids, words):
+            let before = notes.suggestedSaved
+            answer(engine.proposed.filter { ids.contains($0.id) }, words: words)
+            // From here a new suggestion is a row of its own, while few wait.
+            if notes.suggestedSaved != before { notes.suggestedSavedAt = now }
+        case let .showSuggested(group):
+            drafts.suggestedShown.insert(group)
 
         // MARK: The plan
         case let .planPick(id):
@@ -172,14 +165,41 @@ public extension TodayApp {
             var plan = drafts.plan ?? PlanDraft()
             plan.sends[id] = !(plan.sends[id] ?? false)
             drafts.plan = plan
+        case let .planLeft(id, option):
+            guard engine.leftTasks.contains(where: { $0.id == id }), DayEngine.leftOptions.contains(where: { $0.id == option }) else { break }
+            var plan = drafts.plan ?? PlanDraft()
+            // The option chosen again takes the choice back: none is chosen for the owner.
+            plan.left[id] = plan.left[id] == option ? nil : option
+            drafts.plan = plan
         case .planReset:
             drafts.plan = nil
         case .planSave:
-            let picked = engine.candidates.filter(engine.ticked)
-            guard !picked.isEmpty else { break }
-            // A suggested task ticked becomes a task; a flag changed on the
-            // page is written to its task.
-            for task in picked where task.isProposed { wrote(writes.answer(task, .task)) }
+            let picked = engine.pickedForToday
+            let left = engine.leftTasks.filter { engine.leftChoice($0) != nil }
+            guard !picked.isEmpty || !left.isEmpty else { break }
+            // Where each thing yesterday left goes: today, tomorrow, or closed as not done.
+            for task in left {
+                guard let option = engine.leftChoice(task) else { continue }
+                var change: JSONObject = [:]
+                switch option {
+                case "today":
+                    change["dueDay"] = .string(day.today.description)
+                    if day.discovery.taskMoves, task.notBefore != nil { change["notBefore"] = .null }
+                case "tomorrow":
+                    change["dueDay"] = .string(day.today.adding(days: 1, in: calendar).description)
+                    if day.discovery.taskMoves {
+                        change["notBefore"] = TodayWrites.stamp(day.startOfTomorrow)
+                        change["deferrals"] = .number(Decimal(task.deferrals + 1))
+                    }
+                case "drop": change = ["status": "abandoned"]
+                default: break
+                }
+                if !change.isEmpty { wrote(writes.change(task, change)) }
+                notes.yesterday[DayEngine.leftID(task)] = option
+                notes.yesterdayAt[DayEngine.leftID(task)] = now
+            }
+            // What was put on today and is unticked leaves today: its place is taken back.
+            for task in engine.candidates where engine.placedToday(task) && !engine.ticked(task) { wrote(writes.move(task, to: nil)) }
             // A flag the assistant suggests on a task that exists starts
             // selected: it is taken where its task is ticked and the owner
             // picked no other, and turned down where the owner picked another.

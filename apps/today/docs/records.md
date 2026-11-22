@@ -302,8 +302,50 @@ or an underscore) a capital: "Christopher" for "christopher", "Dan" for "dan@exa
 ## Writes the app makes
 
 Log or skip an occurrence (`routines/routinelog`). Answer suggested tasks (`status` to `open`, `done` or
-`abandoned`). Add a task. Set a flag (the rule above). Take urgent off. Set or remove a project's
+`abandoned`; or the owner's words as a `today/correction`). Add a task. Set a flag (the rule above). Take urgent off. Set or remove a project's
 `priority`. Move a task (`notBefore` or `dueDay`, with `deferrals`). Mark a task done. Accept or reject a
 patch request. Save the plan and the wrap (`today/plan`, and the task writes its ticks imply). "Got it"
 (`today/reviewmark`). Mark the night read and the last look (`today/preference`). Keep a return point.
 Every write goes through the outbox, so it works offline and is sent when the app reconnects.
+
+## Suggested tasks: what the app reads to draw them, and what "Other" writes
+
+A suggested task is a `tasks/task` in `proposed`. Beyond what the tasks section lists, the app reads:
+
+- **`originAt`** (datetime, tasks 5): when what the task was made from was said or happened. The line
+  under a suggestion says "Heard" with that time. A record without it says "Suggested" with the record's own
+  `createdAt`, which is when the suggestion was written and not when anyone said anything. A suggestion's
+  age, for the fade after a week and the end after two, is counted from `originAt` where it is set.
+- **`description`** as Markdown. A record's path in brackets, such as `(source: <authority>/<package>/<kind>/<id>)`,
+  is not shown: where the words came from is the task's `origin`. A bare path in a sentence is drawn as that
+  record's pill, as the kit draws one. A writer should put no path in the prose at all.
+- **`today/advice`** for the same task id: its `answer` starts selected and marks the option, and orders
+  the suggestion in its project's group (`task` first, none next, `done` and `dismiss` last).
+
+The fourth answer, **Other**, is offered only where the repository declares
+`substrate.reamde.dev/today/correction` (today 4). Saved with words, the app:
+
+1. creates one `today/correction` under an id it mints, with `subject` a reference to the suggested task
+   (`{"ref": "substrate.reamde.dev/tasks/task/<id>"}`) and `text` the owner's words, trimmed;
+2. sends the same words to the assistant as a chat turn whose context is that task. The task itself is not
+   written: the assistant acts on it.
+
+It reads every `today/correction` (the kind is linked and followed). A suggested task whose latest correction
+is newer than the task's own `updatedAt` is with the assistant: it is not asked again and not counted. Once
+the task changes after the correction (rewritten, say) it is a suggestion again; once it leaves `proposed` it
+is not one. The app never changes or deletes a correction.
+
+## The plan: what yesterday left, and what is on today
+
+- **Left from yesterday** is a task that is `open`, has `dueDay` before today, and has no `notBefore` at or
+  after the start of today. It is asked after on the plan page, and the plan's Save writes the answer:
+  `dueDay` to today (and `notBefore` cleared) for Today; `dueDay` to tomorrow, `notBefore` to the start of
+  tomorrow and one more `deferrals` for Tomorrow; `status: abandoned` for Drop it. One chosen for today is in
+  the plan's `picked`. A routine with nothing logged yesterday is not planning: it is still asked after in
+  the day, and its answer writes its `routines/routinelog` at once.
+- **A task is on today** when the saved plan's `picked` holds it, when it is due today, when it is urgent,
+  or when its `notBefore` is within today. The last is how anything puts a task on today without a due day:
+  the wrap's "Tomorrow", "When", and the assistant adding what the owner asked for (`today-add`). The plan
+  page shows such a task ticked; unticked and saved, its `notBefore` is cleared, so it leaves today.
+- The plan page lists no suggested task. Ticking no longer makes one a task: they are answered on their own page.
+

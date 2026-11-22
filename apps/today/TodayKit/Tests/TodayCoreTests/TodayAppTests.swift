@@ -70,19 +70,48 @@ struct OrderTests {
         let pane = try #require(TodayFixtures.all.first { $0.name == "today-wake-stale" }).app.pane
         guard case let .routine(card) = rows(pane)[0].body else { return #expect(Bool(false)) }
         #expect(card.notLogged == "Not logged since 17 October.")
-        guard case let .yesterday(left) = try #require(row(pane, "yesterday")).body else { return #expect(Bool(false)) }
-        #expect(left.items.map(\.glyph) == [.task], "only the task that was due, not a month of doses")
+        // Not a month of doses: nothing of yesterday's routines is asked after, and the task that was due is on the plan page.
+        #expect(row(pane, "yesterday") == nil)
+        #expect(row(pane, "plan")?.line?.hasSuffix("One is left from yesterday.") == true)
     }
 
-    @Test func theMorningIsNightYesterdaySuggestedPlanInThatOrder() {
+    @Test func theMorningIsNightThenSuggestedAndThePlanInThatOrder() throws {
         let pane = pane("08:20")
         #expect(pane.lead == "night" && pane.ground == .planning)
         #expect(rows(pane).prefix(2).map(\.id) == ["suggested", "plan"])
-        // What yesterday left came first, and was answered at 08:19 and on waking.
-        #expect(rows(TodayCoreTests.pane("07:38")).map(\.id).contains("yesterday"))
+        // Both open a page, so both end with the right chevron and a tap opens the page.
+        #expect(rows(pane).prefix(2).map(\.trailing) == [.page(.suggested), .page(.plan)])
+        // On waking, only a routine yesterday left with nothing logged is asked after in the day, by name.
+        let waking = try #require(row(TodayCoreTests.pane("07:05"), "yesterday"))
+        #expect(waking.title == "Not logged yesterday" && waking.line == "Weekly medication." && waking.glyph == .routine)
+        #expect(row(TodayCoreTests.pane("07:38"), "yesterday") == nil, "logged at 07:33")
         let saved = TodayCoreTests.pane("08:40")
         #expect(saved.lead == "row:plan")
         #expect(row(saved, "suggested") == nil)
+    }
+
+    @Test func aSavedPlanKeepsARowThatOpensItAndNeverLeads() throws {
+        // Before it is saved the plan's row says what yesterday left.
+        let before = try #require(row(pane("08:40"), "plan"))
+        #expect(
+            before.title == "Plan the day"
+                && before.line == "What is for today and how much each matters, and four overlaps to choose. One is left from yesterday.")
+        let pane = pane("11:30")
+        let plan = try #require(row(pane, "plan"))
+        #expect(plan.title == "Today's plan" && plan.line == "Saved at 08:44. Thirteen tasks." && plan.trailing == .page(.plan))
+        guard case let .plan(card) = plan.body else { return #expect(Bool(false)) }
+        #expect(card.open.opens == .plan && card.saved == "Plan saved at 08:44.")
+        // It stands under what is done, above what is happening and what leads.
+        let ids = pane.items.map(\.id)
+        #expect(ids.firstIndex(of: "row:plan") == ids.firstIndex(of: "earlier").map { $0 + 1 })
+        #expect(pane.lead == "row:task:p-vendor")
+        // "Earlier today" keeps its line, and what yesterday left is named there with its answer.
+        guard case let .earlier(earlier)? = pane.items.first(where: { $0.id == "earlier" }) else { return #expect(Bool(false)) }
+        #expect(earlier.lines.contains { $0.text == "Plan saved." && $0.button == nil })
+        #expect(earlier.lines.contains { $0.text == "From yesterday: verify the safety vendor endpoint claims, moved to today." })
+        // The page says it is saved, and has nothing to save until something changes.
+        guard case let .plan(page) = page("11:30", .plan) else { return #expect(Bool(false)) }
+        #expect(page.saved == "Plan saved at 08:44." && !page.save.enabled && page.left.isEmpty)
     }
 
     @Test func aMeetingWithinTenMinutesLeadsAndTheRowsWait() {
@@ -264,110 +293,259 @@ struct OrderTests {
 
 @Suite("Suggested tasks, the plan and the wrap", .timeLimit(.minutes(10)))
 struct SaveCardTests {
-    @Test func everySuggestedListIsOpenWithTheAssistantsOptionSelected() throws {
+    /// The suggested tasks' page at a moment of the invented day.
+    private func suggestedPage(_ clock: String, edit: (inout TodayApp.State) -> Void = { _ in }) throws -> SuggestedPage {
+        guard case let .suggested(page) = page(clock, .suggested, edit: edit) else { throw CancellationError() }
+        return page
+    }
+
+    @Test func theSuggestedTasksOpenAsAPageGroupedByProject() throws {
         let pane = pane("08:30")
         let suggested = try #require(row(pane, "suggested"))
-        // The title says how many wait, and the card draws twelve of them at a time.
-        #expect(suggested.title == "Thirteen suggested tasks to answer" && suggested.state == .now)
-        guard case let .suggested(card) = suggested.body else { return #expect(Bool(false)) }
-        #expect(card.items.count == 12 && card.batch == "Showing twelve at a time. The next take their place when you save.")
-        #expect(card.save.button?.title == "Save 12 answers" && card.save.button?.enabled == true)
-        for item in card.items {
-            #expect(item.options.rows.map(\.name) == ["Make it a task", "Already done", "Dismiss"])
+        // The row says how many wait and what matters about them, and opens the page: it lists none of them.
+        #expect(suggested.title == "Thirteen suggested tasks to answer" && suggested.state == .now && suggested.trailing == .page(.suggested))
+        #expect(suggested.line == "Four on your priorities. Moss would make twelve tasks.")
+        guard case let .suggested(door) = suggested.body else { return #expect(Bool(false)) }
+        #expect(door.open.opens == .suggested)
+        var listed: [SuggestedItem] = []
+        collect(SuggestedItem.self, in: pane, into: &listed)
+        #expect(listed.isEmpty, "the day lists no suggested task")
+
+        let page = try suggestedPage("08:30")
+        // The flagged projects first in flag order, then the others by name, then what is on no project.
+        #expect(page.groups.map(\.name) == ["EU AI Act", "Lantern", "Hiring", "Northfield bring-up", "Security hardening", "On no project"])
+        #expect(page.groups.map(\.stripe.flag) == [.high, .high, .medium, nil, nil, nil])
+        #expect(page.groups.map(\.count) == ["1 suggested", "2 suggested", "1 suggested", "1 suggested", "3 suggested", "5 suggested"])
+        #expect(page.line == suggested.line && page.rule == DayEngine.fadeRule)
+        // Within one, the newest first.
+        #expect(page.groups[1].items.map(\.id) == ["t-wei", "p-marcus"])
+        #expect(page.groups[4].items.map(\.id) == ["p-kenji", "p-ticket", "p-origin"])
+        #expect(page.groups[5].items.map(\.id) == ["p-marco", "p-casey", "p-tomas", "o-farid", "o-ben"])
+        // Each group is a save card of its own.
+        #expect(page.groups[1].save?.button?.title == "Save 2 answers")
+        #expect(page.groups[1].save?.button?.command == .saveSuggested(["t-wei", "p-marcus"], words: [:]))
+        for item in page.groups.flatMap(\.items) {
+            #expect(item.options.rows.map(\.name) == ["Make it a task", "Already done", "Dismiss", "Other"])
             let selected = try #require(item.options.selected)
             #expect(selected.suggested, "the assistant's option starts selected, and carries the pill")
+            #expect(item.save == nil && item.other == nil)
         }
-        let maya = try #require(card.items.first { $0.id == "o-maya" })
+        let maya = try #require(page.groups[2].items.first)
         #expect(maya.options.selected?.id == "dismiss" && maya.fade.level == 3)
-        let ben = try #require(card.items.first { $0.id == "o-ben" })
+        let ben = try #require(page.groups[5].items.last)
         #expect(ben.fade == .init(level: 2, label: "Fading. Gone on Tuesday."))
     }
 
     @Test func aPickIsADraftAndTheAssistantObjectsOnceInPlace() throws {
-        let pane = pane("08:30") { $0.drafts.suggested["p-marcus"] = .dismiss }
-        guard case let .suggested(card) = try #require(row(pane, "suggested")).body else { return #expect(Bool(false)) }
-        let marcus = try #require(card.items.first { $0.id == "p-marcus" })
+        let page = try suggestedPage("08:30") { $0.drafts.suggested["p-marcus"] = .dismiss }
+        let marcus = try #require(page.groups.flatMap(\.items).first { $0.id == "p-marcus" })
         #expect(marcus.options.selected?.id == "dismiss")
         // The pill stays on the assistant's option.
         #expect(marcus.options.rows.first { $0.suggested }?.id == "task")
         #expect(marcus.objection?.heading == "Moss objects, once")
     }
 
-    @Test func savingTheSuggestedTasksWritesEachAnswerAndNothingBefore() async throws {
+    @Test func savingAGroupWritesItsAnswersAndNoOthers() async throws {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:30"), performsEffects: false)
         await load(harness, "08:30")
         await harness.send(.suggest("p-kenji", .done))
         #expect(writes(harness).isEmpty, "a pick writes nothing")
-        guard case let .suggested(card) = try #require(row(await harness.presentation.pane, "suggested")).body else { return #expect(Bool(false)) }
-        await harness.send(try #require(card.save.button?.command))
+        guard case let .suggested(page) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        let security = try #require(page.groups.first { $0.name == "Security hardening" })
+        await harness.send(try #require(security.save?.button?.command))
         let written = writes(harness).flatMap(\.entries)
-        // The twelve the card drew, and not the thirteenth, which nobody saw.
-        #expect(written.count == 12 && !written.contains { $0.recordID == "t-wei" })
+        // The three of that project, and none of the ten on the others.
+        #expect(Set(written.map(\.recordID)) == ["p-kenji", "p-ticket", "p-origin"])
         let byID = Dictionary(uniqueKeysWithValues: written.map { ($0.recordID, $0.properties) })
         #expect(byID["p-kenji"] == ["status": "done"])
-        #expect(byID["o-maya"] == ["status": "abandoned"])
-        #expect(byID["p-tomas"] == ["status": "open", "prioritySetBy": "owner"])
+        #expect(byID["p-ticket"] == ["status": "open", "prioritySetBy": "owner"])
         let notes = try #require(await harness.state.notes)
-        #expect(notes.suggestedSaved == [10, 1, 1] && notes.suggestedSavedAt == TodayFixtures.at("08:30"))
-        // The next take their place: here the one that was left.
-        let after = try #require(row(await harness.presentation.pane, "suggested"))
-        guard case let .suggested(next) = after.body else { return #expect(Bool(false)) }
-        #expect(after.title == "One suggested task to answer" && next.items.map(\.id) == ["t-wei"] && next.batch == nil)
+        #expect(notes.suggestedSaved == [2, 1, 0, 0] && notes.suggestedSavedAt == TodayFixtures.at("08:30"))
+        // The answered group leaves the page, and the row counts what is left.
+        guard case let .suggested(after) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        #expect(!after.groups.contains { $0.name == "Security hardening" } && after.groups.count == 5)
+        #expect(row(await harness.presentation.pane, "suggested")?.title == "Ten suggested tasks to answer")
     }
 
-    @Test func aLargeBacklogIsAnsweredTwelveAtATime() async throws {
+    @Test func aLargeBacklogIsGroupedAndAGroupDrawsSixUntilAskedForTheRest() async throws {
         let pane = pane("08:30", edit: TodayFixtures.crowd)
-        let suggested = try #require(row(pane, "suggested"))
-        // The title says the true count; one line says the card shows twelve.
-        #expect(suggested.title == "113 suggested tasks to answer")
-        guard case let .suggested(card) = suggested.body else { return #expect(Bool(false)) }
-        #expect(card.batch == "Showing twelve at a time. The next take their place when you save.")
-        // Those the assistant has answered first, then the newest of the rest.
-        #expect(
-            card.items.map(\.id) == [
-                "o-maya", "b-003", "b-002", "b-001", "p-kenji", "b-091", "b-078", "b-065", "b-052", "b-039", "b-026", "b-013",
-            ])
-        // With no advice nothing is selected, and Save counts only what is answered.
-        #expect(card.items.prefix(5).allSatisfy { $0.options.selected?.suggested == true && $0.pending })
-        #expect(card.items.dropFirst(5).allSatisfy { $0.options.selected == nil && !$0.options.rows.contains { $0.suggested } && !$0.pending })
-        #expect(card.save.button?.title == "Save 5 answers" && card.save.button?.enabled == true)
+        #expect(row(pane, "suggested")?.title == "113 suggested tasks to answer")
+        #expect(row(pane, "suggested")?.line == "Four on your priorities. Moss would make two tasks.")
+        let page = try suggestedPage("08:30", edit: TodayFixtures.crowd)
+        #expect(page.groups.map(\.name) == ["EU AI Act", "Lantern", "Hiring", "Northfield bring-up", "Security hardening", "On no project"])
+        let none = try #require(page.groups.last)
+        // What the assistant would make a task first, then the newest it has not looked at; what it would
+        // close or dismiss is last, among the ones not drawn yet.
+        #expect(none.count == "105 suggested" && none.items.map(\.id) == ["b-001", "b-091", "b-078", "b-065", "b-052", "b-039"])
+        #expect(none.more?.title == "Show the other 99" && none.more?.command == .showSuggested(group: "none"))
+        // With no advice nothing is selected, and Save counts only what is answered, of what is drawn.
+        #expect(none.items[0].options.selected?.suggested == true && none.items[0].pending)
+        #expect(none.items.dropFirst().allSatisfy { $0.options.selected == nil && !$0.options.rows.contains { $0.suggested } && !$0.pending })
+        #expect(none.save?.button?.title == "Save 1 answer" && none.save?.button?.enabled == true)
+        // Advice or not, the security group has its own order: the one Moss would make a task first.
+        #expect(page.groups[4].items.map(\.id) == ["p-kenji", "p-ticket", "p-origin"])
 
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:30"), performsEffects: false)
         await load(harness, "08:30", edit: TodayFixtures.crowd)
         await harness.send(.suggest("b-091", .dismiss))
         await harness.send(.suggest("b-078", .task))
-        guard case let .suggested(drawn) = try #require(row(await harness.presentation.pane, "suggested")).body else { return #expect(Bool(false)) }
-        #expect(drawn.items.map(\.id) == card.items.map(\.id), "a pick moves nothing")
-        #expect(drawn.save.button?.title == "Save 7 answers")
-        await harness.send(try #require(drawn.save.button?.command))
-        // Exactly the seven answered on the card are written, of 113.
+        guard case let .suggested(drawn) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        let picked = try #require(drawn.groups.last)
+        #expect(picked.items.map(\.id) == none.items.map(\.id), "a pick moves nothing")
+        #expect(picked.save?.button?.title == "Save 3 answers")
+        await harness.send(try #require(picked.save?.button?.command))
+        // Exactly the three answered among the six drawn are written, of 105: b-002 and b-003 have the
+        // assistant's answer and were never drawn.
         let written = writes(harness).flatMap(\.entries)
-        #expect(Set(written.map(\.recordID)) == ["o-maya", "b-003", "b-002", "b-001", "p-kenji", "b-091", "b-078"])
+        #expect(Set(written.map(\.recordID)) == ["b-001", "b-091", "b-078"])
         #expect(written.first { $0.recordID == "b-091" }?.properties == ["status": "abandoned"])
-        // The next twelve take their place: the five left with no answer, then the next newest.
-        let after = try #require(row(await harness.presentation.pane, "suggested"))
-        #expect(after.title == "106 suggested tasks to answer")
-        guard case let .suggested(next) = after.body else { return #expect(Bool(false)) }
-        #expect(next.items.prefix(5).map(\.id) == ["b-065", "b-052", "b-039", "b-026", "b-013"] && next.items.count == 12)
-        #expect(next.save.button?.title == "Save 0 answers" && next.save.button?.enabled == false)
+        // The next take their place, and the rest are drawn when asked for.
+        guard case let .suggested(next) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        #expect(next.groups.last?.items.map(\.id) == ["b-065", "b-052", "b-039", "b-026", "b-013", "p-marco"])
+        #expect(next.groups.last?.save?.button?.enabled == false)
+        await harness.send(.showSuggested(group: "none"))
+        guard case let .suggested(all) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        let whole = try #require(all.groups.last)
+        #expect(whole.items.count == 102 && whole.more == nil && whole.items.suffix(2).map(\.id) == ["b-002", "b-003"])
+        #expect(whole.save?.button?.title == "Save 2 answers")
+        #expect(row(await harness.presentation.pane, "suggested")?.title == "110 suggested tasks to answer")
     }
 
-    @Test func thePlanListsOnlyTheSuggestedTasksTheCardDraws() throws {
-        // With a hundred waiting, the plan page holds the card's twelve and no other suggestion,
-        // so its Save can never make a task of one the owner has not seen.
-        let pane = pane("08:30", edit: TodayFixtures.crowd)
-        guard case let .suggested(card) = try #require(row(pane, "suggested")).body else { return #expect(Bool(false)) }
+    @Test func otherKeepsTheOwnersWordsAndSendsThemToTheAssistantAboutThatTask() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:30"), performsEffects: false)
+        await load(harness, "08:30")
+        await harness.send(.suggest("p-marco", .other))
+        guard case let .suggested(page) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        let none = try #require(page.groups.last)
+        let marco = try #require(none.items.first { $0.id == "p-marco" })
+        // Chosen, it shows its field; the pill stays on the assistant's option.
+        #expect(marco.options.selected?.id == "other" && marco.other?.placeholder == "What is wrong, or what to do instead")
+        #expect(marco.options.rows.first { $0.suggested }?.id == "task" && marco.pending)
+        #expect(writes(harness).isEmpty, "nothing is written before the Save")
+        // With no words it is left as it is, and its pick stays.
+        await harness.send(.saveSuggested(["p-marco"], words: ["p-marco": "  "]))
+        let kept = await harness.state.drafts.suggested["p-marco"]
+        #expect(writes(harness).isEmpty && kept == .other)
+
+        guard case let .saveSuggested(ids, _)? = none.save?.button?.command else { return #expect(Bool(false)) }
+        await harness.send(.saveSuggested(ids, words: ["p-marco": " Marco asked about the offsite, not what I drink. Ask him the dates. "]))
+        let written = writes(harness).flatMap(\.entries)
+        let correction = try #require(written.first { $0.kind == TodayKinds.correction })
+        let path = "\(TodayKinds.task)/p-marco"
+        #expect(correction.method == .put)
+        #expect(
+            correction.properties == [
+                "subject": ["ref": .string(path)], "text": "Marco asked about the offsite, not what I drink. Ask him the dates.",
+            ])
+        #expect(!written.contains { $0.recordID == "p-marco" }, "the task itself is not changed: Moss acts on it")
+        #expect(Set(written.filter { $0.kind == TodayKinds.task }.map(\.recordID)) == ["p-casey", "p-tomas", "o-farid", "o-ben"])
+        // The words go to the assistant about that task, with the task as the turn's context.
+        guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        #expect(exchange.subject == .task("p-marco") && context == [path])
+        #expect(message == "Marco asked about the offsite, not what I drink. Ask him the dates.")
+        let counts = await harness.state.notes?.suggestedSaved
+        #expect(counts == [4, 0, 0, 1])
+
+        // It is with Moss: not asked again, not counted, and drawn with what was said while the exchange is here.
+        guard case let .suggested(after) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        let told = try #require(after.groups.last)
+        #expect(told.items.isEmpty && told.save == nil && told.count == "With Moss" && told.told.map(\.id) == ["p-marco"])
+        #expect(told.told[0].told?.words == "Marco asked about the offsite, not what I drink. Ask him the dates.")
+        #expect(told.told[0].told?.answer?.state == .waiting && told.told[0].options.isEmpty)
+        #expect(row(await harness.presentation.pane, "suggested")?.title == "Eight suggested tasks to answer")
+        await harness.deliver(.answer(exchange.id, .done("I asked Marco for the dates and dismissed the suggestion.")))
+        guard case let .suggested(answered) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        #expect(answered.groups.last?.told.first?.told?.answer?.text == "I asked Marco for the dates and dismissed the suggestion.")
+        // On its own page it says the same, once: the box under it does not hold that exchange a second time.
+        guard case let .task(own) = await harness.presentation.page(.task("p-marco")) else { return #expect(Bool(false)) }
+        #expect(own.suggestion?.told?.answer?.state == .done && own.suggestion?.told?.words.hasPrefix("Marco asked") == true)
+        #expect(own.suggestion?.options.isEmpty == true && own.card.moss?.exchanges.isEmpty == true)
+        // Closed, it leaves the page; the record stays for whoever suggests tasks.
+        await harness.send(.closeAnswer(exchange.id))
+        guard case let .suggested(closed) = await harness.presentation.page(.suggested) else { return #expect(Bool(false)) }
+        #expect(!closed.groups.contains { $0.id == "none" })
+    }
+
+    @Test func aCorrectedSuggestionIsAskedAgainOnlyOnceItChanges() throws {
+        func correction(_ clock: String) -> Record {
+            Record(
+                id: "c1", kind: TodayKinds.correction,
+                properties: ["subject": ["ref": .string("\(TodayKinds.task)/p-marco")], "text": "Not what he asked."], version: 1,
+                createdAt: TodayFixtures.stamp(TodayFixtures.at(clock)))
+        }
+        func ids(_ edit: @escaping (inout TodayApp.State) -> Void) throws -> [String] {
+            try suggestedPage("08:30", edit: edit).groups.flatMap(\.items).map(\.id)
+        }
+        // The suggestion was written at 00:40: words said after that stand, and it is with Moss.
+        #expect(try !ids { $0.linked.records[RecordFold.key(TodayKinds.correction, "c1")] = correction("08:00") }.contains("p-marco"))
+        // Rewritten since, it is a suggestion again.
+        let rewritten = try ids { state in
+            state.linked.records[RecordFold.key(TodayKinds.correction, "c1")] = correction("08:00")
+            state.linked.records[RecordFold.key(TodayKinds.task, "p-marco")]?.updatedAt = TodayFixtures.stamp(TodayFixtures.at("08:10"))
+        }
+        #expect(rewritten.contains("p-marco"))
+        // A repository that does not keep such words offers the three answers and no other.
+        let without = try suggestedPage("08:30") { state in
+            state.discovery?.present.removeAll { $0 == TodayKinds.correction }
+            state.drafts.suggested["p-marco"] = .other
+        }
+        #expect(without.groups.flatMap(\.items).allSatisfy { $0.options.rows.map(\.id) == ["task", "done", "dismiss"] && $0.other == nil })
+    }
+
+    @Test func otherIsNotWrittenWhereTheRepositoryDoesNotKeepIt() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:30"), performsEffects: false)
+        await load(harness, "08:30")
+        var discovery = TodayFixtures.discovery
+        discovery.present.removeAll { $0 == TodayKinds.correction }
+        await harness.deliver(.discovered(discovery))
+        await harness.send(.suggest("p-marco", .other))
+        harness.clearTrace()
+        // The pick is no pick there: the list shows the assistant's option selected, and Save applies that.
+        guard case let .task(page) = await harness.presentation.page(.task("p-marco")) else { return #expect(Bool(false)) }
+        #expect(page.suggestion?.options.rows.map(\.id) == ["task", "done", "dismiss"] && page.suggestion?.options.selected?.id == "task")
+        await harness.send(.saveSuggested(["p-marco"], words: ["p-marco": "Not what he asked."]))
+        let written = writes(harness).flatMap(\.entries)
+        #expect(written.map(\.kind) == [TodayKinds.task] && written.first?.properties?["status"] == "open")
+        #expect(!harness.effects.contains { if case .ask = $0 { true } else { false } })
+    }
+
+    @Test func aSuggestionSaysWhenItWasHeardOnlyWhereItsRecordSaysSo() throws {
+        let page = try suggestedPage("08:30", edit: TodayFixtures.crowd)
+        let items = page.groups.flatMap(\.items)
+        // The record names when the words were said: that, and not when the suggestion was written four minutes later.
+        #expect(items.first { $0.id == "p-kenji" }?.origin == "Heard yesterday at 21:37, with Kenji.")
+        #expect(items.first { $0.id == "p-marcus" }?.origin == "Heard on 22 October, with Marcus.")
+        // An older record says only when it was written, and is not called heard.
+        #expect(items.first { $0.id == "b-091" }?.origin == "Suggested today at 07:31.")
+        // It fades by when it was said: one written yesterday from words two weeks old is gone tonight.
+        let late = try suggestedPage("08:30") { state in
+            let key = RecordFold.key(TodayKinds.task, "p-marco")
+            state.linked.records[key]?.createdAt = TodayFixtures.stamp(TodayFixtures.at("22:59", day: -1))
+            state.linked.records[key]?.properties["originAt"] = .string(TodayFixtures.stamp(TodayFixtures.at("15:06", day: -15)))
+        }
+        let old = try #require(late.groups.flatMap(\.items).first { $0.id == "p-marco" })
+        #expect(old.origin == "Heard on 4 November, with Marco." && old.fade.level == 3)
+    }
+
+    @Test func thePlanListsNoSuggestedTaskAndHasADoorToTheirPage() throws {
         guard case let .plan(plan) = page("08:30", .plan, edit: TodayFixtures.crowd) else { return #expect(Bool(false)) }
         let listed = Set(plan.groups.flatMap { $0.items + $0.more }.map(\.id))
-        let backlog = listed.filter { $0.hasPrefix("b-") }
-        #expect(!backlog.isEmpty && backlog.isSubset(of: Set(card.items.map(\.id))))
+        #expect(!listed.contains { $0.hasPrefix("b-") } && !listed.contains("p-kenji"))
+        #expect(plan.suggested == "113 suggested tasks wait for an answer, on a page of their own." && plan.suggestedOpen?.opens == .suggested)
+        guard case let .plan(none) = page("11:30", .plan) else { return #expect(Bool(false)) }
+        #expect(none.suggested == nil && none.suggestedOpen == nil)
     }
 
     @Test func oneHeardInTheDayIsARowOfItsOwnOnlyWhileFewWait() throws {
-        // At 16:35 one suggestion was heard after the card was saved: it is its own row, with its own Save.
+        // At 16:35 one suggestion was heard after a group was saved: it is its own row, with its own Save.
         let few = pane("16:35")
-        #expect(row(few, "heard:h-tomas-pr") != nil && row(few, "suggested") == nil)
-        // With a hundred waiting, everything goes through the card.
+        let heard = try #require(row(few, "heard:h-tomas-pr"))
+        #expect(row(few, "suggested") == nil && heard.line == "Heard today at 14:28, with Tomas.")
+        guard case let .heard(item) = heard.body else { return #expect(Bool(false)) }
+        #expect(item.save?.button?.command == .saveSuggested(["h-tomas-pr"], words: [:]))
+        // With a hundred waiting, everything goes through the page.
         let many = pane("16:35", edit: TodayFixtures.crowd)
         #expect(!rows(many).contains { $0.id.hasPrefix("heard:") })
         #expect(row(many, "suggested")?.title == "101 suggested tasks to answer")
@@ -375,12 +553,61 @@ struct SaveCardTests {
 
     @Test func theWrapSaysHowManySuggestedTasksWaitAndListsNone() throws {
         guard case let .wrap(card) = try #require(row(pane("22:15", edit: TodayFixtures.crowd), "wrap")).body else { return #expect(Bool(false)) }
-        #expect(card.unanswered == "101 suggested tasks are still not answered.")
+        #expect(card.unanswered == "101 suggested tasks are still not answered." && card.answer?.opens == .suggested)
         var items: [SuggestedItem] = []
         collect(SuggestedItem.self, in: card, into: &items)
         #expect(items.isEmpty, "the wrap never lists a suggested task")
         guard case let .wrap(one) = try #require(row(pane("22:15"), "wrap")).body else { return #expect(Bool(false)) }
         #expect(one.unanswered == "One suggested task is still not answered.")
+    }
+
+    @Test func aDescriptionIsDrawnAsMarkdownWithoutABracketedRecordPath() throws {
+        let said = """
+            Agreed on the call: you would send everyone the answers.
+
+            **Question:** do the drafts need the same sign-off? (source: providers.example.dev/chat/message/chat-733f1dd2ad0a) Seen again on 21 November.
+            """
+        // Where the words came from is the task's origin already: a record's path in brackets is not shown.
+        #expect(
+            Words.prose(said)
+                == "Agreed on the call: you would send everyone the answers.\n\n**Question:** do the drafts need the same sign-off? Seen again on 21 November.")
+        #expect(
+            Words.prose("Both asked (sources: a.example.dev/chat/message/m1, a.example.dev/chat/message/m2 and a.example.dev/mail/message/m3).")
+                == "Both asked.")
+        #expect(Words.prose("Asked twice (see (a.example.dev/chat/message/m1)).") == "Asked twice (see).")
+        // Brackets that say something stay, and so does a record named in the sentence, which is drawn as its pill.
+        #expect(Words.prose("He agreed (twice, by Friday).") == "He agreed (twice, by Friday).")
+        #expect(Words.prose("See a.example.dev/chat/message/m1 for the rest.") == "See a.example.dev/chat/message/m1 for the rest.")
+        #expect(Words.prose("> But yes.\n> > Fixing it") == "But yes.\nFixing it")
+        // A cut never leaves a mark or a link open.
+        #expect(
+            Words.excerpt("Intro words here and **a bold run that is cut in the middle of it** end.", limit: 40)
+                == "Intro words here and a bold run that\u{2026}")
+        #expect(Words.excerpt("**Whole:** kept as it was written.", limit: 40) == "**Whole:** kept as it was written.")
+        #expect(
+            Words.excerpt("Read [the proposal for the new bastion](https://example.com/a/long/address) today", limit: 30)
+                == "Read the proposal for the new\u{2026}")
+        #expect(Words.excerpt("Run `make check` and then `make all the things` twice", limit: 34) == "Run `make check` and then make\u{2026}")
+        #expect(Words.closed("one *two") == "one two" && Words.closed("**one** *two* three") == "**one** *two* three")
+        // A row's line draws no Markdown: there the same words are plain.
+        #expect(Words.plain("**Question:** see [the doc](https://example.com/x) and `the script`") == "Question: see the doc and the script")
+
+        // A suggested task's description on the page, whole on its own page, and a task's line in the day.
+        let key = RecordFold.key(TodayKinds.task, "p-marco")
+        func lay(_ state: inout TodayApp.State) { state.linked.records[key]?.properties["description"] = .string(said) }
+        let item = try #require(try suggestedPage("08:30", edit: lay).groups.flatMap(\.items).first { $0.id == "p-marco" })
+        #expect(
+            item.quote == "Agreed on the call: you would send everyone the answers. **Question:** do the drafts need the same sign-off? Seen again\u{2026}")
+        guard case let .task(own) = page("08:30", .task("p-marco"), edit: lay) else { return #expect(Bool(false)) }
+        #expect(own.suggestion?.quote == Words.prose(said))
+        let day = pane("11:30") { state in
+            state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["priorityReason"] = nil
+            state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["description"] =
+                "**Question:** which of the decisions are [ours](https://example.com/x)?"
+            state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["dueDay"] = nil
+            state.linked.records[RecordFold.key(TodayKinds.task, "t-leo")]?.properties["notBefore"] = TodayFixtures.ts("10:00")
+        }
+        #expect(row(day, "task:t-leo")?.line == "Question: which of the decisions are ours?")
     }
 
     @Test func aLongDescriptionIsItsOpeningWordsInTheDayAndWholeOnItsPage() throws {
@@ -390,11 +617,9 @@ struct SaveCardTests {
         #expect(Words.excerpt("One line.\n\nAnother.") == "One line. Another.", "a short text is one paragraph, not cut")
         #expect(Words.excerpt("> But yes.\n> > Fixing it") == "But yes. Fixing it", "a quote's marks are not words")
         #expect(Words.excerpt(String(repeating: "a", count: 300)).count == Words.excerptLimit + 1, "a run with no word to cut at is still cut")
-        // A suggested task in the card, and on a project's or a person's page.
-        guard case let .suggested(card) = try #require(row(pane("08:30", edit: TodayFixtures.crowd), "suggested")).body else {
-            return #expect(Bool(false))
-        }
-        #expect(card.items.first { $0.id == "b-091" }?.quote == short)
+        // A suggested task on the page, and on a project's or a person's page.
+        let suggested = try suggestedPage("08:30", edit: TodayFixtures.crowd)
+        #expect(suggested.groups.flatMap(\.items).first { $0.id == "b-091" }?.quote == short)
         // The lead: a reason above, the opening words under it.
         let day = pane("11:30", edit: TodayFixtures.longTasks)
         let lead = try #require(row(day, "task:t-ledger"))
@@ -421,8 +646,15 @@ struct SaveCardTests {
         #expect(plan.groups.prefix(5).map(\.name) == ["EU AI Act", "External API reliability", "Lantern", "GitHub orgs", "Hiring"])
         let all = plan.groups.flatMap { $0.items + $0.more }
         #expect(all.filter(\.suggested).allSatisfy { $0.ticked })
-        #expect(all.first { $0.id == "p-vendor" }?.ticked == true)
+        #expect(all.first { $0.id == "t-proxy" }?.ticked == true)
         #expect(all.first { $0.id == "t-keys" }?.ticked == false)
+        // What yesterday left is the first section: each task by name with its own list, and nothing chosen for the owner.
+        #expect(plan.leftTitle == "Left from yesterday" && plan.left.map(\.id) == ["p-vendor"] && !all.contains { $0.id == "p-vendor" })
+        let left = try #require(plan.left.first)
+        #expect(left.title == "Verify the safety vendor endpoint claims" && left.chips.project?.name == "External API reliability")
+        #expect(left.line == "It was due yesterday. A day late, and the vendors saw last night's errors." && left.chips.pills.isEmpty)
+        #expect(left.options.rows.map(\.name) == ["Today", "Tomorrow", "Drop it"] && left.options.selected == nil)
+        #expect(plan.barLine.hasSuffix("One from yesterday has no answer yet."))
         #expect(plan.overlaps.count == 4 && plan.overlaps.allSatisfy { $0.options.selected == nil })
         #expect(plan.sends.rows.allSatisfy { !$0.selected })
         #expect(plan.save.title == "Save the plan" && plan.save.enabled)
@@ -436,9 +668,21 @@ struct SaveCardTests {
         await harness.send(.planPick("t-leo"))
         await harness.send(.planFlag("t-leo", .medium))
         await harness.send(.planOverlap("ov-henrik+karim", option: "\(TodayFixtures.eventKind)/henrik"))
+        // What yesterday left: a choice is a draft too, and the option chosen again takes it back.
+        await harness.send(.planLeft("p-vendor", option: "drop"))
+        await harness.send(.planLeft("p-vendor", option: "drop"))
+        let taken = await harness.state.drafts.plan?.left
+        #expect(taken?.isEmpty == true)
+        await harness.send(.planLeft("p-vendor", option: "today"))
+        guard case let .plan(draft) = await harness.presentation.page(.plan) else { return #expect(Bool(false)) }
+        #expect(draft.left.first?.options.selected?.id == "today" && !draft.barLine.contains("from yesterday"))
         #expect(writes(harness).isEmpty, "the plan is a draft until it is saved")
         await harness.send(.planSave)
         let written = writes(harness).flatMap(\.entries)
+        // The one left from yesterday is for today: its day moves, and the plan holds it.
+        #expect(written.first { $0.recordID == "p-vendor" }?.properties == ["dueDay": "2026-11-19"])
+        let noted = await harness.state.notes?.yesterday["y-task:p-vendor"]
+        #expect(noted == "today")
         let flag = try #require(written.first { $0.recordID == "t-leo" })
         #expect(flag.properties?["priority"] == "medium" && flag.properties?["prioritySetBy"] == "owner")
         let plan = written.filter { $0.kind == TodayKinds.plan }
@@ -446,9 +690,62 @@ struct SaveCardTests {
         #expect(plan[0].properties == ["day": "2026-11-19"])
         let picked = (plan[1].properties?["picked"]?.array ?? []).compactMap(\.text)
         #expect(picked.contains("\(TodayKinds.task)/t-leo") && !picked.contains("\(TodayKinds.task)/t-keys"))
+        #expect(picked.contains("\(TodayKinds.task)/p-vendor"))
         #expect(plan[1].properties?["savedAt"] == .string("2026-11-19T08:40:00Z"))
         #expect(plan[1].properties?["overlaps"]?.array?.first?["chosen"]?.text == "\(TodayFixtures.eventKind)/henrik")
         #expect(await harness.state.drafts.plan == nil)
+    }
+
+    @Test func whatYesterdayLeftCanLeaveTodayOrBeDroppedFromThePlan() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:40"), performsEffects: false)
+        await load(harness, "08:40")
+        await harness.send(.planLeft("p-vendor", option: "tomorrow"))
+        guard case let .plan(draft) = await harness.presentation.page(.plan) else { return #expect(Bool(false)) }
+        #expect(draft.barLine.contains("One from yesterday leaves today."))
+        await harness.send(.planSave)
+        let moved = try #require(writes(harness).flatMap(\.entries).first { $0.recordID == "p-vendor" })
+        #expect(
+            moved.properties == ["dueDay": "2026-11-20", "notBefore": "2026-11-20T00:00:00Z", "deferrals": 1])
+        let picked = (writes(harness).flatMap(\.entries).last?.properties?["picked"]?.array ?? []).compactMap(\.text)
+        #expect(!picked.contains("\(TodayKinds.task)/p-vendor"))
+
+        let other = ControllerHarness(TodayFixtures.app, environment: environment("08:40"), performsEffects: false)
+        await load(other, "08:40")
+        await other.send(.planLeft("p-vendor", option: "drop"))
+        await other.send(.planSave)
+        #expect(writes(other).flatMap(\.entries).first { $0.recordID == "p-vendor" }?.properties == ["status": "abandoned"])
+        // Answered, it is named with its answer in what is done, and is asked after no more.
+        let lines = await other.presentation.pane.items.compactMap { item -> [String]? in
+            if case let .earlier(earlier) = item { earlier.lines.map(\.text) } else { nil }
+        }.flatMap { $0 }
+        #expect(lines.contains("From yesterday: verify the safety vendor endpoint claims, dropped."))
+        guard case let .plan(after) = await other.presentation.page(.plan) else { return #expect(Bool(false)) }
+        #expect(after.left.isEmpty && after.leftTitle == nil)
+    }
+
+    @Test func aTaskPutOnTodayIsCountedAndTickedWhereverTodayIsDrawn() async throws {
+        // What Moss adds when the owner asks: an open task in a project, `notBefore` now, no flag and no due day.
+        let added = TodayFixtures.task(
+            "m-caddies", "Test the drive caddies", list: "hiring", created: TodayFixtures.at("08:35"), extra: ["notBefore": TodayFixtures.ts("08:35")])
+        func lay(_ state: inout TodayApp.State) { state.linked.records[RecordFold.key(added.kind, added.id)] = added }
+        // Before the plan is saved: the strip counts it, the day draws it, and the plan has it ticked.
+        let before = pane("08:40", edit: lay)
+        #expect(before.strip.entries.first { $0.id == "hiring" }?.line == "0 of 1 done")
+        #expect(row(before, "task:m-caddies") != nil)
+        guard case let .plan(plan) = page("08:40", .plan, edit: lay) else { return #expect(Bool(false)) }
+        let hiring = try #require(plan.groups.first { $0.id == "hiring" })
+        #expect(hiring.count == "1 today" && hiring.items.map(\.id) == ["m-caddies"] && hiring.items[0].ticked && hiring.items[0].suggested)
+        // Added after the plan was saved, it is today's all the same.
+        let after = pane("11:30", edit: lay)
+        #expect(after.strip.entries.first { $0.id == "hiring" }?.line == "0 of 2 done" && row(after, "task:m-caddies") != nil)
+        guard case let .plan(saved) = page("11:30", .plan, edit: lay) else { return #expect(Bool(false)) }
+        #expect(saved.groups.flatMap { $0.items + $0.more }.first { $0.id == "m-caddies" }?.ticked == true)
+        // Unticked and saved, it leaves today: its place is taken back.
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
+        await load(harness, "11:30", edit: lay)
+        await harness.send(.planPick("m-caddies"))
+        await harness.send(.planSave)
+        #expect(writes(harness).flatMap(\.entries).first { $0.recordID == "m-caddies" }?.properties == ["notBefore": .null])
     }
 
     @Test func aFlagSuggestedOnATaskStartsSelectedInThePlanAndIsTakenOnSave() async throws {
@@ -873,7 +1170,7 @@ struct ReadTests {
         #expect(meeting.eyebrow == "14:20 to 14:40, in 2 h 50" && meeting.card.meta == "Google Meet, 2 people")
 
         guard case let .task(heard) = page("16:35", .task("h-tomas-pr")) else { return #expect(Bool(false)) }
-        #expect(heard.suggestion?.save?.button?.command == .saveSuggested("h-tomas-pr") && heard.card.doors.isEmpty)
+        #expect(heard.suggestion?.save?.button?.command == .saveSuggested(["h-tomas-pr"], words: [:]) && heard.card.doors.isEmpty)
         guard case .missing = page("11:30", .task("gone")) else { return #expect(Bool(false)) }
     }
 
@@ -903,13 +1200,12 @@ struct ReadTests {
         #expect(name(["name": "Dr Ines Castel", "givenName": "Ines"]).short == "Ines" && name(["name": "Ines Castel"]).short == "Ines")
 
         // Wherever a person is named: "for …", "with …", the circle, the page.
-        guard case let .suggested(card) = try #require(row(pane("08:30", edit: TodayFixtures.crowd), "suggested")).body else {
-            return #expect(Bool(false))
-        }
-        let odile = try #require(card.items.first { $0.id == "b-078" })
+        guard case let .suggested(suggested) = page("08:30", .suggested, edit: TodayFixtures.crowd) else { return #expect(Bool(false)) }
+        let items = suggested.groups.flatMap(\.items)
+        let odile = try #require(items.first { $0.id == "b-078" })
         #expect(odile.chips.people.map(\.label) == ["for Odile"] && odile.chips.people.first?.badge.initials == "OM")
         #expect(odile.origin.hasSuffix(", with Odile."))
-        let sato = try #require(card.items.first { $0.id == "b-065" })
+        let sato = try #require(items.first { $0.id == "b-065" })
         #expect(sato.chips.people.map(\.label) == ["for Rsato"] && sato.origin.hasSuffix(", with Rsato."))
         guard case let .person(person) = page("08:30", .person(TodayFixtures.person("odile")), edit: TodayFixtures.crowd) else {
             return #expect(Bool(false))
@@ -1155,7 +1451,7 @@ struct OptionListTests {
         for fixture in TodayFixtures.all {
             var found: [OptionList] = []
             collect(OptionList.self, in: fixture.app.pane, into: &found)
-            for route in fixture.routes + [.plan, .priorities, .projects] { collect(OptionList.self, in: fixture.app.page(route), into: &found) }
+            for route in fixture.routes + [.plan, .priorities, .projects, .suggested] { collect(OptionList.self, in: fixture.app.page(route), into: &found) }
             out += found.map { (fixture.name, $0) }
         }
         return out
@@ -1183,7 +1479,7 @@ struct OptionListTests {
         let suggested = try #require(page.suggested.first)
         #expect(suggested.flag.options.selected == nil && suggested.flag.options.rows.first { $0.suggested }?.id == "high")
         // Above a Save, the assistant's option is the one selected.
-        guard case let .suggested(card) = try #require(rows(pane("08:30")).first { $0.id == "suggested" }).body else { return }
-        #expect(card.items.allSatisfy { $0.options.selected?.suggested == true })
+        guard case let .suggested(answers) = TodayFixtures.present(TodayFixtures.state(at: "08:30"), at: "08:30").page(.suggested) else { return }
+        #expect(answers.groups.flatMap(\.items).allSatisfy { $0.options.selected?.suggested == true })
     }
 }

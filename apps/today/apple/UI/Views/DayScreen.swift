@@ -55,8 +55,14 @@ struct DayScreen<Notices: View>: View {
 
     private var actions: PaneActions {
         let openURL = openURL
+        let state = state
         return PaneActions(
-            send: send,
+            send: { command in
+                // What was typed under "Other" is the view's until its Save: it goes with that Save, and is the view's no more.
+                guard case let .saveSuggested(ids, _) = command else { return send(command) }
+                send(.saveSuggested(ids, words: state.words.filter { ids.contains($0.key) }))
+                for id in ids { state.words[id] = nil }
+            },
             open: { route in
                 guard path.last != route else { return }
                 withAnimation(.snappy(duration: 0.25)) { path.append(route) }

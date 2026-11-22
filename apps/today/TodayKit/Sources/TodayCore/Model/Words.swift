@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The small rules every sentence of the pane follows: sentence case,
 /// numbers as words up to fifteen, lists with "and", clock times as 24-hour
@@ -41,18 +42,103 @@ enum Words {
     /// break.
     static let lineExcerptLimit = 80
 
-    /// The opening words of a long text, as one paragraph: cut at a word
-    /// and ended with an ellipsis. A card or a row shows this much of a
-    /// description; the whole of it is on the thing's own page.
-    static func excerpt(_ text: String, limit: Int = excerptLimit) -> String {
-        // A description is Markdown, and what someone said is kept as a
-        // quote: the mark at the head of each quoted line is not a word.
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
+    /// A description as it is drawn: its Markdown, less what is not for
+    /// reading. A record's path in brackets ("(source: <path>)") is where
+    /// the words came from, which the task's origin holds already; and the
+    /// mark at the head of a quoted line is not a word.
+    static func prose(_ text: String) -> String {
+        var out = ""
+        var rest = Substring(text)
+        // The innermost brackets first: the nearest close, and the last open before it.
+        while let close = rest.firstIndex(of: ")") {
+            let after = rest.index(after: close)
+            if let open = rest[..<close].lastIndex(of: "("), namesOnlyRecords(rest[rest.index(after: open) ..< close]) {
+                // The space before it goes with it.
+                var head = rest[..<open]
+                while head.last == " " { head = head.dropLast() }
+                out += head
+            } else {
+                out += rest[..<after]
+            }
+            rest = rest[after...]
+        }
+        out += rest
+        let lines = out.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
             var rest = line.drop(while: { $0 == " " })
+            guard rest.first == ">" else { return line }
             while rest.first == ">" { rest = rest.dropFirst().drop(while: { $0 == " " }) }
             return rest
         }
-        let words = lines.joined(separator: "\n").split(whereSeparator: \.isWhitespace)
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether what stands between two brackets only names records:
+    /// "source: <path>", "<path>", "sources: <path>, <path> and <path>".
+    static func namesOnlyRecords(_ inside: Substring) -> Bool {
+        var words = inside.split(whereSeparator: { $0 == " " || $0 == "," || $0 == ";" || $0 == "\n" })
+        // A label of one or two words that ends with a colon.
+        if let colon = words.firstIndex(where: { $0.hasSuffix(":") }), colon <= 1 { words.removeFirst(colon + 1) }
+        words.removeAll { $0 == "and" }
+        return !words.isEmpty && words.allSatisfy { RecordPaths.isWhole(String($0)) }
+    }
+
+    /// A description as plain words, for a line that draws no Markdown: its
+    /// marks of emphasis and of code are taken out, and a link is its label.
+    static func plain(_ text: String) -> String {
+        var out = ""
+        var rest = Substring(prose(text))
+        while let open = rest.firstIndex(of: "[") {
+            // "[label](target)": the label stays.
+            guard let label = rest[open...].firstIndex(of: "]"), rest[label...].dropFirst().first == "(",
+                let end = rest[label...].firstIndex(of: ")")
+            else {
+                out += rest[...open]
+                rest = rest[rest.index(after: open)...]
+                continue
+            }
+            out += rest[..<open]
+            out += rest[rest.index(after: open) ..< label]
+            rest = rest[rest.index(after: end)...]
+        }
+        out += rest
+        for mark in ["**", "__", "`"] { out = out.replacingOccurrences(of: mark, with: "") }
+        return out
+    }
+
+    /// What a cut left open is closed: a link with no end loses its
+    /// bracket and what there is of its target, and a mark of emphasis or
+    /// of code with no partner is taken out, so none is drawn as written.
+    static func closed(_ cut: String) -> String {
+        var out = cut
+        if let open = out.lastIndex(of: "[") {
+            let tail = out[open...]
+            let whole = tail.firstIndex(of: "]").map { label in tail[label...].dropFirst().first == "(" && tail[label...].contains(")") } ?? false
+            if !whole {
+                // The label's words stay; a target that was cut does not.
+                var label = String(tail.dropFirst())
+                if let target = label.range(of: "](") { label = String(label[..<target.lowerBound]) }
+                out = String(out[..<open]) + label
+            }
+        }
+        for mark in ["**", "`"] where out.components(separatedBy: mark).count % 2 == 0 {
+            if let last = out.range(of: mark, options: .backwards) { out.removeSubrange(last) }
+        }
+        // One star alone, once the pairs of two are counted out.
+        let single = out.replacingOccurrences(of: "**", with: "").filter { $0 == "*" }.count
+        if single % 2 == 1, let last = out.lastIndex(of: "*") {
+            let before = last > out.startIndex ? out[out.index(before: last)] : " "
+            let after = out.index(after: last) < out.endIndex ? out[out.index(after: last)] : " "
+            if before != "*", after != "*" { out.remove(at: last) }
+        }
+        return out
+    }
+
+    /// The opening words of a long text, as one paragraph: cut at a word
+    /// and ended with an ellipsis. A card or a row shows this much of a
+    /// description; the whole of it is on the thing's own page. It is
+    /// still Markdown: a cut never leaves a mark or a link open.
+    static func excerpt(_ text: String, limit: Int = excerptLimit) -> String {
+        let words = prose(text).split(whereSeparator: \.isWhitespace)
         let flat = words.joined(separator: " ")
         guard flat.count > limit else { return flat }
         var out = ""
@@ -62,7 +148,8 @@ enum Words {
         }
         // One unbroken run longer than the limit has no word to cut at.
         if out.isEmpty { out = String(flat.prefix(limit)) }
-        while let last = out.last, ".,;:([{-\u{2013}\u{2014}".contains(last) { out.removeLast() }
+        out = closed(out)
+        while let last = out.last, " .,;:([{-\u{2013}\u{2014}".contains(last) { out.removeLast() }
         return out + "\u{2026}"
     }
 

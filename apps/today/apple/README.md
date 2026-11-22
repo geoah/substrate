@@ -11,7 +11,7 @@ proposal 098: one pane, the order of the day.
 | `UI/Look/`       | `TodayLook`: the guide's colours, sizes and type, on the kit's tokens where the kit has one             |
 | `UI/Components/` | the guide's seventeen components                                                                        |
 | `UI/Views/`      | the day (`DayScreen`, `PaneView`), what the views keep to themselves (`PaneViewState`), the root        |
-| `UI/Pages/`      | the pages: priorities, all projects, a project, a person, a meeting, a task, the plan                   |
+| `UI/Pages/`      | the pages: priorities, all projects, a project, a person, a meeting, a task, the plan, the suggested tasks |
 | `Tests/`         | the gallery: every component, every scene and every page drawn on the Mac, and the hand-made scenes     |
 
 ## The components
@@ -34,7 +34,7 @@ second app draws them.
 | The strip           | `StripView`                                                             |
 | What is happening   | `HappeningView`                                                         |
 | The urgent card     | `UrgentCardView`, on `.card(urgent: true)`                              |
-| The save card       | `SuggestedCardView`, `WrapCardView`, `PlanPageView`, with `SaveRowView` |
+| The save card       | `SuggestedGroupView` (a project's suggestions; `SuggestedItemView` for one, with `SuggestedOtherField` and `SuggestedToldView`), `WrapCardView`, `PlanPageView` (with `PlanLeftView`), with `SaveRowView` |
 | Add or ask          | `ComposerBar`                                                           |
 | Moss's box          | `MossBoxView`, `AnswerCardView`                                         |
 | A page              | `PageScaffold`, `PageTitle`, `PageView`                                 |

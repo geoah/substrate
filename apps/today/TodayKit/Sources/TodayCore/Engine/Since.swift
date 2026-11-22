@@ -181,10 +181,8 @@ extension DayEngine {
         if let saved = day.notes.suggestedSavedAt {
             lines.append((saved, .init(id: "suggested", time: clock(saved), text: "Suggested tasks saved: " + Words.low(savedLine(day.notes.suggestedSaved)))))
         }
-        if let saved = day.plan?.savedAt, isToday(saved) {
-            lines.append(
-                (saved, .init(id: "plan", time: clock(saved), text: "Plan saved.", button: ButtonPresentation("Open the plan", role: .quiet, opens: .plan))))
-        }
+        // The plan's own row, under this, is the way back into it.
+        if let saved = day.plan?.savedAt, isToday(saved) { lines.append((saved, .init(id: "plan", time: clock(saved), text: "Plan saved."))) }
         // Each thing yesterday left, by name and with its answer: the same words for each would say nothing.
         for item in yesterdayLeft {
             guard let at = item.at, let line = yesterdayAnswer(item) else { continue }

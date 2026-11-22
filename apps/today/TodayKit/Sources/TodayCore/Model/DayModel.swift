@@ -51,6 +51,10 @@ public struct TaskItem: Equatable, Sendable {
     public var completedAt: Date?
     /// The path of the record it was made from.
     public var origin: String?
+    /// When what it was made from was said or happened (`originAt`, tasks
+    /// 5). Absent on a record written before that was kept: then only when
+    /// the record itself was written is known.
+    public var originAt: Date?
     /// The contacts' paths.
     public var people: [String]
     public var notBefore: Date?
@@ -84,6 +88,7 @@ public struct TaskItem: Equatable, Sendable {
         status = record["status"]?.text.flatMap(Status.init(rawValue:)) ?? .open
         completedAt = record["completedAt"]?.text.flatMap(Timestamp.parse)
         origin = record["origin"]?.referencePath
+        originAt = record["originAt"]?.text.flatMap(Timestamp.parse)
         people = (record["people"]?.array ?? []).compactMap(\.referencePath)
         notBefore = record["notBefore"]?.text.flatMap(Timestamp.parse)
         deferrals = record["deferrals"]?.int ?? 0
@@ -111,13 +116,38 @@ public struct Advice: Equatable, Sendable {
     public var objectedAt: Date?
 
     init?(_ record: Record) {
-        guard record.kind == TodayKinds.advice, let answer = record["answer"]?.text.flatMap(SuggestedAnswer.init(rawValue:)) else { return nil }
+        guard record.kind == TodayKinds.advice, let answer = record["answer"]?.text.flatMap(SuggestedAnswer.init(rawValue:)),
+            SuggestedAnswer.advised.contains(answer)
+        else { return nil }
         task = record["task"]?.referenceID ?? record.id
         self.answer = answer
         reason = record["reason"]?.text
         objection = record["objection"]?.text
         objectedAt = record["objectedAt"]?.text.flatMap(Timestamp.parse)
     }
+}
+
+/// What the owner said was wrong with something suggested, or what to do
+/// instead: a `today/correction`. The app writes one under "Other" on a
+/// suggested task; whoever suggests tasks reads them later.
+public struct Correction: Equatable, Sendable {
+    public var id: String
+    /// The path of the record corrected.
+    public var subject: String
+    public var text: String
+    /// `.distantPast` while the write is still on its way: the newest there is.
+    public var createdAt: Date
+
+    init?(_ record: Record) {
+        guard record.kind == TodayKinds.correction, let subject = record["subject"]?.referencePath, let text = record["text"]?.text else { return nil }
+        id = record.id
+        self.subject = subject
+        self.text = text
+        createdAt = record.createdDate
+    }
+
+    /// Whether it was written after `date`: one not yet sent always was.
+    func isAfter(_ date: Date) -> Bool { createdAt == .distantPast || createdAt >= date }
 }
 
 /// Something that repeats and is ticked: a record of a kind that binds

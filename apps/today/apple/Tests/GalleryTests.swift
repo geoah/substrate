@@ -52,12 +52,12 @@ import TodayCore
         }
     }
 
-    /// Twelve suggested tasks with every list open are taller than the long
-    /// drawing every scene gets, which ends before the card's Save: this
-    /// one is drawn to its end.
-    @Test func theBacklogCardDrawsDownToItsSave() async throws {
+    /// A hundred suggestions grouped by project are taller than the long
+    /// drawing every page gets, which ends before the last group's Save:
+    /// this one is drawn to its end.
+    @Test func theBacklogPageDrawsDownToItsLastSave() async throws {
         guard let backlog = TodayFixtures.all.first(where: { $0.name == "today-backlog" }) else { return }
-        try await write("tall-scene-today-backlog", DayScreen(app: backlog.app), size: CGSize(width: 393, height: 5600))
+        try await write("tall-scene-today-backlog-suggested", DayScreen(app: backlog.app, path: [.suggested]), size: CGSize(width: 393, height: 7200))
     }
 
     /// The wide layout from the core's own day, at an iPad's size and a Mac's.
@@ -79,6 +79,7 @@ import TodayCore
         case let .meeting(id): "meeting-\(id.split(separator: "/").last.map(String.init) ?? id)"
         case let .task(id): "task-\(id)"
         case .plan: "plan"
+        case .suggested: "suggested"
         }
     }
 
@@ -122,7 +123,8 @@ import TodayCore
         let app = HandScenes.app(HandScenes.focus())
         let pages: [(String, TodayRoute, CGFloat)] = [
             ("priorities", .priorities, 1500), ("projects", .projects, 1100), ("project", .project("api"), 2600), ("person", .person("tomas"), 1700),
-            ("meeting", .meeting("tomas"), 1800), ("task", .task("t-vigil"), 1300), ("plan", .plan, 2600), ("missing", .task("gone"), 852),
+            ("meeting", .meeting("tomas"), 1800), ("task", .task("t-vigil"), 1300), ("plan", .plan, 3400), ("suggested", .suggested, 3400),
+            ("missing", .task("gone"), 852),
         ]
         for (name, route, height) in pages {
             try await both("page-\(name)") { DayScreen(app: app, path: [route]) }
@@ -140,6 +142,7 @@ import TodayCore
         try await both("wide-mac", size: OffscreenDrawing.mac) { DayScreen(app: app) }
         try await write("wide-ipad-project", DayScreen(app: app, path: [.project("api")]), size: Self.pad)
         try await write("wide-ipad-plan", DayScreen(app: app, path: [.plan]), size: Self.pad)
+        try await write("wide-ipad-suggested", DayScreen(app: app, path: [.suggested]), size: Self.pad)
     }
 
     /// Large text: rows stack and never clip.
@@ -154,6 +157,9 @@ import TodayCore
         try await write(
             "large-text-guide-options", ComponentSheets.sheet("options").environment(\.dynamicTypeSize, .accessibility2),
             size: CGSize(width: 393, height: 4200))
+        try await write(
+            "large-text-suggested", DayScreen(app: app, path: [.suggested]).environment(\.dynamicTypeSize, .accessibility2),
+            size: CGSize(width: 393, height: 5200))
     }
 
     /// Settings' own part: the assistant's standing instructions, one on,

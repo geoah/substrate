@@ -12,7 +12,7 @@ enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
         ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
-        ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 1700), ("bar", 760), ("moss", 760), ("page", 1500),
+        ("card", 1700), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900),
     ]
 
@@ -254,6 +254,22 @@ enum ComponentSheets {
             Case(caption: "Page: a row that opens a page") {
                 TaskLines(lines: [TaskLine(id: "t", title: "Read the incident write-up", line: "Today.", stripe: Stripe(.medium), opens: .task("t"))])
             }
+            Case(caption: "Page, in the day: the suggested tasks and the saved plan", carded: false) {
+                VStack(spacing: 0) {
+                    RowView(
+                        row: Row(
+                            id: "suggested", glyph: .moss, title: "Thirteen suggested tasks to answer",
+                            line: "Four on your priorities. Moss would make twelve tasks.", state: .next, trailing: .page(.suggested),
+                            body: .suggested(PageRowCard(line: "", open: ButtonPresentation("Open the suggested tasks", opens: .suggested)))))
+                    RowView(
+                        row: Row(
+                            id: "plan", glyph: .plan, title: "Today's plan", line: "Saved at 08:44. Thirteen tasks. One is left from yesterday.",
+                            state: .next, trailing: .page(.plan),
+                            body: .plan(PageRowCard(line: "", open: ButtonPresentation("Open the plan", opens: .plan)))),
+                        first: false)
+                }
+                .soft()
+            }
             Case(caption: "Closed, then open in place", carded: false) {
                 VStack(spacing: 8) {
                     NightView(night: h.nightRead)
@@ -340,8 +356,11 @@ enum ComponentSheets {
 
     static var save: some View {
         Group {
-            Case(caption: "Draft: every list open, nothing in effect", carded: false) {
-                RowView(row: h.gate.items.compactMap { if case let .row(row) = $0, row.id == "gate" { row } else { nil } }[0])
+            Case(caption: "Draft: a project's suggestions, every list open, nothing in effect; Other with its field; one answered in words") {
+                SuggestedGroupView(group: h.suggestedPage.groups[0])
+            }
+            Case(caption: "A task yesterday left, on the plan page: nothing chosen until you choose") {
+                PlanLeftView(left: h.planPage.left[1])
             }
             Case(caption: "Saved: one line") {
                 SaveRowView(row: SaveRow(button: nil, saved: "Saved at 08:38. Twelve made tasks and one dismissed."))

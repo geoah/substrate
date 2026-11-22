@@ -1,14 +1,17 @@
 import Observation
 import SwiftUI
 
-/// What the views keep to themselves: which lines are opened in place, and
-/// which of a meeting's points to raise are ticked. Nothing here is a
+/// What the views keep to themselves: which lines are opened in place,
+/// which of a meeting's points to raise are ticked, and what is typed
+/// under "Other" on a suggested task until its Save. Nothing here is a
 /// record or a choice; closing the app forgets it.
 @MainActor
 @Observable
 final class PaneViewState {
     var opened: Set<String> = []
     var ticked: Set<String> = []
+    /// What is typed under "Other", by the suggested task's id.
+    var words: [String: String] = [:]
 
     func isOpen(_ id: String) -> Bool { opened.contains(id) }
 

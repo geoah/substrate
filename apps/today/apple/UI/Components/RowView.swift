@@ -105,14 +105,19 @@ struct RowView: View {
                 // target, a gap on a row with a title and no line.
                 VStack(alignment: .leading, spacing: 4) {
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
+                        // A row that opens a page opens it; every other opens in place.
+                        if case let .page(route) = row.trailing {
+                            pane.open(route)
+                        } else {
+                            withAnimation(.snappy(duration: 0.2)) { state.toggle(openID) }
+                        }
                     } label: {
                         RowHead(icon: .glyph(row.glyph), title: row.title, line: row.line, stripe: row.stripe, lineLimit: lineLimit)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens in place")
+                    .accessibilityHint(opensPage ? "Opens its page" : "Opens in place")
                     if !row.chips.isEmpty {
                         ChipsView(chips: row.chips).padding(.leading, TodayLook.leadBox + TodayLook.lead + (row.stripe.flag == nil ? 0 : 10))
                     }
@@ -146,9 +151,15 @@ struct RowView: View {
             }
         case let .tick(button):
             PaneButton(button, small: true)
+        case .page:
+            RowChevron(turn: .page).frame(minHeight: 32)
         case .opens:
             RowChevron(turn: .closed).frame(minHeight: 32)
         }
+    }
+
+    private var opensPage: Bool {
+        if case .page = row.trailing { true } else { false }
     }
 
     // MARK: A card
@@ -184,9 +195,9 @@ struct RowBodyView: View {
         switch row.body {
         case let .routine(card): RoutineCardView(card: card)
         case let .yesterday(card): YesterdayCardView(card: card)
-        case let .suggested(card): SuggestedCardView(card: card)
+        case let .suggested(card): PageRowCardView(card: card)
         case let .heard(item): SuggestedItemView(item: item, first: true, headed: false)
-        case let .plan(card): PlanRowCardView(card: card)
+        case let .plan(card): PageRowCardView(card: card)
         case let .overlap(card): OverlapCardView(card: card, titled: false)
         case let .urgent(card): UrgentCardView(card: card, line: row.line)
         case let .task(card): TaskCardView(card: card, chips: row.chips, scope: row.id)

@@ -34,16 +34,30 @@ in the order it is acted on, and "Add or ask" fixed at the bottom. What is
 typed there goes to the assistant, which adds a task where the words are one
 and answers where they ask; where it cannot be reached, the words can be
 kept as a task. The
-priorities, the list of projects, a project, a person, a meeting, a task and
-the plan are pages; everything else opens in place.
+priorities, the list of projects, a project, a person, a meeting, a task,
+the plan and the suggested tasks are pages; everything else opens in place.
+A row of the day that opens a page ends with a right chevron.
 
 The rules are the engine's, and a test pins each:
 
 - **Tasks and suggested tasks, nothing else.** A suggested task is a task in
-  `proposed`; the suggested tasks are answered together and saved with one
-  button, with the assistant's answer selected and marked Suggested. The
-  card draws twelve at a time, and one the assistant has not answered has
-  nothing selected.
+  `proposed`. They are answered on a page of their own, grouped by project:
+  the flagged projects first, and within one what the assistant would make
+  a task first. Each project is a save card with its own button, the
+  assistant's answer selected and marked Suggested, and one it has not
+  answered has nothing selected. A group draws six until asked for the rest,
+  and its Save answers only what it draws.
+- **Other.** Every suggestion can be answered in the owner's own words:
+  what is wrong, or what to do instead. They are kept as a record for
+  whoever suggests tasks, and sent to the assistant with the task. That
+  suggestion is then with the assistant and is not asked again.
+- **Heard means said.** A suggestion says "Heard" only with the time its
+  words were said; one whose record does not say is "Suggested", with the
+  time it was written. It fades by the first.
+- **What yesterday left is part of the plan.** A task that was due and is
+  still open is the first section of the plan page, by name, with its own
+  list and nothing chosen for the owner. Saved, the plan keeps a row in the
+  day that opens it again.
 - **The assistant suggests and never acts.** Above a Save its option starts
   selected and nothing takes effect until Save; where a tap takes effect at
   once its option only carries the pill. A flag or a project it suggests on
