@@ -120,7 +120,7 @@ func records(_ bundles: [String]) async throws {
 /// Turns Push Notifications on for a bundle id that lacks it. A profile made
 /// before is invalidated by the change, and `profiles` replaces it.
 func enablePush(_ bundleID: String, _ bundle: String) async throws {
-    let held = rows(try await call("GET", "/v1/bundleIds/\(bundleID)/bundleIdCapabilities", query: ["limit": "200"]))
+    let held = rows(try await call("GET", "/v1/bundleIds/\(bundleID)/bundleIdCapabilities"))
     if held.contains(where: { attributes($0)["capabilityType"] as? String == "PUSH_NOTIFICATIONS" }) { return }
     let body: [String: Any] = [
         "data": [
