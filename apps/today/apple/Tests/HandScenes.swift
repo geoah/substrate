@@ -332,22 +332,19 @@ enum HandScenes {
                             skip: nil, stale: StaleNote("Nothing has been logged since 17 October. A tick here is the log."))))),
             .row(
                 Row(
-                    id: "y-b12", glyph: .routine, title: "From yesterday: Vitamin B12", line: "Weekly, due Wednesday morning. Not logged.",
-                    state: .next,
+                    id: "y-b12", glyph: .routine, title: "Not logged yesterday", line: "Vitamin B12.", state: .next,
                     body: .yesterday(
                         YesterdayCard(
                             items: [
                                 YesterdayCard.Item(
-                                    id: "y-b12", glyph: .routine, title: "Vitamin B12",
-                                    text: "Weekly, due Wednesday morning. Not logged.",
+                                    id: "y-b12", glyph: .routine, title: "Vitamin B12", text: "It was due yesterday at 07:30. Not logged.",
                                     options: OptionList(
                                         .round,
                                         [
-                                            option("taken", "I took it", "It is logged for Wednesday."),
-                                            option("today", "Take it today", "It joins the morning medication."),
-                                            option("skip", "Skip this week"),
+                                            option("took", "Took it yesterday", "Logged for yesterday."),
+                                            option("skipped", "Skipped", "Logged as skipped."),
                                         ]))
-                            ], note: "From a routine.")))),
+                            ])))),
             .row(
                 Row(
                     id: "r-skin", glyph: .routine, title: "Skincare", line: "5 steps", state: .next,

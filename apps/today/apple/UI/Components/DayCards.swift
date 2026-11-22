@@ -71,8 +71,9 @@ struct StaleNoteView: View {
     }
 }
 
-/// What was not logged yesterday: each routine by name, with its option
-/// list. It acts on a tap: it has no Save.
+/// What was not logged yesterday: each routine by name, with when it was
+/// due and its option list. One alone is named by the row's own line, so
+/// only when it was due is said under it. It acts on a tap: it has no Save.
 struct YesterdayCardView: View {
     var card: YesterdayCard
     @Environment(\.colorScheme) private var scheme
@@ -81,16 +82,21 @@ struct YesterdayCardView: View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top, spacing: TodayLook.lead) {
-                        GlyphView(glyph: item.glyph)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let text = item.text {
-                                Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
+                    if card.items.count > 1 {
+                        HStack(alignment: .top, spacing: TodayLook.lead) {
+                            GlyphView(glyph: item.glyph)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.title).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
                                     .fixedSize(horizontal: false, vertical: true)
+                                if let text = item.text {
+                                    Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                         }
+                    } else if let text = item.text {
+                        Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     OptionListView(item.options)
                     if let chosen = item.chosen { SavedLine(chosen) }
