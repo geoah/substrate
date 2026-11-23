@@ -103,10 +103,18 @@ be scrolled or paged: several of them in one place is the system's Smart Stack.
 
 - **The extension reads no record and reaches no server.** The app makes the day
   ahead (`GlancePresenter`, from the pane the engine makes at each instant) and
-  writes it as `glance.json` in the App Group `group.dev.reamde.substrate.today`,
-  which the app and the extension both name in their entitlements. The extension
-  links `TodayGlance` and nothing else of the app, and draws what it reads.
-- **It stays right while the app is not running.** The file holds the day at each
+  writes it into one Keychain item, which the extension reads. The extension links
+  `TodayGlance` and nothing else of the app, and draws what it reads.
+- **The two share a Keychain access group.** The app and the extension each list
+  the app's own identifier as their one Keychain group (`keychain-access-groups`:
+  the team's prefix, then `dev.reamde.substrate.today`), as Substrate Chat does for
+  its notification extension. A Keychain group is no capability to register with
+  Apple, so signing needs nothing set up for it, as Chat's extension ships. The
+  item is a generic password, service `dev.reamde.substrate.today.glance`, account
+  `day`, readable after the first unlock and never synchronised to iCloud; its
+  value is the day's JSON compressed, about six kilobytes for a day of eighteen
+  meetings.
+- **It stays right while the app is not running.** The item holds the day at each
   instant it changes: now, then each turn of the day (a meeting starts or ends or
   comes near, a routine comes within its hour, the evening begins), up to 24
   instants or the end of tomorrow. Past the last of them a widget says to open the
@@ -120,15 +128,12 @@ be scrolled or paged: several of them in one place is the system's Smart Stack.
   `plan` and `suggested` for the rows that open those pages). A link the build does
   not know opens the day.
 - **Signing out, or clearing what the device kept, takes the day back at once**:
-  the file then holds one day that says to open the app.
-
-A simulator build needs nothing more. A build signed for a device needs the group
-registered with the team and turned on for both identifiers,
-`dev.reamde.substrate.today` and `dev.reamde.substrate.today.widgets`.
+  the item then holds one day that says to open the app.
 
 The widgets' views are in `apple/Widgets/Views/`, compiled into the extension and
 into the tests, which draw every widget on the Mac
-([the gallery](apple/README.md#the-gallery)).
+([the gallery](apple/README.md#the-gallery)). The Keychain item is one definition,
+`apple/Widgets/Shared/`, compiled into the extension and into the UI framework.
 
 ## TodayKit
 

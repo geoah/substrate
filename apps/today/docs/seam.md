@@ -203,9 +203,10 @@ one: it sends `button.command` or `row.command`.
   found at the last sign-in are kept there, and without it the pane opens empty until the server answers.
 - **The widgets' day**: `glance` is where the root hands a `GlanceTimeline`, off the main actor: a moment
   after each change that may draw the pane otherwise, once the records are read, and one that says to open
-  the app as soon as the owner signs out or clears what the device kept. The shell writes it as
-  `GlanceTimeline.fileName` in the App Group `GlanceTimeline.group`, unless the file already says the same
-  from now on, and has WidgetKit read it again. Nil, as on a Mac, writes none.
+  the app as soon as the owner signs out or clears what the device kept. The shell writes it into the
+  Keychain item the widget extension reads (`GlanceKeychain`, in the Keychain group the app and the extension
+  share), unless the item already says the same from now on, and has WidgetKit read it again. Nil, as on a
+  Mac, writes none.
 - **A link**: the scene's `onOpenURL` hands the URL to `Today.open(_:)`, and the day's screen opens
   `TodayLinks.route(_:)` on its path: that page in place of whatever was open, or the day for nil.
 - **Coming forward**: the shell's `refresh` is `.foreground`, which reads again and counts as a look. A view

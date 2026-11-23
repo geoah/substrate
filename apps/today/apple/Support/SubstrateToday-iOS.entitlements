@@ -2,11 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The folder the app and its widget extension share: the app writes
-	     the widgets' day there, and the extension reads it. -->
-	<key>com.apple.security.application-groups</key>
+	<!-- The Keychain group the app and its widget extension share: the
+	     app's own identifier, so the session every build wrote is already
+	     in it. The app writes the widgets' day there, and the extension
+	     reads it. -->
+	<key>keychain-access-groups</key>
 	<array>
-		<string>group.dev.reamde.substrate.today</string>
+		<string>$(AppIdentifierPrefix)dev.reamde.substrate.today</string>
 	</array>
 </dict>
 </plist>

@@ -14,6 +14,7 @@ proposal 098: one pane, the order of the day.
 | `UI/Pages/`      | the pages: priorities, all projects, a project, a person, a meeting, a task, the plan, the suggested tasks |
 | `Widgets/`       | the widget extension (`SubstrateTodayWidgets`, iPhone and iPad): the three widgets and the timeline it reads |
 | `Widgets/Views/` | the widgets' views and their look, compiled into the extension and into the tests                       |
+| `Widgets/Shared/`| the Keychain item the widgets' day is kept in, compiled into the extension and into `SubstrateTodayUI`  |
 | `Tests/`         | the gallery: every component, every scene, every page and every widget drawn on the Mac, and the hand-made scenes |
 
 ## The components
@@ -93,8 +94,18 @@ default changes only the layout that depends on it: a Mac has no text size to gr
 ## The widgets
 
 `Widgets/` is the extension: `SubstrateTodayWidgets` (the bundle and the three `StaticConfiguration`s, medium
-and large), and `GlanceProvider`, which reads `glance.json` from the App Group's folder and hands WidgetKit the
-days in it. It works nothing out: with no file, its one entry says to open the app.
+and large), and `GlanceProvider`, which reads the Keychain item the app wrote and hands WidgetKit the days in
+it. It works nothing out: with no item, its one entry says to open the app.
+
+`Widgets/Shared/` is that item, `GlanceKeychain`: one generic password (service
+`dev.reamde.substrate.today.glance`, account `day`, readable after the first unlock, never synchronised) whose
+value is the timeline's JSON compressed. It is compiled into the extension, which reads it, and into
+`SubstrateTodayUI`, whose `TodayGlanceWriter` writes it. It names no access group: the app's entitlements and
+the extension's each list the app's own identifier as their one Keychain group
+(`$(AppIdentifierPrefix)dev.reamde.substrate.today`), so that is where a write goes and what a read searches,
+as Chat's session reaches its notification extension. A Keychain group is no capability, so nothing is
+registered for it. `GlanceKeychainTests` holds what names the item, the group in the three entitlements
+files, and the value there and back.
 
 `Widgets/Views/` draws a `GlanceDay` and decides nothing: `GlanceWidgetView` is one widget at one instant, over
 `NowGlanceView`, `TasksGlanceView` and `MeetingsGlanceView`. The extension links no part of the app, so

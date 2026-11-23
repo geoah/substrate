@@ -65,12 +65,12 @@ public enum Today {
         links.open(TodayLinks.route(url))
     }
 
-    /// Where the root hands the widgets' day: the file the widget extension
-    /// reads, on an iPhone and an iPad. A Mac has no widget of the app, and
-    /// writes none.
+    /// Where the root hands the widgets' day: the Keychain item the widget
+    /// extension reads, on an iPhone and an iPad. A Mac has no widget of
+    /// the app, and writes none.
     static var glance: (@Sendable (GlanceTimeline) async -> Void)? {
         #if os(iOS)
-        return { await TodayGlanceFile.shared.write($0) }
+        return { await TodayGlanceWriter.shared.write($0) }
         #else
         return nil
         #endif
@@ -121,25 +121,21 @@ public enum Today {
 }
 
 #if os(iOS)
-/// The widgets' day as a file in the App Group's folder, which the widget
-/// extension reads (`GlanceTimeline.group`, `GlanceTimeline.fileName`).
-/// One write at a time, in the order they were asked for, so the day that
-/// signing out leaves is never written over by one made before it.
-actor TodayGlanceFile {
-    static let shared = TodayGlanceFile()
+/// What writes the widgets' day into the Keychain item the widget
+/// extension reads (`GlanceKeychain`). One write at a time, in the order
+/// they were asked for, so the day that signing out leaves is never written
+/// over by one made before it.
+actor TodayGlanceWriter {
+    static let shared = TodayGlanceWriter()
 
     /// Writes the timeline and has the widgets read it again, unless the
-    /// file already says the same from now on: a change the widgets would
+    /// item already says the same from now on: a change the widgets would
     /// not show costs them no reload. A write whose work was cancelled
     /// while it waited its turn is not made.
     func write(_ timeline: GlanceTimeline) {
         guard !Task.isCancelled else { return }
-        guard let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: GlanceTimeline.group) else { return }
-        let file = folder.appendingPathComponent(GlanceTimeline.fileName)
-        if let kept = (try? Data(contentsOf: file)).flatMap({ try? GlanceTimeline(data: $0) }), kept.says(sameAs: timeline, from: timeline.writtenAt) {
-            return
-        }
-        guard let data = try? timeline.encoded(), (try? data.write(to: file, options: .atomic)) != nil else { return }
+        if let kept = GlanceKeychain.timeline(), kept.says(sameAs: timeline, from: timeline.writtenAt) { return }
+        guard let data = try? GlanceKeychain.pack(timeline), GlanceKeychain.write(data) else { return }
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

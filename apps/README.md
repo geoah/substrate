@@ -1181,7 +1181,8 @@ approval sets nothing up. The records it reads and writes are in
 and its views in [today/docs/seam.md](today/docs/seam.md), and its
 components, its debug hooks and its gallery in
 [today/apple/README.md](today/apple/README.md). The widgets draw a day the
-app writes ahead into the App Group the two share, and read no record
+app writes ahead into a Keychain item in the access group the two share,
+as Chat's notification extension reads its session, and read no record
 themselves ([today/README.md](today/README.md#widgets)).
 
 ```bash

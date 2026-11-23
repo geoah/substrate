@@ -2,14 +2,9 @@ import Foundation
 
 /// The widgets' day at each instant it changes, made ahead by the app so a
 /// widget stays right as meetings start and end while the app is not
-/// running. The app writes it as one file in the App Group's folder, and the
-/// widget extension reads it there.
+/// running. The app keeps it where its widget extension reads it, and the
+/// extension draws what it reads.
 public struct GlanceTimeline: Codable, Equatable, Sendable {
-    /// The App Group the app and its widget extension share.
-    public static let group = "group.dev.reamde.substrate.today"
-    /// The file's name in the group's folder.
-    public static let fileName = "glance.json"
-
     public var writtenAt: Date
     /// In order of `at`: each holds from its own until the next one's.
     public var entries: [GlanceDay]
@@ -53,10 +48,10 @@ public struct GlanceTimeline: Codable, Equatable, Sendable {
         return mine.dropFirst().elementsEqual(theirs.dropFirst())
     }
 
-    // MARK: The file
+    // MARK: As bytes
 
-    /// The timeline as the file holds it: JSON with its keys in order, so
-    /// the same timeline is the same bytes.
+    /// The timeline as it is kept: JSON with its keys in order, so the
+    /// same timeline is the same bytes.
     public func encoded() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

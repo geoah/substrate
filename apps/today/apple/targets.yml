@@ -66,10 +66,12 @@ targets:
   SubstrateTodayWidgets:
     # The home-screen widgets: Now and next, Tasks and Meetings, each in the
     # medium and the large size. It links TodayGlance and nothing else of
-    # the app: the app writes the day ahead as one file in the App Group's
-    # folder, and the widgets draw what they read there, so the extension
-    # reads no record and reaches no server. The views under Widgets/Views
-    # are compiled into the tests as well, which draw them on the Mac.
+    # the app: the app writes the day ahead into one Keychain item in the
+    # group the two share, and the widgets draw what they read there, so the
+    # extension reads no record and reaches no server. The views under
+    # Widgets/Views are compiled into the tests as well, which draw them on
+    # the Mac, and the store under Widgets/Shared into the UI framework,
+    # which writes the item.
     type: app-extension
     platform: iOS
     sources:
@@ -99,6 +101,9 @@ targets:
     supportedDestinations: [iOS, macOS]
     sources:
       - UI
+      # The Keychain item the widgets' day is kept in: one definition the
+      # widget extension compiles too.
+      - Widgets/Shared
       - ../../xcode/Shared/CheckingForUpdates.swift
     dependencies:
       - package: TodayKit

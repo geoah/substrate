@@ -8,10 +8,10 @@ struct GlanceEntry: TimelineEntry {
     var day: GlanceDay
 }
 
-/// The widgets' timeline, read from the file the app wrote in the App
-/// Group's folder: the day that holds now and each one after it, already
-/// made by the app, so nothing is worked out here. With no file, or one
-/// that cannot be read, the one entry says to open the app.
+/// The widgets' timeline, read from the Keychain item the app wrote
+/// (`GlanceKeychain`): the day that holds now and each one after it,
+/// already made by the app, so nothing is worked out here. With no item,
+/// or one that cannot be read, the one entry says to open the app.
 struct GlanceProvider: TimelineProvider {
     /// What stands in a widget before its day is read: an invented day,
     /// which the system draws as blank shapes.
@@ -28,22 +28,15 @@ struct GlanceProvider: TimelineProvider {
 
     /// The system asks again once the last entry is reached. Where there is
     /// only the one that holds now, nothing here can change it: the app
-    /// has the widgets read again each time it writes the file.
+    /// has the widgets read again each time it writes the item.
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<GlanceEntry>) -> Void) {
         let entries = entries(from: .now)
         completion(Timeline(entries: entries, policy: entries.count > 1 ? .atEnd : .never))
     }
 
-    /// The file's days from an instant on, each an entry at the instant it
+    /// The item's days from an instant on, each an entry at the instant it
     /// holds from. The first holds already, and the system draws it at once.
     func entries(from now: Date) -> [GlanceEntry] {
-        (Self.read() ?? .closed(at: now)).days(from: now).map { GlanceEntry(date: $0.at, day: $0) }
-    }
-
-    static func read() -> GlanceTimeline? {
-        guard let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: GlanceTimeline.group),
-            let data = try? Data(contentsOf: folder.appendingPathComponent(GlanceTimeline.fileName))
-        else { return nil }
-        return try? GlanceTimeline(data: data)
+        (GlanceKeychain.timeline() ?? .closed(at: now)).days(from: now).map { GlanceEntry(date: $0.at, day: $0) }
     }
 }
