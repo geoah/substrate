@@ -49,10 +49,12 @@ extension DayEngine {
         let state: Row.State = stretch.phase == .later ? .later : .next
         let routines = todaysRoutines.filter { doneAt($0) == nil && self.stretch(at: $0.slot) == stretch.index }
         // A routine within the hour is first: on waking, the pane is the routine.
-        let soon = routines.filter { $0.slot <= now.addingTimeInterval(60 * 60) }
-        let later = routines.filter { $0.slot > now.addingTimeInterval(60 * 60) }
+        let soon = routines.filter { $0.slot <= now.addingTimeInterval(DayEngine.routineWindow) }
+        let later = routines.filter { $0.slot > now.addingTimeInterval(DayEngine.routineWindow) }
         // The day is closing: the wrap leads what is left of it.
-        let closing = stretch.next == nil && stretch.phase == .now && now >= (calendar.date(bySettingHour: 21, minute: 0, second: 0, of: now) ?? now)
+        let closing =
+            stretch.next == nil && stretch.phase == .now
+            && now >= (calendar.date(bySettingHour: DayEngine.closingHour, minute: 0, second: 0, of: now) ?? now)
         if closing, let wrap = wrapRow(state: state, closing: true) { out.append(wrap) }
         out += soon.map { row($0, state: state) }
         if isCurrent {
@@ -83,7 +85,7 @@ extension DayEngine {
         out += later.map { row($0, state: state) }
         // Before the evening the wrap is the last thing ahead, never the
         // first thing of a day with nothing else in it.
-        let evening = now >= (calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now) ?? now)
+        let evening = now >= (calendar.date(bySettingHour: DayEngine.eveningHour, minute: 0, second: 0, of: now) ?? now)
         if stretch.next == nil, !closing, stretch.phase == .later || evening || !out.isEmpty, let wrap = wrapRow(state: state) { out.append(wrap) }
         return out
     }

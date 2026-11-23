@@ -116,6 +116,64 @@ A thing made from nothing (a task the owner typed) has no links. A meeting has i
 calendar. `MeetingCard.Reading.url` opens what is to be read first the same way: its page at the source
 where that is read, else the record.
 
+## The widgets' day
+
+A home-screen widget draws a second, much smaller value: `GlanceDay`, the day at one instant, in
+`TodayKit/Sources/TodayGlance/` (Foundation alone, so the widget extension links it without the kit).
+`GlancePresenter` makes it from the pane the engine makes at that instant, and works nothing out a second
+time: what leads is `PanePresentation.lead`, the order is the order of `items`, and a meeting's real instants
+are the day's own. Every word a widget shows is in the value, the widgets' names and "and 3 more" included.
+
+| Type                             | Holds                                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GlanceTimeline`                 | `writtenAt`, the `entries` in order of `at`, and `until`, the instant past which the day is not known. `days(from:)` is what a widget draws from an instant on |
+| `GlanceDay`                      | `at` (from when it holds), the date, `now`, `quiet`, `next`, `left`, `upcoming`, `tasks`, `meetings`, and `message`, which every widget says in place of the day |
+| `GlanceItem`                     | One thing on one line: glyph, title, one line, a meeting's start, its flag (and whether it is only suggested), its project, a live count's end, and `link` |
+| `GlanceMeeting`                  | A meeting with its `start` and `end` as instants: its time and title, `note`, `live`, `off`, its place in a `pair` to choose between, and whether it `counts` |
+| `GlanceTasks`, `GlanceMeetings`  | A list under its name: `title`, `standing` ("2 of 6 done", "5 left"), `items`, the sentence for none (`empty`), and `more(after:)` for what does not fit |
+| `GlanceKind`, `GlanceWords`, `GlanceLinks` | The three widgets' kinds, names and descriptions; the fixed words; the link scheme and the day's link |
+
+What each widget draws:
+
+- **Now and next** (`today.now`): `now` (glyph, title, `line`; a stripe where it has a flag; its `count` where
+  a meeting leads before it starts), then `next` with its time and its count where `counts`, then `left`. The
+  large size lists `upcoming` under them, each with its glyph and, where it has a flag, its stripe. With
+  nothing leading it says `quiet`.
+- **Tasks** (`today.tasks`): `tasks.title` and `tasks.standing`, then each of `tasks.items` as its stripe, its
+  title and its project where there is room, then `tasks.more(after:)`; `tasks.empty` when there is none.
+- **Meetings** (`today.meetings`): `meetings.title` and `meetings.standing`, then each of `meetings.items` as
+  its time, its title and what ends its line: the count where `counts`, else `note`. `off` is struck through,
+  and the two of a `pair` stand on one band.
+
+What `GlancePresenter` keeps to:
+
+- **`now`** is the item whose id is `PanePresentation.lead`: a row, a meeting, the night. **`next`** is the
+  first meeting in the pane that is not on, not `off` and does not lead, so a meeting that leads is never said
+  twice. **`upcoming`** is every row and every meeting the owner goes to, in the pane's order, without those
+  two. The saved plan's row is not a thing ahead. The rows a `parked` line folds while a meeting leads are
+  still listed, in the engine's order.
+- **`tasks.items`** are the pane's task rows, and something urgent, in its order; `standing` counts the tasks
+  done today from "Earlier today". A suggested task and a routine are not tasks.
+- **A routine** is its group and a count, as a reminder says it (`DayEngine.outsideTitle`): a dose in no group
+  is "Medication" and "1 item.", and what was not logged yesterday says no more than that. No name and no dose
+  of what is in a routine is in the value ([records](records.md)).
+- **A count** is real: `count` and `counts` are set exactly where `MeetingRow.until` is, and the view draws the
+  minutes left to the meeting's `start`, "in 12 min": a started minute counted, as `Words.until` counts it,
+  and never minutes and seconds, which read as a time of day beside the real ones. On the home screen the
+  system counts the minutes; `GlanceWords.count(from:to:)` is the same words at one instant, for a picture.
+- **A link** is the route of the page a line opens (`TodayLinks`): `substrate-today://task/<id>`,
+  `substrate-today://meeting/<id>`, `substrate-today://plan`, `substrate-today://suggested`, and
+  `substrate-today://day` for everything else. `TodayLinks.route(_:)` reads one back, and answers nil, the
+  day, for one it does not know.
+
+The timeline is the day at `now`, then at each of the day's turns (`DayEngine.turns`: a run of meetings comes
+near, a meeting starts or ends, a routine comes within its hour, a task moved to a time reaches it, an
+unchecked urgent mark starts to interrupt, the evening and the closing of the day begin, midnight), up to
+`GlancePresenter.limit` instants or the end of tomorrow. A turn that changes nothing a widget draws adds no
+entry. The instant a count starts to be said is no turn: it is the day before it with the count on. A test
+walks the invented day and holds the timeline to the pane at every instant between the turns, so a rule the
+engine gains without a turn fails there.
+
 ## Commands
 
 | Command                                                                                     | When                                                                                   |
@@ -141,8 +199,15 @@ one: it sends `button.command` or `row.command`.
 
 ## What the shell wires
 
-- **The root**: `TodayApp(cache:outbox:words:build:folder:)`. Pass `folder: parts.folder`: the kinds found at
-  the last sign-in are kept there, and without it the pane opens empty until the server answers.
+- **The root**: `TodayApp(cache:outbox:words:build:folder:glance:)`. Pass `folder: parts.folder`: the kinds
+  found at the last sign-in are kept there, and without it the pane opens empty until the server answers.
+- **The widgets' day**: `glance` is where the root hands a `GlanceTimeline`, off the main actor: a moment
+  after each change that may draw the pane otherwise, once the records are read, and one that says to open
+  the app as soon as the owner signs out or clears what the device kept. The shell writes it as
+  `GlanceTimeline.fileName` in the App Group `GlanceTimeline.group`, unless the file already says the same
+  from now on, and has WidgetKit read it again. Nil, as on a Mac, writes none.
+- **A link**: the scene's `onOpenURL` hands the URL to `Today.open(_:)`, and the day's screen opens
+  `TodayLinks.route(_:)` on its path: that page in place of whatever was open, or the day for nil.
 - **Coming forward**: the shell's `refresh` is `.foreground`, which reads again and counts as a look. A view
   that shows the pane without the app coming forward sends `.looked`.
 - **Notifications**: `respond: TodayReminders.command(for:)`. The root registers the category (Taken, Skip,
@@ -163,3 +228,7 @@ the plan's row and a plan draft, working at 11:30, a flag list open, the interru
 meeting, the gap with something marked urgent and held, the same with the assistant unreachable, the evening,
 the wrap, an answer in place, and an empty repository. A gallery draws `fixture.app.pane`, and
 `fixture.app.page(route)` for each of `fixture.routes`.
+
+`TodayFixtures.glances` is the widgets' day at the moments their gallery draws: waking, the morning, the
+afternoon in a meeting with two that share time still to choose between, a repository with nothing to draw a
+day from, and signed out.

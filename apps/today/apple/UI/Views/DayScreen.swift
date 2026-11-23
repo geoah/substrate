@@ -21,6 +21,8 @@ struct DayScreen<Notices: View>: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduced
+    /// The links the app was opened with; none where a gallery draws.
+    @Environment(OpenedLinks.self) private var links: OpenedLinks?
 
     /// - Parameters:
     ///   - path: the pages open at first, for a gallery that draws one.
@@ -76,6 +78,11 @@ struct DayScreen<Notices: View>: View {
             if phase != .active { state.flush() }
         }
         .onDisappear { state.flush() }
+        // A link the app was opened with: its page takes the place of whatever was open, and the day's own closes it.
+        .onChange(of: links?.waiting, initial: true) { _, waiting in
+            guard waiting != nil, let link = links?.take() else { return }
+            withAnimation(state.motion) { path = link.route.map { [$0] } ?? [] }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: state.begun)
         .sensoryFeedback(.success, trigger: state.sent)
     }

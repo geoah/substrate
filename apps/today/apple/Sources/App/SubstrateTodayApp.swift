@@ -32,6 +32,10 @@ struct SubstrateTodayApp: App {
                 .checkingForUpdates { updates.checkNow() }
                 .updateOffer(updates)
                 .onChange(of: updates.offer?.version, initial: true) { _, version in Today.updateOffered(version) }
+                // A tap on a widget, or on one of its lines, opens the app with a link of its own, in the
+                // window that is already open.
+                .onOpenURL { Today.open($0) }
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 #if os(macOS)
             .frame(minWidth: 520, minHeight: 420)
                 #endif

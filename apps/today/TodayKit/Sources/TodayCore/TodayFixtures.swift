@@ -3,6 +3,7 @@ import SubstrateCore
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
+import TodayGlance
 
 /// One invented day, as records, and the pane at each moment the design
 /// draws, made by running the root's presenter over them at a fixed
@@ -766,6 +767,35 @@ public enum TodayFixtures {
                 ]
             },
             Fixture(name: "today-empty", app: present(TodayApp.State(), at: "11:30"), routes: [.projects, .priorities, .plan]),
+        ]
+    }
+}
+
+// MARK: The widgets' day
+
+public extension TodayFixtures {
+    /// A moment of the invented day as a widget draws it.
+    static func glance(at clock: String, edit: (inout TodayApp.State) -> Void = { _ in }) -> GlanceDay {
+        GlancePresenter.day(state(at: clock, edit: edit), now: at(clock), calendar: calendar)
+    }
+
+    /// The two meetings at 15:00 with no choice made between them: what the
+    /// saved plan chose is taken away.
+    static func unchosen(_ state: inout TodayApp.State) {
+        let key = RecordFold.key(TodayKinds.plan, "d20261119")
+        guard let overlaps = state.linked.records[key]?.properties["overlaps"]?.array else { return }
+        state.linked.records[key]?.properties["overlaps"] = .array(Array(overlaps.dropFirst()))
+    }
+
+    /// One named day per moment a widget gallery draws: waking, with the
+    /// routine leading and a count to the first call; the morning, with the
+    /// plan saved and the day ahead; the afternoon, in a meeting, with two
+    /// that share time still to choose between; a repository with nothing
+    /// to draw a day from; and signed out.
+    static var glances: [(name: String, day: GlanceDay)] {
+        [
+            ("wake", glance(at: "07:05")), ("morning", glance(at: "10:30")), ("afternoon", glance(at: "14:25", edit: unchosen)),
+            ("empty", GlancePresenter.day(TodayApp.State(), now: at("11:30"), calendar: calendar)), ("closed", .closed(at: at("11:30"))),
         ]
     }
 }

@@ -1166,7 +1166,9 @@ mise run android:build       # every Android module, the Tasks app's :tasks amon
 ## Substrate Today
 
 A sixth app, built on the kit: `SubstrateToday` (bundle id
-`dev.reamde.substrate.today`) on iPhone, iPad and Mac from one target, its
+`dev.reamde.substrate.today`) on iPhone, iPad and Mac from one target, with
+its home-screen widgets on iPhone and iPad
+(`dev.reamde.substrate.today.widgets`), its
 screens in the `SubstrateTodayUI` framework, its core the portable
 `TodayKit` (`today/TodayKit`) under the kit's link. Its whole interface is
 one pane, the order of the day: the projects the owner flagged on top, then
@@ -1178,7 +1180,9 @@ approval sets nothing up. The records it reads and writes are in
 [today/docs/records.md](today/docs/records.md), the seam between its core
 and its views in [today/docs/seam.md](today/docs/seam.md), and its
 components, its debug hooks and its gallery in
-[today/apple/README.md](today/apple/README.md).
+[today/apple/README.md](today/apple/README.md). The widgets draw a day the
+app writes ahead into the App Group the two share, and read no record
+themselves ([today/README.md](today/README.md#widgets)).
 
 ```bash
 mise run apple:build:today   # the Mac app and the simulator app, registering nothing with Apple
@@ -1440,8 +1444,8 @@ tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (Su
 tasks/package/                      its published tasks package
 tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders) and TasksAndroid (its roots over the Android bridge, the SubstrateTasks library), with their tests; portable
 tasks/android/                      Substrate Tasks on Android: the Gradle module :tasks, its Compose UI, its bridge.json and generated Kotlin, fixtures/tasks.json
-today/apple/                        Substrate Today: Sources/ (the app), UI/ (SubstrateTodayUI: the shell, the design guide's components, the pane and its pages), Tests/ (the views and the components drawn)
-today/TodayKit/                     its Swift package: TodayCore (the day's model, the order of the day, its presentations and commands, its root under the link), with its tests; portable
+today/apple/                        Substrate Today: Sources/ (the app), UI/ (SubstrateTodayUI: the shell, the design guide's components, the pane and its pages), Widgets/ (its home-screen widgets, and under Views/ what draws them), Tests/ (the views, the components and the widgets drawn)
+today/TodayKit/                     its Swift package: TodayCore (the day's model, the order of the day, its presentations and commands, its root under the link) and TodayGlance (the day as a widget draws it, over Foundation alone), with its tests; portable
 today/docs/                         the records it reads and writes, and the seam between its core and its views
 template/                           what `mise run apps:new` copies: a whole app named `template` (app.json, TemplateKit/, apple/, package/), released by nothing
 ```

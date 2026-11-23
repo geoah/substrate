@@ -5,6 +5,7 @@ import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
+import TodayGlance
 
 /// What the root's events ask the device and the server for, beyond the
 /// data link's own (the kit's `LinkedRecords`): what the repository holds,
@@ -121,6 +122,18 @@ public extension TodayApp {
         // The reminders follow the plan the presenter made, once the device
         // has said what it allows.
         if state.linked.loaded, state.permission != nil, presentation.reminders != state.scheduled { out.append(.schedule(presentation.reminders)) }
+        // The widgets' day follows the state: made again whenever the pane may be drawn otherwise, and closed
+        // when the owner signs out or clears what the device kept.
+        if glance != nil, let link = state.linked.link {
+            let was = previous.linked.link
+            if case .records(.cleared) = event {
+                out.append(.writeGlance(nil))
+            } else if !link.signedIn {
+                if was?.signedIn != false { out.append(.writeGlance(nil)) }
+            } else if state.linked.loaded, state.revision != previous.revision {
+                out.append(.writeGlance(state))
+            }
+        }
         return out
     }
 
@@ -156,6 +169,8 @@ public extension TodayApp {
         case .registerNotifications: "notifications.register"
         case .schedule: "reminders"
         case .remind: nil
+        // A newer day takes the place of one still being made.
+        case .writeGlance: "glance"
         }
     }
 
@@ -271,6 +286,21 @@ public extension TodayApp {
             guard let notifications else { return .none }
             return .once {
                 await notifications.schedule(TodayReminders.request(plan))
+                return nil
+            }
+        case let .writeGlance(state):
+            guard let glance else { return .none }
+            return .once {
+                guard let state else {
+                    // Signed out, or cleared: what the widgets showed is taken back at once.
+                    await glance(.closed(at: clock.now))
+                    return nil
+                }
+                // A moment, so a run of changes makes the day once: a newer one cancels this.
+                guard (try? await clock.sleep(until: clock.now.addingTimeInterval(Self.glanceDelay))) != nil else { return nil }
+                let timeline = GlancePresenter.timeline(state, now: clock.now, calendar: Self.calendar(timeZone)) { Task.isCancelled }
+                guard !Task.isCancelled else { return nil }
+                await glance(timeline)
                 return nil
             }
         }

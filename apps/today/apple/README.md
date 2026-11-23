@@ -12,7 +12,9 @@ proposal 098: one pane, the order of the day.
 | `UI/Components/` | the guide's seventeen components                                                                        |
 | `UI/Views/`      | the day (`DayScreen`, `PaneView`), what the views keep to themselves (`PaneViewState`), the root        |
 | `UI/Pages/`      | the pages: priorities, all projects, a project, a person, a meeting, a task, the plan, the suggested tasks |
-| `Tests/`         | the gallery: every component, every scene and every page drawn on the Mac, and the hand-made scenes     |
+| `Widgets/`       | the widget extension (`SubstrateTodayWidgets`, iPhone and iPad): the three widgets and the timeline it reads |
+| `Widgets/Views/` | the widgets' views and their look, compiled into the extension and into the tests                       |
+| `Tests/`         | the gallery: every component, every scene, every page and every widget drawn on the Mac, and the hand-made scenes |
 
 ## The components
 
@@ -87,3 +89,35 @@ invented day does not reach, from values made by hand in `Tests/HandScenes.swift
 
 A picture is drawn offscreen on the Mac, so glass is a translucent fill there, and a text size above the
 default changes only the layout that depends on it: a Mac has no text size to grow.
+
+## The widgets
+
+`Widgets/` is the extension: `SubstrateTodayWidgets` (the bundle and the three `StaticConfiguration`s, medium
+and large), and `GlanceProvider`, which reads `glance.json` from the App Group's folder and hands WidgetKit the
+days in it. It works nothing out: with no file, its one entry says to open the app.
+
+`Widgets/Views/` draws a `GlanceDay` and decides nothing: `GlanceWidgetView` is one widget at one instant, over
+`NowGlanceView`, `TasksGlanceView` and `MeetingsGlanceView`. The extension links no part of the app, so
+`GlanceLook` repeats the few colours, sizes and glyphs a widget draws with, and `WidgetLookTests` holds each to
+`TodayLook`'s and to the app's own glyphs.
+
+- A flag is its stripe alone, as in the pane. In the Tasks widget a line is moved in to make room for it; in
+  Now and next it hangs in the widget's margin, as the stripe of the pane's leading row does, so lines with a
+  flag and lines without one keep their glyphs on one edge. Where the system draws a widget in one tint, the
+  glyphs and the stripes are what it tints (`widgetAccentable`), and High is the most solid of the three.
+- The count to a meeting (`GlanceCount`) is the system's own count of whole minutes over the time left
+  (`Date.ComponentsFormatStyle`, "12 min") after the core's word "in", so it moves by itself and reads
+  "in 12 min". The system drops a minute that has started and the app counts it, so the stretch it counts
+  runs 59.9 seconds past the start; `WidgetLookTests` holds what it says to `GlanceWords.count(from:to:)`,
+  the words a picture draws. At the start itself the timeline's next day takes the count away.
+- A list draws as many lines as fit (`GlanceFitting`), so a larger text size draws fewer and cuts none, and
+  the core says what is left over ("and 3 more").
+- The background is the card colour, given to the system as the widget's container background.
+
+The gallery draws them at an iPhone's sizes, 338 by 158 and 338 by 354, in light and in dark:
+`widget-<now|tasks|meetings>-<medium|large>-<moment>` for each of `TodayFixtures.glances` (waking, the morning,
+the afternoon in a meeting with two to choose between, a repository with nothing to draw, signed out), and
+`widget-sheet-<moment>`, the three side by side in both sizes. `widget-sheet-afternoon-large-text` is drawn a
+third larger, and `widget-sheet-afternoon-tinted` as the widgets draw themselves for one tint, without the
+system's tint over them. A picture's count to a meeting stands at the day's own instant, in the same words
+the running one says; on a device it runs.

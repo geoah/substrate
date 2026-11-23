@@ -5,6 +5,7 @@ import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
+import TodayGlance
 
 /// Substrate Today's root, kept by the link (`LinkController<TodayApp>`).
 /// The small kinds the pane reads (lists, tasks, the series kinds, logs,
@@ -83,6 +84,9 @@ public struct TodayApp: LinkedRecordsApp {
         case registerNotifications
         case schedule([ReminderPlan])
         case remind(ReminderPlan)
+        /// The widgets' day made again from this state and written; nil
+        /// writes the day that says to open the app.
+        case writeGlance(State?)
 
         public var recordsEffect: LinkedRecords.Effect? {
             if case let .records(effect) = self { effect } else { nil }
@@ -144,6 +148,13 @@ public struct TodayApp: LinkedRecordsApp {
     /// What the repository held when the device last asked, read from its
     /// folder as the root is made.
     public let saved: Discovery?
+    /// Where the widgets' day goes once it is made: the shell's, since the
+    /// core knows no widget and no folder they read. Nil writes none.
+    public let glance: (@Sendable (GlanceTimeline) async -> Void)?
+
+    /// How long the widgets' day waits after a change before it is made, so
+    /// a run of changes makes it once.
+    static let glanceDelay: TimeInterval = 0.4
 
     /// - Parameters:
     ///   - words: the Status screen's words, as the shell made them
@@ -151,10 +162,22 @@ public struct TodayApp: LinkedRecordsApp {
     ///   - folder: the repository's folder (`AppShell.Parts.folder`), where
     ///     the kinds found at the last sign-in are kept, so the pane opens
     ///     over them offline.
-    public init(cache: RecordCache?, outbox: Outbox?, words: StatusWords, build: BuildFacts, folder: RepositoryFolder? = nil) {
+    ///   - glance: what keeps the widgets' day, called off the main actor
+    ///     each time the day may be drawn otherwise.
+    public init(
+        cache: RecordCache?, outbox: Outbox?, words: StatusWords, build: BuildFacts, folder: RepositoryFolder? = nil,
+        glance: (@Sendable (GlanceTimeline) async -> Void)? = nil
+    ) {
         saved = folder.flatMap { Self.kindsFile.load(from: $0) }
         linked = LinkedRecords(kinds: saved?.linked ?? [], cache: cache, outbox: outbox, words: words)
         self.build = build
+        self.glance = glance
+    }
+
+    /// Two roots are one where they hold the same parts; what the widgets'
+    /// day is written through is compared by whether there is one.
+    public static func == (lhs: TodayApp, rhs: TodayApp) -> Bool {
+        lhs.linked == rhs.linked && lhs.build == rhs.build && lhs.saved == rhs.saved && (lhs.glance == nil) == (rhs.glance == nil)
     }
 
     /// The Status screen's words, and the linked records'.

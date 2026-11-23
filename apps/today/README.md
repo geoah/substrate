@@ -19,10 +19,11 @@ never fails because one is missing.
 | `app.json` | the app, named once: its ids, its scope (`full`), and that it publishes and asks for no package |
 | [`docs/records.md`](docs/records.md) | every kind and property the pane reads and writes, who writes each, and the rules that turn records into the pane |
 | [`docs/seam.md`](docs/seam.md) | the presentation types and the commands: what a view draws and sends |
-| `TodayKit/` | the core, a Swift package with no UI framework that builds and tests on Linux: `TodayCore` |
+| `TodayKit/` | the core, a Swift package with no UI framework that builds and tests on Linux: `TodayCore`, and `TodayGlance`, the day as a widget draws it |
 | `apple/Sources/` | the app target: its scenes and the updater |
 | `apple/UI/` | `SubstrateTodayUI`: the kit's `AppShell` over the app's root, the design guide's components, the pane and the pages ([its README](apple/README.md)) |
-| `apple/Tests/` | the gallery: every component, scene and page drawn on the Mac |
+| `apple/Widgets/` | the widget extension, on iPhone and iPad: three home-screen widgets drawn from `TodayGlance` alone ([Widgets](#widgets)) |
+| `apple/Tests/` | the gallery: every component, scene, page and widget drawn on the Mac |
 | [`dev/`](dev/README.md) | a dev server with the packages and an invented day, to try the app against |
 
 ## The pane
@@ -84,6 +85,51 @@ The rules are the engine's, and a test pins each:
   reminder a day at the first slot, whose words name no medicine.
 - **No durations.** Only real times: when something starts, how long until it.
 
+## Widgets
+
+Three home-screen widgets, on iPhone and iPad, each in the two sizes that take a
+row of the home screen or several (`systemMedium`, `systemLarge`). None is small.
+
+| Widget | Kind | Draws |
+| --- | --- | --- |
+| Now and next | `today.now` | what leads the day (the pane's current item: its glyph, its title, one line), the next meeting the owner goes to with its time, and how much is left. The large size adds what follows, in the order of the day, a task with its flag as a stripe |
+| Tasks | `today.tasks` | today's open tasks in the pane's order, each with its flag as a stripe and its project where there is room, under "Today" and "2 of 6 done". Three in the medium size, seven in the large, and "and 3 more" |
+| Meetings | `today.meetings` | the meetings of the rest of today: the one in progress says "now, until 14:40", two that share time and wait for a choice stand on one band, and one the owner does not go to is struck through |
+
+The count to the next meeting is in minutes, "in 12 min", as the app says it, and
+drawn within the hour before it as the app's is. The system counts the minutes
+itself, so it moves on the home screen with no new day for each one. A widget cannot
+be scrolled or paged: several of them in one place is the system's Smart Stack.
+
+- **The extension reads no record and reaches no server.** The app makes the day
+  ahead (`GlancePresenter`, from the pane the engine makes at each instant) and
+  writes it as `glance.json` in the App Group `group.dev.reamde.substrate.today`,
+  which the app and the extension both name in their entitlements. The extension
+  links `TodayGlance` and nothing else of the app, and draws what it reads.
+- **It stays right while the app is not running.** The file holds the day at each
+  instant it changes: now, then each turn of the day (a meeting starts or ends or
+  comes near, a routine comes within its hour, the evening begins), up to 24
+  instants or the end of tomorrow. Past the last of them a widget says to open the
+  app, and never shows a day it does not know.
+- **A routine is its group and a count**, as in a reminder: the names and doses of
+  what is in it are shown inside the app only
+  ([records](docs/records.md)). Titles are marked private, so a locked device hides them.
+- **A tap opens the app with a link of its own** (the `substrate-today` scheme):
+  `substrate-today://day` anywhere on a widget, and in the large size a line opens
+  its page, `substrate-today://task/<id>` or `substrate-today://meeting/<id>` (and
+  `plan` and `suggested` for the rows that open those pages). A link the build does
+  not know opens the day.
+- **Signing out, or clearing what the device kept, takes the day back at once**:
+  the file then holds one day that says to open the app.
+
+A simulator build needs nothing more. A build signed for a device needs the group
+registered with the team and turned on for both identifiers,
+`dev.reamde.substrate.today` and `dev.reamde.substrate.today.widgets`.
+
+The widgets' views are in `apple/Widgets/Views/`, compiled into the extension and
+into the tests, which draw every widget on the Mac
+([the gallery](apple/README.md#the-gallery)).
+
 ## TodayKit
 
 `TodayCore`, by folder:
@@ -95,6 +141,11 @@ The rules are the engine's, and a test pins each:
 | `Engine/` | `DayEngine`: pure functions from a `Day` to the pane and the pages |
 | `App/` | the root under the kit's link (`TodayApp`, a `LinkedRecordsApp`): commands to events, effects, the reads beside the linked kinds (two window reads, open requests, sync status), the writes, the assistant's client, Settings |
 | `TodayFixtures.swift` | an invented day as records, and one named scene per moment the design draws, each made by running the engine at a fixed instant |
+| `GlancePresenter.swift` | the widgets' day at an instant, made from that instant's pane, and the timeline of such days ahead |
+
+`TodayGlance` is the day as a widget draws it (`GlanceDay`, and the `GlanceTimeline`
+of them the app writes), over Foundation alone with no dependency, so the widget
+extension links it without the kit.
 
 The small kinds (lists, tasks, the series kinds, logs, medications, the app's
 own, the assistant's instructions) are read whole and followed through the
@@ -122,6 +173,7 @@ build also draws any fixture scene with no server at all.
 
 ## Not built yet
 
-Widgets and the Lock Screen, App Intents, Live Activities, and messages the
-assistant drafts for the owner to send. A reminder's actions (Taken, Skip,
-Later) work from a notification.
+Lock Screen widgets, a widget on the Mac, App Intents (a widget's lines open
+the app and tick nothing), Live Activities, and messages the assistant drafts
+for the owner to send. A reminder's actions (Taken, Skip, Later) work from a
+notification.

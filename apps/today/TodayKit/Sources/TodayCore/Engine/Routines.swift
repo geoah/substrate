@@ -253,6 +253,16 @@ extension DayEngine {
             body: .yesterday(yesterdayCard(routines)))
     }
 
+    // MARK: Outside the app
+
+    /// What a routine row is called outside the app, where no medicine is
+    /// named: its group, or its own name where it is not a dose, else
+    /// "Medication".
+    func outsideTitle(_ row: RoutineRow) -> String {
+        let grouped = day.series[row.occurrences[0].series]?.group != nil
+        return grouped || !row.isDose ? row.title : "Medication"
+    }
+
     // MARK: Reminders
 
     /// One reminder for each routine row still open in the next three days,
@@ -262,11 +272,9 @@ extension DayEngine {
     var reminders: [ReminderPlan] {
         let end = calendar.date(byAdding: .day, value: 3, to: day.startOfToday) ?? now.addingTimeInterval(3 * 86400)
         return routineRows(from: now, to: end).filter { !open($0).isEmpty }.prefix(48).map { row in
-            let grouped = day.series[row.occurrences[0].series]?.group != nil
             let count = open(row).count
             return ReminderPlan(
-                id: "today.routine." + row.id, title: grouped || !row.isDose ? row.title : "Medication",
-                body: count == 1 ? "1 item" : "\(count) items", fireAt: row.slot, row: row.id)
+                id: "today.routine." + row.id, title: outsideTitle(row), body: count == 1 ? "1 item" : "\(count) items", fireAt: row.slot, row: row.id)
         }
     }
 }

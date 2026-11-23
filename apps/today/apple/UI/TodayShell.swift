@@ -5,6 +5,11 @@ import SubstrateDeviceApple
 import SubstrateScreens
 import SubstrateUI
 import TodayCore
+import TodayGlance
+
+#if os(iOS)
+import WidgetKit
+#endif
 
 /// The app's shell: the kit's `AppShell` over `TodayApp`.
 public typealias TodayShell = AppShell<TodayApp>
@@ -50,6 +55,27 @@ public enum Today {
         shell.send(.offered(version))
     }
 
+    /// The links the app was opened with, which the day's screen follows.
+    @MainActor static let links = OpenedLinks()
+
+    /// The app was opened with a link (`TodayLinks`): a tap on a widget, or
+    /// on one of its lines. The day's screen opens the page it names; the
+    /// day's own link, and one this build does not know, open the day.
+    @MainActor public static func open(_ url: URL) {
+        links.open(TodayLinks.route(url))
+    }
+
+    /// Where the root hands the widgets' day: the file the widget extension
+    /// reads, on an iPhone and an iPad. A Mac has no widget of the app, and
+    /// writes none.
+    static var glance: (@Sendable (GlanceTimeline) async -> Void)? {
+        #if os(iOS)
+        return { await TodayGlanceFile.shared.write($0) }
+        #else
+        return nil
+        #endif
+    }
+
     static var configuration: TodayShell.Configuration {
         var service = "dev.reamde.substrate.today"
         var folder = "SubstrateToday"
@@ -62,11 +88,62 @@ public enum Today {
         return TodayShell.Configuration(
             manifest: TodayManifest.current, keychainService: service, folder: folder, packages: TodayManifest.packages,
             words: TodayApp.words(device:),
-            app: { TodayApp(cache: $0.cache, outbox: $0.outbox, words: $0.words, build: $0.build, folder: $0.folder) },
+            app: { TodayApp(cache: $0.cache, outbox: $0.outbox, words: $0.words, build: $0.build, folder: $0.folder, glance: glance) },
             refresh: .foreground, respond: TodayReminders.command(for:), settings: { .settings($0) }, clearSaved: .clearSaved,
             settingsScreen: TodayPresenter.settings)
     }
 }
+
+/// The link the app was opened with, until the day's screen follows it:
+/// the screen watches `waiting` and takes the link once. Navigation stays
+/// the screen's own; this only hands it where to go.
+@MainActor @Observable final class OpenedLinks {
+    struct Link: Equatable {
+        /// One more for every link, so the same link opened twice is two.
+        var number: Int
+        /// The page it names; nil is the day.
+        var route: TodayRoute?
+    }
+
+    private(set) var waiting: Link?
+    private var count = 0
+
+    func open(_ route: TodayRoute?) {
+        count += 1
+        waiting = Link(number: count, route: route)
+    }
+
+    /// The link that waits, which then waits no more.
+    func take() -> Link? {
+        defer { waiting = nil }
+        return waiting
+    }
+}
+
+#if os(iOS)
+/// The widgets' day as a file in the App Group's folder, which the widget
+/// extension reads (`GlanceTimeline.group`, `GlanceTimeline.fileName`).
+/// One write at a time, in the order they were asked for, so the day that
+/// signing out leaves is never written over by one made before it.
+actor TodayGlanceFile {
+    static let shared = TodayGlanceFile()
+
+    /// Writes the timeline and has the widgets read it again, unless the
+    /// file already says the same from now on: a change the widgets would
+    /// not show costs them no reload. A write whose work was cancelled
+    /// while it waited its turn is not made.
+    func write(_ timeline: GlanceTimeline) {
+        guard !Task.isCancelled else { return }
+        guard let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: GlanceTimeline.group) else { return }
+        let file = folder.appendingPathComponent(GlanceTimeline.fileName)
+        if let kept = (try? Data(contentsOf: file)).flatMap({ try? GlanceTimeline(data: $0) }), kept.says(sameAs: timeline, from: timeline.writtenAt) {
+            return
+        }
+        guard let data = try? timeline.encoded(), (try? data.write(to: file, options: .atomic)) != nil else { return }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+#endif
 
 #if DEBUG
 /// Three hooks for a debug build, since nothing in the kit offers them. All

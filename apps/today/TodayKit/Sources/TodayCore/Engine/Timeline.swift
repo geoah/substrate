@@ -26,6 +26,18 @@ extension DayEngine {
         var next: Run?
     }
 
+    /// How close a fixed point is when it leads and the rows wait.
+    static let nearWindow: TimeInterval = 10 * 60
+    /// How long before the next fixed point its count is said: hours ahead,
+    /// its time says enough.
+    static let countWindow: TimeInterval = 60 * 60
+    /// How long before its slot a routine is first among the rows.
+    static let routineWindow: TimeInterval = 60 * 60
+    /// The hour the evening starts, when the wrap is a row of the day, and
+    /// the hour the day is closing, when it leads what is left.
+    static let eveningHour = 18
+    static let closingHour = 21
+
     /// Today's meetings, in order of their start.
     var todaysMeetings: [Meeting] {
         day.meetings.filter { $0.start < day.startOfTomorrow && $0.end > day.startOfToday }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
@@ -58,8 +70,8 @@ extension DayEngine {
             let phase = phase(cursor, run.from)
             out.append(
                 Stretch(
-                    index: index, from: cursor, to: run.from, phase: phase, near: phase == .now && run.from.timeIntervalSince(now) <= 10 * 60,
-                    next: run))
+                    index: index, from: cursor, to: run.from, phase: phase,
+                    near: phase == .now && run.from.timeIntervalSince(now) <= DayEngine.nearWindow, next: run))
             cursor = run.to
         }
         out.append(Stretch(index: runs.count, from: cursor, to: day.startOfTomorrow, phase: phase(cursor, day.startOfTomorrow), near: false, next: nil))
@@ -80,6 +92,29 @@ extension DayEngine {
         let stretches = stretches
         let own = stretches.first { moment < $0.to }?.index ?? stretches.count - 1
         return max(own, currentStretch)
+    }
+
+    /// The instants after now, up to the end of today, at which the order
+    /// of the day changes with no record changing and no count of minutes
+    /// moving: a run of meetings comes near, a meeting starts or ends, a
+    /// routine comes within its hour, a task moved to a time reaches it,
+    /// something marked urgent that nobody checked starts to interrupt, the
+    /// evening and the closing of the day begin, and the day ends. In
+    /// order, each once. What draws the day ahead of time, a widget's
+    /// timeline, is made at these and at no instant between them.
+    var turns: [Date] {
+        var out: Set<Date> = [day.startOfTomorrow]
+        for run in runs { out.insert(run.from.addingTimeInterval(-DayEngine.nearWindow)) }
+        for meeting in todaysMeetings { out.formUnion([meeting.start, meeting.end]) }
+        for routine in todaysRoutines where doneAt(routine) == nil { out.insert(routine.slot.addingTimeInterval(-DayEngine.routineWindow)) }
+        for task in day.tasks {
+            if let moved = task.notBefore { out.insert(moved) }
+            if case .unchecked(interrupts: false)? = urgentState(task) { out.insert(task.updatedAt.addingTimeInterval(day.preference.urgentWait)) }
+        }
+        for hour in [DayEngine.eveningHour, DayEngine.closingHour] {
+            if let at = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: now) { out.insert(at) }
+        }
+        return out.filter { $0 > now && $0 <= day.startOfTomorrow }.sorted()
     }
 
     // MARK: Overlaps
@@ -256,7 +291,7 @@ extension DayEngine {
             line = (first.isProposed ? "Suggested: " : "Your task: ") + Words.low(first.name) + ". " + (taskLine(first).line ?? "")
         }
         // Hours ahead the time says enough: the count is for the hour before.
-        let isNext = nextMeeting?.id == meeting.id && meeting.start.timeIntervalSince(now) <= 60 * 60
+        let isNext = nextMeeting?.id == meeting.id && meeting.start.timeIntervalSince(now) <= DayEngine.countWindow
         // While the two wait for a choice they are their times and titles, and one line that asks.
         if tie?.toChoose == true { line = nil }
         var row = MeetingRow(

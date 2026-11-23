@@ -124,8 +124,12 @@ public struct Exchange: Codable, Equatable, Sendable, Identifiable {
 /// calendar in the owner's time zone, the drafts and the day's notes. The
 /// engine is a pure function of it.
 public struct Day: Sendable {
-    public var now: Date
-    public var calendar: Calendar
+    public var now: Date { didSet { bounds = Bounds(now, calendar) } }
+    public var calendar: Calendar { didSet { bounds = Bounds(now, calendar) } }
+    /// Where yesterday, today and tomorrow start, worked out once for the
+    /// instant: the engine asks for them hundreds of times a pane, and the
+    /// calendar is slow to answer.
+    private var bounds: Bounds
     public var lists: [ListItem] = []
     public var tasks: [TaskItem] = []
     public var advice: [String: Advice] = [:]
@@ -168,13 +172,26 @@ public struct Day: Sendable {
     public init(now: Date, calendar: Calendar) {
         self.now = now
         self.calendar = calendar
+        bounds = Bounds(now, calendar)
         notes = DayNotes(day: CivilDay(now, in: calendar))
     }
 
+    private struct Bounds: Sendable {
+        var yesterday: Date
+        var today: Date
+        var tomorrow: Date
+
+        init(_ now: Date, _ calendar: Calendar) {
+            today = calendar.startOfDay(for: now)
+            tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
+            yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today.addingTimeInterval(-86400)
+        }
+    }
+
     public var today: CivilDay { CivilDay(now, in: calendar) }
-    public var startOfToday: Date { calendar.startOfDay(for: now) }
-    public var startOfTomorrow: Date { calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday.addingTimeInterval(86400) }
-    public var startOfYesterday: Date { calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday.addingTimeInterval(-86400) }
+    public var startOfToday: Date { bounds.today }
+    public var startOfTomorrow: Date { bounds.tomorrow }
+    public var startOfYesterday: Date { bounds.yesterday }
 
     public func list(_ id: String?) -> ListItem? { id.flatMap { id in lists.first { $0.id == id } } }
     public func task(_ id: String) -> TaskItem? { tasks.first { $0.id == id } }

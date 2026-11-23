@@ -34,6 +34,9 @@ targets:
       # The kit and TodayKit come through the framework alone: the app
       # linking them too would hold a second copy of their types.
       - target: SubstrateTodayUI
+      # The home-screen widgets, on iPhone and iPad.
+      - target: SubstrateTodayWidgets
+        destinationFilters: [iOS]
     settings:
       base:
         PRODUCT_NAME: SubstrateToday
@@ -43,7 +46,7 @@ targets:
         "INFOPLIST_FILE[sdk=macosx*]": ../today/apple/Support/Info-Today-macOS.plist
         CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_IOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": $(SUBSTRATE_MACOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
-        SUBSTRATE_IOS_ENTITLEMENTS_NO: ""
+        SUBSTRATE_IOS_ENTITLEMENTS_NO: ../today/apple/Support/SubstrateToday-iOS.entitlements
         SUBSTRATE_IOS_ENTITLEMENTS_YES: ../today/apple/Support/SubstrateToday-iOS-site.entitlements
         SUBSTRATE_MACOS_ENTITLEMENTS_NO: ../today/apple/Support/SubstrateToday-macOS.entitlements
         SUBSTRATE_MACOS_ENTITLEMENTS_YES: ../today/apple/Support/SubstrateToday-macOS-site.entitlements
@@ -60,6 +63,32 @@ targets:
         # (TodayManifest.localClientID). A release stamps both.
         SUBSTRATE_TODAY_CLIENT_ID: ""
         SUBSTRATE_TODAY_REDIRECT: ""
+  SubstrateTodayWidgets:
+    # The home-screen widgets: Now and next, Tasks and Meetings, each in the
+    # medium and the large size. It links TodayGlance and nothing else of
+    # the app: the app writes the day ahead as one file in the App Group's
+    # folder, and the widgets draw what they read there, so the extension
+    # reads no record and reaches no server. The views under Widgets/Views
+    # are compiled into the tests as well, which draw them on the Mac.
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+    dependencies:
+      - package: TodayKit
+        product: TodayGlance
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateTodayWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.today.widgets
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ../today/apple/Support/Info-TodayWidgets.plist
+        CODE_SIGN_ENTITLEMENTS: ../today/apple/Support/SubstrateTodayWidgets.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        SKIP_INSTALL: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
   SubstrateTodayUI:
     # The app's screens: the kit's AppShell over TodayApp and the SwiftUI
     # views that draw TodayKit's presentations and send its commands. A
@@ -74,6 +103,9 @@ targets:
     dependencies:
       - package: TodayKit
         product: TodayCore
+      # The widgets' day, which the shell writes for the extension.
+      - package: TodayKit
+        product: TodayGlance
       # The kit by library, not its umbrella: a framework that links the
       # umbrella's package product is left without the libraries under it.
       - package: SubstrateKit
@@ -111,10 +143,14 @@ targets:
     supportedDestinations: [macOS, iOS]
     sources:
       - Tests
+      # The widgets' views, drawn here as the extension draws them.
+      - Widgets/Views
     dependencies:
       - target: SubstrateTodayUI
       - package: TodayKit
         product: TodayCore
+      - package: TodayKit
+        product: TodayGlance
       - package: SubstrateKit
         product: SubstrateScreens
       - package: SubstrateKit

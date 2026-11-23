@@ -8,7 +8,9 @@
   "apple": {
     "bundleID": "dev.reamde.substrate.today",
     "scheme": "SubstrateToday",
-    "extensions": [],
+    "extensions": [
+      "dev.reamde.substrate.today.widgets"
+    ],
     "clientIDKey": "SubstrateTodayClientID",
     "redirectKey": "SubstrateTodayRedirect"
   },

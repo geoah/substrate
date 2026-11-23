@@ -9,6 +9,10 @@ public struct RootView: View {
     public init() {}
 
     public var body: some View {
+        content.environment(Today.links)
+    }
+
+    @ViewBuilder private var content: some View {
         #if DEBUG
         if let scene = TodayDebug.demo {
             DayScreen(app: scene)
