@@ -78,7 +78,7 @@ jobs:
           persist-credentials: false
           # The commit `release` verifies against the tag before it builds.
           ref: ${{ inputs.sha }}
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
@@ -165,7 +165,7 @@ jobs:
       # goreleaser and the Go it builds with, nothing else: no Python tool
       # resolved from PyPI, and no pnpm. The image build runs in BuildKit's
       # containers, which see neither the token nor the login.
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
@@ -239,7 +239,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.sha }}
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
@@ -272,7 +272,7 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.sha }}
       # mise alone, for the task: the script needs no tool it installs.
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
@@ -375,7 +375,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.sha }}
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
@@ -417,7 +417,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.sha }}
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           experimental: true
           version: 2026.9.2
