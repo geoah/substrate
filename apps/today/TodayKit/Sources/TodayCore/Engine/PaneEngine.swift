@@ -195,9 +195,18 @@ extension DayEngine {
                 if let overlap = overlap(of: meeting) {
                     guard !seen.contains(overlap.id) else { continue }
                     seen.insert(overlap.id)
+                    // Two that share time are two lines of the day, tied: nothing is drawn around them.
                     let members = overlap.meetings.filter { $0.end > now }
                     if members.contains(where: { $0.id == leading }) { place() }
-                    items.append(.overlap(OverlapBlock(id: overlap.id, card: card(overlap), meetings: members.map { meetingRow($0, leads: $0.id == leading) })))
+                    for (index, member) in members.enumerated() {
+                        let other = members.count == 2 ? members[1 - index] : nil
+                        let tie = other.map {
+                            MeetingTie(
+                                id: overlap.id, other: $0.id, second: index == 1, toChoose: overlap.chosen == nil,
+                                ask: overlap.chosen == nil && index == 1 ? "These two overlap. Choose one." : nil, otherLeads: $0.id == leading)
+                        }
+                        items.append(.meeting(meetingRow(member, leads: member.id == leading, tie: tie)))
+                    }
                 } else {
                     if meeting.id == leading { place() }
                     items.append(.meeting(meetingRow(meeting, leads: meeting.id == leading)))

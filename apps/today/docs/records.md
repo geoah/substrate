@@ -233,6 +233,38 @@ reader that counts from it says "heard yesterday" of words a week old. So:
   (`[message](substrate://<kind>/<id>)`), never by its path. Words that are quoted stay as they were said.
   Text written before this keeps what it has.
 
+## Where a task came from: its links
+
+A task says what it was made from in `origin`, a reference to any kind: a chat message, a mail, an issue, a
+transcript. The app gives a task two ways out to it, and a suggested task the same two.
+
+- **The record.** `<server>/data/<kind>/<id>`: the origin's own page in the server's console, in a browser.
+  It needs no read: the address is made from the reference.
+- **Its page at the source.** No kind declares which of its addresses is the record's own page, so the app
+  finds it by the names the providers use. It reads the origin and takes the first of `permalink`,
+  `htmlUrl`, `htmlLink`, `webViewLink`, `externalUrl`, `url` and `publicUrl` that holds an `http` or `https`
+  address whose host does not start with `api.` (GitHub's `url` is its API's; its page is `htmlUrl`). The
+  place is named from the host: Slack, Gmail, Google Docs, Google Drive, Google Calendar, Linear, GitHub,
+  Notion, else the host itself.
+- **A Gmail message names no address**, so its page is composed as the provider's own tools compose it:
+  `https://mail.google.com/mail/u/<the account's email>/#all/<the thread's threadId>`, from the message's
+  `thread` and `account` references, which are read too. Without the account's address there is no link:
+  it would open in whichever account the browser has first, and find nothing.
+- A record with none of these (a chat mirrored from a bridge that has no web address) has the record link
+  alone.
+
+Reading: the origins of the tasks that are `open` or `proposed`, eight at a time and one batch at once, each
+once. What is found is kept on the device (`today-sources.json` in the repository's folder), so the links
+are there offline and are not read again. A record that is gone or that the app may not read names no page
+and is not asked for again until the next launch; a read that fails otherwise is asked again when the app
+comes back to the front. Signing out empties what was kept.
+
+A meeting's link is its event's `htmlLink`, which the window read already holds. What a dossier names in
+`readFirst` opens as its record, or at its source where that page was read for a task.
+
+A kind that named its own page (a trait with one `url` property, say) would let every app do this without
+guessing by name. None does today.
+
 ## The owner's corrections: `today/correction`
 
 Added in version 4 of the today package. What the owner said was wrong with something the assistant
@@ -261,7 +293,8 @@ suggested, or what to do instead, in their words.
 
 A meeting is an occurrence of any kind that binds core `temporal(range)` with `recurring` or `override`
 (a calendar's event and its series). The app reads today and the next two days with a window read. Two that
-overlap are an overlap, settled in the plan (`today/plan.overlaps`).
+overlap are an overlap, settled in the plan (`today/plan.overlaps`). In the day they stay two lines, tied to
+each other: marked while no choice is made, and the one not gone to struck through once one is.
 
 One event synced from two accounts is one meeting: two events with the same start, the same end and the same
 title (compared without case or surrounding space) are drawn once, with the attendees of both. An event titled

@@ -43,10 +43,9 @@ public enum PaneItem: Codable, Equatable, Sendable, Identifiable {
     /// that open in place, or open a page where `trailing` says so. The
     /// saved plan's row stands under what is done, and never leads.
     case row(Row)
-    /// A meeting on its own line; the one that leads is drawn in full.
+    /// A meeting on its own line; the one that leads is drawn in full. Two
+    /// that share time are two lines tied to each other (`MeetingRow.tie`).
     case meeting(MeetingRow)
-    /// Two meetings that overlap, as one block around them with its options.
-    case overlap(OverlapBlock)
     /// What waits while a meeting leads: "The vendor check waits until you
     /// are out."
     case parked(ParkedLine)
@@ -63,7 +62,6 @@ public enum PaneItem: Codable, Equatable, Sendable, Identifiable {
         case .happening: "happening"
         case let .row(row): "row:" + row.id
         case let .meeting(meeting): "meeting:" + meeting.id
-        case let .overlap(block): "overlap:" + block.id
         case let .parked(line): "parked:" + line.id
         case let .unfinished(card): "unfinished:" + card.id
         case let .note(note): "note:" + note.id

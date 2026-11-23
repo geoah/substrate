@@ -22,6 +22,8 @@ public enum TodayPresenter {
         if let notes = state.notes, notes.day == day.today { day.notes = notes }
         day.exchanges = state.exchanges
         day.reachable = state.reachable && state.linked.link?.online != false
+        day.server = state.linked.link?.server
+        day.sources = state.sources
         return day
     }
 

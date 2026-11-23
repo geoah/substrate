@@ -208,10 +208,20 @@ enum HandScenes {
         Door(id: "flag", label: "Flag", value: flag?.word ?? "No flag yet", stripe: Stripe(flag), options: flags(chosen: flag))
     }
 
-    static let vigilCard = TaskCard(
-        id: "t-vigil", chips: Chips(project: security), doors: [flagDoor(.high), whenDoor],
-        done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-vigil")),
-        moss: moss("the Vigil triage", asks: ["Who else could take this?"]))
+    /// What a task was made from, as its two buttons: the place it was said, and the record.
+    static let links = [
+        SourceLink(id: "source", title: "Slack", label: "Open in Slack", url: "https://example.slack.com/archives/C0EXAMPLE/p1700000000000100"),
+        SourceLink(id: "record", title: "Record", label: "Open the record in Substrate", url: "https://substrate.example.com/data/example/message/m1"),
+    ]
+
+    static let vigilCard: TaskCard = {
+        var card = TaskCard(
+            id: "t-vigil", chips: Chips(project: security), doors: [flagDoor(.high), whenDoor],
+            done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-vigil")),
+            moss: moss("the Vigil triage", asks: ["Who else could take this?"]))
+        card.links = links
+        return card
+    }()
 
     static func taskRow(_ id: String, _ title: String, _ line: String, flag: Flag?, state: Row.State, chips: Chips = .none, suggested: Bool = false) -> Row {
         Row(
@@ -256,28 +266,45 @@ enum HandScenes {
                     placeholder: "Ask or tell Moss about this meeting")))
     }
 
-    static let overlap = OverlapBlock(
-        id: "o-1500",
-        card: OverlapCard(
-            id: "o-1500", name: "The 15:00 overlap", text: "Henrik and Karim both start at 15:00.", pill: Pill(.neutral, "Chosen"),
-            options: OptionList(
-                .round,
-                [
-                    option(
-                        "henrik", "Henrik at 15:00, and ask Karim for 16:30", "A message to Karim, asking for 16:30, which is free on your calendar.",
-                        selected: true, suggested: true, reason: "Henrik's proposal is waiting for your view."),
-                    option("karim", "Karim at 15:00, and ask Henrik for 16:30"), option("both", "Both: Henrik until 15:20, then Karim"),
-                ]),
-            chosen: "Chosen at 08:44.",
-            ready: ReadyMessage(
-                id: "m-karim", heading: "Sent to Karim", text: "Karim, could we move today's 1:1 to 16:30? I have a clash at 15:00.", send: nil,
-                note: "Sent at 08:44. No answer yet, so both are still at 15:00.", sent: true)),
-        meetings: [
-            meeting(
-                "henrik", "15:00", "15:30", "Henrik", people: ["HA"], line: "Weekly 1:1. Henrik will want your view on the proposal.", attendance: "Going.",
-                project: bastion),
-            meeting("karim", "15:00", "15:30", "Karim", people: ["KS"], line: "Weekly 1:1.", attendance: "Asked to move, no answer yet."),
-        ])
+    static let overlapCard = OverlapCard(
+        id: "o-1500", name: "The 15:00 overlap", text: "Henrik and Karim both start at 15:00.", pill: Pill(.neutral, "Chosen"),
+        options: OptionList(
+            .round,
+            [
+                option(
+                    "henrik", "Henrik at 15:00, and ask Karim for 16:30", "A message to Karim, asking for 16:30, which is free on your calendar.",
+                    selected: true, suggested: true, reason: "Henrik's proposal is waiting for your view."),
+                option("karim", "Karim at 15:00, and ask Henrik for 16:30"), option("both", "Both: Henrik until 15:20, then Karim"),
+            ]),
+        chosen: "Chosen at 08:44.",
+        ready: ReadyMessage(
+            id: "m-karim", heading: "Sent to Karim", text: "Karim, could we move today's 1:1 to 16:30? I have a clash at 15:00.", send: nil,
+            note: "Sent at 08:44. No answer yet, so both are still at 15:00.", sent: true))
+
+    /// Two meetings that share time, as the two tied lines of the day:
+    /// chosen (the second is struck through), or still to choose.
+    static func tied(toChoose: Bool = false) -> [PaneItem] {
+        var card = overlapCard
+        if toChoose {
+            card.pill = Pill(.caution, "To choose")
+            card.options.rows = card.options.rows.map { row in
+                var row = row
+                row.selected = false
+                return row
+            }
+            card.chosen = nil
+            card.ready = nil
+        }
+        var first = meeting(
+            "henrik", "15:00", "15:30", "Henrik", people: ["HA"], line: toChoose ? nil : "Weekly 1:1. Henrik will want your view on the proposal.",
+            attendance: toChoose ? nil : "Going.", project: toChoose ? nil : bastion)
+        var second = meeting("karim", "15:00", "15:30", "Karim", people: ["KS"], line: nil, attendance: toChoose ? nil : "Not going.", off: !toChoose)
+        first.card.overlap = card
+        second.card.overlap = card
+        first.tie = MeetingTie(id: "o-1500", other: "karim", second: false, toChoose: toChoose)
+        second.tie = MeetingTie(id: "o-1500", other: "henrik", second: true, toChoose: toChoose, ask: toChoose ? "These two overlap. Choose one." : nil)
+        return [.meeting(first), .meeting(second)]
+    }
 
     // MARK: Scenes
 
@@ -317,9 +344,9 @@ enum HandScenes {
                 .meeting(
                     meeting(
                         "tomas", "14:20", "14:40", "Tomas", people: ["TV"],
-                        line: "Your task: fix the 1:1 clash with Tomas. Proposed at 08:44. No answer yet.", until: "in 2 h 50")),
+                        line: "Your task: fix the 1:1 clash with Tomas. Proposed at 08:44. No answer yet.")),
                 .meeting(meeting("viktor", "14:40", "15:00", "Viktor", people: ["VL"], line: "Weekly 1:1.", project: lantern)),
-                .overlap(overlap),
+            ] + tied() + [
                 .meeting(meeting("cloud", "21:00", "21:30", "Cloud standup", people: ["CR", "MB", "WZ"], line: "Moved to Friday.", off: true)),
                 .row(
                     Row(
@@ -694,12 +721,16 @@ enum HandScenes {
     static let taskPage = TaskPage(
         id: "t-vigil", title: "Triage the Vigil findings and review the four lockdown PRs",
         line: "Over 90 findings with no owner in the sources checked, and the 20:00 sync will ask.", stripe: Stripe(.high),
-        card: TaskCard(
-            id: "t-vigil", chips: Chips(project: security), details: "“I will go over these tomorrow”, Tue 20:26",
-            left: TaskCard.Left(heading: "Where you left it, 13:55", text: "Findings sorted to OPS-2041. PR 3 of 4 is half read."),
-            deferred: "Put off three times.", doors: [flagDoor(.high), whenDoor],
-            done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-vigil")),
-            moss: moss("the Vigil triage", asks: ["Who else could take this?"])))
+        card: {
+            var card = TaskCard(
+                id: "t-vigil", chips: Chips(project: security), details: "“I will go over these tomorrow”, Tue 20:26",
+                left: TaskCard.Left(heading: "Where you left it, 13:55", text: "Findings sorted to OPS-2041. PR 3 of 4 is half read."),
+                deferred: "Put off three times.", doors: [flagDoor(.high), whenDoor],
+                done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done("t-vigil")),
+                moss: moss("the Vigil triage", asks: ["Who else could take this?"]))
+            card.links = links
+            return card
+        }())
 
     static func planItem(_ id: String, _ title: String, why: String, flag: Flag, ticked: Bool = true, suggested: Bool = true) -> PlanPage.Item {
         PlanPage.Item(id: id, title: title, why: why, line: "This morning.", ticked: ticked, suggested: suggested, flag: flagControl(nil, suggested: flag))
@@ -744,7 +775,7 @@ enum HandScenes {
                 more: [planItem("c4", "Read the guidance update", why: "Nothing waits on it.", flag: .low, ticked: false, suggested: false)]),
         ],
         overlapsTitle: "The four overlaps",
-        overlaps: [PlanPage.Overlap(id: "o-1500", name: "The 15:00 overlap", text: "Henrik and Karim both start at 15:00.", options: overlap.card.options)],
+        overlaps: [PlanPage.Overlap(id: "o-1500", name: "The 15:00 overlap", text: "Henrik and Karim both start at 15:00.", options: overlapCard.options)],
         sendsTitle: "What Moss may send when you save", sendsHint: "Moss sends only what you tick. Nothing is ticked for you.",
         sends: OptionList(
             .square,

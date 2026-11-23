@@ -30,7 +30,6 @@ private func meetings(_ pane: PanePresentation) -> [MeetingRow] {
     pane.items.flatMap { item -> [MeetingRow] in
         switch item {
         case let .meeting(meeting): [meeting]
-        case let .overlap(block): block.meetings
         default: []
         }
     }
@@ -254,15 +253,37 @@ struct OrderTests {
     }
 
     @Test func overlapsArePairsAndAChoiceMakesTheOtherMeetingOff() {
+        // Two that share time are two lines of the day, one under the other, each tied to the other.
         let morning = pane("08:30")
-        let blocks = morning.items.compactMap { if case let .overlap(block) = $0 { block } else { nil } }
-        #expect(blocks.map(\.card.name) == ["The 15:00 overlap", "The 17:20 overlap", "The 17:40 overlap", "The 21:00 overlap"])
-        #expect(blocks.allSatisfy { $0.card.pill.word == "To choose" && $0.card.options.selected == nil })
-        #expect(blocks[1].card.options.rows.map(\.id).last == "both")
-        let planned = pane("11:30")
-        let chosen = planned.items.compactMap { if case let .overlap(block) = $0 { block } else { nil } }
-        #expect(chosen[0].card.pill.word == "Chosen")
-        #expect(chosen[0].meetings.map(\.off) == [false, true])
+        let tied = meetings(morning).filter { $0.tie != nil }
+        #expect(tied.count == 8 && Set(tied.compactMap(\.tie?.id)).count == 4)
+        #expect(
+            tied.compactMap(\.card.overlap?.name).enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
+                == ["The 15:00 overlap", "The 17:20 overlap", "The 17:40 overlap", "The 21:00 overlap"])
+        let all = meetings(morning)
+        for (index, row) in all.enumerated() {
+            guard let tie = row.tie else { continue }
+            // The other is the line next to it: above the second, below the first.
+            #expect(all[tie.second ? index - 1 : index + 1].id == tie.other)
+        }
+        // None is chosen: both are marked, the second asks, and neither says a line of its own.
+        #expect(tied.allSatisfy { $0.tie?.toChoose == true && $0.card.overlap?.options.selected == nil && $0.line == nil && !$0.off })
+        #expect(tied.map { $0.tie?.ask } == Array(repeating: [nil, "These two overlap. Choose one."], count: 4).flatMap { $0 })
+        #expect(tied[2].card.overlap?.options.rows.map(\.id).last == "both")
+        // Chosen: nothing asks, and the one not gone to is struck through.
+        let planned = meetings(pane("11:30")).filter { $0.tie != nil }
+        #expect(planned[0].card.overlap?.pill.word == "Chosen" && planned[0].tie?.toChoose == false && planned[1].tie?.ask == nil)
+        #expect(planned.prefix(2).map(\.off) == [false, true])
+    }
+
+    @Test func theCountToAMeetingIsForTheHourBeforeIt() {
+        // Tomas is at 14:20: hours ahead his line says his time alone.
+        #expect(meetings(pane("08:30")).first { $0.id == "tomas" }?.until == nil)
+        #expect(meetings(pane("13:19")).first { $0.id == "tomas" }?.until == nil)
+        #expect(
+            meetings(pane("13:20")).first { $0.id == "tomas" }?.until == "in 60 min" || meetings(pane("13:21")).first { $0.id == "tomas" }?.until == "in 59 min"
+        )
+        #expect(meetings(pane("13:50")).first { $0.id == "tomas" }?.until == "in 30 min")
     }
 
     @Test func theLiveMeetingLeads() {
@@ -528,8 +549,8 @@ struct SaveCardTests {
         let page = try suggestedPage("08:30", edit: TodayFixtures.crowd)
         let items = page.groups.flatMap(\.items)
         // The record names when the words were said: that, and not when the suggestion was written four minutes later.
-        #expect(items.first { $0.id == "p-kenji" }?.origin == "Heard yesterday at 21:37, with Kenji.")
-        #expect(items.first { $0.id == "p-marcus" }?.origin == "Heard on 22 October, with Marcus.")
+        #expect(items.first { $0.id == "p-kenji" }?.origin == "Heard yesterday at 21:37, from a message, with Kenji.")
+        #expect(items.first { $0.id == "p-marcus" }?.origin == "Heard on 22 October, from a message, with Marcus.")
         // An older record says only when it was written, and is not called heard.
         #expect(items.first { $0.id == "b-091" }?.origin == "Suggested today at 07:31.")
         // It fades by when it was said: one written yesterday from words two weeks old is gone tonight.
@@ -539,7 +560,7 @@ struct SaveCardTests {
             state.linked.records[key]?.properties["originAt"] = .string(TodayFixtures.stamp(TodayFixtures.at("15:06", day: -15)))
         }
         let old = try #require(late.groups.flatMap(\.items).first { $0.id == "p-marco" })
-        #expect(old.origin == "Heard on 4 November, with Marco." && old.fade.level == 3)
+        #expect(old.origin == "Heard on 4 November, from a message, with Marco." && old.fade.level == 3)
     }
 
     @Test func thePlanListsNoSuggestedTaskAndHasADoorToTheirPage() throws {
@@ -1362,7 +1383,7 @@ struct ReadTests {
         #expect(ended.filter { $0.title.lowercased().contains("physiotherapy") }.map(\.id) == ["physio"] && ended.allSatisfy(\.ended))
         let waking = TodayCoreTests.pane("07:52")
         #expect(meetings(waking).filter { $0.start == "08:00" }.map(\.id) == ["physio"])
-        #expect(!waking.items.contains { if case let .overlap(block) = $0 { block.meetings.contains { $0.start == "08:00" } } else { false } })
+        #expect(!meetings(waking).contains { $0.start == "08:00" && $0.tie != nil })
         // One page, under either id.
         guard case let .meeting(first) = page("11:30", .meeting("physio")), case let .meeting(second) = page("11:30", .meeting("physio-second")) else {
             return #expect(Bool(false))
@@ -1372,8 +1393,7 @@ struct ReadTests {
         #expect(day.meetings.filter { $0.start == TodayFixtures.at("14:20") }.map(\.title) == ["Tomas"])
         #expect(day.meeting("tomas-busy")?.id == "tomas" && day.meeting("tomas")?.count == 2)
         #expect(!meetings(pane).contains { $0.title == "Busy" })
-        let blocks = pane.items.compactMap { if case let .overlap(block) = $0 { block.card.name } else { nil } }
-        #expect(blocks == ["The 15:00 overlap", "The 17:20 overlap", "The 17:40 overlap", "The 21:00 overlap"])
+        #expect(Set(meetings(pane).compactMap(\.tie?.id)).count == 4)
         // A "Busy" block with nothing named at its time is still drawn, and two of them are one.
         func busy(_ id: String) -> Record {
             Record(id: id, kind: TodayFixtures.eventKind, properties: ["summary": "Busy", "at": "2026-11-19T11:00:00Z", "endsAt": "2026-11-19T11:30:00Z"])
@@ -1545,7 +1565,8 @@ private func load(_ harness: ControllerHarness<TodayApp>, _ clock: String, edit:
     await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
     await harness.deliver(
         .localRead(
-            notes: state.notes, windows: state.windows, at: TodayFixtures.at(clock), today: CivilDay(year: 2026, month: 11, day: 19),
+            notes: state.notes, windows: state.windows, sources: state.sources, at: TodayFixtures.at(clock),
+            today: CivilDay(year: 2026, month: 11, day: 19),
             zone: TodayFixtures.zone.identifier))
     await harness.deliver(.windowsRead(state.windows, requests: state.requests, stale: []))
     await harness.deliver(.contactsRead(Array(state.contacts.values), asked: []))
@@ -1607,5 +1628,119 @@ struct OptionListTests {
         // Above a Save, the assistant's option is the one selected.
         guard case let .suggested(answers) = TodayFixtures.present(TodayFixtures.state(at: "08:30"), at: "08:30").page(.suggested) else { return }
         #expect(answers.groups.flatMap(\.items).allSatisfy { $0.options.selected?.suggested == true })
+    }
+}
+
+@Suite("Where a task came from")
+struct SourceTests {
+    private static let slack = "providers.substrate.reamde.dev/slack/message"
+    private static let mail = "providers.substrate.reamde.dev/google/gmailmessage"
+
+    @Test func aRecordsPageIsTheAddressItNamesForItself() {
+        let message = Record(id: "m1", kind: Self.slack, properties: ["permalink": "https://example.slack.com/archives/C01/p170"])
+        #expect(SourcePages.page(of: message) == SourcePage(name: "Slack", url: "https://example.slack.com/archives/C01/p170"))
+        // GitHub's `url` is its API's: the page is `htmlUrl`.
+        let pull = Record(
+            id: "p1", kind: "providers.substrate.reamde.dev/github/pullrequest",
+            properties: ["url": "https://api.github.com/repos/example/app/pulls/7", "htmlUrl": "https://github.com/example/app/pull/7"])
+        #expect(SourcePages.page(of: pull) == SourcePage(name: "GitHub", url: "https://github.com/example/app/pull/7"))
+        // An API's address alone is no page, and neither is what is not a web address.
+        let bare = Record(id: "p2", kind: "providers.substrate.reamde.dev/github/pullrequest", properties: ["url": "https://api.github.com/x"])
+        #expect(SourcePages.page(of: bare) == nil)
+        #expect(SourcePages.page(of: Record(id: "x", kind: Self.slack, properties: ["permalink": "slack://channel?id=C01"])) == nil)
+        #expect(SourcePages.page(of: Record(id: "b1", kind: "providers.substrate.reamde.dev/beeper/message", properties: ["text": "hello"])) == nil)
+        let issue = Record(id: "i1", kind: "providers.substrate.reamde.dev/linear/issue", properties: ["url": "https://linear.app/example/issue/OPS-1/x"])
+        #expect(SourcePages.page(of: issue)?.name == "Linear")
+        let transcript = Record(id: "t1", kind: "example.dev/capture/transcript", properties: ["externalUrl": "https://docs.google.com/document/d/abc"])
+        #expect(SourcePages.page(of: transcript)?.name == "Google Docs")
+        let event = Record(
+            id: "e1", kind: "providers.substrate.reamde.dev/google/calendarevent", properties: ["htmlLink": "https://www.google.com/calendar/event?eid=abc"])
+        #expect(SourcePages.page(of: event)?.name == "Google Calendar")
+        // A place with no name of its own is called by its host.
+        #expect(SourcePages.name(of: URL(string: "https://www.example.org/a/b")!) == "example.org")
+    }
+
+    @Test func aMailsPageIsComposedFromItsThreadAndItsAccount() {
+        let thread = "providers.substrate.reamde.dev/google/gmailthread/t1"
+        let account = "providers.substrate.reamde.dev/google/account/a1"
+        let message = Record(
+            id: "g1", kind: Self.mail, properties: ["messageId": "18c2aaaa", "thread": ["ref": .string(thread)], "account": ["ref": .string(account)]])
+        #expect(SourcePages.related(message) == [thread, account])
+        let related: [String: Record] = [
+            thread: Record(id: "t1", kind: "providers.substrate.reamde.dev/google/gmailthread", properties: ["threadId": "18c2f0a1"]),
+            account: Record(id: "a1", kind: "providers.substrate.reamde.dev/google/account", properties: ["email": "owner+work@example.com"]),
+        ]
+        #expect(
+            SourcePages.page(of: message, with: related)
+                == SourcePage(name: "Gmail", url: "https://mail.google.com/mail/u/owner%2Bwork@example.com/#all/18c2f0a1"))
+        // Without the thread the message's own id opens its conversation.
+        #expect(SourcePages.page(of: message, with: [account: related[account]!])?.url.hasSuffix("#all/18c2aaaa") == true)
+        // Without the account's address the link would open in another account and find nothing: there is none.
+        #expect(SourcePages.page(of: message, with: [thread: related[thread]!]) == nil)
+    }
+
+    @Test func aRecordOpensInTheServersConsole() {
+        let server = URL(string: "https://substrate.example.com/")
+        #expect(
+            SourcePages.console(server, path: "\(Self.slack)/m 1")
+                == "https://substrate.example.com/data/providers.substrate.reamde.dev/slack/message/m%201")
+        #expect(SourcePages.console(nil, path: "\(Self.slack)/m1") == nil)
+        #expect(SourcePages.console(server, path: "not a path") == nil)
+    }
+
+    @Test func aTaskMadeFromARecordHasItsLinks() {
+        // On its page a suggestion has its page at the source, then the record itself.
+        guard case let .task(heard) = page("08:30", .task("p-kenji")), let item = heard.suggestion else { return #expect(Bool(false)) }
+        #expect(item.links.map(\.title) == ["Slack", "Record"] && item.links.map(\.label) == ["Open in Slack", "Open the record in Substrate"])
+        #expect(item.links[1].url == "https://substrate.example.com/data/\(TodayFixtures.origin("p-kenji"))")
+        // One whose record names no page has the record alone, and one made from nothing has no link.
+        guard case let .task(bare) = page("08:30", .task("p-marco")) else { return #expect(Bool(false)) }
+        #expect(bare.suggestion?.links.map(\.title) == ["Record"])
+        guard case let .task(typed) = page("11:30", .task("t-pharmacy")) else { return #expect(Bool(false)) }
+        #expect(typed.card.links.isEmpty)
+        // Made a task, it keeps them: beside its Done.
+        let opened = TodayFixtures.state(at: "11:30") { state in
+            state.linked.records[RecordFold.key(TodayKinds.task, "p-ticket")]?.properties["status"] = "open"
+        }
+        guard case let .task(open) = TodayFixtures.present(opened, at: "11:30").page(.task("p-ticket")) else { return #expect(Bool(false)) }
+        #expect(open.card.links.map(\.title) == ["Linear", "Record"] && open.card.done != nil)
+    }
+
+    @Test func pagesAreReadABatchAtATimeAndKept() async {
+        let harness = ControllerHarness(TodayFixtures.app)
+        var state = TodayFixtures.state(at: "08:30")
+        let known = state.sources
+        state.sources = [:]
+        await harness.deliver(.discovered(TodayFixtures.discovery))
+        await harness.deliver(.records(.linked(LinkSnapshot(phase: .signedIn, server: TodayFixtures.server, online: true))))
+        await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
+        // Nothing is asked before the device's own notes are read: what it kept comes first.
+        #expect(!harness.effects.contains { if case .readSources = $0 { true } else { false } })
+        let kept = Dictionary(uniqueKeysWithValues: known.sorted { $0.key < $1.key }.prefix(3).map { ($0.key, $0.value) })
+        await harness.deliver(
+            .localRead(notes: nil, windows: nil, sources: kept, at: TodayFixtures.at("08:30"), today: CivilDay(year: 2026, month: 11, day: 19), zone: "UTC"))
+        guard case let .readSources(first)? = harness.effects.last(where: { if case .readSources = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        #expect(first.count == 8 && first == first.sorted() && Set(first).isDisjoint(with: kept.keys))
+        // The batch answers: what was found is kept, and the next batch is what is still missing.
+        let found = Dictionary(uniqueKeysWithValues: first.dropLast(2).map { ($0, SourcePage(name: "Slack", url: "https://example.slack.com/x")) })
+        await harness.deliver(.sourcesRead(found, none: [first[6]], failed: [first[7]]))
+        #expect(harness.effects.contains { if case let .saveSources(saved) = $0 { saved.count == kept.count + found.count } else { false } })
+        guard case let .readSources(second)? = harness.effects.last(where: { if case .readSources = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        #expect(Set(second).isDisjoint(with: first) && !second.isEmpty)
+        // What failed is asked again when the app comes back; what names no page is not.
+        await harness.deliver(.sourcesRead([:], none: second, failed: []))
+        var asked: Set<String> = []
+        while case let .readSources(batch)? = harness.effects.last(where: { if case .readSources = $0 { true } else { false } }), !asked.isSuperset(of: batch) {
+            asked.formUnion(batch)
+            await harness.deliver(.sourcesRead([:], none: batch, failed: []))
+        }
+        #expect(!asked.contains(first[7]) && !asked.contains(first[6]))
+        harness.clearTrace()
+        await harness.deliver(.records(.foregrounded))
+        #expect(harness.effects.contains(.readSources([first[7]])))
     }
 }

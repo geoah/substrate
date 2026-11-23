@@ -160,6 +160,10 @@ public struct Day: Sendable {
     public var versions: [String: Int] = [:]
     /// Whether the repository holds each part: a part it lacks stays empty.
     public var discovery = Discovery()
+    /// The server the records are on: a record's own page is in its console.
+    public var server: URL?
+    /// The page at its source of each record read for one, by its path.
+    public var sources: [String: SourcePage] = [:]
 
     public init(now: Date, calendar: Calendar) {
         self.now = now
@@ -175,6 +179,12 @@ public struct Day: Sendable {
     public func list(_ id: String?) -> ListItem? { id.flatMap { id in lists.first { $0.id == id } } }
     public func task(_ id: String) -> TaskItem? { tasks.first { $0.id == id } }
     public func person(_ path: String) -> Person? { people[path] }
+
+    /// The buttons that open what something was made from: its page at the
+    /// source, once that is read, and the record itself.
+    public func links(for path: String?) -> [SourceLink] {
+        SourcePages.links(for: path, page: path.flatMap { sources[$0] }, server: server)
+    }
 
     /// A meeting by its id, or by the id another calendar gave it.
     public func meeting(_ id: String) -> Meeting? { meetings.first { $0.id == id } ?? meetings.first { $0.also.contains(id) } }

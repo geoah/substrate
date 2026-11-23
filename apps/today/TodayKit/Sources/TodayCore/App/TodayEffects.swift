@@ -52,7 +52,7 @@ public extension TodayApp {
             case .refreshAsked:
                 if signedIn { out.append(.discover) }
             case .cleared:
-                out.append(.readUsage)
+                out += [.readUsage, .saveSources([:])]
             case let .changed(key, _):
                 // A series changed: its occurrences are computed again.
                 if let discovery = state.discovery, let kind = RecordReference(path: key)?.kind, discovery.series.contains(kind), signedIn {
@@ -82,6 +82,8 @@ public extension TodayApp {
             if signedIn, state.linked.link?.online != false, let discovery = state.discovery, discovery.stale(at: at) { out.append(.discover) }
         case let .windowsRead(windows, _, _):
             out.append(.saveWindows(windows))
+        case let .sourcesRead(found, _, _):
+            if !found.isEmpty { out.append(.saveSources(state.sources)) }
         case let .asked(exchange, message, context):
             out.append(.ask(exchange, message: message, context: context))
         case .stopped:
@@ -102,6 +104,18 @@ public extension TodayApp {
         if state.linked.records != previous.linked.records || state.windows != previous.windows, signedIn {
             let missing = Self.missingContacts(state)
             if !missing.isEmpty { out.append(.readContacts(missing)) }
+        }
+        // The pages of what the tasks were made from: a batch is read when it is named, and
+        // again when the app comes back, since a read cut short by leaving never answers.
+        if !state.sourcesAsking.isEmpty, signedIn {
+            var again = false
+            if case let .records(records) = event {
+                switch records {
+                case .foregrounded, .linked: again = true
+                default: break
+                }
+            }
+            if again || state.sourcesAsking != previous.sourcesAsking { out.append(.readSources(state.sourcesAsking)) }
         }
         if state.notes != previous.notes, state.notesRead, let notes = state.notes { out.append(.saveNotes(notes)) }
         // The reminders follow the plan the presenter made, once the device
@@ -133,6 +147,8 @@ public extension TodayApp {
         case .readWindows: "windows"
         case .saveWindows: "windows.save"
         case .readContacts: nil
+        case .readSources: "sources"
+        case .saveSources: "sources.save"
         case .saveNotes: "notes"
         case .ask, .stopAsking: "ask"
         case .readUsage: "usage"
@@ -171,7 +187,8 @@ public extension TodayApp {
             return .once {
                 let now = clock.now
                 return .localRead(
-                    notes: folder.flatMap { Self.notesFile.load(from: $0) }, windows: folder.flatMap { Self.windowsFile.load(from: $0) }, at: now,
+                    notes: folder.flatMap { Self.notesFile.load(from: $0) }, windows: folder.flatMap { Self.windowsFile.load(from: $0) },
+                    sources: folder.flatMap { Self.sourcesFile.load(from: $0) }, at: now,
                     today: CivilDay(now, in: Self.calendar(timeZone)), zone: timeZone.identifier)
             }
         case let .readWindows(discovery):
@@ -196,6 +213,18 @@ public extension TodayApp {
             return .once {
                 guard let client = await source.current() else { return nil }
                 return .contactsRead(await TodayReads.contacts(client, paths), asked: paths)
+            }
+        case let .readSources(paths):
+            return .once {
+                guard let client = await source.current() else { return .sourcesRead([:], none: [], failed: paths) }
+                let read = await TodayReads.sources(client, paths)
+                return .sourcesRead(read.found, none: read.none, failed: read.failed)
+            }
+        case let .saveSources(sources):
+            guard let folder else { return .none }
+            return .once {
+                try? Self.sourcesFile.save(sources, to: folder)
+                return nil
             }
         case let .saveNotes(notes):
             guard let folder else { return .none }

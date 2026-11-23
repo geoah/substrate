@@ -2,63 +2,131 @@ import SubstrateUI
 import SwiftUI
 import TodayCore
 
-/// A meeting. As a line: its time, title and who, whether the owner goes,
-/// one line, its project; only the next fixed point says how long until
-/// it. Opened in place, or leading the day, it is a card with what to know
+/// A meeting. As a line: its time, title and who, one line, its project;
+/// only the next fixed point says how long until it, in the hour before.
+/// Opened in place, or leading the day, it is a card with what to know
 /// before it. The line and the card are two faces on one surface
 /// (`PanelSurface`): one fades as the other comes, and the surface grows
 /// from the list's to a card's.
+///
+/// Two meetings that share time are two such lines, tied (`MeetingTie`):
+/// nothing is drawn between them. While no choice is made a band marks
+/// both and the second asks for one; a tap on either opens the options
+/// under them, and they close by themselves once one is chosen. The one
+/// the owner does not go to is then struck through, and a tap on it opens
+/// the options again.
 struct MeetingRowView: View {
     @Environment(\.words) private var words
     var meeting: MeetingRow
     /// Where it stands among the closed meetings around it.
     var joins = Joins()
-    /// Inside an overlap's block: drawn on the block's own card.
-    var inBlock = false
 
     @Environment(PaneViewState.self) private var state
 
     private var openID: String { "meeting:" + meeting.id }
     var isCard: Bool { !meeting.off && (meeting.leads || state.isOpen(openID)) }
 
+    private var tie: MeetingTie? { meeting.tie }
+    private var choiceID: String? { tie.map { "overlap:" + $0.id } }
+    /// The two are both lines: the choice between them opens under them.
+    /// One whose other is drawn in full has the options in that card.
+    private var paired: Bool {
+        guard let tie else { return false }
+        return !tie.otherLeads && !meeting.leads && !state.isOpen("meeting:" + tie.other) && !state.isOpen(openID)
+    }
+    /// A tap opens the choice, not the meeting: while none is made, and on
+    /// the one the owner does not go to.
+    private var opensChoice: Bool { paired && (tie?.toChoose == true || meeting.off) }
+    private var choosing: Bool { paired && choiceID.map(state.isOpen) == true }
+
     var body: some View {
         // No stack of their own around the two faces: a ZStack around a tall one lays out what it holds a line short.
-        let faces = Group {
+        Group {
             if isCard {
-                card.padding(inBlock ? 12 : TodayLook.inset).transition(.face)
+                card.padding(TodayLook.inset).transition(.face)
             } else {
                 line.transition(.face)
             }
         }
-        .rowLine(!isCard && joins.above)
-        // Inside an overlap's block the block is the surface.
-        if inBlock {
-            faces.frame(maxWidth: .infinity, alignment: .topLeading).clipped()
-        } else {
-            faces.panel(isCard ? .card() : .line(joins))
+        // The line moves as one thing. Its faces stand inside a transition, and without this the words of
+        // a line that is carried down by what opens above it take a shorter way than its glyph, its
+        // badges and its surface, and run ahead of their own line for a moment.
+        .geometryGroup()
+        // Nothing parts two lines that are tied.
+        .rowLine(!isCard && joins.above && tie?.second != true)
+        .panel(isCard ? .card() : .line(joins))
+        .onChange(of: meeting.card.overlap?.options.selected?.id) { _, chosen in
+            // One was chosen: it is seen filled, then the two close.
+            guard tie?.second == true, chosen != nil, let choiceID, state.isOpen(choiceID) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(550))
+                if state.isOpen(choiceID) { state.toggle(choiceID) }
+            }
         }
     }
 
     private var line: some View {
-        Group {
-            if meeting.off {
-                lineBody
-            } else {
-                Button {
-                    state.toggle(openID)
-                } label: {
-                    lineBody.contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if meeting.off, !opensChoice {
+                    lineBody
+                } else {
+                    Button(action: tap) {
+                        lineBody.contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(opensChoice ? "Opens the choice between the two" : "Opens in place")
+                    // On the button, never on what holds it: with an accessibility value on the line's
+                    // container the line no longer moves as one thing (`geometryGroup` below).
+                    .accessibilityValue(meeting.attendance ?? "")
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens in place")
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 10)
+            // Two that are tied stand closer to each other than to the lines around them.
+            .padding(.top, tie?.second == true ? 5 : TodayLook.gap)
+            // The line that asks stands clear of the band's lower edge.
+            .padding(.bottom, tie != nil && tie?.second != true ? 5 : TodayLook.gap + (tie?.ask != nil && paired ? 6 : 0))
+            .frame(minHeight: tie == nil ? 50 : TodayLook.target, alignment: .top)
+            // A meeting that ended is a dimmed row of what is done; it still opens.
+            .opacity(meeting.ended ? 0.6 : 1)
+            if choosing, tie?.second == true, let overlap = meeting.card.overlap {
+                VStack(alignment: .leading, spacing: 8) {
+                    OptionListView(overlap.options)
+                    if let chosen = overlap.chosen { SavedLine(chosen) }
+                    if let ready = overlap.ready { ReadyMessageView(message: ready) }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .transition(.unfold)
             }
         }
-        .padding(.leading, inBlock ? 10 : 20)
-        .padding(.trailing, 10)
-        .padding(.vertical, TodayLook.gap)
-        .frame(minHeight: 50, alignment: .top)
-        // A meeting that ended is a dimmed row of what is done; it still opens.
-        .opacity(meeting.ended ? 0.6 : 1)
+        .background { band }
+    }
+
+    /// What marks two tied lines while no choice is made: one band behind
+    /// both, and behind the options once they are open.
+    @ViewBuilder private var band: some View {
+        if let tie {
+            let (top, bottom): (CGFloat, CGFloat) = tie.second ? (0, 16) : (16, 0)
+            UnevenRoundedRectangle(
+                topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous
+            )
+            .fill(.cautionFill)
+            .padding(.horizontal, 6)
+            .padding(.top, tie.second ? 0 : 5)
+            .padding(.bottom, tie.second ? 5 : 0)
+            .opacity(tie.toChoose && paired ? 1 : 0)
+        }
+    }
+
+    private func tap() {
+        if opensChoice, let choiceID {
+            state.toggle(choiceID)
+        } else {
+            // Opened in full, it holds the options itself: the ones under the two close.
+            state.toggle(openID, closing: choiceID)
+        }
     }
 
     private var lineBody: some View {
@@ -81,17 +149,21 @@ struct MeetingRowView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    if !meeting.off {
-                        if let until = meeting.until {
-                            Text(until).font(TodayLook.Text.button).foregroundStyle(.ink).fixedSize()
-                        }
-                        RowChevron(turn: .closed)
+                    if !meeting.off, let until = meeting.until {
+                        Text(until).font(TodayLook.Text.button).foregroundStyle(.ink).fixedSize()
+                    }
+                    // Two that wait for a choice open as one thing, with one chevron: at the top right of
+                    // their band, where every row's is.
+                    if opensChoice ? (tie?.second != true || !(tie?.toChoose ?? false)) : !meeting.off {
+                        RowChevron(turn: choosing && opensChoice ? .open : .closed)
                     }
                 }
+                if let ask = tie?.ask, paired {
+                    Text(ask).font(TodayLook.Text.second.weight(.medium)).foregroundStyle(.cautionWords)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if !meeting.off {
-                    if let attendance = meeting.attendance {
-                        Text(attendance).font(TodayLook.Text.second.weight(.semibold)).foregroundStyle(.inkSecond)
-                    }
                     if let line = meeting.line {
                         Text(line).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
                             .multilineTextAlignment(.leading)
@@ -134,8 +206,7 @@ struct MeetingRowView: View {
                     }
                 }
             }
-            // Inside an overlap's block the block has said the overlap and holds its options: the meeting does not say them again.
-            MeetingCardView(card: meeting.card, scope: meeting.id, showsOverlap: !inBlock)
+            MeetingCardView(card: meeting.card, scope: meeting.id)
         }
     }
 
@@ -160,8 +231,6 @@ struct MeetingCardView: View {
     var card: MeetingCard
     /// What keeps this card's ticked points apart from another's.
     var scope: String
-    /// False where the overlap this meeting is in is drawn around it.
-    var showsOverlap = true
 
     @Environment(PaneViewState.self) private var state
     @Environment(\.pane) private var pane
@@ -172,7 +241,7 @@ struct MeetingCardView: View {
             if let purpose = card.purpose {
                 Text(purpose).font(TodayLook.font(.callout)).foregroundStyle(.ink).fixedSize(horizontal: false, vertical: true)
             }
-            if showsOverlap, let overlap = card.overlap { OverlapCardView(card: overlap) }
+            if let overlap = card.overlap { OverlapCardView(card: overlap) }
             if !card.tasks.isEmpty {
                 section(card.tasksTitle) {
                     RowList {
@@ -252,6 +321,7 @@ struct MeetingCardView: View {
                 }
             }
             if let join = card.join { PaneButton(join) }
+            if !card.links.isEmpty { SourceLinksView(links: card.links) }
             if let after = card.after {
                 section(card.labels.after) {
                     Text(after).font(TodayLook.Text.body).foregroundStyle(.inkSecond).fixedSize(horizontal: false, vertical: true)
@@ -265,45 +335,6 @@ struct MeetingCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let label { SectionLabel(label) }
             content()
-        }
-    }
-}
-
-/// Two meetings that overlap, as one block around them with its options.
-struct OverlapBlockView: View {
-    var block: OverlapBlock
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(block.card.name).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                    Spacer(minLength: 8)
-                    PillView(block.card.pill)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(block.card.name).font(TodayLook.Text.rowTitle).foregroundStyle(.ink)
-                    PillView(block.card.pill)
-                }
-            }
-            Text(block.card.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 0) {
-                ForEach(Array(block.meetings.enumerated()), id: \.element.id) { index, meeting in
-                    MeetingRowView(meeting: meeting, joins: Joins(above: index > 0), inBlock: true)
-                }
-            }
-            .background(.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            OptionListView(block.card.options)
-            if let chosen = block.card.chosen { SavedLine(chosen) }
-            if let ready = block.card.ready { ReadyMessageView(message: ready) }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            let shape = RoundedRectangle(cornerRadius: TodayLook.listRadius, style: .continuous)
-            shape.fill(TodayLook.soft(scheme)).overlay(shape.strokeBorder(TodayLook.line(scheme), lineWidth: 1))
         }
     }
 }

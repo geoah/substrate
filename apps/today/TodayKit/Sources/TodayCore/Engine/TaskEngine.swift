@@ -236,13 +236,15 @@ extension DayEngine {
         }
         let left = day.returns[task.path].map { TaskCard.Left(heading: "Where you left it, \(clock($0.at))", text: $0.text) }
         let held = urgentState(task) == .held || urgentState(task) == .unchecked(interrupts: false)
-        return TaskCard(
+        var card = TaskCard(
             id: task.id, chips: taskChips(task), details: details(task), left: left,
             deferred: task.deferrals >= 3 ? "Put off \(Words.low(Words.num(task.deferrals))) times." : nil,
             markedTitle: held ? "Marked urgent, and waiting" : nil, marked: held ? markedBlock(task) : nil, doors: doors,
             done: task.isOpen ? ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)) : nil,
             said: task.status == .done ? (task.completedAt.map { "Done at \(clock($0))." } ?? "Done.") : nil,
             moss: mossBox(.task(task.id), about: "this task", asks: ["Break it into steps", "Who else could take this?"]))
+        card.links = day.links(for: task.origin)
+        return card
     }
 
     func taskRow(_ task: TaskItem, state: Row.State) -> Row {
@@ -278,7 +280,7 @@ extension DayEngine {
                 line: "The urgent pill comes off" + (task.was.map { " and it is flagged \($0.word) again" } ?? "") + ".",
                 command: .urgent(task: task.id, .notUrgent)),
         ]
-        return UrgentCard(
+        var card = UrgentCard(
             id: task.id, setBy: "\(setter(task)) marked it urgent at \(clock(task.updatedAt)).",
             text: task.reason ?? task.details.map { Words.excerpt($0) }, voices: voices,
             unchecked: unchecked ? (day.reachable ? "Nobody has checked this yet." : "Moss cannot be reached, so nobody has checked this.") : nil,
@@ -286,6 +288,8 @@ extension DayEngine {
             options: OptionList(.round, rows), project: chip(task.list),
             done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)),
             moss: day.reachable ? mossBox(.task(task.id), about: "this task", asks: ["What do I need to know?", "Who else could take this?"]) : nil)
+        card.links = day.links(for: task.origin)
+        return card
     }
 
     func urgentRow(_ task: TaskItem, parked: String?) -> Row {

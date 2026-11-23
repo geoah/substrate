@@ -500,6 +500,10 @@ public struct SuggestedItem: Codable, Equatable, Sendable, Identifiable {
     public var pending: Bool
     /// Set where the owner answered it in words: nothing else is drawn.
     public var told: Told?
+    /// What it was made from, as buttons that leave the app: its page at
+    /// the source ("Slack"), and the record itself. Empty where it was made
+    /// from nothing: the owner typed it.
+    public var links: [SourceLink] = []
 
     public init(
         id: String, title: String, origin: String, quote: String? = nil, brief: Brief? = nil, fade: Fade, chips: Chips = .none,
@@ -569,16 +573,35 @@ public struct OverlapCard: Codable, Equatable, Hashable, Sendable, Identifiable 
     }
 }
 
-/// An overlap in the timeline: one block around its meetings.
-public struct OverlapBlock: Codable, Equatable, Sendable, Identifiable {
+/// What ties a meeting's line to the line of the meeting it shares time
+/// with. The two stay lines of the day like any other, one under the other
+/// with nothing between them. While no choice is made both are marked, the
+/// second says so, and a tap on either opens the options under them
+/// (`MeetingCard.overlap`); once one is chosen they close, and the meeting
+/// the owner does not go to is struck through.
+public struct MeetingTie: Codable, Equatable, Hashable, Sendable {
+    /// The overlap's id: what the two lines open and close together.
     public var id: String
-    public var card: OverlapCard
-    public var meetings: [MeetingRow]
+    /// The other meeting's id.
+    public var other: String
+    /// The second of the two: the options open under it.
+    public var second: Bool
+    /// No choice is made yet.
+    public var toChoose: Bool
+    /// "These two overlap. Choose one.", under the second while no choice
+    /// is made.
+    public var ask: String?
+    /// The other meeting leads the day, drawn in full with the options in
+    /// it: this line opens its own card.
+    public var otherLeads: Bool
 
-    public init(id: String, card: OverlapCard, meetings: [MeetingRow]) {
+    public init(id: String, other: String, second: Bool, toChoose: Bool, ask: String? = nil, otherLeads: Bool = false) {
         self.id = id
-        self.card = card
-        self.meetings = meetings
+        self.other = other
+        self.second = second
+        self.toChoose = toChoose
+        self.ask = ask
+        self.otherLeads = otherLeads
     }
 }
 
@@ -589,6 +612,8 @@ public struct OverlapBlock: Codable, Equatable, Sendable, Identifiable {
 /// fixed point says how long until it. It opens in place to `card`; the
 /// meeting that leads is drawn open.
 public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
+    /// Set where it shares time with the meeting next to it in the day.
+    public var tie: MeetingTie?
     public var id: String
     /// "14:20".
     public var start: String
@@ -597,12 +622,13 @@ public struct MeetingRow: Codable, Equatable, Sendable, Identifiable {
     public var title: String
     /// Up to three of who is in it.
     public var people: [Badge]
-    /// "Going.", "Asked to move, no answer yet.": only inside an overlap
-    /// that is chosen.
+    /// "Going.", "Not going.": only inside an overlap that is chosen. Said
+    /// aloud; to the eye the line that is struck through says it.
     public var attendance: String?
     /// "Your task: the clash fix. A task, not done.", or its purpose.
     public var line: String?
-    /// "in 2 h 40", on the next fixed point alone.
+    /// "in 40 min", on the next fixed point alone and within the hour
+    /// before it: hours ahead, its time says enough.
     public var until: String?
     /// Under the title of the meeting in full: "to 14:40, Google Meet, 2 people".
     public var detail: String?
@@ -692,6 +718,8 @@ public struct MeetingCard: Codable, Equatable, Sendable {
     public var join: ButtonPresentation?
     public var after: String?
     public var moss: MossBox?
+    /// The event's own page in its calendar, as a button that leaves the app.
+    public var links: [SourceLink] = []
     /// The label over each part.
     public var labels = MeetingLabels()
 
@@ -776,6 +804,10 @@ public struct TaskCard: Codable, Equatable, Sendable, Identifiable {
     /// "Done at 11:52."
     public var said: String?
     public var moss: MossBox?
+    /// What it was made from, as buttons that leave the app: its page at
+    /// the source ("Slack"), and the record itself. Empty where it was made
+    /// from nothing: the owner typed it.
+    public var links: [SourceLink] = []
 
     public init(
         id: String, chips: Chips = .none, details: String? = nil, brief: Brief? = nil, left: Left? = nil, deferred: String? = nil,
@@ -832,6 +864,10 @@ public struct UrgentCard: Codable, Equatable, Sendable, Identifiable {
     public var done: ButtonPresentation?
     public var said: String?
     public var moss: MossBox?
+    /// What it was made from, as buttons that leave the app: its page at
+    /// the source ("Slack"), and the record itself. Empty where it was made
+    /// from nothing: the owner typed it.
+    public var links: [SourceLink] = []
 
     public init(
         id: String, setBy: String, text: String? = nil, voices: [Voice] = [], unchecked: String? = nil, took: String? = nil,

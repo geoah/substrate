@@ -19,6 +19,12 @@ public extension TodayApp {
                 next.requests = []
                 next.contacts = [:]
                 next.contactsAsked = []
+                next.sources = [:]
+                next.sourcesNone = []
+                next.sourcesFailed = []
+                next.sourcesAsking = []
+            // Back in front, or linked again: what could not be read is asked for again.
+            case .foregrounded, .linked: next.sourcesFailed = []
             default: break
             }
             // The night starts at the last look of the day before: once the
@@ -36,7 +42,9 @@ public extension TodayApp {
             if discovery.linked != linked.kinds(in: next.linked) { next.linked = linked.apply(.rekinded(discovery.linked), to: next.linked) }
         case let .discoveryFailed(words):
             next.discoveryProblem = words
-        case let .localRead(notes, windows, at, today, zone):
+        case let .localRead(notes, windows, sources, at, today, zone):
+            // What was read since the app opened stands over what the device kept.
+            if let sources { next.sources = sources.merging(next.sources) { _, read in read } }
             next.notesRead = true
             next.zone = zone
             next.notes = Self.rolled(notes, at: at, today: today)
@@ -51,6 +59,11 @@ public extension TodayApp {
         case let .contactsRead(records, asked):
             for record in records { next.contacts["\(record.kind)/\(record.id)"] = record }
             next.contactsAsked.formUnion(asked)
+        case let .sourcesRead(found, none, failed):
+            next.sources.merge(found) { _, read in read }
+            next.sourcesNone.formUnion(none)
+            next.sourcesFailed.formUnion(failed)
+            next.sourcesAsking = []
         case let .looked(at, today, zone):
             next.zone = zone
             if next.notesRead { next.notes = Self.rolled(next.notes, at: at, today: today) }
@@ -115,8 +128,30 @@ public extension TodayApp {
                 if next.notes?.day != today { next.notes = Self.rolled(next.notes, at: at, today: today) }
             }
         }
+        // The pages of what the tasks were made from, a few at a time and
+        // one batch at once: the next is named when the last has answered.
+        switch event {
+        case .records, .localRead, .sourcesRead:
+            if next.sourcesAsking.isEmpty, next.notesRead, next.linked.link?.signedIn == true, next.linked.link?.online != false {
+                next.sourcesAsking = Self.missingSources(next)
+            }
+        default: break
+        }
         if next != previous { next.revision = previous.revision &+ 1 }
         return next
+    }
+
+    /// The records open tasks and suggested tasks were made from whose
+    /// page the root has not read or asked for, a few at a time.
+    static func missingSources(_ state: State) -> [String] {
+        var wanted: Set<String> = []
+        for record in state.linked.records.values where record.kind == TodayKinds.task {
+            let status = record["status"]?.text ?? "open"
+            guard status == "open" || status == "proposed", let path = record["origin"]?.referencePath else { continue }
+            guard state.sources[path] == nil, !state.sourcesNone.contains(path), !state.sourcesFailed.contains(path) else { continue }
+            wanted.insert(path)
+        }
+        return Array(wanted.sorted().prefix(8))
     }
 
     /// The day's notes after a look: the same day's with the look kept, or

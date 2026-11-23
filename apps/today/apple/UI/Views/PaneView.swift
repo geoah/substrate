@@ -139,7 +139,6 @@ struct PaneSlotView: View {
         case let .happening(happening): HappeningView(happening: happening)
         case let .row(row): RowView(row: row, joins: slot.joins)
         case let .meeting(meeting): MeetingRowView(meeting: meeting, joins: slot.joins)
-        case let .overlap(block): OverlapBlockView(block: block)
         case let .parked(line): ParkedLineView(line: line)
         case let .unfinished(card): UnfinishedCardView(card: card)
         case let .note(note): NoteLineView(note: note)

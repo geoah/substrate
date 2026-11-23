@@ -30,10 +30,13 @@ public struct TodayApp: LinkedRecordsApp {
         /// What the device kept: the day's notes and the last window reads,
         /// with the instant, the owner's day and time zone as the device
         /// has them.
-        case localRead(notes: DayNotes?, windows: Windows?, at: Date, today: CivilDay, zone: String)
+        case localRead(notes: DayNotes?, windows: Windows?, sources: [String: SourcePage]?, at: Date, today: CivilDay, zone: String)
         case windowsRead(Windows, requests: [Record], stale: [StaleSource])
         case windowsFailed(String)
         case contactsRead([Record], asked: [String])
+        /// The pages of the records asked for: the ones found, the ones
+        /// that name none, and the ones that could not be read.
+        case sourcesRead([String: SourcePage], none: [String], failed: [String])
         /// The owner looked at the pane.
         case looked(at: Date, today: CivilDay, zone: String)
         case drafted(Drafts)
@@ -69,6 +72,8 @@ public struct TodayApp: LinkedRecordsApp {
         case readWindows(Discovery)
         case saveWindows(Windows)
         case readContacts([String])
+        case readSources([String])
+        case saveSources([String: SourcePage])
         case saveNotes(DayNotes)
         case ask(Exchange, message: String, context: [String])
         case stopAsking
@@ -95,6 +100,15 @@ public struct TodayApp: LinkedRecordsApp {
         /// The contacts the rows name, by path, and the paths asked for.
         public var contacts: [String: Record] = [:]
         public var contactsAsked: Set<String> = []
+        /// The page at its source of each record a task was made from, by
+        /// the record's path: read once each, and kept on the device.
+        public var sources: [String: SourcePage] = [:]
+        /// The records read that name no page, and the ones whose read
+        /// failed, which are asked for again when the app comes back.
+        public var sourcesNone: Set<String> = []
+        public var sourcesFailed: Set<String> = []
+        /// The records being read for their page now: one batch at a time.
+        public var sourcesAsking: [String] = []
         public var stale: [StaleSource] = []
         public var drafts = Drafts()
         public var notes: DayNotes?
@@ -123,6 +137,7 @@ public struct TodayApp: LinkedRecordsApp {
     static let kindsFile = SettingsFile<Discovery>(name: "today-kinds.json")
     static let notesFile = SettingsFile<DayNotes>(name: "today-day.json")
     static let windowsFile = SettingsFile<Windows>(name: "today-windows.json")
+    static let sourcesFile = SettingsFile<[String: SourcePage]>(name: "today-sources.json")
 
     public let linked: LinkedRecords
     public let build: BuildFacts

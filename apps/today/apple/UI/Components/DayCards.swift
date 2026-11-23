@@ -152,6 +152,7 @@ struct SuggestedItemView: View {
                     Text(item.origin).font(TodayLook.Text.footnote).foregroundStyle(.inkSecond)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if !item.links.isEmpty { SourceLinksView(links: item.links) }
                 if let quote = item.quote {
                     Folded(brief: item.brief, id: "said:" + item.id) { all in QuoteText(all ? quote : item.brief?.text ?? quote, whole: all) }
                 }
@@ -447,7 +448,7 @@ struct UrgentCardView: View {
             if !card.options.isEmpty { OptionListView(card.options, onTint: true) }
             if let chosen = card.chosen { SavedLine(chosen) }
             if let ready = card.ready { ReadyMessageView(message: ready) }
-            if let done = card.done { PaneButton(done) }
+            ActionRow(action: card.done, links: card.links)
             if let said = card.said { SavedLine(said) }
             if let moss = card.moss { MossBoxView(box: moss) }
         }
@@ -518,7 +519,7 @@ struct TaskCardView: View {
                 }
                 .overlay(alignment: .bottom) { Rectangle().fill(TodayLook.line(scheme)).frame(height: 0.5) }
             }
-            if let done = card.done { PaneButton(done) }
+            ActionRow(action: card.done, links: card.links)
             if let said = card.said { SavedLine(said) }
             if let moss = card.moss { MossBoxView(box: moss) }
         }

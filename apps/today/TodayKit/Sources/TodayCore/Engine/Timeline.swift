@@ -221,13 +221,16 @@ extension DayEngine {
         if meeting.count > 1 { meta.append("\(meeting.count) people") }
         let chips = Chips(
             people: who.compactMap { entry in entry.person.map { PersonChip(id: $0.path, label: $0.short, badge: $0.badge) } })
-        return MeetingCard(
+        var card = MeetingCard(
             meta: meta.isEmpty ? nil : Words.cap(meta.joined(separator: ", ")), chips: chips, purpose: dossier?.purpose,
             overlap: overlap(of: meeting).map(card),
             tasksTitle: tasks.isEmpty ? nil : "Your tasks with \(who.count == 1 ? (who[0].person?.short ?? who[0].name) : "the room")",
             tasks: tasks.map(taskLine), since: dossier?.since, raise: dossier?.raise ?? [],
             readFirst: (dossier?.readFirst ?? []).enumerated().map { index, path in
-                MeetingCard.Reading(id: "\(index)", title: RecordReference(path: path).map(fallbackName) ?? path, kind: nil)
+                // What is read first opens at its source where that is known, else as the record itself.
+                MeetingCard.Reading(
+                    id: "\(index)", title: RecordReference(path: path).map(fallbackName) ?? path, kind: nil,
+                    url: day.sources[path]?.url ?? SourcePages.console(day.server, path: path))
             },
             join: meeting.join.flatMap { url in
                 soon
@@ -235,9 +238,16 @@ extension DayEngine {
                     : ButtonPresentation("Join link", glyph: .join, role: .quiet, url: url)
             }, after: dossier?.after,
             moss: mossBox(.meeting(meeting.id), about: meeting.title, asks: ["Prepare me in three lines", "What is open with the people in it?"]))
+        if let page = meeting.page, let url = URL(string: page), url.scheme?.hasPrefix("http") == true {
+            let name = SourcePages.name(of: url)
+            card.links = [SourceLink(id: "source", title: name, label: "Open in \(name)", url: page)]
+        }
+        return card
     }
 
-    func meetingRow(_ meeting: Meeting, leads: Bool) -> MeetingRow {
+    /// - Parameter tie: set where the meeting it shares time with is drawn
+    ///   next to it.
+    func meetingRow(_ meeting: Meeting, leads: Bool, tie: MeetingTie? = nil) -> MeetingRow {
         let who = people(meeting)
         let tasks = tasks(for: meeting)
         let attends = attends(meeting)
@@ -245,13 +255,18 @@ extension DayEngine {
         if let first = tasks.first {
             line = (first.isProposed ? "Suggested: " : "Your task: ") + Words.low(first.name) + ". " + (taskLine(first).line ?? "")
         }
-        let isNext = nextMeeting?.id == meeting.id
-        return MeetingRow(
+        // Hours ahead the time says enough: the count is for the hour before.
+        let isNext = nextMeeting?.id == meeting.id && meeting.start.timeIntervalSince(now) <= 60 * 60
+        // While the two wait for a choice they are their times and titles, and one line that asks.
+        if tie?.toChoose == true { line = nil }
+        var row = MeetingRow(
             id: meeting.id, start: clock(meeting.start), end: clock(meeting.end), title: meeting.title,
             people: who.prefix(3).map { badge(name: $0.name, person: $0.person) },
             attendance: attends.map { $0 ? "Going." : "Not going." }, line: attends == false ? nil : line,
             until: isNext ? Words.until(meeting.start, now: now) : nil, live: meeting.start <= now && meeting.end > now, leads: leads,
             off: attends == false, card: meetingCard(meeting))
+        row.tie = tie
+        return row
     }
 
     /// The shape of the day in real times, for the plan's opening line.

@@ -279,6 +279,8 @@ public struct Meeting: Equatable, Sendable {
     public var people: [Person]
     public var place: String?
     public var join: String?
+    /// The event's own page in its calendar.
+    public var page: String?
     public var count: Int
     /// The ids of the same event as other calendars hold it, and of a
     /// "Busy" block that only shadows it: a page, a dossier or a choice
@@ -313,6 +315,7 @@ public struct Meeting: Equatable, Sendable {
         }
         count = attendees.count
         join = record["hangoutLink"]?.text ?? record["url"]?.text
+        page = record["htmlLink"]?.text
         place = record["location"]?.text ?? (record["hangoutLink"]?.text != nil ? "Google Meet" : nil)
     }
 

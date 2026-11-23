@@ -59,6 +59,31 @@ public enum TodayFixtures {
     static func contact(_ id: String, _ name: String) -> Record { Record(id: id, kind: TodayKinds.contact, properties: ["name": .string(name)], version: 1) }
     static func person(_ id: String) -> String { "\(TodayKinds.contact)/\(id)" }
 
+    /// The message a suggested task was made from, as the invented day has it.
+    public static func origin(_ task: String) -> String { "providers.substrate.reamde.dev/slack/message/m-\(task)" }
+
+    /// Where the invented day's messages can be read at their source: most
+    /// in a chat, one as a mail, one in an issue tracker, and one nowhere,
+    /// so its task has the record alone.
+    public static func sources(_ tasks: some Sequence<String>) -> [String: SourcePage] {
+        var out: [String: SourcePage] = [:]
+        for task in tasks {
+            switch task {
+            case "p-marco": continue
+            case "p-ticket": out[origin(task)] = SourcePage(name: "Linear", url: "https://linear.app/example/issue/OPS-412")
+            case "p-casey": out[origin(task)] = SourcePage(name: "Gmail", url: "https://mail.google.com/mail/u/owner@example.com/#all/18c2f0a1b2c3d4e5")
+            default:
+                out[origin(task)] = SourcePage(
+                    name: "Slack", url: "https://example.slack.com/archives/C0EXAMPLE/p\(task.utf8.reduce(1_700_000) { ($0 &* 31 &+ Int($1)) % 1_000_000_000 })"
+                )
+            }
+        }
+        return out
+    }
+
+    /// The server the invented day's records are on.
+    public static let server = URL(string: "https://substrate.example.com")
+
     static func task(
         _ id: String, _ name: String, list: String? = nil, flag: String = "none", status: String = "open", people: [String] = [],
         created: Date, why: String? = nil, quote: String? = nil, extra: [String: JSONValue] = [:]
@@ -267,7 +292,7 @@ public enum TodayFixtures {
             out.append(
                 task(
                     s.0, s.1, list: s.2, flag: s.3, status: "proposed", people: s.4, created: s.5.addingTimeInterval(240), quote: s.8,
-                    extra: ["originAt": .string(stamp(s.5))]))
+                    extra: ["originAt": .string(stamp(s.5)), "origin": .string(origin(s.0))]))
             out.append(
                 advice(
                     s.0, s.6, s.7,
@@ -637,6 +662,12 @@ public enum TodayFixtures {
         state.windows.occurrences = occurrences
         state.windows.meetings = meetings
         state.windows.readAt = now
+        // The pages of what the tasks were made from are read already.
+        state.sources = sources(
+            state.linked.records.values.compactMap { record in
+                record["origin"]?.referencePath.flatMap { $0.hasPrefix(origin("")) ? String($0.dropFirst(origin("").count)) : nil }
+            })
+        state.linked.link = LinkSnapshot(phase: .signedIn, server: server, online: true)
         // The suggestions on the priorities are taken at 08:41.
         state.requests = now < at("08:41") ? requests : []
         if now >= at("08:41") {

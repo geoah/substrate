@@ -18,6 +18,7 @@ own against the kit.
   is typed under "Other" on a suggested task (`SuggestedItem.other`), until its Save. A view sends that Save
   as `saveSuggested(ids, words:)` with the words of those ids, whatever `words` the button's own command carries.
 - **Ticks under "To raise"** on a meeting.
+- **The choice between two tied meetings**, open or closed: the key `overlap:<MeetingTie.id>`.
 - **What was finished a moment ago.** A command that finishes something (`TodayCommand.finishing` is not
   nil: `done`, `log(row:done:)`, `logOccurrence(_:done:)`) is not sent on the tap. The view keeps it in a
   `Finishing`: for `Finishing.countdown` (3 seconds) the control that was pressed is a countdown and the way
@@ -46,7 +47,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `TodayPresentation`                                          | The root: `pane`, `page(_:)`, the kit's notices, problem, settings, storage and about, and `writing`    |
 | `PanePresentation`                                           | The day: `strip`, `items` in the order drawn, `ground`, `composer`, `answer`                            |
-| `PaneItem`                                                   | One thing in the timeline: night, earlier, happening, row, meeting, overlap, parked, unfinished, note   |
+| `PaneItem`                                                   | One thing in the timeline: night, earlier, happening, row, meeting, parked, unfinished, note            |
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |
 | `NightPresentation`, `NightItem`, `NightDecision`            | The night: one line folded; open, by project, with "Got it"                                             |
 | `EarlierPresentation`                                        | "Earlier today": a header with a count, and its `entries` in one order by when they happened: a `row` for what was finished (`Row.State.done`: crossed out, its filled tick takes it back), a `meeting` that ended (`MeetingRow.ended`: dimmed), a `line` for bookkeeping |
@@ -57,7 +58,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `YesterdayCard`                                              | What was not logged yesterday: each routine with its option list, acting on a tap                       |
 | `SuggestedItem`                                              | One suggested task wherever it is drawn: `save` set when drawn alone, `other` while "Other" is the pick, `told` once the owner answered it in words |
 | `PageRowCard`                                                | What a row that opens a page holds where it leads: one line and one button ("Open the plan", "Open the suggested tasks") |
-| `OverlapCard`, `OverlapBlock`                                | An overlap's options; in the timeline, the block around its meetings                                    |
+| `OverlapCard`, `MeetingTie`                                  | An overlap's options; and what ties the lines of two meetings that share time ([below](#two-meetings-that-share-time)) |
 | `MeetingRow`, `MeetingCard`                                  | A meeting as a line, and in full                                                                        |
 | `TaskCard`, `Door`, `TaskLine`                               | A task open (chips, `details`, doors for Flag, Project and When, Done, the assistant's box); a task as a list line. `details` is all of the description, in the day as on the task's page; `brief`, set only on the current item with a long one, is its opening words and the two words of the button that shows all of it in place and puts it back |
 | `UrgentCard`                                                 | What cannot wait, in its three states (open, chosen, unchecked)                                         |
@@ -79,6 +80,41 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 `Pill.Kind` gives a pill's tone and glyph: `suggested` (sparkles), `urgent` (flame), `stale` (clock),
 `caution`, `neutral`. An `OptionRow` with `suggested` carries the Suggested pill, and `reason` is the
 assistant's sentence under it.
+
+## Two meetings that share time
+
+They are two `PaneItem.meeting` lines like any other, one under the other, each with a `MeetingRow.tie` that
+names the overlap and the other meeting. Nothing is drawn around them and nothing between them.
+
+- **No choice yet** (`tie.toChoose`): one band marks both, the second says `tie.ask` ("These two overlap.
+  Choose one."), neither says a line of its own, and the pair has one chevron, at the top right of the band.
+  A tap on either opens the options (`MeetingRow.card.overlap`) under the second line, in place.
+- **A choice** sends `decideOverlap` at once. The chosen option is seen filled, then the view closes the
+  options by itself. The meeting the owner does not go to is `off`: struck through, with nothing under it.
+- **Afterwards** the line the owner goes to opens its own card, which holds the overlap and its options. A
+  tap on the struck line opens the options under the two again.
+- Where one of the two leads the day, or is open as its card, that card holds the options and the other is
+  a plain line (`tie.otherLeads`, or the view's own open state).
+
+`MeetingRow.until` is set on the next fixed point only within the hour before it: hours ahead, its time says
+enough.
+
+## What a thing was made from: its links
+
+`TaskCard.links`, `UrgentCard.links`, `SuggestedItem.links` and `MeetingCard.links` are `SourceLink`s:
+buttons that leave the app. A view draws each as a small button with its `title` and the arrow of a link
+that opens elsewhere, names it aloud with its `label`, and opens its `url` on a tap. On a task they stand
+beside "Done"; on a suggestion under the line that says when it was heard.
+
+- `source`: the record's page where it came from, titled by the place ("Slack", "Gmail", "Linear",
+  "GitHub", "Google Docs", else the host). Present once the root has read that page
+  ([records](records.md#where-a-task-came-from-its-links)).
+- `record`: the record itself in the server's console, which a browser opens. Present whenever the thing
+  names what it was made from and the server is known.
+
+A thing made from nothing (a task the owner typed) has no links. A meeting has its event's own page in its
+calendar. `MeetingCard.Reading.url` opens what is to be read first the same way: its page at the source
+where that is read, else the record.
 
 ## Commands
 

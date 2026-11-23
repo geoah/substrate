@@ -32,11 +32,11 @@ func outline(_ pane: PanePresentation) -> String {
             out.append(
                 "row[\(row.state.rawValue)] \(row.id): \(row.title) | \(row.line ?? row.opening ?? "") | \(row.stripe.flag?.rawValue ?? "-")\(row.stripe.suggested ? "?" : "") | pills=\(row.chips.pills.map(\.word))"
             )
-        case let .meeting(m): out.append("meeting\(m.leads ? "*" : "")\(m.live ? "!" : ""): \(m.start)-\(m.end) \(m.title) \(m.until ?? "") | \(m.line ?? "")")
-        case let .overlap(o):
+        case let .meeting(m):
+            let tie = m.tie.map { " tied\($0.second ? "+" : "")\($0.toChoose ? "?" : "")" } ?? ""
             out.append(
-                "overlap \(o.card.name) [\(o.card.pill.word)]: "
-                    + o.meetings.map { "\($0.start) \($0.title)\($0.leads ? "*" : "")\($0.off ? " off" : "") \($0.attendance ?? "")" }.joined(separator: " + "))
+                "meeting\(m.leads ? "*" : "")\(m.live ? "!" : "")\(m.off ? " off" : "")\(tie): \(m.start)-\(m.end) \(m.title) \(m.until ?? "") | \(m.line ?? "")"
+            )
         case let .parked(p): out.append("parked: \(p.what) \(p.rest)")
         case let .unfinished(u): out.append("unfinished: \(u.line)")
         case let .note(n): out.append("note: \(n.text)")

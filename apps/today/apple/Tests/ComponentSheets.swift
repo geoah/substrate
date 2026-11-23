@@ -11,7 +11,7 @@ import TodayCore
 enum ComponentSheets {
     /// Each component's id in the guide, and the height its sheet needs.
     static let all: [(String, CGFloat)] = [
-        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 900), ("options", 2100), ("row", 1200),
+        ("tile", 420), ("badge", 380), ("glyph", 420), ("stripe", 520), ("pill", 420), ("button", 1060), ("options", 2100), ("row", 2400),
         ("card", 2500), ("strip", 620), ("happening", 1700), ("urgent", 2100), ("save", 2500), ("bar", 760), ("moss", 760), ("page", 1500),
         ("ground", 900), ("finish", 2300),
     ]
@@ -225,6 +225,9 @@ enum ComponentSheets {
     static var button: some View {
         Group {
             Case(caption: "Primary") { PaneButton(ButtonPresentation("Done", glyph: .done, role: .primary)) }
+            Case(caption: "A card's action, with what the thing was made from beside it: links that leave the app") {
+                ActionRow(action: ButtonPresentation("Done", glyph: .done, role: .primary), links: h.links)
+            }
             Case(caption: "Wide") { PaneButton(ButtonPresentation("Save 13 answers", glyph: .done, role: .primary, wide: true)) }
             Case(caption: "Secondary, and outlined") {
                 HStack {
@@ -308,12 +311,21 @@ enum ComponentSheets {
                     .row(bare("t4", "Renew the passport")),
                 ])
             }
-            Case(caption: "Meeting: the next fixed point", carded: false) {
+            Case(caption: "Meeting: the next fixed point says how long until it, in the hour before", carded: false) {
                 PaneItemsView(items: [
                     .meeting(
-                        h.meeting("m1", "14:20", "14:40", "Tomas", people: ["TV"], line: "Your task: fix the 1:1 clash with Tomas.", until: "in 2 h 50")),
+                        h.meeting("m1", "14:20", "14:40", "Tomas", people: ["TV"], line: "Your task: fix the 1:1 clash with Tomas.", until: "in 40 min")),
                     .meeting(h.meeting("m2", "14:40", "15:00", "Viktor", people: ["VL"], line: "Weekly 1:1.", project: h.lantern)),
                 ])
+            }
+            Case(caption: "Two meetings that share time: two lines, tied, and marked while no choice is made", carded: false) {
+                PaneItemsView(items: [.meeting(h.meeting("m2", "14:40", "15:00", "Viktor", people: ["VL"], line: nil))] + h.tied(toChoose: true))
+            }
+            Case(caption: "A tap on either opens the options under the two", carded: false) {
+                PaneItemsView(items: h.tied(toChoose: true)).environment(opened("overlap:o-1500"))
+            }
+            Case(caption: "Chosen: the options close, and the one not gone to is struck through", carded: false) {
+                PaneItemsView(items: h.tied())
             }
             Case(caption: "Page: a row that opens a page") {
                 TaskLines(lines: [TaskLine(id: "t", title: "Read the incident write-up", line: "Today.", stripe: Stripe(.medium), opens: .task("t"))])

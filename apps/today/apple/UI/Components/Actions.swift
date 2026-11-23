@@ -90,6 +90,60 @@ struct PaneButton: View {
     }
 }
 
+/// What something was made from, as buttons that leave the app: the place
+/// it came from by its name, and the record itself. Each ends with the
+/// arrow of a link that opens elsewhere, and says in full where it goes.
+struct SourceLinksView: View {
+    var links: [SourceLink]
+
+    @Environment(\.pane) private var pane
+
+    var body: some View {
+        HStack(spacing: TodayLook.betweenChips) {
+            ForEach(links) { link in
+                Button {
+                    pane.openURL(link.url)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(link.title).lineLimit(1)
+                        Image(systemName: Symbol.leaves.systemName).font(TodayLook.font(.caption, weight: .bold))
+                    }
+                }
+                .buttonStyle(.today(.small))
+                .accessibilityLabel(link.label)
+                .transition(.face)
+            }
+        }
+    }
+}
+
+/// A card's one action with what it was made from beside it: "Done" and
+/// then the links, on one line where they fit and on two where they do not.
+struct ActionRow: View {
+    var action: ButtonPresentation?
+    var links: [SourceLink]
+
+    var body: some View {
+        if let action, !links.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: TodayLook.betweenButtons) {
+                    PaneButton(action)
+                    Spacer(minLength: 0)
+                    SourceLinksView(links: links)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    PaneButton(action)
+                    SourceLinksView(links: links)
+                }
+            }
+        } else if let action {
+            PaneButton(action)
+        } else if !links.isEmpty {
+            SourceLinksView(links: links)
+        }
+    }
+}
+
 /// A control that finishes something, after its tap and until its command
 /// is sent (`Finishing`). While it counts, an icon tick is a ring draining
 /// around the undo arrow and a button with a word reads "Undo" over a fill

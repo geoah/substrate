@@ -194,6 +194,14 @@ final class PaneViewState {
         }
     }
 
+    /// The same, and what gives way to it closes in the same move.
+    func toggle(_ id: String, closing other: String?) {
+        withAnimation(motion) {
+            if let other { opened.remove(other) }
+            if opened.contains(id) { opened.remove(id) } else { opened.insert(id) }
+        }
+    }
+
     func open(_ id: String) -> Binding<Bool> {
         Binding(
             get: { self.opened.contains(id) },

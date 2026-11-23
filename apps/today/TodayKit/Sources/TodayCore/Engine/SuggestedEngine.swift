@@ -79,10 +79,12 @@ extension DayEngine {
         guard let correction = correction(of: task) else { return nil }
         let exchange = day.exchanges.last { $0.subject == .task(task.id) }
         guard alone || exchange != nil else { return nil }
-        return SuggestedItem(
+        var item = SuggestedItem(
             id: task.id, title: task.name, origin: origin(task), fade: fade(task),
             chips: Chips(project: grouped ? nil : chip(task.list), people: people(task)), stripe: stripe(task), options: .empty, pending: false,
             told: SuggestedItem.Told(words: correction.text, answer: exchange.map(answerCard)))
+        item.links = day.links(for: task.origin)
+        return item
     }
 
     /// The owner's pick for a suggestion, as the draft has it. "Other" is
@@ -128,7 +130,7 @@ extension DayEngine {
             objection = SuggestedItem.Objection(line: line, note: "It is said once. Dismiss stands if you save it.")
         }
         let todo = selected != nil
-        return SuggestedItem(
+        var item = SuggestedItem(
             id: task.id, title: task.name, origin: origin(task), quote: details(task),
             brief: whole ? nil : task.details.flatMap { Words.letters($0) > Words.excerptWholeLimit ? Brief(text: Words.excerpt($0)) : nil },
             fade: fade(task), chips: Chips(project: own ? chip(task.list) : nil, people: people(task)), stripe: stripe(task), options: options,
@@ -142,6 +144,8 @@ extension DayEngine {
                     button: ButtonPresentation("Save", glyph: .done, role: .primary, enabled: todo, command: .saveSuggested([task.id], words: [:])))
                 : nil,
             pending: todo)
+        item.links = day.links(for: task.origin)
+        return item
     }
 
     /// A suggestion as a page's list draws it: as it was answered in words
