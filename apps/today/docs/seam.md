@@ -32,6 +32,13 @@ own against the kit.
   between its command and its record.
 - **Whether what is done is shown.** The header of "Earlier today" shows or hides its entries. The device
   keeps the choice across launches, and it starts shown.
+- **Whether what waits is shown.** Within ten minutes of a meeting the rows of the stretch are folded into
+  one line, "Morning medication, the vendor check and two more wait until you are out." (`ParkedLine`). The
+  line holds the rows it folds (`rows`) and opens in place to them: a view draws them under it as rows of the
+  day, each with its tick and its own way to open, so a routine is logged and a task ticked in the minutes
+  before the meeting. It starts closed. (The owner, 24 November, with the line circled: "I missed saving my
+  skincare and some medication and now I can't see and change them." The rows were folded and the line did
+  not open.)
 
 - **How it moves.** A view draws every change of the presentation as a move and not a cut: an item of the
   day keeps one place whatever it is drawn as (`PaneItem.id`), so the row that becomes the current item is
@@ -49,6 +56,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `TodayPresentation`                                          | The root: `pane`, `page(_:)`, the kit's notices, problem, settings, storage and about, and `writing`    |
 | `PanePresentation`                                           | The day: `strip`, `items` in the order drawn, `ground`, `composer`, `answer`                            |
 | `PaneItem`                                                   | One thing in the timeline: night, earlier, happening, row, meeting, parked, unfinished, note            |
+| `ParkedLine`                                                 | What waits while a meeting leads: the things in bold (`what`), the rest of the sentence, and the `rows` it folds, which it opens to |
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |
 | `NightPresentation`, `NightItem`, `NightDecision`            | The night: one line folded; open, by project, with "Got it"                                             |
 | `EarlierPresentation`                                        | "Earlier today": a header with a count, and its `entries` in one order by when they happened: a `row` for what was finished (`Row.State.done`: crossed out, its filled tick takes it back), a `meeting` that ended (`MeetingRow.ended`: dimmed), a `line` for bookkeeping |

@@ -47,7 +47,7 @@ public enum PaneItem: Codable, Equatable, Sendable, Identifiable {
     /// that share time are two lines tied to each other (`MeetingRow.tie`).
     case meeting(MeetingRow)
     /// What waits while a meeting leads: "The vendor check waits until you
-    /// are out."
+    /// are out." It opens in place to the rows it folds (`ParkedLine.rows`).
     case parked(ParkedLine)
     /// The assistant asks where something flagged High goes when it will
     /// not be finished.
@@ -69,17 +69,23 @@ public enum PaneItem: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-public struct ParkedLine: Codable, Equatable, Hashable, Sendable, Identifiable {
+public struct ParkedLine: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     /// The things that wait, in bold: "The vendor check and Lin's score".
     public var what: String
     /// "waits until you are out." / "wait until you are out."
     public var rest: String
+    /// The rows the line folds, in the order of the day. The line opens in
+    /// place and they are drawn under it as rows of the day are, so a
+    /// routine can still be logged and a task ticked before the meeting.
+    /// Empty where it names one thing that is not a row of its own.
+    public var rows: [Row]
 
-    public init(id: String, what: String, rest: String) {
+    public init(id: String, what: String, rest: String, rows: [Row] = []) {
         self.id = id
         self.what = what
         self.rest = rest
+        self.rows = rows
     }
 }
 

@@ -37,7 +37,7 @@ func outline(_ pane: PanePresentation) -> String {
             out.append(
                 "meeting\(m.leads ? "*" : "")\(m.live ? "!" : "")\(m.off ? " off" : "")\(tie): \(m.start)-\(m.end) \(m.title) \(m.until ?? "") | \(m.line ?? "")"
             )
-        case let .parked(p): out.append("parked: \(p.what) \(p.rest)")
+        case let .parked(p): out.append("parked: \(p.what) \(p.rest) [\(p.rows.map(\.id).joined(separator: ", "))]")
         case let .unfinished(u): out.append("unfinished: \(u.line)")
         case let .note(n): out.append("note: \(n.text)")
         }

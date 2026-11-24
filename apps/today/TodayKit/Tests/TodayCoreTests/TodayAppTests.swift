@@ -21,6 +21,11 @@ private func page(_ clock: String, _ route: TodayRoute, edit: (inout TodayApp.St
     TodayFixtures.present(TodayFixtures.state(at: clock, edit: edit), at: clock).page(route)
 }
 
+/// A morning on which no routine was logged: the logs are taken out of the invented day.
+private func nothingLogged(_ state: inout TodayApp.State) {
+    for (key, record) in state.linked.records where record.kind == TodayKinds.log { state.linked.records[key] = nil }
+}
+
 private func rows(_ pane: PanePresentation) -> [Row] {
     pane.items.compactMap { if case let .row(row) = $0 { row } else { nil } }
 }
@@ -122,6 +127,23 @@ struct OrderTests {
         // Only the next fixed point says how long until it.
         let next = meetings(pane).filter { $0.until != nil }
         #expect(next.map(\.id) == ["physio"] && next[0].until == "in 8 min")
+        // The rows that wait are folded into the line and not taken away: it holds them, in the day's order,
+        // each as the row it would be, so a routine is logged from it and a task ticked.
+        let waiting = pane.items.compactMap { item -> ParkedLine? in if case let .parked(line) = item { line } else { nil } }
+        #expect(waiting.count == 1)
+        let held = waiting.first?.rows ?? []
+        #expect(
+            held.count >= 2 && held.map(\.id) == Array(Set(held.map(\.id))).sorted { a, b in held.firstIndex { $0.id == a }! < held.firstIndex { $0.id == b }! }
+        )
+        #expect(held.allSatisfy { row in !rows(pane).contains { $0.id == row.id } }, "and drawn nowhere else")
+        // A morning routine nobody logged is among them, with its own way to log it.
+        let unlogged = TodayFixtures.present(TodayFixtures.state(at: "07:52", edit: nothingLogged), at: "07:52").pane
+        let late = unlogged.items.flatMap { item -> [Row] in if case let .parked(line) = item { line.rows } else { [] } }
+        let routine = late.first { if case .routine = $0.body { true } else { false } }
+        #expect(routine != nil, "the morning's routines are among them")
+        if let routine, case let .routine(card) = routine.body {
+            #expect(card.done?.command == .log(row: routine.id, done: true))
+        }
     }
 
     @Test func tasksAreInFlagOrderAndNeverMoveByHand() {
@@ -934,6 +956,21 @@ struct UrgentTests {
 
 @Suite("Writes", .timeLimit(.minutes(10)))
 struct WriteTests {
+    @Test func aRoutineThatWaitsBeforeAMeetingIsLoggedFromTheLineThatHoldsIt() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:52"), performsEffects: false)
+        await load(harness, "07:52", edit: nothingLogged)
+        func held() async -> [Row] {
+            await harness.presentation.pane.items.flatMap { item -> [Row] in if case let .parked(line) = item { line.rows } else { [] } }
+        }
+        let before = await held()
+        let routine = try #require(before.first { if case .routine = $0.body { true } else { false } })
+        await harness.send(.log(row: routine.id, done: true))
+        // It is written, and it leaves the line for what is done.
+        #expect(!writes(harness).flatMap(\.entries).isEmpty)
+        let after = await held()
+        #expect(!after.contains { $0.id == routine.id } && after.count == before.count - 1)
+    }
+
     @Test func aRoutineRowLogsEveryOccurrenceUnderTheOccurrencesOwnID() async throws {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
         await load(harness, "07:05")

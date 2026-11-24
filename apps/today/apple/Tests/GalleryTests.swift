@@ -71,6 +71,23 @@ import TodayCore
         try await write("sources-unread-happening", DayScreen(app: unread, opened: ["happening"]), size: CGSize(width: 393, height: 2200))
     }
 
+    /// A meeting is eight minutes away and a morning's routines were not
+    /// logged: the line that says what waits, closed, and opened to the rows
+    /// it holds, one of them opened in turn to be logged.
+    @Test func whatWaitsBeforeAMeetingOpensToItsRows() async throws {
+        let unlogged = TodayFixtures.state(at: "07:52") { state in
+            for (key, record) in state.linked.records where record.kind == TodayKinds.log { state.linked.records[key] = nil }
+        }
+        let app = TodayFixtures.present(unlogged, at: "07:52")
+        let lines = app.pane.items.compactMap { item -> ParkedLine? in if case let .parked(line) = item { line } else { nil } }
+        let line = try #require(lines.first)
+        let routine = try #require(line.rows.first { if case .routine = $0.body { true } else { false } })
+        try await both("waiting-closed", size: CGSize(width: 393, height: 1500)) { DayScreen(app: app) }
+        try await both("waiting-open", size: CGSize(width: 393, height: 2000)) { DayScreen(app: app, opened: ["parked:" + line.id]) }
+        try await write(
+            "waiting-open-routine", DayScreen(app: app, opened: ["parked:" + line.id, "row:" + routine.id]), size: CGSize(width: 393, height: 2300))
+    }
+
     /// A hundred suggestions grouped by project are taller than the long
     /// drawing every page gets, which ends before the last group's Save:
     /// this one is drawn to its end.

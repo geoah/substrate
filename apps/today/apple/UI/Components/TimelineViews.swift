@@ -495,18 +495,54 @@ struct HappeningItemView: View {
 }
 
 /// What waits while a meeting leads: the things in bold, then the rest of
-/// the sentence.
+/// the sentence. The line folds the rows it names and does not take them
+/// away: it opens in place, its chevron at the top right as on every row
+/// that does, and the rows are drawn under it as rows of the day are, each
+/// with its tick and its own way to open. So a routine can be logged and a
+/// task ticked in the minutes before a meeting.
 struct ParkedLineView: View {
     var line: ParkedLine
 
+    @Environment(PaneViewState.self) private var state
+
+    private var openID: String { "parked:" + line.id }
+
     var body: some View {
-        Text("\(Text(line.what).fontWeight(.semibold).foregroundStyle(.ink))\(Text(" " + line.rest).foregroundStyle(.inkSecond))")
-            .font(TodayLook.Text.body)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .soft(radius: 18)
+        let open = state.isOpen(openID)
+        VStack(alignment: .leading, spacing: 0) {
+            if line.rows.isEmpty {
+                sentence.soft(radius: 18)
+            } else {
+                Button {
+                    state.toggle(openID)
+                } label: {
+                    sentence.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(open ? "Hides what waits" : "Shows what waits")
+                .soft(radius: 18)
+                if open {
+                    ForEach(PaneSlot.slots(of: line.rows.map(PaneItem.row), open: state.opened)) { slot in
+                        PaneSlotView(slot: slot)
+                            .padding(.top, slot.joins.above ? 0 : TodayLook.gap)
+                            .transition(.unfold)
+                    }
+                }
+            }
+        }
+    }
+
+    private var sentence: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("\(Text(line.what).fontWeight(.semibold).foregroundStyle(.ink))\(Text(" " + line.rest).foregroundStyle(.inkSecond))")
+                .font(TodayLook.Text.body)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !line.rows.isEmpty { RowChevron(turn: state.isOpen(openID) ? .open : .closed) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 }
 

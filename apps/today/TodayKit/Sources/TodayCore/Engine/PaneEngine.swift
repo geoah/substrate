@@ -146,14 +146,15 @@ extension DayEngine {
             var rows = stretch.phase == .past ? [] : stretch.index == current ? currentRows : rows(in: stretch, current: current)
             if stretch.phase == .now {
                 if stretch.near, !rows.isEmpty {
-                    // This close to a fixed point, the meeting leads and the rows wait.
+                    // This close to a fixed point, the meeting leads and the rows wait. They are folded into one
+                    // line and not taken away: the line holds them, and opens to them.
                     let names = rows.prefix(4).map { Words.low($0.title) }
                     items.append(
                         .parked(
                             ParkedLine(
                                 id: "s\(stretch.index)",
                                 what: Words.cap(Words.list(names + (rows.count > 4 ? ["\(Words.low(Words.num(rows.count - 4))) more"] : []))),
-                                rest: "\(rows.count == 1 ? "waits" : "wait") until you are out.")))
+                                rest: "\(rows.count == 1 ? "waits" : "wait") until you are out.", rows: rows)))
                     rows = []
                 } else if lead == nil, let first = rows.first {
                     rows[0].state = .now
