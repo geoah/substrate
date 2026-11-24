@@ -334,7 +334,7 @@ private func load(_ harness: ControllerHarness<TodayApp>, _ clock: String) async
     await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
     await harness.deliver(
         .localRead(
-            notes: state.notes, windows: state.windows, sources: state.sources, at: TodayFixtures.at(clock),
+            notes: state.notes, windows: state.windows, sources: state.sources, moss: nil, at: TodayFixtures.at(clock),
             today: CivilDay(year: 2026, month: 11, day: 19), zone: TodayFixtures.zone.identifier))
     await harness.deliver(.windowsRead(state.windows, requests: state.requests, stale: []))
     await harness.deliver(.contactsRead(Array(state.contacts.values), asked: []))

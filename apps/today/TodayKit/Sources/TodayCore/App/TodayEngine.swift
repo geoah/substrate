@@ -23,6 +23,8 @@ public extension TodayApp {
                 next.sourcesNone = []
                 next.sourcesFailed = []
                 next.sourcesAsking = []
+                next.exchanges = []
+                next.threads = [:]
             // Back in front, or linked again: what could not be read is asked for again.
             case .foregrounded, .linked: next.sourcesFailed = []
             default: break
@@ -42,9 +44,14 @@ public extension TodayApp {
             if discovery.linked != linked.kinds(in: next.linked) { next.linked = linked.apply(.rekinded(discovery.linked), to: next.linked) }
         case let .discoveryFailed(words):
             next.discoveryProblem = words
-        case let .localRead(notes, windows, sources, at, today, zone):
+        case let .localRead(notes, windows, sources, moss, at, today, zone):
             // What was read since the app opened stands over what the device kept.
             if let sources { next.sources = sources.merging(next.sources) { _, read in read } }
+            if let moss = moss?.recent(at: at, today: today) {
+                next.threads = moss.threads.merging(next.threads) { _, opened in opened }
+                let asked = Set(next.exchanges.map(\.id))
+                next.exchanges = moss.exchanges.filter { !asked.contains($0.id) } + next.exchanges
+            }
             next.notesRead = true
             next.zone = zone
             next.notes = Self.rolled(notes, at: at, today: today)
@@ -74,12 +81,23 @@ public extension TodayApp {
         case let .decided(ids):
             next.requests.removeAll { ids.contains($0.id) }
         case let .asked(exchange, _, _):
+            // A conversation takes one question at a time. What was still being answered in it is closed where it
+            // stands: the server takes the new message into the same turn, and its answer covers both.
+            for index in next.exchanges.indices where next.exchanges[index].scope == exchange.scope && !exchange.scope.isEmpty {
+                guard next.exchanges[index].state == .waiting || next.exchanges[index].state == .writing else { continue }
+                next.exchanges[index].state = .done
+                if next.exchanges[index].text.isEmpty { next.exchanges[index].text = MossKept.superseded }
+            }
             next.exchanges.removeAll { $0.subject == exchange.subject && $0.state != .waiting && $0.state != .writing && $0.subject == .day }
             next.exchanges.append(exchange)
         case let .answer(id, part):
             guard let index = next.exchanges.firstIndex(where: { $0.id == id }) else { break }
             switch part {
-            case let .thread(thread): next.exchanges[index].thread = thread
+            case let .thread(thread):
+                // The thread the question went into is the conversation's from here on: the next one continues it.
+                next.exchanges[index].thread = thread
+                let scope = next.exchanges[index].scope
+                if !scope.isEmpty { next.threads[scope] = MossThread(thread: thread, at: next.exchanges[index].at) }
             case let .delta(text):
                 next.exchanges[index].text += text
                 next.exchanges[index].state = .writing

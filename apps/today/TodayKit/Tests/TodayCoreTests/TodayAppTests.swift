@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
@@ -474,7 +475,7 @@ struct SaveCardTests {
         #expect(!written.contains { $0.recordID == "p-marco" }, "the task itself is not changed: Moss acts on it")
         #expect(Set(written.filter { $0.kind == TodayKinds.task }.map(\.recordID)) == ["p-casey", "p-tomas", "o-farid", "o-ben"])
         // The words go to the assistant about that task, with the task as the turn's context.
-        guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+        guard case let .ask(exchange, message, context, _, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }
         #expect(exchange.subject == .task("p-marco") && context == [path])
@@ -1177,7 +1178,7 @@ struct WriteTests {
         await load(harness, "11:30")
         // A task's name is sent as it was typed, lines and all, and nothing is written here.
         await harness.send(.addOrAsk(" send Callum the snapshot restore numbers\nand the runbook "))
-        guard case let .ask(told, words, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+        guard case let .ask(told, words, _, _, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }
         #expect(told.subject == .day && words == "send Callum the snapshot restore numbers\nand the runbook" && writes(harness).isEmpty)
@@ -1201,7 +1202,7 @@ struct WriteTests {
         #expect(writes(harness).flatMap(\.entries).count == 1, "an exchange is kept once")
 
         await harness.send(.addOrAsk("What can I drop this afternoon?"))
-        guard case let .ask(exchange, message, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+        guard case let .ask(exchange, message, context, _, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }
         #expect(exchange.subject == .day && message == "What can I drop this afternoon?" && context.isEmpty)
@@ -1221,7 +1222,7 @@ struct WriteTests {
         let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
         await load(harness, "11:30")
         await harness.send(.ask(.task("p-vendor"), "Break it into steps"))
-        guard case let .ask(exchange, _, context)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+        guard case let .ask(exchange, _, context, _, _)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }
         #expect(context == ["\(TodayKinds.task)/p-vendor"])
@@ -1239,9 +1240,167 @@ struct WriteTests {
         #expect(Assistant.parse(#"{"kind":"toolFinished","name":"query"}"#) == nil)
         #expect(Assistant.parse(#"{"kind":"done","result":{"reply":"Two things.","status":"completed"}}"#) == .done("Two things."))
         #expect(Assistant.parse(#"{"kind":"error","text":"The provider refused."}"#) == .failed("The provider refused."))
+        // The server says why a turn failed in `error`.
+        #expect(Assistant.parse(#"{"kind":"error","error":"The model is over its budget for today."}"#) == .failed("The model is over its budget for today."))
+        #expect(Assistant.parse(#"{"kind":"messageQueued","messageId":"m2"}"#) == nil)
         let body = Assistant.body(message: "Why?", context: (0 ..< 12).map { "a.b/c/d/\($0)" }, timezone: "Europe/Lisbon", messageID: "m1")
         #expect(body["context"]?.array?.count == 8, "at most eight records go with a turn")
         #expect(body["messageId"] == "m1" && body["thread"] == "")
+        let next = Assistant.body(message: "And then?", context: [], timezone: "Europe/Lisbon", messageID: "m2", thread: "t1")
+        #expect(next["thread"] == "t1" && next["messageId"] == "m2" && next["context"] == nil)
+    }
+}
+
+@Suite("A conversation with the assistant is continued", .timeLimit(.minutes(10)))
+struct ConversationTests {
+    private typealias Asked = (exchange: Exchange, thread: String?, after: String?)
+
+    private func asked(_ harness: ControllerHarness<TodayApp>) -> Asked? {
+        guard case let .ask(exchange, _, _, thread, after)? = harness.effects.last(where: { if case .ask = $0 { true } else { false } }) else {
+            return nil
+        }
+        return (exchange, thread, after)
+    }
+
+    private func kept(_ harness: ControllerHarness<TodayApp>) -> MossKept? {
+        guard case let .saveMoss(kept)? = harness.effects.last(where: { if case .saveMoss = $0 { true } else { false } }) else { return nil }
+        return kept
+    }
+
+    @Test func aSecondQuestionGoesIntoTheThreadOfTheFirstAndEachThingAndTheDayHaveTheirOwn() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
+        await load(harness, "11:30")
+        await harness.send(.ask(.task("p-vendor"), "Break it into steps"))
+        let first = try #require(asked(harness))
+        #expect(first.exchange.scope == "task:p-vendor" && first.thread == nil && first.after == nil)
+        await harness.deliver(.answer(first.exchange.id, .thread("t-vendor")))
+        await harness.deliver(.answer(first.exchange.id, .done("Three steps.")))
+        await harness.send(.ask(.task("p-vendor"), "Do the second one first"))
+        let second = try #require(asked(harness))
+        #expect(second.thread == "t-vendor" && second.after == nil && second.exchange.id != first.exchange.id)
+        // Another task has a conversation of its own, and so has the day.
+        await harness.send(.ask(.task("t-vigil"), "Who owns these?"))
+        #expect(asked(harness)?.exchange.scope == "task:t-vigil" && asked(harness)?.thread == nil)
+        await harness.send(.addOrAsk("What can I drop this afternoon?"))
+        let day = try #require(asked(harness))
+        #expect(day.exchange.scope == "day:2026-11-19" && day.thread == nil && day.after == nil)
+        await harness.deliver(.answer(day.exchange.id, .thread("t-day")))
+        await harness.deliver(.answer(day.exchange.id, .done("The refill.")))
+        await harness.send(.addOrAsk("And what is first tomorrow?"))
+        #expect(asked(harness)?.thread == "t-day")
+        // The device keeps each conversation's thread, and what was said in it.
+        let kept = try #require(kept(harness))
+        #expect(kept.threads["task:p-vendor"]?.thread == "t-vendor" && kept.threads["day:2026-11-19"]?.thread == "t-day")
+        #expect(kept.threads["task:t-vigil"] == nil, "a thread is kept once the server names it")
+        #expect(kept.exchanges.contains { $0.id == first.exchange.id && $0.text == "Three steps." && $0.thread == "t-vendor" })
+    }
+
+    @Test func aQuestionAskedBeforeTheFirstIsAnsweredJoinsItAndFindsItsThreadByItsMessage() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
+        await load(harness, "11:30")
+        await harness.send(.ask(.task("p-vendor"), "Break it into steps"))
+        let first = try #require(asked(harness))
+        await harness.send(.ask(.task("p-vendor"), "Shorter, please"))
+        let second = try #require(asked(harness))
+        // No thread is known yet: the message asked before names it.
+        #expect(second.thread == nil && second.after == first.exchange.id)
+        guard case let .task(page) = await harness.presentation.page(.task("p-vendor")) else { return #expect(Bool(false)) }
+        let said = try #require(page.card.moss?.exchanges)
+        #expect(said.map(\.state) == [.done, .waiting] && said[0].text == "You asked again before this was answered. Moss answers both below.")
+        // One answer is read at a time in a conversation, and another conversation does not stop it.
+        let app = TodayFixtures.app
+        #expect(app.ownKey(of: .ask(second.exchange, message: "", context: [], thread: nil, after: nil)) == "ask:task:p-vendor")
+        #expect(app.ownKey(of: .stopAsking("day:2026-11-19")) == "ask:day:2026-11-19")
+        await harness.send(.addOrAsk("What is left today?"))
+        await harness.send(.stopAnswer)
+        let stopped = harness.effects.compactMap { effect -> String? in if case let .stopAsking(scope) = effect { scope } else { nil } }
+        #expect(stopped == ["day:2026-11-19", "task:p-vendor"])
+    }
+
+    @Test func whatWasSaidIsKeptOnTheDeviceAndTheNextQuestionContinuesIt() async throws {
+        let at = TodayFixtures.at("09:10")
+        let before = at.addingTimeInterval(-86400)
+        let was = MossKept(
+            threads: [
+                "task:p-vendor": MossThread(thread: "t-vendor", at: at), "day:2026-11-19": MossThread(thread: "t-day", at: at),
+                "day:2026-11-18": MossThread(thread: "t-yesterday", at: before),
+                "task:long-gone": MossThread(thread: "t-old", at: at.addingTimeInterval(-200 * 86400)),
+            ],
+            exchanges: [
+                Exchange(
+                    id: "e1", subject: .task("p-vendor"), scope: "task:p-vendor", question: "Break it into steps", text: "Three steps.", state: .done,
+                    thread: "t-vendor", at: at),
+                Exchange(id: "e2", subject: .task("p-vendor"), scope: "task:p-vendor", question: "Shorter", state: .writing, thread: "t-vendor", at: at),
+                Exchange(id: "e3", subject: .day, scope: "day:2026-11-18", question: "What is left?", text: "Two things.", state: .done, at: before),
+            ])
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("11:30"), performsEffects: false)
+        await load(harness, "11:30", moss: was)
+        // The task's box shows what was said before the app closed, and what was being answered then is closed.
+        guard case let .task(page) = await harness.presentation.page(.task("p-vendor")) else { return #expect(Bool(false)) }
+        let said = try #require(page.card.moss?.exchanges)
+        #expect(said.map(\.question) == ["Break it into steps", "Shorter"] && said[0].text == "Three steps.")
+        #expect(said[1].state == .done && said[1].text == "The app closed before this was answered. The answer may be in Chat, under Moss.")
+        // Yesterday's conversation about the day is not today's, and a thread nobody asked in for months is let go.
+        #expect(await harness.presentation.pane.answer == nil)
+        let threads = await harness.state.threads
+        #expect(threads.keys.sorted() == ["day:2026-11-19", "task:p-vendor"])
+        await harness.send(.ask(.task("p-vendor"), "And the third?"))
+        #expect(asked(harness)?.thread == "t-vendor")
+        await harness.send(.addOrAsk("What is left?"))
+        #expect(asked(harness)?.thread == "t-day")
+        // Clearing what the device kept, as signing out does, forgets every conversation.
+        await harness.deliver(.records(.cleared))
+        #expect(kept(harness) == MossKept())
+        let after = await harness.state
+        #expect(after.threads.isEmpty && after.exchanges.isEmpty)
+    }
+
+    @Test func aThreadThatIsGoneIsOpenedAgainAndOneThatWasNotHeardOfIsFoundByItsMessage() async throws {
+        func said(_ stream: AsyncStream<AssistantEvent>) async -> [AssistantEvent] {
+            var out: [AssistantEvent] = []
+            for await event in stream { out.append(event) }
+            return out
+        }
+        func bodies(_ server: ScriptedLines) -> [JSONValue] {
+            server.requests.filter { $0.httpMethod == "POST" }.compactMap { $0.httpBody.flatMap { try? JSONValue(data: $0) } }
+        }
+        let origin = try #require(URL(string: "https://s.example.com"))
+        let answer = [#"{"kind":"thread","thread":"t-new"}"#, #"{"kind":"done","result":{"reply":"Yes.","status":"completed"}}"#]
+
+        // The thread the conversation was kept in is gone: the same message opens a new one, once.
+        let gone = ScriptedLines()
+        gone.answer(status: 404, lines: [#"{"error":{"code":"not_found","message":"thread t-gone"}}"#])
+        gone.answer(lines: answer)
+        var events = await said(
+            Assistant.ask(
+                SubstrateClient(server: origin, token: "secret", transport: gone), message: "Still on?", context: [], timezone: "UTC",
+                messageID: "m2", thread: "t-gone", app: TodayApp.appName))
+        #expect(events == [.thread("t-new"), .done("Yes.")])
+        #expect(bodies(gone).map { $0["thread"] } == ["t-gone", ""] && bodies(gone).allSatisfy { $0["messageId"] == "m2" })
+
+        // A new thread that is refused is said, and not tried a third time.
+        let refused = ScriptedLines()
+        refused.answer(status: 404, lines: [#"{"error":{"code":"not_found","message":"thread t-gone"}}"#])
+        refused.answer(status: 404, lines: [#"{"error":{"code":"not_found","message":"record"}}"#])
+        events = await said(
+            Assistant.ask(
+                SubstrateClient(server: origin, token: "secret", transport: refused), message: "Still on?", context: [], timezone: "UTC",
+                messageID: "m2", thread: "t-gone", app: TodayApp.appName))
+        #expect(events.count == 1 && refused.requests.count == 2)
+        if case .failed = events.first {} else { #expect(Bool(false), "a refusal is said in place") }
+
+        // No thread was heard of, and something was asked before: its message's row names the thread.
+        let lost = ScriptedLines()
+        let row = Record(id: "m1", kind: TodayKinds.message, properties: ["role": "user", "thread": .string("substrate.reamde.dev/llm/thread/t-kept")])
+        lost.answer(lines: [String(decoding: try JSONEncoder().encode(row), as: UTF8.self)])
+        lost.answer(lines: [#"{"kind":"thread","thread":"t-kept"}"#, #"{"kind":"done","result":{"reply":"Shorter.","status":"completed"}}"#])
+        events = await said(
+            Assistant.ask(
+                SubstrateClient(server: origin, token: "secret", transport: lost), message: "Shorter", context: [], timezone: "UTC",
+                messageID: "m2", after: "m1", app: TodayApp.appName))
+        #expect(events == [.thread("t-kept"), .done("Shorter.")])
+        #expect(lost.requests.first?.httpMethod == "GET" && lost.requests.first?.url?.path.hasSuffix("/llm/message/m1") == true)
+        #expect(bodies(lost).map { $0["thread"] } == ["t-kept"])
     }
 }
 
@@ -1559,13 +1718,15 @@ private func environment(_ clock: String) -> AppEnvironment {
 }
 
 /// The root at a moment of the invented day, laid over through its own events.
-private func load(_ harness: ControllerHarness<TodayApp>, _ clock: String, edit: (inout TodayApp.State) -> Void = { _ in }) async {
+private func load(
+    _ harness: ControllerHarness<TodayApp>, _ clock: String, moss: MossKept? = nil, edit: (inout TodayApp.State) -> Void = { _ in }
+) async {
     let state = TodayFixtures.state(at: clock, edit: edit)
     await harness.deliver(.discovered(TodayFixtures.discovery))
     await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
     await harness.deliver(
         .localRead(
-            notes: state.notes, windows: state.windows, sources: state.sources, at: TodayFixtures.at(clock),
+            notes: state.notes, windows: state.windows, sources: state.sources, moss: moss, at: TodayFixtures.at(clock),
             today: CivilDay(year: 2026, month: 11, day: 19),
             zone: TodayFixtures.zone.identifier))
     await harness.deliver(.windowsRead(state.windows, requests: state.requests, stale: []))
@@ -1718,7 +1879,9 @@ struct SourceTests {
         #expect(!harness.effects.contains { if case .readSources = $0 { true } else { false } })
         let kept = Dictionary(uniqueKeysWithValues: known.sorted { $0.key < $1.key }.prefix(3).map { ($0.key, $0.value) })
         await harness.deliver(
-            .localRead(notes: nil, windows: nil, sources: kept, at: TodayFixtures.at("08:30"), today: CivilDay(year: 2026, month: 11, day: 19), zone: "UTC"))
+            .localRead(
+                notes: nil, windows: nil, sources: kept, moss: nil, at: TodayFixtures.at("08:30"), today: CivilDay(year: 2026, month: 11, day: 19),
+                zone: "UTC"))
         guard case let .readSources(first)? = harness.effects.last(where: { if case .readSources = $0 { true } else { false } }) else {
             return #expect(Bool(false))
         }

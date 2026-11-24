@@ -64,7 +64,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `UrgentCard`                                                 | What cannot wait, in its three states (open, chosen, unchecked)                                         |
 | `UnfinishedCard`                                             | The assistant asks where something flagged High goes                                                    |
 | `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait, and `answer` opens their page |
-| `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives                             |
+| `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives. Its exchanges are the thing's conversation, the ones kept from earlier days included ([Asking the assistant](#asking-the-assistant)) |
 | `ComposerPresentation`                                       | "Add or ask"                                                                                            |
 | `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `SuggestedPage`, `MissingPage` |
 | `SuggestedPage`, `SuggestedPage.Group`                       | The suggested tasks as a page: one save card for each project, six of a group drawn until `more` is pressed |
@@ -115,6 +115,41 @@ beside "Done"; on a suggestion under the line that says when it was heard.
 A thing made from nothing (a task the owner typed) has no links. A meeting has its event's own page in its
 calendar. `MeetingCard.Reading.url` opens what is to be read first the same way: its page at the source
 where that is read, else the record.
+
+## Asking the assistant
+
+What the owner says to the assistant is a conversation it remembers, and not one message at a time (the
+owner, 24 November: "if I talk to it again, it doesn't know what I'm talking about"). A conversation is a
+thread on the server, and the app keeps which thread each one is in.
+
+- **A conversation's scope** (`MossSubject.scope(on:)`). Each thing has one conversation for as long as it
+  lives: `task:<id>`, `project:<id>`, `person:<path>`, `meeting:<id>`. So a question about a task a week
+  later follows what was said before. The day has one a day, in the owner's time zone: `day:2026-11-24`,
+  where "Add or ask" and the plan's sends go. "Other" words on a suggested task go to that task's. An
+  exchange keeps the scope it was asked in, so one sent before midnight stays in that day's.
+- **Continuing it.** `State.threads` holds the thread of each scope. A question is sent into it
+  (`Effect.ask(_:message:context:thread:after:)`), with the thing's record as the turn's context every time,
+  so the assistant reads the thing as it is now. The server names the thread in its first line, and that
+  is when it is kept: the thread a question opened is the conversation's from then on.
+- **A thread that was not heard of.** With no thread kept and something asked in the scope before, the
+  question names that exchange (`after`), and `Assistant.thread(of:)` reads the message's own row, which the
+  server writes under the id the app chose and which names its thread. So a second question sent before
+  the first one's thread arrived, or after a send whose answer was lost, opens no second conversation.
+- **A thread that is gone.** The server refuses a thread it does not hold before it writes the message
+  (404). The same message is then sent once more with no thread, which opens a new one.
+- **One answer at a time in a conversation.** A question asked while another in the same scope is being
+  answered closes that one where it stands (the server takes the new message into the same turn, and the
+  answer covers both). Conversations do not wait on each other: each is read under its own effect key.
+- **Kept on the device** (`MossKept`, `today-moss.json` in the repository's folder): the threads and the
+  exchanges, saved when a question is asked, answered or closed. On opening, today's conversation about the
+  day is read back and no earlier day's, an exchange about a thing for thirty days, a thing's thread for
+  four months after it was last asked in, and an exchange that was being answered when the app closed is
+  closed with a sentence that says so. Signing out, or clearing what the device kept, forgets them all.
+
+What this does not do: another device does not find a conversation started on this one (a thread has no
+property that says what it is about, so that needs a record of the app's own); a conversation about a thing
+is not told what was said about the day, or the reverse (both read the same records and the assistant's
+memories); and a thread is not given a name of its own in Chat.
 
 ## The widgets' day
 

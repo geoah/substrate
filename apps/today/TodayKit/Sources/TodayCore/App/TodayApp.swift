@@ -31,7 +31,7 @@ public struct TodayApp: LinkedRecordsApp {
         /// What the device kept: the day's notes and the last window reads,
         /// with the instant, the owner's day and time zone as the device
         /// has them.
-        case localRead(notes: DayNotes?, windows: Windows?, sources: [String: SourcePage]?, at: Date, today: CivilDay, zone: String)
+        case localRead(notes: DayNotes?, windows: Windows?, sources: [String: SourcePage]?, moss: MossKept?, at: Date, today: CivilDay, zone: String)
         case windowsRead(Windows, requests: [Record], stale: [StaleSource])
         case windowsFailed(String)
         case contactsRead([Record], asked: [String])
@@ -76,8 +76,12 @@ public struct TodayApp: LinkedRecordsApp {
         case readSources([String])
         case saveSources([String: SourcePage])
         case saveNotes(DayNotes)
-        case ask(Exchange, message: String, context: [String])
-        case stopAsking
+        /// One question, sent into its conversation's thread: the one
+        /// kept for it, else the one the message `after` is in, else a new one.
+        case ask(Exchange, message: String, context: [String], thread: String?, after: String?)
+        /// Stops reading the answer in one conversation, by its scope.
+        case stopAsking(String)
+        case saveMoss(MossKept)
         case readUsage
         case readPermission
         case askPermission
@@ -121,6 +125,10 @@ public struct TodayApp: LinkedRecordsApp {
         /// The owner's time zone, as the device last said.
         public var zone: String?
         public var exchanges: [Exchange] = []
+        /// The assistant's thread each conversation is kept in, by its
+        /// scope (`MossSubject.scope(on:)`): what the next question in it
+        /// continues. Kept on the device with the exchanges.
+        public var threads: [String: MossThread] = [:]
         /// False once the assistant could not be reached, until it answers.
         public var reachable = true
         /// Each area of the repository's folder and its size, nil until read.
@@ -142,6 +150,7 @@ public struct TodayApp: LinkedRecordsApp {
     static let notesFile = SettingsFile<DayNotes>(name: "today-day.json")
     static let windowsFile = SettingsFile<Windows>(name: "today-windows.json")
     static let sourcesFile = SettingsFile<[String: SourcePage]>(name: "today-sources.json")
+    static let mossFile = SettingsFile<MossKept>(name: "today-moss.json")
 
     public let linked: LinkedRecords
     public let build: BuildFacts

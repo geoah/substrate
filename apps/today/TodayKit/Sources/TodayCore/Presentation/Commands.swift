@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 import SubstrateScreens
 
 /// A page. Navigation is the views': a view keeps a path of these and asks
@@ -32,6 +33,22 @@ public enum MossSubject: Codable, Hashable, Sendable {
     case meeting(String)
     /// The day itself: a question typed into "Add or ask".
     case day
+}
+
+public extension MossSubject {
+    /// What a conversation with the assistant is kept under. A thing has
+    /// one conversation for as long as it lives, so a question about a
+    /// task a week later follows what was said before; the day has one a
+    /// day, in the owner's time zone.
+    func scope(on day: CivilDay) -> String {
+        switch self {
+        case let .task(id): "task:" + id
+        case let .project(id): "project:" + id
+        case let .person(path): "person:" + path
+        case let .meeting(id): "meeting:" + id
+        case .day: "day:" + day.description
+        }
+    }
 }
 
 /// The answers a suggested task has, always: the three the assistant may

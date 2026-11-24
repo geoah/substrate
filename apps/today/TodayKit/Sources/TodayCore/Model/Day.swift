@@ -101,23 +101,100 @@ public struct DayNotes: Codable, Equatable, Sendable {
 
 /// One exchange with the assistant, as the root keeps it.
 public struct Exchange: Codable, Equatable, Sendable, Identifiable {
+    /// Also the id its message is sent under, so a send is never run twice.
     public var id: String
     public var subject: MossSubject
+    /// The conversation it belongs to (`MossSubject.scope(on:)`), fixed
+    /// when it is asked: a question sent before midnight stays in that
+    /// day's conversation.
+    public var scope: String
     public var question: String
     public var text: String
     public var state: AnswerCard.State
     public var thread: String?
     public var at: Date
 
-    public init(id: String, subject: MossSubject, question: String, text: String = "", state: AnswerCard.State = .waiting, thread: String? = nil, at: Date) {
+    public init(
+        id: String, subject: MossSubject, scope: String = "", question: String, text: String = "", state: AnswerCard.State = .waiting,
+        thread: String? = nil, at: Date
+    ) {
         self.id = id
         self.subject = subject
+        self.scope = scope
         self.question = question
         self.text = text
         self.state = state
         self.thread = thread
         self.at = at
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        subject = try container.decode(MossSubject.self, forKey: .subject)
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        question = try container.decode(String.self, forKey: .question)
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        state = try container.decode(AnswerCard.State.self, forKey: .state)
+        thread = try container.decodeIfPresent(String.self, forKey: .thread)
+        at = try container.decode(Date.self, forKey: .at)
+    }
+}
+
+/// The assistant's thread a conversation is kept in, and when it was last
+/// asked in.
+public struct MossThread: Codable, Equatable, Sendable {
+    public var thread: String
+    public var at: Date
+
+    public init(thread: String, at: Date) {
+        self.thread = thread
+        self.at = at
+    }
+}
+
+/// What the device keeps of the conversations with the assistant: each
+/// conversation's thread, by its scope, and the exchanges a box shows.
+public struct MossKept: Codable, Equatable, Sendable {
+    public var threads: [String: MossThread]
+    public var exchanges: [Exchange]
+
+    public init(threads: [String: MossThread] = [:], exchanges: [Exchange] = []) {
+        self.threads = threads
+        self.exchanges = exchanges
+    }
+
+    /// The most exchanges kept, and how long one about a thing is kept.
+    static let limit = 60
+    static let age: TimeInterval = 30 * 86400
+    /// How long a thing's thread is kept after it was last asked in.
+    static let threadAge: TimeInterval = 120 * 86400
+
+    /// What is still worth keeping at `now`: today's conversation about
+    /// the day and no earlier day's, the recent exchanges about things,
+    /// and a thing's thread for as long as it is likely to be asked in.
+    /// An exchange that was being answered when it was kept is closed
+    /// where it stood.
+    func recent(at now: Date, today: CivilDay) -> MossKept {
+        let day = MossSubject.day.scope(on: today)
+        var out = MossKept()
+        out.threads = threads.filter { scope, kept in
+            scope.hasPrefix("day:") ? scope == day : now.timeIntervalSince(kept.at) < Self.threadAge
+        }
+        out.exchanges = exchanges.filter { $0.subject == .day ? $0.scope == day : now.timeIntervalSince($0.at) < Self.age }.suffix(Self.limit).map {
+            var exchange = $0
+            if exchange.state == .waiting || exchange.state == .writing {
+                exchange.state = .done
+                if exchange.text.isEmpty { exchange.text = Self.interrupted }
+            }
+            return exchange
+        }
+        return out
+    }
+
+    static let interrupted = "The app closed before this was answered. The answer may be in Chat, under Moss."
+    /// Said on a question whose answer comes with the one asked after it.
+    static let superseded = "You asked again before this was answered. Moss answers both below."
 }
 
 /// Everything the engine reads, as one value: the records, the instant, the

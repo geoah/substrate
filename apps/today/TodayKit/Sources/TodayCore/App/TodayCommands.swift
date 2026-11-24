@@ -39,7 +39,8 @@ public extension TodayApp {
         func ask(_ subject: MossSubject, _ text: String) {
             let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !question.isEmpty else { return }
-            let exchange = Exchange(id: context.mint().uuidString.lowercased(), subject: subject, question: question, at: now)
+            let exchange = Exchange(
+                id: context.mint().uuidString.lowercased(), subject: subject, scope: subject.scope(on: day.today), question: question, at: now)
             out.append(.asked(exchange, message: Assistant.message(subject, question, day: day), context: Assistant.context(subject, day: day)))
         }
 

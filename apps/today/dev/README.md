@@ -73,6 +73,27 @@ server holds no model key, so a run would only fail. `seed.py` and
 `TODAY_DEV_ASSISTANT=1` and `seed.py --assistant` leave the trigger on, for a
 server whose provider has been given a key.
 
+## Asking the assistant
+
+The assistant, Moss, answers on a provider too, so with no model key a question in the app fails at once.
+`model.py` is a stand-in for one: it serves the Anthropic Messages API on port 8099 and answers each turn
+with how many of the person's messages it was given, which is what shows whether a second question went
+into the conversation of the first.
+
+```bash
+python3 apps/today/dev/model.py /tmp/today-model.log &
+SUBSTRATE_EGRESS_ALLOW=127.0.0.1 apps/today/dev/server.sh up     # the server refuses to call this machine otherwise
+. .dev/today-dev.env
+curl -sS -X PATCH "$TODAY_DEV_SERVER/api/v1/substrate.reamde.dev/llm/provider/anthropic" \
+  -H "Authorization: Bearer $TODAY_DEV_TOKEN" -H "Content-Type: application/json" \
+  -d '{"properties":{"baseURL":"http://127.0.0.1:8099/","apiKey":"stand-in"}}'
+```
+
+Ask twice about one task in the app: the second answer says "I was given 2 of your messages", and the
+repository holds one `llm/thread` for the two. Put the provider back with `"baseURL":
+"https://api.anthropic.com/"` and `"apiKey": null`. Start and stop the server through `server.sh`: a bare
+`mise run dev:restart` leaves out its port and its database container, and aims at the shared ones.
+
 ## The calendar
 
 A real calendar comes from a provider, which needs an account. `calendar.yaml`

@@ -35,6 +35,9 @@ public enum TodayKinds {
     public static let recurring = "\(authority)/core/recurring"
     public static let override = "\(authority)/core/override"
     public static let instruction = "\(authority)/llm/instruction"
+    /// One message of a thread with the assistant: the row a question the
+    /// app sent is written under, which names its thread.
+    public static let message = "\(authority)/llm/message"
 
     /// The assistant.
     public static let assistant = "\(authority)/assistant/moss"

@@ -53,7 +53,7 @@ public extension TodayApp {
             case .refreshAsked:
                 if signedIn { out.append(.discover) }
             case .cleared:
-                out += [.readUsage, .saveSources([:])]
+                out += [.readUsage, .saveSources([:]), .saveMoss(MossKept())]
             case let .changed(key, _):
                 // A series changed: its occurrences are computed again.
                 if let discovery = state.discovery, let kind = RecordReference(path: key)?.kind, discovery.series.contains(kind), signedIn {
@@ -86,9 +86,15 @@ public extension TodayApp {
         case let .sourcesRead(found, _, _):
             if !found.isEmpty { out.append(.saveSources(state.sources)) }
         case let .asked(exchange, message, context):
-            out.append(.ask(exchange, message: message, context: context))
+            let kept = state.threads[exchange.scope]?.thread
+            // With no thread kept, what was last asked in the conversation finds it: its message names its thread.
+            // So a question sent before the first one's thread was heard of, or after a send that lost its
+            // answer, does not open a second conversation.
+            let before = kept == nil && !exchange.scope.isEmpty ? previous.exchanges.last { $0.scope == exchange.scope }?.id : nil
+            out.append(.ask(exchange, message: message, context: context, thread: kept, after: before))
         case .stopped:
-            out.append(.stopAsking)
+            let asking = previous.exchanges.filter { $0.state == .waiting || $0.state == .writing }.map(\.scope)
+            for scope in Set(asking).sorted() { out.append(.stopAsking(scope)) }
         case let .later(plan):
             out.append(.remind(plan))
         case .permissionWanted:
@@ -119,6 +125,11 @@ public extension TodayApp {
             if again || state.sourcesAsking != previous.sourcesAsking { out.append(.readSources(state.sourcesAsking)) }
         }
         if state.notes != previous.notes, state.notesRead, let notes = state.notes { out.append(.saveNotes(notes)) }
+        // The conversations are kept when one opens, and when a question is asked, answered or closed: not at
+        // every word of an answer as it arrives.
+        if state.notesRead, state.threads != previous.threads || Self.standing(state.exchanges) != Self.standing(previous.exchanges) {
+            if case .records(.cleared) = event {} else { out.append(.saveMoss(MossKept(threads: state.threads, exchanges: state.exchanges))) }
+        }
         // The reminders follow the plan the presenter made, once the device
         // has said what it allows.
         if state.linked.loaded, state.permission != nil, presentation.reminders != state.scheduled { out.append(.schedule(presentation.reminders)) }
@@ -151,6 +162,9 @@ public extension TodayApp {
         return Array(wanted.sorted().prefix(40))
     }
 
+    /// What of the exchanges is kept as it changes: which there are and how each stands.
+    static func standing(_ exchanges: [Exchange]) -> [String] { exchanges.map { $0.id + " " + $0.state.rawValue } }
+
     func ownKey(of effect: Effect) -> String? {
         switch effect {
         case .records: nil
@@ -163,7 +177,10 @@ public extension TodayApp {
         case .readSources: "sources"
         case .saveSources: "sources.save"
         case .saveNotes: "notes"
-        case .ask, .stopAsking: "ask"
+        case .saveMoss: "moss.save"
+        // One answer is read at a time in a conversation, and the conversations do not wait on each other.
+        case let .ask(exchange, _, _, _, _): "ask:" + exchange.scope
+        case let .stopAsking(scope): "ask:" + scope
         case .readUsage: "usage"
         case .readPermission, .askPermission: "permission"
         case .registerNotifications: "notifications.register"
@@ -203,7 +220,7 @@ public extension TodayApp {
                 let now = clock.now
                 return .localRead(
                     notes: folder.flatMap { Self.notesFile.load(from: $0) }, windows: folder.flatMap { Self.windowsFile.load(from: $0) },
-                    sources: folder.flatMap { Self.sourcesFile.load(from: $0) }, at: now,
+                    sources: folder.flatMap { Self.sourcesFile.load(from: $0) }, moss: folder.flatMap { Self.mossFile.load(from: $0) }, at: now,
                     today: CivilDay(now, in: Self.calendar(timeZone)), zone: timeZone.identifier)
             }
         case let .readWindows(discovery):
@@ -247,14 +264,21 @@ public extension TodayApp {
                 try? Self.notesFile.save(notes, to: folder)
                 return nil
             }
-        case let .ask(exchange, message, context):
+        case let .saveMoss(kept):
+            guard let folder else { return .none }
+            return .once {
+                try? Self.mossFile.save(kept, to: folder)
+                return nil
+            }
+        case let .ask(exchange, message, context, thread, after):
             return .relay { continuation in
                 guard let client = await source.current() else {
                     continuation.yield(.answer(exchange.id, .failed("Moss could not be reached. You are signed out.")))
                     return
                 }
                 for await event in Assistant.ask(
-                    client, message: message, context: context, timezone: timeZone.identifier, messageID: exchange.id, app: Self.appName)
+                    client, message: message, context: context, timezone: timeZone.identifier, messageID: exchange.id, thread: thread, after: after,
+                    app: Self.appName)
                 {
                     continuation.yield(.answer(exchange.id, event))
                 }

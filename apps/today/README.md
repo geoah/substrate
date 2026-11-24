@@ -34,7 +34,9 @@ night, what is done earlier today, what is happening since the last look
 in the order it is acted on, and "Add or ask" fixed at the bottom. What is
 typed there goes to the assistant, which adds a task where the words are one
 and answers where they ask; where it cannot be reached, the words can be
-kept as a task. The
+kept as a task. What is said to the assistant is a conversation it remembers:
+the day has one a day, and each task, project, person and meeting has its own,
+for as long as it lives ([Asking the assistant](docs/seam.md#asking-the-assistant)). The
 priorities, the list of projects, a project, a person, a meeting, a task,
 the plan and the suggested tasks are pages; everything else opens in place.
 A row of the day that opens a page ends with a right chevron.
