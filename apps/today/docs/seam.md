@@ -122,35 +122,42 @@ A home-screen widget draws a second, much smaller value: `GlanceDay`, the day at
 `TodayKit/Sources/TodayGlance/` (Foundation alone, so the widget extension links it without the kit).
 `GlancePresenter` makes it from the pane the engine makes at that instant, and works nothing out a second
 time: what leads is `PanePresentation.lead`, the order is the order of `items`, and a meeting's real instants
-are the day's own. Every word a widget shows is in the value, the widgets' names and "and 3 more" included.
+are the day's own. Every word a widget shows is in the value, "and 3 more" included.
 
 | Type                             | Holds                                                                                               |
 | -------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `GlanceTimeline`                 | `writtenAt`, the `entries` in order of `at`, and `until`, the instant past which the day is not known. `days(from:)` is what a widget draws from an instant on |
 | `GlanceDay`                      | `at` (from when it holds), the date, `now`, `quiet`, `next`, `left`, `upcoming`, `tasks`, `meetings`, and `message`, which every widget says in place of the day |
-| `GlanceItem`                     | One thing on one line: glyph, title, one line, a meeting's start, its flag (and whether it is only suggested), its project, a live count's end, and `link` |
-| `GlanceMeeting`                  | A meeting with its `start` and `end` as instants: its time and title, `note`, `live`, `off`, its place in a `pair` to choose between, and whether it `counts` |
-| `GlanceTasks`, `GlanceMeetings`  | A list under its name: `title`, `standing` ("2 of 6 done", "5 left"), `items`, the sentence for none (`empty`), and `more(after:)` for what does not fit |
+| `GlanceItem`                     | One thing on one row: glyph, title, `line` (said at the row's end where there is room), a meeting's start (`time`) and end (`until`), its flag (and whether it is only suggested), its project, a live count's end, and `link` |
+| `GlanceMeeting`                  | A meeting with its `start` and `end` as instants: its `time`, its end as words (`until`), its title, `note`, `live`, `off`, its place in a `pair` to choose between, and whether it `counts` |
+| `GlanceTasks`, `GlanceMeetings`  | A list: `standing` ("2 of 6 tasks done", "5 meetings left"), `items`, and the sentence for none (`empty`) |
 | `GlanceKind`, `GlanceWords`, `GlanceLinks` | The three widgets' kinds, names and descriptions; the fixed words; the link scheme and the day's link |
+
+A widget has no name over its rows and no row taller than one line (the owner, 24 November: "too large
+text, too little info, too much wasted space", then "avoid headers and just have single rows with icons and
+priorities for each item in order"). A row is a flag's stripe, the kind's glyph, a meeting's start and end,
+the title, and what ends it: a count, a note ("now", "Choose one"), or quietly the first of `line` and the
+project that the title leaves room for. A widget draws as many rows as fit, six in a medium one and sixteen
+in a large one at the default text size, and one quiet line under them where a line is left over.
 
 What each widget draws:
 
-- **Now and next** (`today.now`): `now` (glyph, title, `line`; a stripe where it has a flag; its `count` where
-  a meeting leads before it starts), then `next` with its time and its count where `counts`, then `left`. The
-  large size lists `upcoming` under them, each with its glyph and, where it has a flag, its stripe. With
-  nothing leading it says `quiet`.
-- **Tasks** (`today.tasks`): `tasks.title` and `tasks.standing`, then each of `tasks.items` as its stripe, its
-  title and its project where there is room, then `tasks.more(after:)`; `tasks.empty` when there is none.
-- **Meetings** (`today.meetings`): `meetings.title` and `meetings.standing`, then each of `meetings.items` as
-  its time, its title and what ends its line: the count where `counts`, else `note`. `off` is struck through,
-  and the two of a `pair` stand on one band.
+- **Now and next** (`today.now`): `now`, heavier, then `upcoming` in its order. Where `next` would fall below
+  the last row, the rows before it give way: one quiet row says how many ("and 4 more") and `next` is the last
+  row, so the next fixed point is always in the widget. Under the rows, `left`. With nothing leading it says
+  `quiet`.
+- **Tasks** (`today.tasks`): each of `tasks.items`, and under them `tasks.standing`; `tasks.empty` when there
+  is none.
+- **Meetings** (`today.meetings`): each of `meetings.items` with its start and its end in one column, and
+  what ends its row: the count where `counts`, else `note`. The one in progress is heavier, `off` is struck
+  through, and the two of a `pair` stand on one band. Under them, `meetings.standing`.
 
 What `GlancePresenter` keeps to:
 
 - **`now`** is the item whose id is `PanePresentation.lead`: a row, a meeting, the night. **`next`** is the
   first meeting in the pane that is not on, not `off` and does not lead, so a meeting that leads is never said
-  twice. **`upcoming`** is every row and every meeting the owner goes to, in the pane's order, without those
-  two. The saved plan's row is not a thing ahead. The rows a `parked` line folds while a meeting leads are
+  twice. **`upcoming`** is every row and every meeting the owner goes to, in the pane's order, without what
+  leads; `next` is among them, in its own place. The saved plan's row is not a thing ahead. The rows a `parked` line folds while a meeting leads are
   still listed, in the engine's order.
 - **`tasks.items`** are the pane's task rows, and something urgent, in its order; `standing` counts the tasks
   done today from "Earlier today". A suggested task and a routine are not tasks.
@@ -161,7 +168,7 @@ What `GlancePresenter` keeps to:
   minutes left to the meeting's `start`, "in 12 min": a started minute counted, as `Words.until` counts it,
   and never minutes and seconds, which read as a time of day beside the real ones. On the home screen the
   system counts the minutes; `GlanceWords.count(from:to:)` is the same words at one instant, for a picture.
-- **A link** is the route of the page a line opens (`TodayLinks`): `substrate-today://task/<id>`,
+- **A link** is the route of the page a row opens (`TodayLinks`): `substrate-today://task/<id>`,
   `substrate-today://meeting/<id>`, `substrate-today://plan`, `substrate-today://suggested`, and
   `substrate-today://day` for everything else. `TodayLinks.route(_:)` reads one back, and answers nil, the
   day, for one it does not know.

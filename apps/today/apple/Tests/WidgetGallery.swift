@@ -131,7 +131,7 @@ extension GalleryTests {
             #expect(Glyph(rawValue: glyph.rawValue)?.systemName == glyph.symbol, "\(glyph)")
         }
         #expect(GlanceLook.points(.headline) == TodayLook.points(.headline) && GlanceLook.points(.caption) == TodayLook.points(.caption))
-        #expect(GlanceLook.points(.subheadline) == TodayLook.points(.subheadline) && GlanceLook.points(.footnote) == TodayLook.points(.footnote))
+        #expect(GlanceLook.points(.footnote) == TodayLook.points(.footnote) && GlanceLook.points(.caption2) == TodayLook.points(.caption2))
     }
 
     /// On the home screen the system counts the minutes to a meeting

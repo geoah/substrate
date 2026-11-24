@@ -12,7 +12,7 @@ import TodayGlance
 /// A widget's day as indented text: what a reader checks a moment by.
 func outline(_ day: GlanceDay) -> String {
     func item(_ item: GlanceItem) -> String {
-        "\(item.glyph.rawValue) \(item.time.map { $0 + " " } ?? "")\(item.title) | \(item.line ?? "") | \(item.flag?.rawValue ?? "-")\(item.suggested ? "?" : "") | \(item.project ?? "") | \(item.count.map { _ in "counts " } ?? "")\(item.link)"
+        "\(item.glyph.rawValue) \(item.time.map { $0 + (item.until.map { "–" + $0 } ?? "") + " " } ?? "")\(item.title) | \(item.line ?? "") | \(item.flag?.rawValue ?? "-")\(item.suggested ? "?" : "") | \(item.project ?? "") | \(item.count.map { _ in "counts " } ?? "")\(item.link)"
     }
     var out: [String] = ["\(day.dateShort) message: \(day.message ?? "-")"]
     out.append("now: \(day.now.map(item) ?? day.quiet ?? "-")")
@@ -23,7 +23,7 @@ func outline(_ day: GlanceDay) -> String {
     out += day.tasks.items.map { "  " + item($0) }
     out.append("meetings: \(day.meetings.standing ?? "-")")
     out += day.meetings.items.map {
-        "  \($0.time) \($0.title) | \($0.note ?? "")\($0.live ? " live" : "")\($0.off ? " off" : "")\($0.pair.map { " pair:" + $0.rawValue } ?? "")\($0.counts ? " counts" : "")"
+        "  \($0.time)\($0.until.map { "–" + $0 } ?? "") \($0.title) | \($0.note ?? "")\($0.live ? " live" : "")\($0.off ? " off" : "")\($0.pair.map { " pair:" + $0.rawValue } ?? "")\($0.counts ? " counts" : "")"
     }
     return out.joined(separator: "\n")
 }
@@ -66,21 +66,25 @@ struct GlanceTests {
             if case let .row(row) = item, row.id.hasPrefix("task:") { "row:" + row.id } else { nil }
         }
         #expect(day.tasks.items.map(\.id) == rows && rows.count == 10)
-        #expect(day.tasks.title == "Today" && day.tasks.standing == "3 of 13 done")
+        #expect(day.tasks.standing == "3 of 13 tasks done")
         #expect(day.tasks.items.map(\.flag).prefix(4) == [.high, .high, .high, .medium])
-        #expect(!day.upcoming.contains { $0.title == "Today's plan" } && !day.upcoming.contains { $0.id == now.id || $0.id == "meeting:" + next.id })
-        #expect(day.tasks.more(after: 3) == "and 7 more" && day.tasks.more(after: 10) == nil)
-        // What follows is rows and meetings as the pane orders them.
+        #expect(!day.upcoming.contains { $0.title == "Today's plan" } && !day.upcoming.contains { $0.id == now.id })
+        #expect(GlanceWords.more(7) == "and 7 more" && GlanceWords.more(0) == nil)
+        // What follows is rows and meetings as the pane orders them, the next fixed point in its own place with its start and its end.
         let order = pane.items.compactMap { item -> String? in
             switch item {
             case let .row(row): row.id == "plan" ? nil : item.id
             case let .meeting(meeting): meeting.off ? nil : item.id
             default: nil
             }
-        }.filter { $0 != now.id && $0 != "meeting:" + next.id }
+        }.filter { $0 != now.id }
         #expect(day.upcoming.map(\.id) == order)
+        let tomas = try #require(day.upcoming.first { $0.id == "meeting:" + next.id })
+        #expect(tomas.time == "14:20" && tomas.until == "14:40" && tomas.line == nil && tomas.count == nil)
+        #expect(day.upcoming.firstIndex { $0.id == tomas.id } == 6)
         // The meetings of the rest of today: one the owner does not go to is struck through and not counted.
-        #expect(day.meetings.title == "Meetings" && day.meetings.standing == "12 left" && day.meetings.items.count == 15)
+        #expect(day.meetings.standing == "12 meetings left" && day.meetings.items.count == 15)
+        #expect(day.meetings.items[0].time == "14:20" && day.meetings.items[0].until == "14:40")
         #expect(day.meetings.items.filter(\.off).map(\.title) == ["Karim", "Callum", "Cloud standup"])
         #expect(day.meetings.items[0].link == "substrate-today://meeting/tomas")
     }
@@ -112,12 +116,13 @@ struct GlanceTests {
     @Test func inAMeetingTheWidgetsSaySoAndCountToTheNext() throws {
         let day = glance("14:25", edit: TodayFixtures.unchosen)
         let now = try #require(day.now)
-        #expect(now.id == "meeting:tomas" && now.glyph == .meeting && now.title == "Tomas" && now.line == "Now, until 14:40." && now.count == nil)
+        #expect(now.id == "meeting:tomas" && now.glyph == .meeting && now.title == "Tomas" && now.line == "now" && now.count == nil)
+        #expect(now.time == "14:20" && now.until == "14:40")
         #expect(now.link == "substrate-today://meeting/tomas")
         // The next fixed point starts within the hour: its count runs to its start.
         #expect(day.next?.id == "viktor" && day.next?.counts == true && day.next?.start == TodayFixtures.at("14:40"))
         let meetings = day.meetings.items
-        #expect(meetings[0].live && meetings[0].note == "now, until 14:40" && !meetings[0].counts)
+        #expect(meetings[0].live && meetings[0].note == "now" && meetings[0].until == "14:40" && !meetings[0].counts)
         #expect(meetings[1].id == "viktor" && meetings[1].counts && meetings.filter(\.counts).count == 1)
         // Two that share time and wait for a choice are a pair, and the first asks for one.
         #expect(meetings[2].title == "Henrik" && meetings[2].pair == .first && meetings[2].note == "Choose one")
@@ -131,7 +136,8 @@ struct GlanceTests {
         let day = glance("14:12")
         let pane = pane("14:12")
         let now = try #require(day.now)
-        #expect(pane.lead == "meeting:tomas" && now.id == "meeting:tomas" && now.line == "At 14:20." && now.count == TodayFixtures.at("14:20"))
+        #expect(pane.lead == "meeting:tomas" && now.id == "meeting:tomas" && now.line == nil && now.count == TodayFixtures.at("14:20"))
+        #expect(now.time == "14:20" && now.until == "14:40")
         // The meeting that leads is not said again as what is next.
         #expect(day.next?.id == "viktor" && day.next?.counts == false)
         // The pane folds the rows that wait into one line; a widget still lists them, in their order.
@@ -140,7 +146,7 @@ struct GlanceTests {
             day.tasks.items.map(\.title).prefix(2) == [
                 "Verify the safety vendor endpoint claims", "Triage the Vigil findings and review the four lockdown PRs",
             ])
-        #expect(day.tasks.items.count == 6 && day.tasks.standing == "8 of 14 done")
+        #expect(day.tasks.items.count == 6 && day.tasks.standing == "8 of 14 tasks done")
     }
 
     @Test func somethingUrgentLeadsAndIsATask() throws {
@@ -164,7 +170,7 @@ struct GlanceTests {
                 state.linked.records[key]?.properties["status"] = "done"
             }
         }
-        #expect(late.tasks.items.isEmpty && late.tasks.empty == "Nothing is left today.")
+        #expect(late.tasks.items.isEmpty && late.tasks.empty == "No tasks are left today.")
         #expect(late.meetings.items.isEmpty && late.meetings.empty == "No more meetings today." && late.meetings.standing == nil)
     }
 
@@ -205,6 +211,9 @@ struct GlanceTests {
         var same = before
         same.next?.counts = true
         same.meetings.items[0].counts = true
+        let row = try #require(same.upcoming.firstIndex { $0.id == "meeting:tomas" })
+        #expect(before.upcoming[row].count == nil && on.upcoming[row].count == TodayFixtures.at("14:20"))
+        same.upcoming[row].count = TodayFixtures.at("14:20")
         #expect(same.says(sameAs: on))
     }
 

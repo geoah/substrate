@@ -112,17 +112,29 @@ files, and the value there and back.
 `GlanceLook` repeats the few colours, sizes and glyphs a widget draws with, and `WidgetLookTests` holds each to
 `TodayLook`'s and to the app's own glyphs.
 
-- A flag is its stripe alone, as in the pane. In the Tasks widget a line is moved in to make room for it; in
-  Now and next it hangs in the widget's margin, as the stripe of the pane's leading row does, so lines with a
-  flag and lines without one keep their glyphs on one edge. Where the system draws a widget in one tint, the
-  glyphs and the stripes are what it tints (`widgetAccentable`), and High is the most solid of the three.
+- Every widget is rows and nothing else: no name over them, and no row taller than one line. `GlanceRow`
+  draws one (`GlanceRowContent`, made from a `GlanceItem` or a `GlanceMeeting`): the stripe, the glyph in a
+  box as tall as the words (so every row is one height whatever its glyph), a meeting's start and end, the
+  title, and what ends the row. `ViewThatFits` drops what the title has no room for, in order: the quiet
+  words at the end, then a meeting's end, and only then is the title cut. In the Meetings widget the times
+  keep the room of the widest, so the titles stand on one edge.
+- The type is the app's, two steps smaller (`GlanceLook.Role`): 13 points for a title, 12 for a time, 11 for
+  what is said quietly, and a row is 20 points, so a medium widget holds six rows and a large one sixteen.
+  A weight is set on the font (`Font.system(style, design:).weight(…)`): a text style named with its weight
+  drew at the regular one on a device.
+- A flag is its stripe alone, as in the pane, hung in the widget's margin as the stripe of the pane's leading
+  row is, so rows with a flag and rows without one keep their glyphs on one edge. Where the system draws a
+  widget in one tint, the glyphs and the stripes are what it tints (`widgetAccentable`), and High is the most
+  solid of the three.
 - The count to a meeting (`GlanceCount`) is the system's own count of whole minutes over the time left
   (`Date.ComponentsFormatStyle`, "12 min") after the core's word "in", so it moves by itself and reads
   "in 12 min". The system drops a minute that has started and the app counts it, so the stretch it counts
   runs 59.9 seconds past the start; `WidgetLookTests` holds what it says to `GlanceWords.count(from:to:)`,
   the words a picture draws. At the start itself the timeline's next day takes the count away.
-- A list draws as many lines as fit (`GlanceFitting`), so a larger text size draws fewer and cuts none, and
-  the core says what is left over ("and 3 more").
+- A list draws as many rows as fit (`GlanceList`), so a larger text size draws fewer and cuts none, and one
+  quiet line under them where a line is left over: how the day stands ("2 of 6 tasks done"). Now and next
+  always reaches the next fixed point: where it would fall below the last row, the rows before it give way
+  and one quiet row says how many ("and 4 more").
 - The background is the card colour, given to the system as the widget's container background.
 
 The gallery draws them at an iPhone's sizes, 338 by 158 and 338 by 354, in light and in dark:

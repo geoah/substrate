@@ -61,32 +61,34 @@ enum GlanceLook {
     // MARK: Sizes
 
     static let stripeWidth: CGFloat = 4
-    /// From a row's leading edge to its words, past the stripe.
-    static let stripeRoom: CGFloat = 12
-    /// How far into the widget's margin a stripe hangs beside a line that
-    /// keeps its place.
+    /// How far into the widget's margin a flag's stripe hangs beside its
+    /// row, so rows with a flag and rows without one keep their glyphs and
+    /// their words on one edge.
     static let stripeHang: CGFloat = 9
-    /// The box a glyph leads a line in: what leads the day, the next fixed
-    /// point and each line under them start their words on one edge.
-    static let glyphBox: CGFloat = 22
-    /// Between a glyph and the words beside it.
+    /// The box a glyph leads a row in: every row starts its words on one edge.
+    static let glyphBox: CGFloat = 16
+    /// A glyph's own size in that box.
+    static let glyphSize: CGFloat = 12
+    /// Between a glyph and the words beside it, and between a row's parts.
     static let glyphGap: CGFloat = 6
+    /// Above and below a row's words: a row of the default text size is
+    /// twenty points, so a medium widget draws six and a large one sixteen.
+    static let rowPadding: CGFloat = 2
 
     // MARK: Type
 
-    /// What a run of text is in a widget: the app's type, a step smaller.
+    /// What a run of text is in a widget: the app's type, two steps
+    /// smaller, so a row of the home screen holds six things.
     enum Role {
-        /// The title of what leads the day.
+        /// The title of the row that leads the day.
         case lead
         /// A row's title.
         case row
-        /// A second line.
-        case second
-        /// A widget's own name.
-        case label
         /// A meeting's start.
         case time
-        /// A count, and what is said last and quietly.
+        /// A meeting's end, after its start.
+        case until
+        /// What ends a row quietly, a count, and what is said last.
         case quiet
     }
 
@@ -96,19 +98,19 @@ enum GlanceLook {
     static func font(_ role: Role, scale: CGFloat = 1) -> Font {
         let (style, weight, design): (Font.TextStyle, Font.Weight, Font.Design) =
             switch role {
-            case .lead: (.headline, .semibold, .default)
-            case .row: (.subheadline, .medium, .default)
-            case .second: (.footnote, .regular, .default)
-            case .label: (.footnote, .semibold, .default)
-            case .time: (.footnote, .semibold, .rounded)
-            case .quiet: (.caption, .medium, .default)
+            case .lead: (.footnote, .semibold, .default)
+            case .row: (.footnote, .regular, .default)
+            case .time: (.caption, .semibold, .rounded)
+            case .until: (.caption, .regular, .rounded)
+            case .quiet: (.caption2, .medium, .default)
             }
         #if os(macOS)
         let font = Font.system(size: points(style) * scale, weight: weight, design: design)
         #else
-        let font = Font.system(style, design: design, weight: weight)
+        // The weight is set on the font it is given to: a text style named with a weight drew at the regular one in a widget.
+        let font = Font.system(style, design: design).weight(weight)
         #endif
-        return role == .time || role == .quiet ? font.monospacedDigit() : font
+        return role == .time || role == .until || role == .quiet ? font.monospacedDigit() : font
     }
 
     /// A style's size at the default text size on an iPhone.
@@ -118,6 +120,7 @@ enum GlanceLook {
         case .subheadline: 15
         case .footnote: 13
         case .caption: 12
+        case .caption2: 11
         default: 17
         }
     }

@@ -90,11 +90,18 @@ The rules are the engine's, and a test pins each:
 Three home-screen widgets, on iPhone and iPad, each in the two sizes that take a
 row of the home screen or several (`systemMedium`, `systemLarge`). None is small.
 
+A widget is rows and nothing else. It has no name over them, and each thing is
+one row: its flag as a stripe, its glyph, a meeting's start and end, its title, and
+quietly at the end what the title leaves room for. The type is small, so a medium
+widget holds six rows and a large one sixteen at the default text size; a larger
+text size draws fewer. Where a line is left under the rows, it says how the day
+stands.
+
 | Widget | Kind | Draws |
 | --- | --- | --- |
-| Now and next | `today.now` | what leads the day (the pane's current item: its glyph, its title, one line), the next meeting the owner goes to with its time, and how much is left. The large size adds what follows, in the order of the day, a task with its flag as a stripe |
-| Tasks | `today.tasks` | today's open tasks in the pane's order, each with its flag as a stripe and its project where there is room, under "Today" and "2 of 6 done". Three in the medium size, seven in the large, and "and 3 more" |
-| Meetings | `today.meetings` | the meetings of the rest of today: the one in progress says "now, until 14:40", two that share time and wait for a choice stand on one band, and one the owner does not go to is struck through |
+| Now and next | `today.now` | the day in its order: what leads it (the pane's current item), heavier, then what follows, tasks, routines and meetings alike. The next meeting the owner goes to is always among the rows: where it would fall below the last one, the rows before it give way to "and 4 more". Under them, "3 tasks and 2 meetings left" |
+| Tasks | `today.tasks` | today's open tasks in the pane's order, each with its flag as a stripe, and at the end of its row why it matters now or its project. Under them, "2 of 6 tasks done" |
+| Meetings | `today.meetings` | the meetings of the rest of today, each with its start and its end: the one in progress is heavier and says "now", two that share time and wait for a choice stand on one band, and one the owner does not go to is struck through. Under them, "5 meetings left" |
 
 The count to the next meeting is in minutes, "in 12 min", as the app says it, and
 drawn within the hour before it as the app's is. The system counts the minutes
@@ -123,7 +130,7 @@ be scrolled or paged: several of them in one place is the system's Smart Stack.
   what is in it are shown inside the app only
   ([records](docs/records.md)). Titles are marked private, so a locked device hides them.
 - **A tap opens the app with a link of its own** (the `substrate-today` scheme):
-  `substrate-today://day` anywhere on a widget, and in the large size a line opens
+  `substrate-today://day` anywhere on a widget, and in the large size a row opens
   its page, `substrate-today://task/<id>` or `substrate-today://meeting/<id>` (and
   `plan` and `suggested` for the rows that open those pages). A link the build does
   not know opens the day.

@@ -61,11 +61,10 @@ public enum GlancePresenter {
                 meetings.append(glance)
                 guard !row.off else { continue }
                 if leads {
-                    out.now = self.item(row, meeting, leads: true)
-                } else if out.next == nil, !row.live {
-                    out.next = glance
+                    out.now = self.item(row, meeting)
                 } else {
-                    out.upcoming.append(self.item(row, meeting, leads: false))
+                    if out.next == nil, !row.live { out.next = glance }
+                    out.upcoming.append(self.item(row, meeting))
                 }
             case let .note(note):
                 if out.quiet == nil { out.quiet = note.text }
@@ -76,9 +75,9 @@ public enum GlancePresenter {
         if out.now != nil { out.quiet = nil }
         let going = meetings.filter { !$0.off }.count
         out.left = left(tasks: open.count, meetings: going)
-        out.tasks = GlanceTasks(standing: done + open.count > 0 ? "\(done) of \(done + open.count) done" : nil, items: open)
+        out.tasks = GlanceTasks(standing: done + open.count > 0 ? "\(done) of \(done + open.count) tasks done" : nil, items: open)
         out.meetings = GlanceMeetings(
-            standing: going > 0 ? "\(going) left" : nil, items: meetings,
+            standing: left(tasks: 0, meetings: going), items: meetings,
             empty: engine.todaysMeetings.isEmpty ? "No meetings today." : "No more meetings today.")
         return out
     }
@@ -114,22 +113,22 @@ public enum GlancePresenter {
             link: TodayLinks.link(route))
     }
 
-    /// A meeting as a thing of the day: where it leads, it says that it is
-    /// on or when it starts, and counts to its start within the hour.
-    static func item(_ row: MeetingRow, _ meeting: Meeting, leads: Bool) -> GlanceItem {
+    /// A meeting as a thing of the day: its start and its end, "now" while
+    /// it is on, and the count to its start where it is the next fixed
+    /// point within the hour.
+    static func item(_ row: MeetingRow, _ meeting: Meeting) -> GlanceItem {
         GlanceItem(
-            id: "meeting:" + row.id, glyph: .meeting, title: row.title,
-            line: leads ? (row.live ? "Now, until \(row.end)." : "At \(row.start).") : nil, time: row.start,
-            count: leads && !row.live && row.until != nil ? meeting.start : nil, link: TodayLinks.link(.meeting(row.id)))
+            id: "meeting:" + row.id, glyph: .meeting, title: row.title, line: row.live ? GlanceWords.now : nil, time: row.start, until: row.end,
+            count: !row.live && row.until != nil ? meeting.start : nil, link: TodayLinks.link(.meeting(row.id)))
     }
 
     static func meeting(_ row: MeetingRow, _ meeting: Meeting) -> GlanceMeeting {
         let live = row.live && !row.off
         let pair: GlanceMeeting.Pair? = row.tie.flatMap { $0.toChoose ? ($0.second ? .second : .first) : nil }
         return GlanceMeeting(
-            id: row.id, time: row.start, title: row.title, start: meeting.start, end: meeting.end,
+            id: row.id, time: row.start, until: row.end, title: row.title, start: meeting.start, end: meeting.end,
             // The first of a pair asks: where a widget has room for one of the two, it is the one it draws.
-            note: live ? "now, until \(row.end)" : pair == .first ? "Choose one" : nil, live: live, off: row.off, pair: pair,
+            note: live ? GlanceWords.now : pair == .first ? "Choose one" : nil, live: live, off: row.off, pair: pair,
             counts: !row.off && row.until != nil, link: TodayLinks.link(.meeting(row.id)))
     }
 
@@ -191,6 +190,7 @@ public enum GlancePresenter {
         var out = glance
         out.at = from
         if out.now?.id == "meeting:" + next.id { out.now?.count = next.start }
+        if let index = out.upcoming.firstIndex(where: { $0.id == "meeting:" + next.id }) { out.upcoming[index].count = next.start }
         if out.next?.id == next.id { out.next?.counts = true }
         if let index = out.meetings.items.firstIndex(where: { $0.id == next.id }) { out.meetings.items[index].counts = true }
         return out

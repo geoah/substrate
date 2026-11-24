@@ -71,18 +71,23 @@ public extension GlanceDay {
     /// the widget gallery. Nothing in it is a record of anyone.
     static func sample(at: Date) -> GlanceDay {
         let review = GlanceMeeting(
-            id: "review", time: "14:00", title: "Design review", start: at.addingTimeInterval(2 * 3600), end: at.addingTimeInterval(3 * 3600))
+            id: "review", time: "14:00", until: "15:00", title: "Design review", start: at.addingTimeInterval(2 * 3600),
+            end: at.addingTimeInterval(3 * 3600))
         let planning = GlanceMeeting(
-            id: "planning", time: "16:30", title: "Weekly planning", start: at.addingTimeInterval(4.5 * 3600), end: at.addingTimeInterval(5 * 3600))
+            id: "planning", time: "16:30", until: "17:00", title: "Weekly planning", start: at.addingTimeInterval(4.5 * 3600),
+            end: at.addingTimeInterval(5 * 3600))
+        func item(_ meeting: GlanceMeeting) -> GlanceItem {
+            GlanceItem(id: "meeting:" + meeting.id, glyph: .meeting, title: meeting.title, time: meeting.time, until: meeting.until)
+        }
         let outline = GlanceItem(
             id: "row:task:outline", glyph: .task, title: "Draft the workshop outline", line: "Due today.", flag: .high, project: "Workshop")
         let venue = GlanceItem(id: "row:task:venue", glyph: .task, title: "Reply to the venue", flag: .medium, project: "Workshop")
         let train = GlanceItem(id: "row:task:train", glyph: .task, title: "Book the train", flag: .low, project: "Travel")
-        let walk = GlanceItem(id: "row:routine:walk", glyph: .routine, title: "Evening walk", line: "At 18:30.")
+        let walk = GlanceItem(id: "row:routine:walk", glyph: .routine, title: "Evening walk", line: "1 item.")
         return GlanceDay(
             at: at, date: "Thursday 19 November", dateShort: "Thu 19 Nov", now: outline, next: review, left: "3 tasks and 2 meetings left",
-            upcoming: [venue, train, GlanceItem(id: "meeting:planning", glyph: .meeting, title: planning.title, time: planning.time), walk],
-            tasks: GlanceTasks(standing: "1 of 4 done", items: [outline, venue, train]),
-            meetings: GlanceMeetings(standing: "2 left", items: [review, planning]))
+            upcoming: [venue, item(review), train, item(planning), walk],
+            tasks: GlanceTasks(standing: "1 of 4 tasks done", items: [outline, venue, train]),
+            meetings: GlanceMeetings(standing: "2 meetings left", items: [review, planning]))
     }
 }

@@ -25,7 +25,7 @@ public enum GlanceFlag: String, Codable, Hashable, Sendable, CaseIterable {
     }
 }
 
-/// One thing of the day on one line: a task, a routine, a meeting, the
+/// One thing of the day on one row: a task, a routine, a meeting, the
 /// night, the plan. A routine is its group and a count, never the names or
 /// the doses of what is in it.
 public struct GlanceItem: Codable, Equatable, Sendable, Identifiable {
@@ -33,15 +33,18 @@ public struct GlanceItem: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var glyph: GlanceGlyph
     public var title: String
-    /// One line under the title where a widget has room: why it matters
-    /// now, or what it holds.
+    /// Said quietly at the end of its row where the title leaves it room:
+    /// why it matters now, what it holds, "now" on a meeting in progress.
     public var line: String?
     /// A meeting's start: "14:20".
     public var time: String?
+    /// A meeting's end: "14:40". With `time` it is drawn as a range.
+    public var until: String?
     public var flag: GlanceFlag?
     /// The flag is the assistant's suggestion: its stripe is drawn hollow.
     public var suggested: Bool
-    /// The project's name, said quietly where there is room.
+    /// The project's name, said at the end of its row where `line` has no
+    /// room and it has.
     public var project: String?
     /// The instant the count of minutes runs to ("in 12 min"): set on a
     /// meeting that leads the day and starts within the hour.
@@ -50,7 +53,7 @@ public struct GlanceItem: Codable, Equatable, Sendable, Identifiable {
     public var link: String
 
     public init(
-        id: String, glyph: GlanceGlyph, title: String, line: String? = nil, time: String? = nil, flag: GlanceFlag? = nil,
+        id: String, glyph: GlanceGlyph, title: String, line: String? = nil, time: String? = nil, until: String? = nil, flag: GlanceFlag? = nil,
         suggested: Bool = false, project: String? = nil, count: Date? = nil, link: String = GlanceLinks.day
     ) {
         self.id = id
@@ -58,6 +61,7 @@ public struct GlanceItem: Codable, Equatable, Sendable, Identifiable {
         self.title = title
         self.line = line
         self.time = time
+        self.until = until
         self.flag = flag
         self.suggested = suggested
         self.project = project
@@ -77,11 +81,13 @@ public struct GlanceMeeting: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     /// "14:20".
     public var time: String
+    /// Its end, "14:40": drawn after the start as a range.
+    public var until: String?
     public var title: String
     public var start: Date
     public var end: Date
-    /// What ends its line: "now, until 14:40" on the one in progress,
-    /// "Choose one" on the first of a pair.
+    /// What ends its row: "now" on the one in progress, "Choose one" on the
+    /// first of a pair.
     public var note: String?
     /// On now.
     public var live: Bool
@@ -94,11 +100,12 @@ public struct GlanceMeeting: Codable, Equatable, Sendable, Identifiable {
     public var link: String
 
     public init(
-        id: String, time: String, title: String, start: Date, end: Date, note: String? = nil, live: Bool = false, off: Bool = false,
-        pair: Pair? = nil, counts: Bool = false, link: String = GlanceLinks.day
+        id: String, time: String, until: String? = nil, title: String, start: Date, end: Date, note: String? = nil, live: Bool = false,
+        off: Bool = false, pair: Pair? = nil, counts: Bool = false, link: String = GlanceLinks.day
     ) {
         self.id = id
         self.time = time
+        self.until = until
         self.title = title
         self.start = start
         self.end = end
@@ -113,43 +120,34 @@ public struct GlanceMeeting: Codable, Equatable, Sendable, Identifiable {
 
 /// Today's open tasks, in the order of the day.
 public struct GlanceTasks: Codable, Equatable, Sendable {
-    /// "Today".
-    public var title: String
-    /// "2 of 6 done"; nil on a day with no task.
+    /// "2 of 6 tasks done", said last and quietly where the rows leave a
+    /// line free; nil on a day with no task.
     public var standing: String?
     public var items: [GlanceItem]
     /// Said in place of the items when none is open.
     public var empty: String
 
-    public init(title: String = "Today", standing: String? = nil, items: [GlanceItem] = [], empty: String = "Nothing is left today.") {
-        self.title = title
+    public init(standing: String? = nil, items: [GlanceItem] = [], empty: String = "No tasks are left today.") {
         self.standing = standing
         self.items = items
         self.empty = empty
     }
-
-    /// The last quiet line where a widget draws `shown` of them: "and 3 more".
-    public func more(after shown: Int) -> String? { GlanceWords.more(items.count - shown) }
 }
 
 /// The meetings of the rest of today, in order of their start.
 public struct GlanceMeetings: Codable, Equatable, Sendable {
-    /// "Meetings".
-    public var title: String
-    /// "5 left": the ones the owner goes to. Nil when none is left.
+    /// "5 meetings left": the ones the owner goes to, said last and quietly
+    /// where the rows leave a line free. Nil when none is left.
     public var standing: String?
     public var items: [GlanceMeeting]
     /// Said in place of the items when none is left.
     public var empty: String
 
-    public init(title: String = "Meetings", standing: String? = nil, items: [GlanceMeeting] = [], empty: String = "No more meetings today.") {
-        self.title = title
+    public init(standing: String? = nil, items: [GlanceMeeting] = [], empty: String = "No more meetings today.") {
         self.standing = standing
         self.items = items
         self.empty = empty
     }
-
-    public func more(after shown: Int) -> String? { GlanceWords.more(items.count - shown) }
 }
 
 /// The day at one instant, as the three widgets draw it. It holds from `at`
@@ -168,8 +166,8 @@ public struct GlanceDay: Codable, Equatable, Sendable {
     public var next: GlanceMeeting?
     /// "3 tasks and 2 meetings left".
     public var left: String?
-    /// What follows in the order of the day, without what leads and
-    /// without the next fixed point.
+    /// What follows what leads, in the order of the day: tasks, routines
+    /// and meetings, the next fixed point among them.
     public var upcoming: [GlanceItem]
     public var tasks: GlanceTasks
     public var meetings: GlanceMeetings
@@ -221,7 +219,8 @@ public enum GlanceWords {
     /// Said in place of the minutes once none is left.
     public static let now = "now"
 
-    /// "and 3 more", for what a widget has no room to list.
+    /// "and 3 more", where a widget leaves rows out to reach the next
+    /// fixed point: said in their place.
     public static func more(_ count: Int) -> String? { count > 0 ? "and \(count) more" : nil }
 
     /// The count to a meeting's start as it stands at one instant, in the
@@ -252,7 +251,7 @@ public enum GlanceKind: String, Codable, Hashable, Sendable, CaseIterable {
 
     public var summary: String {
         switch self {
-        case .now: "What leads your day now, your next meeting, and what follows."
+        case .now: "Your day in order: what leads it now, what follows, and your next meeting."
         case .tasks: "Today's open tasks, in the order of the day."
         case .meetings: "The meetings of the rest of today."
         }
