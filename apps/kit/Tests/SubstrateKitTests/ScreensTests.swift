@@ -519,6 +519,33 @@ struct RepositoryStatusTests {
         #expect(local.privacyPolicy == nil)
         #expect(!SettingsPresenter.about(local).rows.contains { $0.id == .about(.privacyPolicy) })
     }
+
+    /// App Review reads a pre-release's version, a channel or a Check for
+    /// Updates that finds nothing as a beta or an updater (2.2, 2.5.2). A
+    /// TestFlight or App Store build is stamped as its release is, less the
+    /// feed address, and its About must show none of the three.
+    @Test func aBuildAppleUpdatesNamesNoChannelAndOffersNoCheck() {
+        let stamp: [String: Any] = [
+            "CFBundleShortVersionString": "1.2.4", "CFBundleVersion": "20261116.160554",
+            "SubstrateVersion": "1.2.4-pre.20261116.160554+3c6e163b", "SubstrateChannel": "prerelease",
+            "SubstratePrivacyPolicy": "https://example.com/privacy",
+        ]
+        let store = BuildFacts.stamped(stamp.merging(["SubstrateUpdates": ""]) { $1 })
+        #expect(store == BuildFacts(version: "1.2.4 (20261116.160554)", channel: nil, privacyPolicy: "https://example.com/privacy"))
+        let about = AboutPresentation.present(
+            appName: "Notes", version: store.version, channel: store.channel, offered: nil, privacyPolicy: store.privacyPolicy)
+        #expect(SettingsPresenter.about(about).rows.map(\.id) == [.about(.version), .about(.privacyPolicy)])
+        #expect(about.check == nil)
+
+        // The feed's own release follows its feed, and says so.
+        let feed = BuildFacts.stamped(stamp.merging(["SubstrateUpdates": "https://example.com/apps/notes/"]) { $1 })
+        #expect(feed.version == "1.2.4-pre.20261116.160554+3c6e163b")
+        #expect(feed.channel == "prerelease")
+
+        // A local build is stamped with nothing.
+        let local = BuildFacts.stamped(["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "1"])
+        #expect(local == BuildFacts(version: "0.1.0 (1)"))
+    }
 }
 
 @Suite("The link", .timeLimit(.minutes(10)))
