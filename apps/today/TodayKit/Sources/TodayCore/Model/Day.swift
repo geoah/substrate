@@ -276,8 +276,9 @@ public struct Day: Sendable {
 
     /// The buttons that open what something was made from: its page at the
     /// source, once that is read, and the record itself.
-    public func links(for path: String?) -> [SourceLink] {
-        SourcePages.links(for: path, page: path.flatMap { sources[$0] }, server: server)
+    /// - Parameter placeSaid: see `SourcePages.links(for:page:server:placeSaid:)`.
+    public func links(for path: String?, placeSaid: Bool = false) -> [SourceLink] {
+        SourcePages.links(for: path, page: path.flatMap { sources[$0] }, server: server, placeSaid: placeSaid)
     }
 
     /// Where something written from a record came from, as a line says it

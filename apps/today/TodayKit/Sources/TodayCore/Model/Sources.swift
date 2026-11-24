@@ -185,10 +185,16 @@ public enum SourcePages {
 
     /// The buttons for something made from a record: its page at the
     /// source, where one is known, then the record itself.
-    public static func links(for path: String?, page: SourcePage?, server: URL?) -> [SourceLink] {
+    /// - Parameter placeSaid: the place is said in words right above the
+    ///   buttons (a section's "Slack, #api-reliability", a line's "Gmail."):
+    ///   the button then says "Open" and does not name the place a second
+    ///   time. What it is told aloud stays "Open in Slack".
+    public static func links(for path: String?, page: SourcePage?, server: URL?, placeSaid: Bool = false) -> [SourceLink] {
         guard let path else { return [] }
         var out: [SourceLink] = []
-        if let page { out.append(SourceLink(id: "source", title: page.name, label: "Open in \(page.name)", url: page.url)) }
+        if let page {
+            out.append(SourceLink(id: "source", title: placeSaid ? "Open" : page.name, label: "Open in \(page.name)", url: page.url))
+        }
         if let console = console(server, path: path) {
             out.append(SourceLink(id: "record", title: "Record", label: "Open the record in Substrate", url: console))
         }

@@ -144,7 +144,9 @@ extension DayEngine: PageMaking {
         for item in day.digests.first(where: { $0.key == list.id })?.items ?? [] where item.at <= now {
             var id = "d-\(Int(item.at.timeIntervalSince1970))"
             while !taken.insert(id).inserted { id += "+" }
-            entries.append((item.at, day.source(of: origin(item)), line(item, id: id)))
+            // Its section says where it came from, so its button does not.
+            let source = day.source(of: origin(item))
+            entries.append((item.at, source, line(item, id: id, placeSaid: source != nil)))
         }
         for task in done {
             guard let at = task.completedAt else { continue }

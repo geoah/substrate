@@ -1988,7 +1988,8 @@ struct DigestSourceTests {
     @Test func aLineHasItsRecordAtOnceAndItsSourceOnceThatIsRead() throws {
         let read = try project("13:00", "extapi")
         let note = try #require(read.timeline[1].lines.first)
-        #expect(note.links.map(\.title) == ["Slack", "Record"] && note.links.map(\.label) == ["Open in Slack", "Open the record in Substrate"])
+        // Its section says "Slack, #api-reliability", so the button says "Open" and is told aloud in full.
+        #expect(note.links.map(\.title) == ["Open", "Record"] && note.links.map(\.label) == ["Open in Slack", "Open the record in Substrate"])
         #expect(note.links[0].url.hasPrefix("https://example.slack.com/archives/C0RELIAB/p"))
         #expect(note.links[1].url == "https://substrate.example.com/data/\(Self.p)/slack/message/m-note")
         let mail = try #require(read.timeline[2].lines.first)
@@ -2011,7 +2012,9 @@ struct DigestSourceTests {
         }
         let items = Dictionary(uniqueKeysWithValues: happening.groups.flatMap(\.items).map { ($0.text, $0) })
         let kenji = try #require(items["Kenji replied: the VMs can stay stopped until Monday."])
-        #expect(kenji.source == "Slack, direct message." && kenji.links.map(\.title) == ["Slack", "Record"])
+        // The line says its place in words, so the button under it does not say it again.
+        #expect(kenji.source == "Slack, direct message." && kenji.links.map(\.title) == ["Open", "Record"])
+        #expect(kenji.links.first?.label == "Open in Slack")
         #expect(items["Ned closed nine of the 26 noisy alert tickets."]?.source == "Linear.")
         #expect(items["Ned closed nine of the 26 noisy alert tickets."]?.links.first?.url == "https://linear.app/example/issue/OPS-2038")
         #expect(items["Callum accepted Friday at 16:30. The 17:20 slot is free."]?.source == "Google Calendar.")

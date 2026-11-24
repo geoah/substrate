@@ -29,8 +29,10 @@ extension DayEngine {
     /// record's.
     func origin(_ item: Digest.Item) -> String? { item.sources.first }
 
-    func line(_ item: Digest.Item, id: String) -> TimelineLine {
-        TimelineLine(id: id, time: clock(item.at), text: item.text, links: day.links(for: origin(item)))
+    /// - Parameter placeSaid: the line stands under a label that says
+    ///   where it came from, so its button does not say it again.
+    func line(_ item: Digest.Item, id: String, placeSaid: Bool = false) -> TimelineLine {
+        TimelineLine(id: id, time: clock(item.at), text: item.text, links: day.links(for: origin(item), placeSaid: placeSaid))
     }
 
     func nightItem(_ digest: Digest) -> NightItem? {
@@ -118,7 +120,8 @@ extension DayEngine {
                 byKey[digest.key, default: []].append(
                     HappeningItem(
                         id: "\(digest.key)-\(index)", time: clock(item.at), text: item.text, source: day.source(of: origin(item)).map { $0 + "." },
-                        isNew: new, links: day.links(for: origin(item))))
+                        // The line says its place in words, so the button under it does not.
+                        isNew: new, links: day.links(for: origin(item), placeSaid: day.source(of: origin(item)) != nil)))
                 if new { fresh.append((item.at, digest.key, item.text)) }
             }
         }

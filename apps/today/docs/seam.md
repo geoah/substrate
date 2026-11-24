@@ -111,7 +111,9 @@ beside "Done"; on a suggestion under the line that says when it was heard.
 
 - `source`: the record's page where it came from, titled by the place ("Slack", "Gmail", "Linear",
   "GitHub", "Google Docs", else the host). Present once the root has read that page
-  ([records](records.md#where-a-task-came-from-its-links)).
+  ([records](records.md#where-a-task-came-from-its-links)). Where the place is said in words right above
+  the buttons (a timeline section's "Slack, #api-reliability", a line's "Gmail."), the title is "Open" and
+  the place is not said a second time; the `label` is "Open in Slack" either way.
 - `record`: the record itself in the server's console, which a browser opens. Present whenever the thing
   names what it was made from and the server is known.
 
