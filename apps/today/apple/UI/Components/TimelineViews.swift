@@ -7,34 +7,38 @@ import TodayCore
 
 /// One line of a timeline: a time, who in bold, what happened, what was
 /// said, and where it came from. Where it names a meeting or a task it
-/// opens that page.
+/// opens that page. What it was written from is a row of small links under
+/// its words, in the words' column.
 struct TimelineLineView: View {
     var line: TimelineLine
     @Environment(\.pane) private var pane
 
     var body: some View {
-        if let route = line.opens {
-            Button {
-                pane.open(route)
-            } label: {
-                HStack(alignment: .top, spacing: 6) {
-                    content
-                    RowChevron(turn: .page)
+        VStack(alignment: .leading, spacing: 4) {
+            if let route = line.opens {
+                Button {
+                    pane.open(route)
+                } label: {
+                    HStack(alignment: .top, spacing: 6) {
+                        content
+                        RowChevron(turn: .page)
+                    }
+                    .frame(minHeight: TodayLook.target, alignment: .top)
+                    .contentShape(Rectangle())
                 }
-                .frame(minHeight: TodayLook.target, alignment: .top)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens its page")
+            } else {
+                content
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Opens its page")
-        } else {
-            content
+            if !line.links.isEmpty { UnderTime(time: line.time) { SourceLinksView(links: line.links, quiet: true) } }
         }
     }
 
     private var content: some View {
         HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
             Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
-                .frame(minWidth: 44, alignment: .leading)
+                .frame(minWidth: TodayLook.timeColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(Text(line.who.map { $0 + " " } ?? "").fontWeight(.semibold))\(Text(line.text))")
                     .font(TodayLook.Text.body)
@@ -50,6 +54,75 @@ struct TimelineLineView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// What stands under a timed line's words, in the words' column: the room
+/// the time takes is kept by the time itself, drawn unseen, so the two
+/// stay on one edge at every text size.
+struct UnderTime<Content: View>: View {
+    var time: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
+            Text(time).font(TodayLook.Text.time).frame(minWidth: TodayLook.timeColumn).hidden().accessibilityHidden(true)
+            content().frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// A project's timeline: each day said once, under it each place its lines
+/// came from said once, and under that the lines, each with its clock time.
+/// It is one list of headings and lines, so a line that arrives, or one
+/// whose source is read and named, moves the others and is not swapped
+/// for them.
+struct ProjectTimelineView: View {
+    var groups: [ProjectPage.TimelineGroup]
+
+    private enum Entry: Identifiable {
+        case day(id: String, label: String, first: Bool)
+        case source(id: String, label: String)
+        case line(TimelineLine)
+
+        var id: String {
+            switch self {
+            case let .day(id, _, _): "day:" + id
+            case let .source(id, _): "source:" + id
+            case let .line(line): "line:" + line.id
+            }
+        }
+    }
+
+    private var entries: [Entry] {
+        var out: [Entry] = []
+        for (index, group) in groups.enumerated() {
+            out.append(.day(id: group.id, label: group.label, first: index == 0))
+            for section in group.sections {
+                if let source = section.source { out.append(.source(id: section.id, label: source)) }
+                out += section.lines.map(Entry.line)
+            }
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(entries) { entry in
+                switch entry {
+                case let .day(_, label, first):
+                    Text(label).font(TodayLook.Text.button).foregroundStyle(.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, first ? 4 : 16)
+                        .accessibilityAddTraits(.isHeader)
+                        .transition(.face)
+                case let .source(_, label):
+                    NoteText(label).padding(.top, 10).accessibilityAddTraits(.isHeader).transition(.face)
+                case let .line(line):
+                    TimelineLineView(line: line).padding(.top, 6).transition(.arrive)
+                }
+            }
+        }
     }
 }
 
@@ -281,7 +354,7 @@ struct EarlierLineView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: TodayLook.gap) {
             Text(line.time).font(TodayLook.Text.time).foregroundStyle(.inkSecond)
-                .frame(minWidth: 44, alignment: .leading)
+                .frame(minWidth: TodayLook.timeColumn, alignment: .leading)
             Text(line.text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -387,7 +460,8 @@ struct HappeningGroupView: View {
 }
 
 /// One thing that came in: its time, what happened, where it came from,
-/// and the New pill when it is new. Something marked urgent that the
+/// the New pill when it is new, and under its words the links to what it
+/// was written from. Something marked urgent that the
 /// assistant holds back carries the urgent pill and its options.
 struct HappeningItemView: View {
     var item: HappeningItem
@@ -398,7 +472,7 @@ struct HappeningItemView: View {
                 Text(item.time)
                     .font(item.isNew ? TodayLook.Text.time.weight(.bold) : TodayLook.Text.time)
                     .foregroundStyle(item.isNew ? AnyShapeStyle(.ink) : AnyShapeStyle(.inkSecond))
-                    .frame(minWidth: 44, alignment: .trailing)
+                    .frame(minWidth: TodayLook.timeColumn, alignment: .trailing)
                 VStack(alignment: .leading, spacing: 2) {
                     if let pill = item.pill { PillView(pill) }
                     Text(item.text).font(TodayLook.Text.body).foregroundStyle(.ink)
@@ -413,6 +487,7 @@ struct HappeningItemView: View {
                 if item.isNew { PillView(.new) }
             }
             .accessibilityElement(children: .combine)
+            if !item.links.isEmpty { UnderTime(time: item.time) { SourceLinksView(links: item.links, quiet: true) } }
             if let marked = item.marked { MarkedBlockView(block: marked).padding(.leading, 54) }
         }
         .padding(.vertical, 3)

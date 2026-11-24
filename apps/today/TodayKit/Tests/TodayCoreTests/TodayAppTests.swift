@@ -179,7 +179,7 @@ struct OrderTests {
         let pane = pane("18:00") { state in
             state.linked.records[RecordFold.key(TodayKinds.digest, "northfield")] = TodayFixtures.digest(
                 "northfield", line: "Stefan gave the go-ahead on one node.",
-                [("06:23", "Stefan gave the go-ahead on one node."), ("10:40", "Stefan asked when the cable swap can start.")])
+                [("06:23", "Stefan gave the go-ahead on one node.", nil), ("10:40", "Stefan asked when the cable swap can start.", nil)])
         }
         guard case let .happening(happening)? = pane.items.first(where: { if case .happening = $0 { true } else { false } }) else {
             return #expect(Bool(false), "something came in today")
@@ -1465,7 +1465,7 @@ struct ReadTests {
         guard case let .project(project) = page("11:30", .project("security")) else { return #expect(Bool(false)) }
         #expect(project.tasks.map(\.id) == ["t-vigil", "p-ticket"] && project.done.map(\.id).sorted() == ["p-kenji", "t-proxy"])
         #expect(project.notToday.map(\.id) == ["p-origin"])
-        #expect(project.timeline.map(\.label) == ["Today", "Overnight"])
+        #expect(project.timeline.map(\.label) == ["Today", "Overnight", "Yesterday"])
 
         guard case let .person(person) = page("11:30", .person(TodayFixtures.person("tomas"))) else { return #expect(Bool(false)) }
         #expect(person.name == "Tomas Varga" && person.sees == "You see Tomas at 14:20." && person.tasks.map(\.id) == ["p-tomas"])
@@ -1905,5 +1905,349 @@ struct SourceTests {
         harness.clearTrace()
         await harness.deliver(.records(.foregrounded))
         #expect(harness.effects.contains(.readSources([first[7]])))
+    }
+}
+
+@Suite("What a line was written from", .timeLimit(.minutes(10)))
+struct DigestSourceTests {
+    private static let p = "providers.substrate.reamde.dev"
+
+    private func project(_ clock: String, _ id: String, edit: (inout TodayApp.State) -> Void = { _ in }) throws -> ProjectPage {
+        guard case let .project(project) = page(clock, .project(id), edit: edit) else { throw Missing() }
+        return project
+    }
+
+    private struct Missing: Error {}
+
+    /// A day of the timeline as its sections: each one's label and the times under it.
+    private func outline(_ group: ProjectPage.TimelineGroup) -> [String] {
+        group.sections.map { "\($0.source ?? "-"): \($0.lines.map(\.time).joined(separator: " "))" }
+    }
+
+    @Test func aProjectsTimelineSaysEachDayOnceAndEachSourceOnceInADay() throws {
+        let page = try project("13:00", "extapi")
+        // One group a day: today in two, then yesterday, then a real date.
+        #expect(page.timeline.map(\.label) == ["Today", "Overnight", "Yesterday", "Tuesday 17 November"])
+        #expect(page.timeline.map(\.id) == ["today", "night", "day-2026-11-18", "day-2026-11-17"])
+        // Inside a day, one section for each place, in order of its newest line, and the lines newest first.
+        #expect(outline(page.timeline[0]) == ["-: 12:10 12:05", "Slack, #api-reliability: 12:02"])
+        #expect(outline(page.timeline[1]) == ["Slack, #api-reliability: 04:05", "Slack, #api-alerts: 03:47 03:12", "GitHub: 02:50"])
+        #expect(outline(page.timeline[2]) == ["Gmail: 16:40", "GitHub: 11:05", "Slack, #api-reliability: 09:30"])
+        #expect(outline(page.timeline[3]) == ["Google Calendar: 15:20", "Linear: 10:10"])
+        // What was written from no record stands first in its day, under the day's name, whatever its time.
+        let security = try project("13:00", "security")
+        #expect(outline(security.timeline[0]) == ["-: 10:05 09:20", "Slack, direct message: 11:12", "Linear: 09:34"])
+        // A time is a clock time, never a day; nothing joins facts with a middot; every id is one line's.
+        let lines = page.timeline.flatMap(\.lines)
+        #expect(lines.allSatisfy { $0.time.count == 5 && $0.time.dropFirst(2).first == ":" && $0.time.allSatisfy { $0.isNumber || $0 == ":" } })
+        #expect(!(page.timeline.flatMap(\.sections).compactMap(\.source) + page.timeline.map(\.label)).contains { $0.contains("\u{B7}") })
+        #expect(Set(lines.map(\.id)).count == lines.count && Set(page.timeline.flatMap(\.sections).map(\.id)).count == 10)
+        // What you finished was written from no record: no label over it and no link under it.
+        #expect(page.timeline[0].sections[0].lines.allSatisfy { $0.who == "You" && $0.links.isEmpty })
+        // A meeting ahead is "Coming up", as before, and opens its page.
+        let bastion = try project("11:30", "bastion")
+        #expect(bastion.timeline.first?.label == "Coming up" && bastion.timeline.first?.sections.map(\.source) == [nil])
+        #expect(bastion.timeline.first?.lines.first?.opens == .meeting("henrik"))
+    }
+
+    @Test func aDayWithOneSourceStillSaysItAndALineWithNoSourceHasNoLabel() throws {
+        let security = try project("08:00", "security")
+        #expect(security.timeline.map(\.label) == ["Overnight", "Yesterday"])
+        #expect(outline(security.timeline[0]) == ["Slack, #security-ops: 02:03"] && outline(security.timeline[1]) == ["Slack, #security-ops: 17:25"])
+        // A digest whose items name nothing: one section with no label, and no links.
+        let bare = try project("11:30", "ghorgs") { state in
+            state.linked.records[RecordFold.key(TodayKinds.digest, "ghorgs")] = TodayFixtures.digest(
+                "ghorgs", line: "The audit of the old organisations began.",
+                [("06:23", "The audit of the old organisations began.", nil), ("10:40", "Two empty organisations were found.", nil)])
+        }
+        #expect(bare.timeline.map(\.label) == ["Today", "Overnight"] && bare.timeline.flatMap(\.sections).allSatisfy { $0.source == nil })
+        #expect(bare.timeline.flatMap(\.lines).allSatisfy { $0.links.isEmpty })
+    }
+
+    @Test func overnightIsOneNightAndEveryOlderLineIsUnderItsOwnDay() throws {
+        func labels(nightFrom: Date, _ items: [(Int, String)]) throws -> [String] {
+            // A project with no task of its own, so every line is the digest's.
+            let page = try project("11:30", "ghorgs") { state in
+                state.notes?.nightFrom = nightFrom
+                state.linked.records[RecordFold.key(TodayKinds.digest, "ghorgs")] = TodayFixtures.digest(
+                    "ghorgs", line: "A line.", [], before: items.map { ($0.0, $0.1, "It happened at \($0.1).", nil) })
+            }
+            return page.timeline.map { "\($0.label): \($0.lines.map(\.time).joined(separator: " "))" }
+        }
+        // The last look was after midnight: the night starts at midnight, and what came before it is yesterday's.
+        let late = try labels(nightFrom: TodayFixtures.at("01:57"), [(0, "09:00"), (0, "03:00"), (0, "00:30"), (1, "23:30"), (1, "08:00")])
+        #expect(late == ["Today: 09:00", "Overnight: 03:00 00:30", "Yesterday: 23:30 08:00"])
+        // It was in the evening before: the night starts there.
+        let evening = try labels(nightFrom: TodayFixtures.at("22:10", day: -1), [(0, "03:00"), (1, "23:30"), (1, "21:00")])
+        #expect(evening == ["Overnight: 03:00 23:30", "Yesterday: 21:00"])
+        // It was days ago: the night is still one night, and each day before it is said by name.
+        let away = try labels(nightFrom: TodayFixtures.at("09:00", day: -4), [(0, "03:00"), (1, "20:00"), (1, "10:00"), (2, "10:00"), (4, "10:00")])
+        #expect(away == ["Overnight: 03:00 20:00", "Yesterday: 10:00", "Tuesday 17 November: 10:00", "Sunday 15 November: 10:00"])
+    }
+
+    @Test func aLineHasItsRecordAtOnceAndItsSourceOnceThatIsRead() throws {
+        let read = try project("13:00", "extapi")
+        let note = try #require(read.timeline[1].lines.first)
+        #expect(note.links.map(\.title) == ["Slack", "Record"] && note.links.map(\.label) == ["Open in Slack", "Open the record in Substrate"])
+        #expect(note.links[0].url.hasPrefix("https://example.slack.com/archives/C0RELIAB/p"))
+        #expect(note.links[1].url == "https://substrate.example.com/data/\(Self.p)/slack/message/m-note")
+        let mail = try #require(read.timeline[2].lines.first)
+        #expect(mail.links.first?.url == "https://mail.google.com/mail/u/owner@example.com/#all/18c2f0a1b2c30001")
+        // Before anything is read: the record alone, and the place from the record's kind with no channel yet.
+        let unread = try project("13:00", "extapi") { $0.sources = [:] }
+        #expect(unread.timeline.flatMap(\.lines).filter { $0.who == nil }.allSatisfy { $0.links.map(\.title) == ["Record"] })
+        #expect(outline(unread.timeline[1]) == ["Slack: 04:05 03:47 03:12", "GitHub: 02:50"])
+        #expect(outline(unread.timeline[2]) == ["Gmail: 16:40", "GitHub: 11:05", "Slack: 09:30"])
+        // A document's kind says no one place: its address does, once read.
+        let doc = try project("08:00", "euai")
+        #expect(outline(doc.timeline[0]) == ["Google Docs: 05:30"])
+        let unreadDoc = try project("08:00", "euai") { $0.sources = [:] }
+        #expect(outline(unreadDoc.timeline[0]) == ["-: 05:30"])
+    }
+
+    @Test func whatIsHappeningSaysWhereEachThingCameFromAndLinksToIt() throws {
+        guard case let .happening(happening)? = pane("11:30").items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        let items = Dictionary(uniqueKeysWithValues: happening.groups.flatMap(\.items).map { ($0.text, $0) })
+        let kenji = try #require(items["Kenji replied: the VMs can stay stopped until Monday."])
+        #expect(kenji.source == "Slack, direct message." && kenji.links.map(\.title) == ["Slack", "Record"])
+        #expect(items["Ned closed nine of the 26 noisy alert tickets."]?.source == "Linear.")
+        #expect(items["Ned closed nine of the 26 noisy alert tickets."]?.links.first?.url == "https://linear.app/example/issue/OPS-2038")
+        #expect(items["Callum accepted Friday at 16:30. The 17:20 slot is free."]?.source == "Google Calendar.")
+        #expect(items["Grant's CV was updated before tonight's interview."]?.source == "Gmail.")
+        // A chat with no page anywhere: no place is said, and the record is its one link.
+        guard case let .happening(evening)? = pane("18:00").items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        let moved = try #require(evening.groups.last?.items.first { $0.text == "The Product Review moved to next Thursday." })
+        #expect(moved.source == nil && moved.links.map(\.title) == ["Record"])
+        // What is marked urgent and waits keeps what it says, and is written from no record.
+        guard case let .happening(gap)? = pane("16:35").items.first(where: { if case .happening = $0 { true } else { false } }) else {
+            return #expect(Bool(false))
+        }
+        let urgent = try #require(gap.groups.flatMap(\.items).first { $0.pill == .urgent })
+        #expect(urgent.source?.hasPrefix("Moss thinks it can wait.") == true && urgent.links.isEmpty)
+        // A channel is said by its name, and a group message by what it is.
+        let afternoon = gap.groups.flatMap(\.items)
+        #expect(afternoon.first { $0.text.hasPrefix("Marcus thanked you") }?.source == "Slack, #lantern-dev.")
+    }
+
+    @Test func theNightsLinesLinkToWhatTheyWereWrittenFrom() throws {
+        guard case let .night(night) = pane("07:05").items[0] else { return #expect(Bool(false)) }
+        let items = night.groups.flatMap(\.items)
+        let api = try #require(items.first { $0.id == "extapi" })
+        #expect(api.lines.map(\.time) == ["04:05", "03:47", "03:12", "02:50"])
+        #expect(api.lines.map { $0.links.map(\.title) } == [["Slack", "Record"], ["Slack", "Record"], ["Slack", "Record"], ["GitHub", "Record"]])
+        let unfiled = try #require(items.first { $0.name == "On no project" })
+        #expect(unfiled.lines.first?.links.map(\.title) == ["Slack", "Record"])
+    }
+
+    @Test func aSlackMessageSaysItsChannel() throws {
+        let records = Dictionary(uniqueKeysWithValues: TodayFixtures.written.map { ("\($0.kind)/\($0.id)", $0) })
+        func record(_ path: String) throws -> Record { try #require(records[path]) }
+        // A message in a channel is read with its conversation, which holds the name.
+        let note = try record(TodayFixtures.said("m-note"))
+        let channel = "\(Self.p)/slack/conversation/c0reliab"
+        #expect(SourcePages.related(note) == [channel])
+        #expect(SourcePages.page(of: note, with: [channel: try record(channel)])?.group == "#api-reliability")
+        // Without it the page is still the message's, with no channel said.
+        #expect(SourcePages.page(of: note)?.group == nil && SourcePages.page(of: note)?.name == "Slack")
+        // A direct message says so itself, and needs no second read; one whose type is not said is read with its conversation.
+        let reply = try record(TodayFixtures.said("m-kenji-reply"))
+        #expect(SourcePages.related(reply).isEmpty && SourcePages.page(of: reply)?.group == "Direct message")
+        var untyped = reply
+        untyped.properties["channelType"] = nil
+        let direct = "\(Self.p)/slack/conversation/d0kenji"
+        #expect(SourcePages.related(untyped) == [direct])
+        #expect(SourcePages.page(of: untyped, with: [direct: try record(direct)])?.group == "Direct message")
+        // A group message is not called by the name Slack makes up for it.
+        let leo = try record(TodayFixtures.said("m-leo"))
+        let group = "\(Self.p)/slack/conversation/g0leads"
+        #expect(SourcePages.page(of: leo, with: [group: try record(group)])?.group == "Group message")
+        // A conversation with no name gets none, and no other kind has one.
+        let nameless = Record(id: "c9", kind: "\(Self.p)/slack/conversation", properties: ["isChannel": true])
+        var stray = note
+        stray.properties["channel"] = .string("\(Self.p)/slack/conversation/c9")
+        #expect(SourcePages.page(of: stray, with: ["\(Self.p)/slack/conversation/c9": nameless])?.group == nil)
+        #expect(TodayFixtures.writtenPages.filter { !$0.key.contains("/slack/") }.values.allSatisfy { $0.group == nil })
+        // The label a line says: the place, then the channel; never a middot.
+        #expect(
+            SourcePages.label(for: TodayFixtures.said("m-note"), page: TodayFixtures.writtenPages[TodayFixtures.said("m-note")]) == "Slack, #api-reliability")
+        #expect(SourcePages.label(for: TodayFixtures.said("m-leo"), page: TodayFixtures.writtenPages[TodayFixtures.said("m-leo")]) == "Slack, group message")
+        #expect(SourcePages.label(for: TodayFixtures.said("m-note"), page: nil) == "Slack" && SourcePages.label(for: nil, page: nil) == nil)
+        // The place from the kind alone.
+        #expect(
+            SourcePages.place(ofKind: "\(Self.p)/google/gmailthread") == "Gmail"
+                && SourcePages.place(ofKind: "\(Self.p)/google/calendarevent") == "Google Calendar")
+        #expect(SourcePages.place(ofKind: "\(Self.p)/linear/issue") == "Linear" && SourcePages.place(ofKind: "\(Self.p)/github/pullrequest") == "GitHub")
+        #expect(SourcePages.place(ofKind: "\(Self.p)/google/drivefile") == nil && SourcePages.place(ofKind: "\(Self.p)/beeper/message") == nil)
+        // What an earlier build kept names no channel, and still reads.
+        let kept = try JSONDecoder().decode([String: SourcePage].self, from: Data(#"{"a/b/c/1":{"name":"Slack","url":"https://example.slack.com/x"}}"#.utf8))
+        #expect(kept["a/b/c/1"] == SourcePage(name: "Slack", url: "https://example.slack.com/x"))
+    }
+
+    @Test func aBatchReadsEachChannelOnceAndAMessageKeepsItsPageWithoutIt() async throws {
+        let stub = StubTransport()
+        let records = Dictionary(uniqueKeysWithValues: TodayFixtures.written.map { ("\($0.kind)/\($0.id)", $0) })
+        func serve(_ path: String) throws {
+            stub.on("GET", "/api/v1/" + path, json: String(decoding: try JSONEncoder().encode(try #require(records[path])), as: UTF8.self))
+        }
+        let alerts = "\(Self.p)/slack/conversation/c0alerts"
+        let reliability = "\(Self.p)/slack/conversation/c0reliab"
+        let asked = [
+            TodayFixtures.said("m-alert"), TodayFixtures.said("m-rollback"), TodayFixtures.said("m-note"), TodayFixtures.said("m-kenji-reply"),
+            TodayFixtures.mail("g-vendors"), TodayFixtures.chat("b-product-review"), TodayFixtures.said("m-gone"),
+        ]
+        for path in asked.dropLast() + [alerts, "\(Self.p)/google/gmailthread/18c2f0a1b2c30001", "\(Self.p)/google/account/owner"] { try serve(path) }
+        // One channel the app may not read.
+        stub.on("GET", "/api/v1/" + reliability, status: 403, json: #"{"error":{"code":"forbidden","message":"not allowed"}}"#)
+        let client = SubstrateClient(server: try #require(TodayFixtures.server), token: "t", transport: stub)
+        let read = await TodayReads.sources(client, asked)
+        // Two messages of one channel: its conversation is read once, and both say it.
+        #expect(read.found[TodayFixtures.said("m-alert")]?.group == "#api-alerts" && read.found[TodayFixtures.said("m-rollback")]?.group == "#api-alerts")
+        #expect(stub.sent("GET", "/api/v1/" + alerts).count == 1)
+        // A channel that may not be read leaves the message its page, with no channel said.
+        let note = try #require(read.found[TodayFixtures.said("m-note")])
+        #expect(note.name == "Slack" && note.group == nil)
+        // A direct message says what it is, and its conversation is not read.
+        #expect(read.found[TodayFixtures.said("m-kenji-reply")]?.group == "Direct message")
+        #expect(stub.sent("GET", "/api/v1/\(Self.p)/slack/conversation/d0kenji").isEmpty)
+        // A mail is still composed from its thread and account; a chat with no address and a record that is gone name no page.
+        #expect(read.found[TodayFixtures.mail("g-vendors")]?.url == "https://mail.google.com/mail/u/owner@example.com/#all/18c2f0a1b2c30001")
+        #expect(Set(read.none) == [TodayFixtures.chat("b-product-review"), TodayFixtures.said("m-gone")] && read.failed.isEmpty)
+    }
+
+    /// The root signed in at a moment of the invented day, with no page read yet and every effect held.
+    private func signedIn(_ clock: String, edit: (inout TodayApp.State) -> Void = { _ in }) async -> ControllerHarness<TodayApp> {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment(clock), performsEffects: false)
+        let state = TodayFixtures.state(at: clock, edit: edit)
+        await harness.deliver(.discovered(TodayFixtures.discovery))
+        await harness.deliver(.records(.linked(LinkSnapshot(phase: .signedIn, server: TodayFixtures.server, online: true))))
+        await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
+        await harness.deliver(
+            .localRead(
+                notes: state.notes, windows: state.windows, sources: nil, moss: nil, at: TodayFixtures.at(clock),
+                today: CivilDay(year: 2026, month: 11, day: 19), zone: TodayFixtures.zone.identifier))
+        return harness
+    }
+
+    /// What the invented day's tasks were made from.
+    private static var origins: Set<String> {
+        Set(TodayFixtures.state(at: "08:30").linked.records.values.compactMap { $0.kind == TodayKinds.task ? $0["origin"]?.referencePath : nil })
+    }
+
+    /// The batch being asked for now.
+    private func asking(_ harness: ControllerHarness<TodayApp>) async -> [String] { await harness.state.sourcesAsking }
+
+    /// Answers every batch as naming no page until `stop` holds of one, which is left unanswered, or none is asked.
+    private func drain(_ harness: ControllerHarness<TodayApp>, until stop: ([String]) -> Bool = { _ in false }) async -> [[String]] {
+        var batches: [[String]] = []
+        while batches.count < 40 {
+            let batch = await asking(harness)
+            guard !batch.isEmpty, !stop(batch) else { break }
+            batches.append(batch)
+            await harness.deliver(.sourcesRead([:], none: batch, failed: []))
+        }
+        return batches
+    }
+
+    @Test func whatTheDayDrawsIsReadAfterTheTasksOriginsAndNoMore() async {
+        let harness = await signedIn("08:30")
+        let batches = await drain(harness)
+        let asked = batches.flatMap { $0 }
+        #expect(batches.allSatisfy { $0.count <= 8 } && Set(asked).count == asked.count)
+        // The tasks' origins come first, all of them.
+        let origins = asked.prefix { Self.origins.contains($0) }
+        #expect(origins.count == 13 && Self.origins.count == 13)
+        // Then what the night and what is happening draw: every item since the night began, the newest first.
+        let drawn = Array(asked.dropFirst(origins.count))
+        #expect(drawn.first == TodayFixtures.said("m-cause") && drawn.last == TodayFixtures.said("m-vigil"))
+        #expect(drawn.contains(TodayFixtures.mail("g-grant")) && drawn.contains(TodayFixtures.file("f-custody")) && drawn.count == 21)
+        // Nothing older is read up front: it is on a project's page alone.
+        for older in [TodayFixtures.mail("g-vendors"), TodayFixtures.pull("pr-4402"), TodayFixtures.said("m-claims"), TodayFixtures.said("m-patch")] {
+            #expect(!asked.contains(older))
+        }
+        // And no record beside them: a channel is read with its message, not as a page of its own.
+        #expect(!asked.contains { $0.contains("/slack/conversation/") })
+    }
+
+    @Test func aProjectsTimelineIsReadOnceItsPageIsOpened() async {
+        let harness = await signedIn("08:30")
+        _ = await drain(harness)
+        #expect(await asking(harness) == [])
+        // The page appears: what its older lines were written from is asked for, the newest first.
+        await harness.send(.opened(.project("extapi")))
+        #expect(await harness.state.projectsOpened == ["extapi"])
+        let batch = await asking(harness)
+        #expect(
+            batch == [
+                TodayFixtures.mail("g-vendors"), TodayFixtures.pull("pr-4402"), TodayFixtures.said("m-claims"), TodayFixtures.invite("e-review"),
+                TodayFixtures.issue("ops-1987"),
+            ])
+        #expect(harness.effects.contains(.readSources(batch)))
+        // It answers: the links are on the lines, and the page is not asked for again when opened again.
+        let pages = TodayFixtures.writtenPages
+        await harness.deliver(.sourcesRead(pages.filter { batch.contains($0.key) }, none: [], failed: []))
+        guard case let .project(page) = await harness.presentation.page(.project("extapi")) else { return #expect(Bool(false)) }
+        #expect(page.timeline.first { $0.label == "Yesterday" }?.sections.map(\.source) == ["Gmail", "GitHub", "Slack, #api-reliability"])
+        await harness.send(.opened(.project("extapi")))
+        await harness.send(.opened(.priorities))
+        #expect(await asking(harness) == [])
+        #expect(await harness.state.projectsOpened == ["extapi"])
+        // Another project's page: its own lines, and no other project's.
+        await harness.send(.opened(.project("security")))
+        #expect(await asking(harness) == [TodayFixtures.said("m-patch")])
+        #expect(await harness.state.projectsOpened == ["extapi", "security"])
+    }
+
+    @Test func thePageOnTheScreenIsReadBeforeTheRestOfTheDay() async {
+        // Opened while the tasks' origins are still being read: its timeline is next, before the other projects' news.
+        let harness = await signedIn("08:30")
+        await harness.send(.opened(.project("extapi")))
+        let asked = await drain(harness).flatMap { $0 }
+        #expect(asked.prefix(13).allSatisfy { Self.origins.contains($0) })
+        let next = Array(asked.dropFirst(13))
+        #expect(
+            next.prefix(4) == [TodayFixtures.said("m-cause"), TodayFixtures.said("m-writeup"), TodayFixtures.said("m-note"), TodayFixtures.said("m-rollback")])
+        let digest = await harness.state.linked.records[RecordFold.key(TodayKinds.digest, "extapi")].flatMap(Digest.init)
+        #expect(Set(next.prefix(11)) == Set(digest?.items.compactMap(\.sources.first) ?? []))
+    }
+
+    @Test func aSlackPageKeptWithNoChannelIsReadOnceMore() async {
+        // An earlier build read the page of what a suggested task was made from, and kept no channel with it.
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("08:30"), performsEffects: false)
+        let state = TodayFixtures.state(at: "08:30")
+        var kept = state.sources
+        let origin = TodayFixtures.origin("p-kenji")
+        kept[origin] = SourcePage(name: "Slack", url: "https://example.slack.com/archives/C0EXAMPLE/p1")
+        await harness.deliver(.discovered(TodayFixtures.discovery))
+        await harness.deliver(.records(.linked(LinkSnapshot(phase: .signedIn, server: TodayFixtures.server, online: true))))
+        await harness.deliver(.records(.loaded(Array(state.linked.records.values), cursor: nil, queue: [])))
+        await harness.deliver(
+            .localRead(
+                notes: state.notes, windows: state.windows, sources: kept, moss: nil, at: TodayFixtures.at("08:30"),
+                today: CivilDay(year: 2026, month: 11, day: 19), zone: TodayFixtures.zone.identifier))
+        // Every message's page the fixture's tasks hold was kept with no channel: each is asked for again, with the
+        // one task's that was never read, and nothing else is.
+        let first = await asking(harness)
+        #expect(first.contains(origin) && first.count == 8)
+        #expect(first.allSatisfy { kept[$0] == nil || (kept[$0]?.name == "Slack" && kept[$0]?.group == nil) })
+        // Read with its channel, it says it; read with none again, it is left as it is.
+        var asked: [String] = []
+        while case let batch = await asking(harness), !batch.isEmpty, asked.count < 80 {
+            asked += batch
+            let found = Dictionary(
+                uniqueKeysWithValues: batch.map {
+                    ($0, SourcePage(name: "Slack", url: "https://example.slack.com/x", group: $0 == origin ? "#security-ops" : nil))
+                })
+            await harness.deliver(.sourcesRead(found, none: [], failed: []))
+        }
+        #expect(Set(asked).count == asked.count, "each once")
+        let group = await harness.state.sources[origin]?.group
+        #expect(group == "#security-ops")
+        #expect(
+            !asked.contains(TodayFixtures.origin("p-ticket")) && !asked.contains(TodayFixtures.mail("g-grant")),
+            "a page with no channel to say is not read again")
     }
 }

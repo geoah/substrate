@@ -80,6 +80,8 @@ enum TodayLook {
     static let target: CGFloat = DesignTokens.touchTarget
     /// The box a kind glyph, a tile or a badge leads a row in.
     static let leadBox: CGFloat = 26
+    /// The least room a clock time takes before a line's words.
+    static let timeColumn: CGFloat = 44
     static let stripeWidth: CGFloat = 4
     static let optionMark: CGFloat = 22
     /// The widest the pane's one column is drawn, on a wide screen.

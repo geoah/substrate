@@ -212,7 +212,8 @@ public struct NightDecision: Codable, Equatable, Hashable, Sendable {
 }
 
 /// One line of a timeline: a time, who (in bold), what happened, what was
-/// said, and where it came from.
+/// said, and where it came from. `time` is a clock time, "08:23", and never
+/// a day: the day is said once, over the lines of it.
 public struct TimelineLine: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var id: String
     public var time: String
@@ -222,8 +223,15 @@ public struct TimelineLine: Codable, Equatable, Hashable, Sendable, Identifiable
     public var source: Pill?
     /// The meeting or the task the line names, where it opens one.
     public var opens: TodayRoute?
+    /// What the line was written from, as buttons that leave the app: its
+    /// page at the source once that is read, and the record itself. None on
+    /// a line written from no record.
+    public var links: [SourceLink]
 
-    public init(id: String, time: String, who: String? = nil, text: String, quote: String? = nil, source: Pill? = nil, opens: TodayRoute? = nil) {
+    public init(
+        id: String, time: String, who: String? = nil, text: String, quote: String? = nil, source: Pill? = nil, opens: TodayRoute? = nil,
+        links: [SourceLink] = []
+    ) {
         self.id = id
         self.time = time
         self.who = who
@@ -231,6 +239,7 @@ public struct TimelineLine: Codable, Equatable, Hashable, Sendable, Identifiable
         self.quote = quote
         self.source = source
         self.opens = opens
+        self.links = links
     }
 }
 
@@ -363,8 +372,8 @@ public struct HappeningItem: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var time: String
     public var text: String
-    /// Where it came from, and what it answers: "Slack. It answers what you
-    /// asked at 09:20."
+    /// Where it came from, and what it answers: "Slack, #api-reliability.",
+    /// "Slack. It answers what you asked at 09:20."
     public var source: String?
     /// New since the last look.
     public var isNew: Bool
@@ -372,9 +381,13 @@ public struct HappeningItem: Codable, Equatable, Sendable, Identifiable {
     public var pill: Pill?
     /// Something marked urgent and held back: who marked it and its options.
     public var marked: MarkedBlock?
+    /// What it was written from, as buttons that leave the app: its page at
+    /// the source once that is read, and the record itself.
+    public var links: [SourceLink]
 
     public init(
-        id: String, time: String, text: String, source: String? = nil, isNew: Bool = false, pill: Pill? = nil, marked: MarkedBlock? = nil
+        id: String, time: String, text: String, source: String? = nil, isNew: Bool = false, pill: Pill? = nil, marked: MarkedBlock? = nil,
+        links: [SourceLink] = []
     ) {
         self.id = id
         self.time = time
@@ -383,6 +396,7 @@ public struct HappeningItem: Codable, Equatable, Sendable, Identifiable {
         self.isNew = isNew
         self.pill = pill
         self.marked = marked
+        self.links = links
     }
 }
 

@@ -60,8 +60,15 @@ public enum TodayFixtures {
     static func contact(_ id: String, _ name: String) -> Record { Record(id: id, kind: TodayKinds.contact, properties: ["name": .string(name)], version: 1) }
     static func person(_ id: String) -> String { "\(TodayKinds.contact)/\(id)" }
 
-    /// The message a suggested task was made from, as the invented day has it.
-    public static func origin(_ task: String) -> String { "providers.substrate.reamde.dev/slack/message/m-\(task)" }
+    /// What a suggested task was made from, as the invented day has it: a
+    /// message, but for one made from an issue and one from a mail.
+    public static func origin(_ task: String) -> String {
+        switch task {
+        case "p-ticket": issue("m-\(task)")
+        case "p-casey": mail("m-\(task)")
+        default: said("m-\(task)")
+        }
+    }
 
     /// Where the invented day's messages can be read at their source: most
     /// in a chat, one as a mail, one in an issue tracker, and one nowhere,
@@ -161,10 +168,25 @@ public enum TodayFixtures {
         return Record(id: id, kind: eventKind, properties: properties, version: 1)
     }
 
-    static func digest(_ key: String, line: String, needsOwner: String? = nil, _ items: [(String, String)]) -> Record {
+    /// A digest: what happened on the invented day as `(clock, text, what
+    /// it was written from)`, and before it as `(days ago, clock, text,
+    /// what it was written from)`.
+    static func digest(
+        _ key: String, line: String, needsOwner: String? = nil, _ items: [(String, String, String?)],
+        before: [(Int, String, String, String?)] = []
+    ) -> Record {
+        var all = items.map { (at: at($0.0), text: $0.1, source: $0.2) }
+        all += before.map { (at: at($0.1, day: -$0.0), text: $0.2, source: $0.3) }
+        all.sort { $0.at > $1.at }
         var properties: [String: JSONValue] = [
-            "line": .string(line), "since": ts("01:57"), "until": ts("23:00"), "count": .number(Decimal(items.count)),
-            "items": .array(items.sorted { $0.0 > $1.0 }.map { .object(["at": ts($0.0), "text": .string($0.1)]) }),
+            "line": .string(line), "since": .string(stamp(min(at("01:57"), all.last?.at ?? .distantFuture))), "until": ts("23:00"),
+            "count": .number(Decimal(all.count)),
+            "items": .array(
+                all.map { item in
+                    var value: JSONObject = ["at": .string(stamp(item.at)), "text": .string(item.text)]
+                    if let source = item.source { value["sources"] = [.string(source)] }
+                    return .object(value)
+                }),
         ]
         if key != TodayKinds.unfiled { properties["project"] = .string("\(listKind)/\(key)") }
         if let needsOwner {
@@ -172,6 +194,115 @@ public enum TodayFixtures {
             properties["needsOwnerReason"] = .string(needsOwner)
         }
         return Record(id: key, kind: TodayKinds.digest, properties: properties, version: 1)
+    }
+
+    // MARK: What the digests were written from
+
+    static let provider = "providers.substrate.reamde.dev"
+    static let messageKind = "\(provider)/slack/message"
+    static let channelKind = "\(provider)/slack/conversation"
+    static let mailKind = "\(provider)/google/gmailmessage"
+
+    /// A message of the invented workspace, as a digest's item names it.
+    static func said(_ id: String) -> String { "\(messageKind)/\(id)" }
+    static func mail(_ id: String) -> String { "\(mailKind)/\(id)" }
+    static func issue(_ id: String) -> String { "\(provider)/linear/issue/\(id)" }
+    static func pull(_ id: String) -> String { "\(provider)/github/pullrequest/\(id)" }
+    static func invite(_ id: String) -> String { "\(provider)/google/calendarevent/\(id)" }
+    static func file(_ id: String) -> String { "\(provider)/google/drivefile/\(id)" }
+    /// A chat mirrored from a bridge, which has no page anywhere.
+    static func chat(_ id: String) -> String { "\(provider)/beeper/message/\(id)" }
+
+    /// The invented workspace's conversations: channels with a name, a
+    /// direct message, which Slack gives none, and a group one, whose name
+    /// Slack makes up.
+    public static var channels: [Record] {
+        func channel(_ id: String, _ properties: [String: JSONValue]) -> Record {
+            Record(id: id, kind: channelKind, properties: properties.merging(["conversationId": .string(id.uppercased())]) { own, _ in own }, version: 1)
+        }
+        return [
+            channel("c0reliab", ["name": "api-reliability", "isChannel": true]), channel("c0alerts", ["name": "api-alerts", "isChannel": true]),
+            channel("c0secops", ["name": "security-ops", "isChannel": true]), channel("c0lantern", ["name": "lantern-dev", "isChannel": true]),
+            channel("c0hiring", ["name": "hiring-loop", "isChannel": true, "isPrivate": true]),
+            channel("c0north", ["name": "northfield", "isChannel": true]), channel("d0kenji", ["isIm": true]),
+            channel("g0leads", ["name": "mpdm-leo--jun--you-1", "isMpim": true]),
+        ]
+    }
+
+    /// The records the invented day's digests were written from, with the
+    /// records read beside them: messages in those conversations, mails
+    /// with their thread and account, issues, pull requests, an invitation
+    /// and a document.
+    public static var written: [Record] {
+        func message(_ id: String, in channel: String, type: String? = nil) -> Record {
+            var properties: [String: JSONValue] = [
+                "permalink": .string(
+                    "https://example.slack.com/archives/\(channel.uppercased())/p\(id.utf8.reduce(1_700_000) { ($0 &* 31 &+ Int($1)) % 1_000_000_000 })"),
+                "channel": .string("\(channelKind)/\(channel)"),
+            ]
+            if let type { properties["channelType"] = .string(type) }
+            return Record(id: id, kind: messageKind, properties: properties, version: 1)
+        }
+        func letter(_ id: String, thread: String) -> [Record] {
+            [
+                Record(
+                    id: id, kind: mailKind,
+                    properties: [
+                        "messageId": .string(thread), "thread": .string("\(provider)/google/gmailthread/\(thread)"),
+                        "account": .string("\(provider)/google/account/owner"),
+                    ],
+                    version: 1),
+                Record(id: thread, kind: "\(provider)/google/gmailthread", properties: ["threadId": .string(thread)], version: 1),
+            ]
+        }
+        var out = channels
+        out += [
+            message("m-note", in: "c0reliab"), message("m-writeup", in: "c0reliab"), message("m-cause", in: "c0reliab"), message("m-claims", in: "c0reliab"),
+            message("m-alert", in: "c0alerts"), message("m-rollback", in: "c0alerts"), message("m-vigil", in: "c0secops"),
+            message("m-patch", in: "c0secops"), message("m-kenji-reply", in: "d0kenji", type: "im"), message("m-wei-pr", in: "c0lantern"),
+            message("m-wei-volume", in: "c0lantern"), message("m-marcus-thanks", in: "c0lantern"), message("m-noor", in: "c0hiring"),
+            message("m-drain", in: "c0north"), message("m-stefan", in: "c0north"), message("m-leo", in: "g0leads"),
+        ]
+        out += letter("g-vendors", thread: "18c2f0a1b2c30001") + letter("g-grant", thread: "18c2f0a1b2c30002")
+        out.append(Record(id: "owner", kind: "\(provider)/google/account", properties: ["email": "owner@example.com"], version: 1))
+        out += [
+            Record(id: "ops-2038", kind: "\(provider)/linear/issue", properties: ["url": "https://linear.app/example/issue/OPS-2038"], version: 1),
+            Record(id: "ops-1987", kind: "\(provider)/linear/issue", properties: ["url": "https://linear.app/example/issue/OPS-1987"], version: 1),
+            Record(
+                id: "pr-4410", kind: "\(provider)/github/pullrequest",
+                properties: ["url": "https://api.github.com/repos/example/api/pulls/4410", "htmlUrl": "https://github.com/example/api/pull/4410"], version: 1),
+            Record(
+                id: "pr-4402", kind: "\(provider)/github/pullrequest",
+                properties: ["url": "https://api.github.com/repos/example/api/pulls/4402", "htmlUrl": "https://github.com/example/api/pull/4402"], version: 1),
+            Record(
+                id: "e-callum", kind: "\(provider)/google/calendarevent", properties: ["htmlLink": "https://www.google.com/calendar/event?eid=callumfriday"],
+                version: 1),
+            Record(
+                id: "e-euai", kind: "\(provider)/google/calendarevent", properties: ["htmlLink": "https://www.google.com/calendar/event?eid=euaicall"],
+                version: 1),
+            Record(
+                id: "e-review", kind: "\(provider)/google/calendarevent", properties: ["htmlLink": "https://www.google.com/calendar/event?eid=vendorreview"],
+                version: 1),
+            Record(
+                id: "f-custody", kind: "\(provider)/google/drivefile", properties: ["webViewLink": "https://docs.google.com/document/d/custodydoc/edit"],
+                version: 1),
+            Record(id: "b-product-review", kind: "\(provider)/beeper/message", properties: ["text": "The review moved."], version: 1),
+        ]
+        return out
+    }
+
+    /// The page of each of those records, as reading them finds it
+    /// (`SourcePages`): a message with its channel, a mail composed from
+    /// its thread and account, and none for a chat that has no address.
+    public static var writtenPages: [String: SourcePage] {
+        let records = Dictionary(written.map { ("\($0.kind)/\($0.id)", $0) }, uniquingKeysWith: { first, _ in first })
+        var out: [String: SourcePage] = [:]
+        for (path, record) in records {
+            var related: [String: Record] = [:]
+            for other in SourcePages.related(record) { related[other] = records[other] }
+            if let page = SourcePages.page(of: record, with: related) { out[path] = page }
+        }
+        return out
     }
 
     static let names: [String: String] = [
@@ -307,41 +438,67 @@ public enum TodayFixtures {
         out += [routine("skin", "Skincare"), routine("meditate", "Meditate"), routine("skin2", "Evening skincare"), routine("read", "Read twenty pages")]
         // Nothing has been logged since 17 October.
         out.append(log(scheduleKind, "vitd", slot: at("07:30", day: -33), at: at("07:41", day: -33)))
+        // Each item names what it was written from: a message in a channel, a mail, an issue, a pull request, an
+        // invitation, a document. One names a chat that has no page, and one names nothing.
         out += [
             digest(
                 "extapi", line: "Errors from 03:12 to 03:47, rolled back and fixed.",
                 [
-                    ("02:50", "A release went out."), ("03:12", "The error rate rose to about one request in five. The alert fired."),
-                    ("03:47", "Rolled back. Errors back to normal."),
-                    ("04:05", "The on-call posted a first note: the cause is not known yet. Write-up by noon."),
-                    ("12:02", "The write-up for last night's incident is posted."), ("20:12", "Wes posted the cause of both incidents: one config flag."),
+                    ("02:50", "A release went out.", pull("pr-4410")),
+                    ("03:12", "The error rate rose to about one request in five. The alert fired.", said("m-alert")),
+                    ("03:47", "Rolled back. Errors back to normal.", said("m-rollback")),
+                    ("04:05", "The on-call posted a first note: the cause is not known yet. Write-up by noon.", said("m-note")),
+                    ("12:02", "The write-up for last night's incident is posted.", said("m-writeup")),
+                    ("20:12", "Wes posted the cause of both incidents: one config flag.", said("m-cause")),
+                ],
+                before: [
+                    (1, "16:40", "The vendors were told a release was planned for the night.", mail("g-vendors")),
+                    (1, "11:05", "Wes opened the config change behind the release.", pull("pr-4402")),
+                    (1, "09:30", "The safety vendor published its endpoint claims.", said("m-claims")),
+                    (2, "15:20", "The vendor review was booked for Thursday 26 November.", invite("e-review")),
+                    (2, "10:10", "A ticket asks for a second alert on the error rate.", issue("ops-1987")),
                 ]),
             digest(
                 "euai", line: "Jun left suggestions on the custody doc at 00:56.",
-                [("05:30", "Jun left more suggestions on the custody doc you sent."), ("13:05", "Two more people accepted your 19:30 call. Eight are coming.")]),
+                [
+                    ("05:30", "Jun left more suggestions on the custody doc you sent.", file("f-custody")),
+                    ("13:05", "Two more people accepted your 19:30 call. Eight are coming.", invite("e-euai")),
+                ]),
             digest(
                 "lantern", line: "Wei posted the backend refactor, PR 4188, with you tagged.",
                 [
-                    ("05:09", "Wei posted the backend refactor, PR 4188, with you tagged."), ("05:16", "Wei posted a volume API proposal."),
-                    ("09:10", "Callum accepted Friday at 16:30. The 17:20 slot is free."),
-                    ("16:12", "Marcus thanked you for the list and asked one follow-up question."),
+                    ("05:09", "Wei posted the backend refactor, PR 4188, with you tagged.", said("m-wei-pr")),
+                    ("05:16", "Wei posted a volume API proposal.", said("m-wei-volume")),
+                    ("09:10", "Callum accepted Friday at 16:30. The 17:20 slot is free.", invite("e-callum")),
+                    ("16:12", "Marcus thanked you for the list and asked one follow-up question.", said("m-marcus-thanks")),
                 ]),
             digest(
                 "security", line: "Vigil filed over 90 cluster findings in one minute. None is triaged in the sources checked.",
                 needsOwner: "Nobody has these in the sources checked. Are they yours?",
                 [
-                    ("02:03", "Vigil filed over 90 cluster findings in one minute. None is triaged in the sources checked."),
-                    ("09:34", "Ned closed nine of the 26 noisy alert tickets."), ("11:12", "Kenji replied: the VMs can stay stopped until Monday."),
-                ]),
+                    ("02:03", "Vigil filed over 90 cluster findings in one minute. None is triaged in the sources checked.", said("m-vigil")),
+                    ("09:34", "Ned closed nine of the 26 noisy alert tickets.", issue("ops-2038")),
+                    ("11:12", "Kenji replied: the VMs can stay stopped until Monday.", said("m-kenji-reply")),
+                ],
+                before: [(1, "17:25", "The proxy vulnerabilities were announced, with a patch.", said("m-patch"))]),
             digest(
                 "hiring", line: "Noor questioned one interview role as unapproved.",
-                [("02:30", "Noor questioned one interview role as unapproved."), ("10:15", "Grant's CV was updated before tonight's interview.")]),
+                [
+                    ("02:30", "Noor questioned one interview role as unapproved.", said("m-noor")),
+                    ("10:15", "Grant's CV was updated before tonight's interview.", mail("g-grant")),
+                ]),
             digest(
                 "northfield", line: "Stefan gave the go-ahead on one node.",
-                [("04:17", "Northfield asked for a list of nodes to be drained for a cable swap."), ("06:23", "Stefan gave the go-ahead on one node.")]),
+                [
+                    ("04:17", "Northfield asked for a list of nodes to be drained for a cable swap.", said("m-drain")),
+                    ("06:23", "Stefan gave the go-ahead on one node.", said("m-stefan")),
+                ]),
             digest(
                 TodayKinds.unfiled, line: "Leo shared the Product Review decisions.",
-                [("02:10", "Leo shared the decisions from the first Product Review."), ("17:05", "The Product Review moved to next Thursday.")]),
+                [
+                    ("02:10", "Leo shared the decisions from the first Product Review.", said("m-leo")),
+                    ("17:05", "The Product Review moved to next Thursday.", chat("b-product-review")),
+                ]),
         ]
         out.append(
             Record(
@@ -663,11 +820,9 @@ public enum TodayFixtures {
         state.windows.occurrences = occurrences
         state.windows.meetings = meetings
         state.windows.readAt = now
-        // The pages of what the tasks were made from are read already.
-        state.sources = sources(
-            state.linked.records.values.compactMap { record in
-                record["origin"]?.referencePath.flatMap { $0.hasPrefix(origin("")) ? String($0.dropFirst(origin("").count)) : nil }
-            })
+        // The pages of what the tasks were made from and the digests were written from are read already.
+        state.sources = sources(state.linked.records.values.filter { $0.kind == taskKind && $0["origin"] != nil }.map(\.id))
+            .merging(writtenPages) { _, written in written }
         state.linked.link = LinkSnapshot(phase: .signedIn, server: server, online: true)
         // The suggestions on the priorities are taken at 08:41.
         state.requests = now < at("08:41") ? requests : []

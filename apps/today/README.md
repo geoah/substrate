@@ -86,6 +86,14 @@ The rules are the engine's, and a test pins each:
   whose series share a group are one row and one tap, in slot order; one
   reminder a day at the first slot, whose words name no medicine.
 - **No durations.** Only real times: when something starts, how long until it.
+- **A line says where it came from and opens it.** A line of what is happening, of the night or of a
+  project's timeline is written from a record (a message, a mail, an issue, an invitation). Under its words
+  are the links out: its page at the source ("Slack", "Gmail") once that is read, and the record itself. It
+  says its source in words, the channel included: "Slack, #api-reliability".
+- **A project's timeline says each day once.** "Coming up", "Today", "Overnight", "Yesterday", then a date,
+  "Tuesday 17 November", each over the lines of that day, and every line has its clock time alone. Inside a
+  day the lines are grouped by where they came from, each source said once over its lines
+  ([the seam](docs/seam.md#a-projects-timeline)).
 
 ## Widgets
 

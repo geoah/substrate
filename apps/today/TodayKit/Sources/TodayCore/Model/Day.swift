@@ -280,6 +280,13 @@ public struct Day: Sendable {
         SourcePages.links(for: path, page: path.flatMap { sources[$0] }, server: server)
     }
 
+    /// Where something written from a record came from, as a line says it
+    /// (`SourcePages.label`): the place at once, and what it is inside the
+    /// place once the record's page is read.
+    public func source(of path: String?) -> String? {
+        SourcePages.label(for: path, page: path.flatMap { sources[$0] })
+    }
+
     /// A meeting by its id, or by the id another calendar gave it.
     public func meeting(_ id: String) -> Meeting? { meetings.first { $0.id == id } ?? meetings.first { $0.also.contains(id) } }
 

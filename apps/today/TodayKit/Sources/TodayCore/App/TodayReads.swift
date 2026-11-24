@@ -132,49 +132,69 @@ enum TodayReads {
         }
     }
 
-    /// The page at its source of each record named: read, with what a page
-    /// is composed from where the record names none (`SourcePages`). A
-    /// record that is gone, or that the app may not read, names no page; a
-    /// read that fails otherwise is asked again later.
+    /// The page at its source of each record named: read, with what is
+    /// read beside it (`SourcePages.related`): what a page is composed from
+    /// where the record names none, and a Slack message's conversation,
+    /// for the channel's name. A record that is gone, or that the app may
+    /// not read, names no page; a read that fails otherwise is asked again
+    /// later. A record beside it that the app may not read is left out, so
+    /// a message keeps its page where its channel's name cannot be read.
     static func sources(_ client: SubstrateClient, _ paths: [String]) async -> (found: [String: SourcePage], none: [String], failed: [String]) {
-        enum Answer: Sendable {
-            case page(SourcePage)
+        enum Read: Sendable {
+            case record(Record)
             case none
             case failed
         }
-        func read(_ path: String) async throws -> Record? {
-            guard let reference = RecordReference(path: path) else { return nil }
-            return try await client.record(reference.kind, reference.recordID)
-        }
-        return await withTaskGroup(of: (String, Answer).self) { group in
-            for path in paths {
-                group.addTask {
-                    do {
-                        guard let record = try await read(path) else { return (path, .none) }
-                        var related: [String: Record] = [:]
-                        for other in SourcePages.related(record) {
-                            if let record = try await read(other) { related[other] = record }
+        func read(_ paths: some Sequence<String>) async -> [String: Read] {
+            await withTaskGroup(of: (String, Read).self) { group in
+                for path in paths {
+                    group.addTask {
+                        guard let reference = RecordReference(path: path) else { return (path, .none) }
+                        do {
+                            return (path, try await client.record(reference.kind, reference.recordID).map(Read.record) ?? .none)
+                        } catch let error as ServerError where error.status == 403 {
+                            return (path, .none)
+                        } catch is InsufficientScope {
+                            return (path, .none)
+                        } catch {
+                            return (path, .failed)
                         }
-                        return (path, SourcePages.page(of: record, with: related).map(Answer.page) ?? .none)
-                    } catch let error as ServerError where error.status == 403 {
-                        return (path, .none)
-                    } catch is InsufficientScope {
-                        return (path, .none)
-                    } catch {
-                        return (path, .failed)
                     }
                 }
+                var out: [String: Read] = [:]
+                for await (path, answer) in group { out[path] = answer }
+                return out
             }
-            var out: (found: [String: SourcePage], none: [String], failed: [String]) = ([:], [], [])
-            for await (path, answer) in group {
-                switch answer {
-                case let .page(page): out.found[path] = page
-                case .none: out.none.append(path)
-                case .failed: out.failed.append(path)
+        }
+        let records = await read(Set(paths))
+        // What is read beside them, each once: eight messages of one channel read its conversation one time.
+        var beside: Set<String> = []
+        for case let .record(record) in records.values { beside.formUnion(SourcePages.related(record)) }
+        let related = await read(beside)
+        var out: (found: [String: SourcePage], none: [String], failed: [String]) = ([:], [], [])
+        for path in paths {
+            guard case let .record(record)? = records[path] else {
+                if case .failed? = records[path] { out.failed.append(path) } else { out.none.append(path) }
+                continue
+            }
+            var with: [String: Record] = [:]
+            var failed = false
+            for other in SourcePages.related(record) {
+                switch related[other] {
+                case let .record(record)?: with[other] = record
+                case .failed?: failed = true
+                default: break
                 }
             }
-            return out
+            if failed {
+                out.failed.append(path)
+            } else if let page = SourcePages.page(of: record, with: with) {
+                out.found[path] = page
+            } else {
+                out.none.append(path)
+            }
         }
+        return out
     }
 
     static func contacts(_ client: SubstrateClient, _ paths: [String]) async -> [Record] {

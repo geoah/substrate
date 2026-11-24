@@ -384,6 +384,8 @@ public extension TodayApp {
             {
                 wrote(writes.preference(["lastActiveAt": TodayWrites.stamp(now), "timezone": .string(zone)]))
             }
+        case let .opened(route):
+            out.append(.pageOpened(route))
         case .refresh:
             out.append(.records(.refreshAsked))
         case .clearSaved:

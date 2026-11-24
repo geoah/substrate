@@ -93,8 +93,11 @@ struct PaneButton: View {
 /// What something was made from, as buttons that leave the app: the place
 /// it came from by its name, and the record itself. Each ends with the
 /// arrow of a link that opens elsewhere, and says in full where it goes.
+/// Under a line of a timeline they are `quiet`: lower and in the second
+/// ink, since there is a pair under every line.
 struct SourceLinksView: View {
     var links: [SourceLink]
+    var quiet = false
 
     @Environment(\.pane) private var pane
 
@@ -104,12 +107,12 @@ struct SourceLinksView: View {
                 Button {
                     pane.openURL(link.url)
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: quiet ? 4 : 5) {
                         Text(link.title).lineLimit(1)
-                        Image(systemName: Symbol.leaves.systemName).font(TodayLook.font(.caption, weight: .bold))
+                        Image(systemName: Symbol.leaves.systemName).font(TodayLook.font(quiet ? .caption2 : .caption, weight: .bold))
                     }
                 }
-                .buttonStyle(.today(.small))
+                .buttonStyle(.today(quiet ? .link : .small))
                 .accessibilityLabel(link.label)
                 .transition(.face)
             }

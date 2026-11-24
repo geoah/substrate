@@ -22,7 +22,9 @@ public extension TodayApp {
                 next.sources = [:]
                 next.sourcesNone = []
                 next.sourcesFailed = []
+                next.sourcesChecked = []
                 next.sourcesAsking = []
+                next.projectsOpened = []
                 next.exchanges = []
                 next.threads = [:]
             // Back in front, or linked again: what could not be read is asked for again.
@@ -70,7 +72,14 @@ public extension TodayApp {
             next.sources.merge(found) { _, read in read }
             next.sourcesNone.formUnion(none)
             next.sourcesFailed.formUnion(failed)
+            next.sourcesChecked.formUnion(found.keys)
             next.sourcesAsking = []
+        case let .pageOpened(route):
+            // A project's page: what its timeline was written from is read for its pages, the latest opened first.
+            if case let .project(id) = route, next.projectsOpened.last != id {
+                next.projectsOpened.removeAll { $0 == id }
+                next.projectsOpened.append(id)
+            }
         case let .looked(at, today, zone):
             next.zone = zone
             if next.notesRead { next.notes = Self.rolled(next.notes, at: at, today: today) }
@@ -146,10 +155,11 @@ public extension TodayApp {
                 if next.notes?.day != today { next.notes = Self.rolled(next.notes, at: at, today: today) }
             }
         }
-        // The pages of what the tasks were made from, a few at a time and
-        // one batch at once: the next is named when the last has answered.
+        // The pages of what the tasks were made from and the digests were
+        // written from, a few at a time and one batch at once: the next is
+        // named when the last has answered.
         switch event {
-        case .records, .localRead, .sourcesRead:
+        case .records, .localRead, .sourcesRead, .pageOpened:
             if next.sourcesAsking.isEmpty, next.notesRead, next.linked.link?.signedIn == true, next.linked.link?.online != false {
                 next.sourcesAsking = Self.missingSources(next)
             }
@@ -159,17 +169,78 @@ public extension TodayApp {
         return next
     }
 
-    /// The records open tasks and suggested tasks were made from whose
-    /// page the root has not read or asked for, a few at a time.
+    /// How many records are read for their page at once.
+    static let sourceBatch = 8
+
+    /// The records whose page the root has not read or asked for, a few at
+    /// a time, in the order they are wanted:
+    /// - what open tasks and suggested tasks were made from;
+    /// - what the timeline of the project's page opened last was written
+    ///   from, since that page is on the screen;
+    /// - what the day draws of every digest, the newest first: each item
+    ///   newer than its project's review mark, and each since the night began;
+    /// - the timelines of the project pages opened before.
+    ///
+    /// A digest's item is read for the first record it names, its thread's
+    /// opener. The items of a project nobody opened that are older than
+    /// both its mark and the night are not read: a repository holds dozens
+    /// of digests of up to thirty items.
     static func missingSources(_ state: State) -> [String] {
-        var wanted: Set<String> = []
-        for record in state.linked.records.values where record.kind == TodayKinds.task {
-            let status = record["status"]?.text ?? "open"
-            guard status == "open" || status == "proposed", let path = record["origin"]?.referencePath else { continue }
-            guard state.sources[path] == nil, !state.sourcesNone.contains(path), !state.sourcesFailed.contains(path) else { continue }
-            wanted.insert(path)
+        var wanted: [String] = []
+        var named: Set<String> = []
+        func want(_ paths: some Sequence<String>) {
+            for path in paths where named.insert(path).inserted && !sourceKnown(path, in: state) { wanted.append(path) }
         }
-        return Array(wanted.sorted().prefix(8))
+        var origins: Set<String> = []
+        // Of each digest, by its project: the first record each item names whose page is not known, and when
+        // the item happened. An item whose page is known costs a look-up and no more, since this is asked at
+        // every change of the records.
+        var unknown: [String: [(at: Date, path: String)]] = [:]
+        var marks: [String: Date] = [:]
+        for record in state.linked.records.values {
+            switch record.kind {
+            case TodayKinds.task:
+                let status = record["status"]?.text ?? "open"
+                if status == "open" || status == "proposed", let path = record["origin"]?.referencePath { origins.insert(path) }
+            case TodayKinds.digest:
+                let items = (record["items"]?.array ?? []).compactMap { item -> (at: Date, path: String)? in
+                    guard let path = item["sources"]?.array?.lazy.compactMap(\.referencePath).first, !sourceKnown(path, in: state) else { return nil }
+                    guard item["text"]?.text != nil, let at = item["at"]?.text.flatMap(Timestamp.parse) else { return nil }
+                    return (at, path)
+                }
+                if !items.isEmpty { unknown[record["project"]?.referenceID ?? record.id] = items }
+            case TodayKinds.reviewmark:
+                if let through = record["through"]?.text.flatMap(Timestamp.parse) { marks[record["project"]?.referenceID ?? record.id] = through }
+            default: break
+            }
+        }
+        func newestFirst(_ items: [(at: Date, path: String)]) -> [String] { items.sorted { ($0.at, $1.path) > ($1.at, $0.path) }.map(\.path) }
+        want(origins.sorted())
+        if let shown = state.projectsOpened.last { want(newestFirst(unknown[shown] ?? [])) }
+        if wanted.count < sourceBatch {
+            // Where the night began, as the device's notes hold it: what is happening and the night draw every item since.
+            let night = state.notes.flatMap { $0.nightFrom ?? $0.wokeAt?.addingTimeInterval(-8 * 3600) }
+            var drawn: [(at: Date, path: String)] = []
+            for (project, items) in unknown {
+                guard let from = [marks[project], night].compactMap({ $0 }).min() else { continue }
+                drawn += items.filter { $0.at > from }
+            }
+            want(newestFirst(drawn))
+        }
+        if wanted.count < sourceBatch {
+            for project in state.projectsOpened.dropLast().reversed() { want(newestFirst(unknown[project] ?? [])) }
+        }
+        return Array(wanted.prefix(sourceBatch))
+    }
+
+    /// Whether a record's page needs no read: it was read, it names none,
+    /// or its read failed and waits for the app to come back. A Slack
+    /// message's page that says no channel is one an earlier build kept,
+    /// or one whose channel has no name: it is read once more.
+    static func sourceKnown(_ path: String, in state: State) -> Bool {
+        if state.sourcesNone.contains(path) || state.sourcesFailed.contains(path) { return true }
+        guard let page = state.sources[path] else { return false }
+        return page.group != nil || state.sourcesChecked.contains(path) || !SourcePages.namesGroup(path)
     }
 
     /// The day's notes after a look: the same day's with the look kept, or

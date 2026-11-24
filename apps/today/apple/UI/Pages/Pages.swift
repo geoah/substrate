@@ -271,13 +271,7 @@ struct ProjectPageView: View {
         if !page.timeline.isEmpty || page.timelineEmpty != nil {
             PageSection(label: page.labels.timeline) {
                 if let empty = page.timelineEmpty, page.timeline.isEmpty { PageText(empty, quiet: true) }
-                ForEach(page.timeline) { group in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(group.label).font(TodayLook.Text.button).foregroundStyle(.ink)
-                        ForEach(group.lines) { TimelineLineView(line: $0) }
-                    }
-                    .padding(.top, 4)
-                }
+                if !page.timeline.isEmpty { ProjectTimelineView(groups: page.timeline) }
             }
         }
     }

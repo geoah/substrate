@@ -152,17 +152,40 @@ public struct ProjectLine: Codable, Equatable, Hashable, Sendable, Identifiable 
 
 /// A project's page: its tasks, its suggested tasks and its timeline.
 public struct ProjectPage: Codable, Equatable, Sendable, Identifiable {
+    /// One day of the timeline. Its label says the day once, so no line
+    /// under it does: "Coming up", "Today", "Overnight", "Yesterday", and a
+    /// date for anything older, "Tuesday 17 November".
     public struct TimelineGroup: Codable, Equatable, Hashable, Sendable, Identifiable {
-        public var id: String
-        /// "Coming up", "Today", "Overnight", "Yesterday", "Earlier".
-        public var label: String
-        public var lines: [TimelineLine]
+        /// The lines of one day that came from one place, the newest first.
+        public struct Section: Codable, Equatable, Hashable, Sendable, Identifiable {
+            public var id: String
+            /// Where its lines came from, said once over them: "Slack",
+            /// "Slack, #api-reliability", "Gmail". Nil over lines written
+            /// from no record: a meeting ahead, a task you finished.
+            public var source: String?
+            public var lines: [TimelineLine]
 
-        public init(id: String, label: String, lines: [TimelineLine]) {
+            public init(id: String, source: String? = nil, lines: [TimelineLine]) {
+                self.id = id
+                self.source = source
+                self.lines = lines
+            }
+        }
+
+        public var id: String
+        public var label: String
+        /// By where the lines came from: what was written from no record
+        /// first, then each place in order of its newest line.
+        public var sections: [Section]
+
+        public init(id: String, label: String, sections: [Section]) {
             self.id = id
             self.label = label
-            self.lines = lines
+            self.sections = sections
         }
+
+        /// Every line of the day, in the order drawn.
+        public var lines: [TimelineLine] { sections.flatMap(\.lines) }
     }
 
     public var id: String

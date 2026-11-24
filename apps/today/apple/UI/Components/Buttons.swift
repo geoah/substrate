@@ -23,6 +23,9 @@ struct TodayButtonStyle: ButtonStyle {
         case beside
         /// Tinted and lower, with the same target: All projects, Open.
         case small
+        /// Tinted, lower still and in the second ink, with the same target:
+        /// a link out under a line of a timeline, where every line has some.
+        case link
         /// Outlined in the urgent red: Remove.
         case destructive
     }
@@ -38,11 +41,11 @@ struct TodayButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(kind == .wide || kind == .beside ? TodayLook.Text.wideButton : TodayLook.Text.button)
+            .font(kind == .wide || kind == .beside ? TodayLook.Text.wideButton : kind == .link ? TodayLook.Text.sectionLabel : TodayLook.Text.button)
             .multilineTextAlignment(.center)
             .foregroundStyle(left == nil ? words : .ink)
-            .padding(.horizontal, kind == .small ? 13 : kind == .beside ? 20 : 16)
-            .padding(.vertical, 6)
+            .padding(.horizontal, kind == .link ? 10 : kind == .small ? 13 : kind == .beside ? 20 : 16)
+            .padding(.vertical, kind == .link ? 3 : 6)
             .frame(maxWidth: kind == .wide ? .infinity : nil, minHeight: height)
             .background {
                 if let left { drain(left) } else { fill }
@@ -66,6 +69,7 @@ struct TodayButtonStyle: ButtonStyle {
         switch kind {
         case .wide, .beside: 52
         case .small: 34
+        case .link: 26
         default: TodayLook.target
         }
     }
@@ -74,6 +78,7 @@ struct TodayButtonStyle: ButtonStyle {
         switch kind {
         case .primary, .wide: .onAction
         case .secondary, .onTint, .outlined, .beside, .small: .ink
+        case .link: .inkSecond
         case .destructive: .urgentWords
         }
     }
@@ -83,6 +88,7 @@ struct TodayButtonStyle: ButtonStyle {
         switch kind {
         case .primary, .wide: shape.fill(.action)
         case .secondary, .small: shape.fill(TodayLook.ink.color.opacity(scheme == .dark ? 0.12 : 0.07))
+        case .link: shape.fill(TodayLook.ink.color.opacity(scheme == .dark ? 0.10 : 0.055))
         case .onTint:
             shape.fill(.card).shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
         case .outlined, .beside: CapsuleOutline().strokeBorder(TodayLook.ink.color.opacity(0.28), lineWidth: 1.5)

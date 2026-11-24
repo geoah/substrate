@@ -10,7 +10,8 @@ own against the kit.
 - **Navigation.** A path of `TodayRoute` (`priorities`, `projects`, `project(id)`, `person(id)`,
   `meeting(id)`, `task(id)`, `plan`, `suggested`). `TodayPresentation.page(_:)` answers a route with its
   `PagePresentation` each time the view draws; it is cheap and pure. One level: a page opened from a page
-  takes its place.
+  takes its place. The view says which page is on the screen (`opened(route)`), and nothing else of its
+  path.
 - **What is open.** Which row, door, flag list, group or folded block is open is view state. The row whose
   `state` is `.now` (and the meeting whose `leads` is true, and the night when `leads`) is drawn open with
   no close button.
@@ -51,7 +52,8 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `StripPresentation`, `StripEntry`                            | The strip: title, date, the flagged projects, "All projects" and the edit icon button                   |
 | `NightPresentation`, `NightItem`, `NightDecision`            | The night: one line folded; open, by project, with "Got it"                                             |
 | `EarlierPresentation`                                        | "Earlier today": a header with a count, and its `entries` in one order by when they happened: a `row` for what was finished (`Row.State.done`: crossed out, its filled tick takes it back), a `meeting` that ended (`MeetingRow.ended`: dimmed), a `line` for bookkeeping |
-| `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, every project with its lines, flagged first, nothing folded   |
+| `HappeningPresentation`, `HappeningGroup`, `HappeningItem`   | What is happening: the closed line; open, every project with its lines, flagged first, nothing folded. A line says where it came from (`source`: "Slack, #api-reliability.") and carries its `links` |
+| `TimelineLine`                                               | One line of a timeline, the night's or a project's: a clock time (`time`, "08:23", never a day), who, what happened, and the `links` to what it was written from |
 | `MarkedBlock`                                                | Something marked urgent and held back: who marked it and its options                                    |
 | `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line. `.tick(button)` ends a task's and a routine's: open it finishes the thing, filled (role `primary`, on a row whose `state` is `.done`) it takes that back. `.page(route)` is a right chevron, and a tap on the line opens the page. A closed row says `line`, or `opening` where it has no line: the opening words of what the open row shows in full, which an open row leaves out |
 | `RoutineCard`                                                | A routine row, open: its items each with a tick, All taken or All done, Skip beside it, a line if stale |
@@ -67,6 +69,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives. Its exchanges are the thing's conversation, the ones kept from earlier days included ([Asking the assistant](#asking-the-assistant)) |
 | `ComposerPresentation`                                       | "Add or ask"                                                                                            |
 | `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `SuggestedPage`, `MissingPage` |
+| `ProjectPage.TimelineGroup`, `TimelineGroup.Section`         | A project's timeline: one group a day, whose `label` says the day once, and in it one section for each place its lines came from, with that place as its `source` ([below](#a-projects-timeline)) |
 | `SuggestedPage`, `SuggestedPage.Group`                       | The suggested tasks as a page: one save card for each project, six of a group drawn until `more` is pressed |
 | `PlanPage.Left`                                              | A task yesterday left, the first section of the plan page: its own list, nothing selected until chosen  |
 | `OptionList`, `OptionRow`                                    | The one control for a choice. `mark` round or square; a row's tap sends `command`                       |
@@ -101,8 +104,8 @@ enough.
 
 ## What a thing was made from: its links
 
-`TaskCard.links`, `UrgentCard.links`, `SuggestedItem.links` and `MeetingCard.links` are `SourceLink`s:
-buttons that leave the app. A view draws each as a small button with its `title` and the arrow of a link
+`TaskCard.links`, `UrgentCard.links`, `SuggestedItem.links`, `MeetingCard.links`, `HappeningItem.links` and
+`TimelineLine.links` are `SourceLink`s: buttons that leave the app. A view draws each as a small button with its `title` and the arrow of a link
 that opens elsewhere, names it aloud with its `label`, and opens its `url` on a tap. On a task they stand
 beside "Done"; on a suggestion under the line that says when it was heard.
 
@@ -115,6 +118,52 @@ beside "Done"; on a suggestion under the line that says when it was heard.
 A thing made from nothing (a task the owner typed) has no links. A meeting has its event's own page in its
 calendar. `MeetingCard.Reading.url` opens what is to be read first the same way: its page at the source
 where that is read, else the record.
+
+A line written from a digest's item has the same two: `HappeningItem.links` in what is happening, and
+`TimelineLine.links` on the night's lines and on a project's timeline. They are the links of the first
+record the item names in `sources`, its thread's opener. The record link is there at once and the source
+link once that record's page is read, so a line may gain its first button a moment after it is drawn. A view
+draws them as one row under the line's words, in the words' column and not under the time, lower and
+quieter than a card's (`SourceLinksView(quiet:)`): there is a pair under every line. A line written from no
+record (a meeting ahead, a task the owner finished, an item that names no source) has none.
+
+**Where a line came from, in words** (`SourcePages.label`, `Day.source(of:)`): the place, then what the
+source is inside it. The place is known from the record's kind before anything is read (Slack, Gmail,
+Google Calendar, Linear, GitHub, Notion), else it is the read page's own name (a file in a drive is "Google
+Docs" by its address). What it is inside the place is `SourcePage.group`, known once the page is read: a
+Slack message's channel as "#name", "direct message" or "group message". So a line says "Slack" first and
+"Slack, #api-reliability" once read. It is joined with a comma, and nothing in the app joins facts with a
+middot. `HappeningItem.source` is that label as a sentence ("Slack, #api-reliability."), and what something
+marked urgent says there stays as it was.
+
+## A project's timeline
+
+`ProjectPage.timeline` is drawn as headings and lines, in this order:
+
+- **One group a day, and its day said once.** "Coming up" (the meetings still ahead that hold a task of the
+  project), "Today" (since waking), "Overnight" (the night before it), "Yesterday", and a date for anything
+  older, "Tuesday 17 November". No line says a day: `TimelineLine.time` is a clock time alone, and it is
+  read under its group's label.
+- **Overnight is one night.** It starts at the last look of the day before where that was in its evening
+  (`DayEngine.timelineNightFrom`). A last look after midnight leaves it starting at midnight, and one longer
+  ago than 16:00 of the day before leaves it starting there, so what an owner who was away finds under
+  "Overnight" is one night's lines, and each day before it has its own group.
+- **Inside a day, one section for each place its lines came from.** `Section.source` is the label above
+  ("Slack, #api-reliability", "Gmail"), said once over the section's lines. All of one source's lines in a
+  day are one section, the newest line first. A day with one source still says it.
+- **What was written from no record has no label and stands first in its day**, directly under the day's
+  name: a task the owner finished, an item that names no source. After a labelled section it would read as
+  more of that one. The labelled sections follow in order of each one's newest line.
+
+A view draws the group's label as a heading, each section's `source` as a quiet line, and each line with its
+time in the time column and its links under its words (`ProjectTimelineView`). It is one list of headings
+and lines whose ids hold: a line is named by when it happened, so one that arrives moves the others, and a
+line whose source was just read moves under its new label.
+
+When a page comes onto the screen the view sends `opened(route)` once. For a project's page the root then
+reads what its timeline was written from, a few records at a time, the newest lines first
+([records](records.md#where-a-task-came-from-its-links)); until a line's record is read it has the record
+link alone and its section says the place with no channel.
 
 ## Asking the assistant
 
@@ -234,6 +283,7 @@ engine gains without a turn fails there.
 | `addOrAsk(_:)`, `addUnanswered(_:)`, `ask(_:_:)`, `closeAnswer(_:)`, `stopAnswer`           | The field and the assistant's boxes                                                    |
 | `send(_:)`                                                                                  | Send, under a message that is ready                                                    |
 | `instruction(_:on:)`, `rewriteInstruction(_:text:)`, `settings(_:)`                         | Settings: an instruction on or off, its text, a row of the app's own                   |
+| `opened(_:)`                                                                                | A page came onto the screen, by its route: sent once each time one appears. It writes nothing; a project's page has what its timeline was written from read for its links |
 | `looked`, `refresh`, `foreground`, `clearSaved`, `offered(_:)`, `dismissProblem`, `notificationsAsked` | The app's own                                                                |
 
 Every button and option row in a presentation already carries the command it sends, so a view rarely names
@@ -271,6 +321,12 @@ the plan's row and a plan draft, working at 11:30, a flag list open, the interru
 meeting, the gap with something marked urgent and held, the same with the assistant unreachable, the evening,
 the wrap, an answer in place, and an empty repository. A gallery draws `fixture.app.pane`, and
 `fixture.app.page(route)` for each of `fixture.routes`.
+
+The invented day's digests name what each item was written from (`TodayFixtures.written`: messages in
+channels with a name, a direct message and a group one, mails with their thread and account, issues, pull
+requests, invitations, a document, and a chat that has no page), over two days before the day itself, and
+their pages are read already (`writtenPages`, made by `SourcePages` from those records). A state with
+`sources` emptied is the day before any page is read.
 
 `TodayFixtures.glances` is the widgets' day at the moments their gallery draws: waking, the morning, the
 afternoon in a meeting with two that share time still to choose between, a repository with nothing to draw a

@@ -40,6 +40,8 @@ public struct TodayApp: LinkedRecordsApp {
         case sourcesRead([String: SourcePage], none: [String], failed: [String])
         /// The owner looked at the pane.
         case looked(at: Date, today: CivilDay, zone: String)
+        /// A page came onto the screen.
+        case pageOpened(TodayRoute)
         case drafted(Drafts)
         case noted(DayNotes)
         /// Requests decided here: hidden until they are read again.
@@ -108,15 +110,24 @@ public struct TodayApp: LinkedRecordsApp {
         /// The contacts the rows name, by path, and the paths asked for.
         public var contacts: [String: Record] = [:]
         public var contactsAsked: Set<String> = []
-        /// The page at its source of each record a task was made from, by
-        /// the record's path: read once each, and kept on the device.
+        /// The page at its source of each record a task was made from or
+        /// a digest's item was written from, by the record's path: read
+        /// once each, and kept on the device.
         public var sources: [String: SourcePage] = [:]
         /// The records read that name no page, and the ones whose read
         /// failed, which are asked for again when the app comes back.
         public var sourcesNone: Set<String> = []
         public var sourcesFailed: Set<String> = []
+        /// The records whose page was read since the app opened: a page
+        /// kept by a build that read less of it is read once more, and
+        /// then stands as it is.
+        public var sourcesChecked: Set<String> = []
         /// The records being read for their page now: one batch at a time.
         public var sourcesAsking: [String] = []
+        /// The projects whose page was opened since the app opened, by the
+        /// list's id, the latest last: what their timelines were written
+        /// from is read for its pages too.
+        public var projectsOpened: [String] = []
         public var stale: [StaleSource] = []
         public var drafts = Drafts()
         public var notes: DayNotes?

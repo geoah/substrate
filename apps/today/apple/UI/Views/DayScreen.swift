@@ -78,6 +78,10 @@ struct DayScreen<Notices: View>: View {
             if phase != .active { state.flush() }
         }
         .onDisappear { state.flush() }
+        // A page is on the screen: the core is told, since a project's page has what its timeline was written from read.
+        .onChange(of: path.last, initial: true) { _, route in
+            if let route { send(.opened(route)) }
+        }
         // A link the app was opened with: its page takes the place of whatever was open, and the day's own closes it.
         .onChange(of: links?.waiting, initial: true) { _, waiting in
             guard waiting != nil, let link = links?.take() else { return }

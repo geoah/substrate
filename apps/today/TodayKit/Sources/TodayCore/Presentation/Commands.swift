@@ -233,6 +233,10 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
 
     /// The owner looked: the app came forward or the pane was opened.
     case looked
+    /// A page is on the screen: sent once each time one appears. It writes
+    /// nothing. A project's page has the records its timeline was written
+    /// from read for their links, a few at a time.
+    case opened(TodayRoute)
     case refresh
     /// The app came to the front: what the system may have changed is read
     /// again.

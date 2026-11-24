@@ -171,12 +171,18 @@ enum HandScenes {
                     items: [
                         HappeningItem(
                             id: "h2", time: "11:12", text: "Kenji replied: the VMs can stay stopped until Monday.",
-                            source: "Slack. It answers what you asked at 09:20.", isNew: true),
-                        HappeningItem(id: "h3", time: "09:34", text: "Ned closed nine of the 26 noisy alert tickets.", source: "Slack."),
+                            source: "Slack, direct message. It answers what you asked at 09:20.", isNew: true, links: links),
+                        HappeningItem(
+                            id: "h3", time: "09:34", text: "Ned closed nine of the 26 noisy alert tickets.", source: "Slack, #security-ops.",
+                            links: links),
                     ]),
                 HappeningGroup(
                     id: "hiring", tile: tile("HI"), name: "Hiring", stripe: Stripe(.medium), opens: .project("hiring"),
-                    items: [HappeningItem(id: "h4", time: "10:15", text: "Grant's CV was updated before tonight's interview.", source: "Mail.")]),
+                    items: [
+                        // Not read yet: the place alone, and the record as its one link.
+                        HappeningItem(
+                            id: "h4", time: "10:15", text: "Grant's CV was updated before tonight's interview.", source: "Gmail.", links: [links[1]])
+                    ]),
                 HappeningGroup(
                     id: "home", tile: tile("HO"), name: "Home", opens: .project("home"),
                     items: [HappeningItem(id: "h5", time: "10:02", text: "A parcel is out for delivery.", source: "Mail.", isNew: true)]),
@@ -685,16 +691,43 @@ enum HandScenes {
         suggested: [suggestedItem("p-api", "Send Patrick the reliability update", origin: "Patrick asked on Wednesday at 22:04.", quote: nil, own: true)],
         timeline: [
             ProjectPage.TimelineGroup(
-                id: "overnight", label: "Overnight",
-                lines: [
-                    TimelineLine(
-                        id: "l1", time: "03:47", who: "The on-call", text: "rolled back the 02:50 release and it recovered.",
-                        source: Pill(.neutral, "PagerDuty")),
-                    TimelineLine(id: "l2", time: "03:12", text: "About one request in five began to fail.", source: Pill(.neutral, "Grafana")),
+                id: "coming", label: "Coming up",
+                sections: [
+                    .init(id: "coming:", lines: [TimelineLine(id: "l3", time: "19:30", text: "Reliability sync with the vendors.", opens: .meeting("vendors"))])
                 ]),
             ProjectPage.TimelineGroup(
-                id: "today", label: "Today",
-                lines: [TimelineLine(id: "l3", time: "19:30", text: "Reliability sync with the vendors.", opens: .meeting("vendors"))]),
+                id: "night", label: "Overnight",
+                sections: [
+                    .init(
+                        id: "night:Slack, #api-alerts", source: "Slack, #api-alerts",
+                        lines: [
+                            TimelineLine(
+                                id: "l1", time: "03:47", who: "The on-call", text: "rolled back the 02:50 release and it recovered.", links: links),
+                            TimelineLine(id: "l2", time: "03:12", text: "About one request in five began to fail.", links: links),
+                        ]),
+                    // Not read yet: the place alone, and the record as its one link.
+                    .init(
+                        id: "night:GitHub", source: "GitHub",
+                        lines: [TimelineLine(id: "l4", time: "02:50", text: "A release went out.", links: [links[1]])]),
+                ]),
+            ProjectPage.TimelineGroup(
+                id: "day-2026-11-18", label: "Yesterday",
+                sections: [
+                    // Written from no record: first in its day, with no label over it and no link under it.
+                    .init(id: "day-2026-11-18:", lines: [TimelineLine(id: "l6", time: "10:40", who: "You", text: "finished: verify the vendor claims.")]),
+                    .init(
+                        id: "day-2026-11-18:Gmail", source: "Gmail",
+                        lines: [
+                            TimelineLine(
+                                id: "l5", time: "16:40",
+                                text: "The vendors were told a release was planned for the night, and two of them asked for the window in writing.",
+                                links: [
+                                    SourceLink(
+                                        id: "source", title: "Gmail", label: "Open in Gmail", url: "https://mail.google.com/mail/u/owner@example.com/#all/18c2"),
+                                    links[1],
+                                ])
+                        ]),
+                ]),
         ],
         meetings: [MeetingLine(id: "vendors", title: "Reliability sync", line: "19:30 to 20:00, in 8 h.")])
 

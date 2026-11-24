@@ -76,28 +76,8 @@ extension DayEngine: PageMaking {
         let notToday = mine.filter { $0.isOpen && !today.contains($0.id) }.sorted { rank($0.shownFlag) < rank($1.shownFlag) }
         let done = mine.filter { $0.status == .done && ($0.completedAt.map(isToday) ?? false) }
         let suggested = mine.filter(\.isProposed)
-        let digest = day.digests.first { $0.key == list.id }
-        var timeline: [ProjectPage.TimelineGroup] = []
         let coming = todaysMeetings.filter { $0.end > now && tasks(for: $0).contains { $0.list == list.id } }
-        if !coming.isEmpty {
-            timeline.append(
-                .init(
-                    id: "coming", label: "Coming up",
-                    lines: coming.map {
-                        TimelineLine(id: "m-" + $0.id, time: clock($0.start), text: $0.title + ($0.start <= now ? ", on now." : "."), opens: .meeting($0.id))
-                    }))
-        }
-        var todayLines = (digest.map(dayItems) ?? []).enumerated().map { line($1, id: "d-\($0)") }
-        todayLines += done.compactMap { task in
-            task.completedAt.map { TimelineLine(id: "t-" + task.id, time: clock($0), who: "You", text: "finished: \(Words.low(task.name)).") }
-        }
-        if !todayLines.isEmpty { timeline.append(.init(id: "today", label: "Today", lines: todayLines.sorted { $0.time > $1.time })) }
-        let night = (digest.map(nightItems) ?? []).enumerated().map { line($1, id: "n-\($0)") }
-        if !night.isEmpty { timeline.append(.init(id: "night", label: "Overnight", lines: night)) }
-        let older = (digest?.items ?? []).filter { $0.at <= nightFrom }.enumerated().map { index, item in
-            TimelineLine(id: "e-\(index)", time: Words.cap(Words.day(item.at, now: now, calendar)), text: item.text)
-        }
-        if !older.isEmpty { timeline.append(.init(id: "earlier", label: "Earlier", lines: older)) }
+        let timeline = timeline(list, done: done, coming: coming)
         let urgent = mine.first { $0.urgent && $0.isOpen }
         return ProjectPage(
             id: list.id, tile: tile(list), name: list.name, flag: list.flag == nil && flagSuggestion(list.path) == nil ? nil : priorityControl(list),
@@ -118,6 +98,93 @@ extension DayEngine: PageMaking {
             meetings: coming.map {
                 MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end))" + ($0.start <= now ? ", on now." : "."))
             })
+    }
+
+    // MARK: A project's timeline
+
+    /// The day a line of a project's timeline stands under. Today is two:
+    /// what came in since waking, and the night before it.
+    enum TimelineDay: Hashable {
+        case today
+        case night
+        /// An earlier day, by where it starts.
+        case day(Date)
+    }
+
+    /// Where the night starts on a project's timeline: at the last look of
+    /// the day before, where that was in its evening. A last look after
+    /// midnight leaves the night starting at midnight, and one longer ago
+    /// than the evening leaves it starting where a night with no look
+    /// before it does, so every line under "Overnight" is of one night and
+    /// its clock time says when.
+    var timelineNightFrom: Date { min(max(nightFrom, day.startOfToday.addingTimeInterval(-8 * 3600)), day.startOfToday) }
+
+    func timelineDay(_ at: Date) -> TimelineDay {
+        if at > wokeAt { return .today }
+        if at > timelineNightFrom || at >= day.startOfToday { return .night }
+        return .day(calendar.startOfDay(for: at))
+    }
+
+    /// A project's timeline: one group for each day, said once ("Today",
+    /// "Overnight", "Yesterday", then the date), and inside a day one
+    /// section for each place its lines came from: first what was written
+    /// from no record, then the places in order of each one's newest line.
+    /// A line's time is its clock time alone.
+    func timeline(_ list: ListItem, done: [TaskItem], coming: [Meeting]) -> [ProjectPage.TimelineGroup] {
+        var out: [ProjectPage.TimelineGroup] = []
+        if !coming.isEmpty {
+            let lines = coming.map {
+                TimelineLine(id: "m-" + $0.id, time: clock($0.start), text: $0.title + ($0.start <= now ? ", on now." : "."), opens: .meeting($0.id))
+            }
+            out.append(.init(id: "coming", label: "Coming up", sections: [.init(id: "coming:", lines: lines)]))
+        }
+        var entries: [(at: Date, source: String?, line: TimelineLine)] = []
+        // A line is named by when it happened, so it keeps its place when a newer one arrives above it.
+        var taken: Set<String> = []
+        for item in day.digests.first(where: { $0.key == list.id })?.items ?? [] where item.at <= now {
+            var id = "d-\(Int(item.at.timeIntervalSince1970))"
+            while !taken.insert(id).inserted { id += "+" }
+            entries.append((item.at, day.source(of: origin(item)), line(item, id: id)))
+        }
+        for task in done {
+            guard let at = task.completedAt else { continue }
+            entries.append((at, nil, TimelineLine(id: "t-" + task.id, time: clock(at), who: "You", text: "finished: \(Words.low(task.name)).")))
+        }
+        let days = Dictionary(grouping: entries) { timelineDay($0.at) }
+        func order(_ day: TimelineDay) -> Date {
+            switch day {
+            case .today: .distantFuture
+            case .night: wokeAt
+            case let .day(start): start
+            }
+        }
+        for key in days.keys.sorted(by: { order($0) > order($1) }) {
+            let id: String
+            let label: String
+            switch key {
+            case .today: (id, label) = ("today", "Today")
+            case .night: (id, label) = ("night", "Overnight")
+            case let .day(start):
+                id = "day-" + CivilDay(start, in: calendar).description
+                label = start == day.startOfYesterday ? "Yesterday" : Words.longDate(start, calendar)
+            }
+            // All of one place's lines in a day are one section, the newest line first. What was written from no
+            // record has no label, so it stands first, under the day's name: after a labelled section it would
+            // read as more of that one.
+            let sections = Dictionary(grouping: days[key] ?? []) { $0.source ?? "" }.map { source, entries in
+                (
+                    newest: source.isEmpty ? Date.distantFuture : entries.map(\.at).max() ?? .distantPast, source: source,
+                    lines: entries.sorted { ($0.at, $0.line.id) > ($1.at, $1.line.id) }.map(\.line)
+                )
+            }
+            out.append(
+                .init(
+                    id: id, label: label,
+                    sections: sections.sorted { ($0.newest, $1.source) > ($1.newest, $0.source) }.map {
+                        .init(id: "\(id):\($0.source)", source: $0.source.isEmpty ? nil : $0.source, lines: $0.lines)
+                    }))
+        }
+        return out
     }
 
     // MARK: A person

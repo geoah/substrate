@@ -35,12 +35,12 @@ second app draws them.
 | Rows                | `RowView`, `MeetingRowView`, `TaskLineView`, `RowList`                  |
 | The current item    | `RowView` where the row leads, with its body from `DayCards`            |
 | The strip           | `StripView`                                                             |
-| What is happening   | `HappeningView`                                                         |
+| What is happening   | `HappeningView`, with each line's links under its words (`SourceLinksView`, quiet) |
 | The urgent card     | `UrgentCardView`, on `.card(urgent: true)`                              |
 | The save card       | `SuggestedGroupView` (a project's suggestions; `SuggestedItemView` for one, with `SuggestedOtherField` and `SuggestedToldView`), `WrapCardView`, `PlanPageView` (with `PlanLeftView`), with `SaveRowView` |
 | Add or ask          | `ComposerBar`                                                           |
 | Moss's box          | `MossBoxView`, `AnswerCardView`                                         |
-| A page              | `PageScaffold`, `PageTitle`, `PageView`                                 |
+| A page              | `PageScaffold`, `PageTitle`, `PageView`; a project's timeline is `ProjectTimelineView` over `TimelineLineView` |
 | Ground colours      | `GroundView`                                                            |
 
 The rules the guide gives hold in the views, not in each screen:
@@ -86,7 +86,10 @@ mise run apps:gallery       # the same pictures, written under build/gallery/app
 `Tests/GalleryTests.swift` draws, at an iPhone's size in light and in dark: each of the guide's components
 with its states (`guide-<id>`), each scene of `TodayFixtures.all` and each page it names (`scene-…`), the
 whole day drawn long (`long-…`), the wide layout at an iPad's and a Mac's size (`wide-…`), and the states one
-invented day does not reach, from values made by hand in `Tests/HandScenes.swift` (`hand-…`).
+invented day does not reach, from values made by hand in `Tests/HandScenes.swift` (`hand-…`). What the
+day's lines were written from is drawn from the core's own day (`sources-…`): a project's timeline by day
+and by source, what is happening and the night opened, each line with its links, and the same before any
+page is read (`sources-unread-…`), where a line has its record alone and a source says no channel.
 
 A picture is drawn offscreen on the Mac, so glass is a translucent fill there, and a text size above the
 default changes only the layout that depends on it: a Mac has no text size to grow.

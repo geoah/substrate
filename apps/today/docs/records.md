@@ -151,6 +151,11 @@ items newer than that project's `today/reviewmark.through` as "what is happening
 at the digest's `until`. A digest whose items are all at or before the mark is not drawn. Whatever writes
 digests keeps the items newer than the mark and may drop the rest.
 
+An item's `sources` are the records it was written from, its thread's opener first: a Slack message, a
+Gmail message or thread, a calendar event, a tracker's issue. The app links a line to the first of them and
+says where it came from by it ([below](#where-a-task-came-from-its-links)). An item with no `sources` is
+drawn with no link and under no source.
+
 The plan is the app's alone. Nothing else creates or stamps it, so the app's own create of the day's plan
 never meets a record already there.
 
@@ -253,11 +258,34 @@ transcript. The app gives a task two ways out to it, and a suggested task the sa
 - A record with none of these (a chat mirrored from a bridge that has no web address) has the record link
   alone.
 
-Reading: the origins of the tasks that are `open` or `proposed`, eight at a time and one batch at once, each
-once. What is found is kept on the device (`today-sources.json` in the repository's folder), so the links
-are there offline and are not read again. A record that is gone or that the app may not read names no page
-and is not asked for again until the next launch; a read that fails otherwise is asked again when the app
-comes back to the front. Signing out empties what was kept.
+- **A Slack message says its channel.** Its page is its `permalink`; what it is inside Slack is read beside
+  it and kept with the page (`SourcePage.group`). The message's `channel` references a
+  `…/slack/conversation`, which is read for its `name`: a channel is "#name". A direct message is
+  "Direct message" and a group one "Group message", by the message's own `channelType` (`im`, `mpim`), which
+  needs no second read, or else by the conversation's `isIm` and `isMpim`: Slack gives the first no name
+  and the second a made-up one. A conversation with no name, or one the app may not read, leaves the page
+  with no channel. A conversation is read once for a batch, however many of its messages the batch holds.
+  No other kind has such a part.
+
+Reading: eight records at a time and one batch at once, each once, while signed in and online, in this
+order:
+
+1. the origins of the tasks that are `open` or `proposed`;
+2. where a project's page is on the screen, what its timeline was written from: the first of `sources` of
+   every item of that project's digest, the newest first;
+3. what the day draws of every digest, the newest first: the first of `sources` of each item newer than its
+   project's review mark, and of each item since the night began, which is what "what is happening" and the
+   night show;
+4. the timelines of the project pages opened earlier since the app opened.
+
+The items of a project nobody opened that are older than both its mark and the night are not read: a
+repository holds dozens of digests of up to thirty items.
+
+What is found is kept on the device (`today-sources.json` in the repository's folder), so the links are
+there offline and are not read again. A record that is gone or that the app may not read names no page and
+is not asked for again until the next launch; a read that fails otherwise is asked again when the app comes
+back to the front. Signing out empties what was kept. A Slack message's page kept with no channel, which is
+every one an earlier build kept, is read once more after each launch and then stands as it is.
 
 A meeting's link is its event's `htmlLink`, which the window read already holds. What a dossier names in
 `readFirst` opens as its record, or at its source where that page was read for a task.

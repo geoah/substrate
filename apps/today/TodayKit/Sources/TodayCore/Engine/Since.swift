@@ -24,7 +24,14 @@ extension DayEngine {
         return read
     }
 
-    func line(_ item: Digest.Item, id: String) -> TimelineLine { TimelineLine(id: id, time: clock(item.at), text: item.text) }
+    /// What a digest's item was written from: the first record it names,
+    /// which is its thread's opener. Its links and its source are that
+    /// record's.
+    func origin(_ item: Digest.Item) -> String? { item.sources.first }
+
+    func line(_ item: Digest.Item, id: String) -> TimelineLine {
+        TimelineLine(id: id, time: clock(item.at), text: item.text, links: day.links(for: origin(item)))
+    }
 
     func nightItem(_ digest: Digest) -> NightItem? {
         let items = nightItems(digest)
@@ -109,7 +116,9 @@ extension DayEngine {
             for (index, item) in dayItems(digest).enumerated() {
                 let new = isNew(item, in: digest)
                 byKey[digest.key, default: []].append(
-                    HappeningItem(id: "\(digest.key)-\(index)", time: clock(item.at), text: item.text, isNew: new))
+                    HappeningItem(
+                        id: "\(digest.key)-\(index)", time: clock(item.at), text: item.text, source: day.source(of: origin(item)).map { $0 + "." },
+                        isNew: new, links: day.links(for: origin(item))))
                 if new { fresh.append((item.at, digest.key, item.text)) }
             }
         }

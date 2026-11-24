@@ -52,6 +52,25 @@ import TodayCore
         }
     }
 
+    /// What the day's lines were written from, from the core's own day: a
+    /// project's timeline by day and by source, what is happening and the
+    /// night opened, each line with its links; and the same with no page
+    /// read yet, where a line has its record alone and a source no channel.
+    @Test func theSourcesOfTheDaysLinesDraw() async throws {
+        let afternoon = TodayFixtures.present(TodayFixtures.state(at: "13:00"), at: "13:00")
+        try await both("sources-project-extapi", size: CGSize(width: 393, height: 2500)) { DayScreen(app: afternoon, path: [.project("extapi")]) }
+        try await write("sources-project-security", DayScreen(app: afternoon, path: [.project("security")]), size: CGSize(width: 393, height: 2500))
+        try await write("sources-wide-project-extapi", DayScreen(app: afternoon, path: [.project("extapi")]), size: CGSize(width: 1180, height: 1900))
+        try await both("sources-happening", size: CGSize(width: 393, height: 2200)) { DayScreen(app: afternoon, opened: ["happening"]) }
+        let waking = TodayFixtures.present(TodayFixtures.state(at: "07:05"), at: "07:05")
+        try await write(
+            "sources-night", DayScreen(app: waking, opened: ["night", "night:extapi", "night:lantern", "night:\(TodayKinds.unfiled)"]),
+            size: CGSize(width: 393, height: 2600))
+        let unread = TodayFixtures.present(TodayFixtures.state(at: "13:00") { $0.sources = [:] }, at: "13:00")
+        try await write("sources-unread-project-extapi", DayScreen(app: unread, path: [.project("extapi")]), size: CGSize(width: 393, height: 2500))
+        try await write("sources-unread-happening", DayScreen(app: unread, opened: ["happening"]), size: CGSize(width: 393, height: 2200))
+    }
+
     /// A hundred suggestions grouped by project are taller than the long
     /// drawing every page gets, which ends before the last group's Save:
     /// this one is drawn to its end.
