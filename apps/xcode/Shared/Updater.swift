@@ -36,10 +36,14 @@ struct BuildInfo: Sendable {
         let short = value("CFBundleShortVersionString")
         build = value("CFBundleVersion")
         let stamped = value("SubstrateVersion")
-        version = stamped.isEmpty ? "\(short) (\(build))" : stamped
+        let base = value("SubstrateUpdates")
+        // A build with no feed address is one Apple updates. It says its
+        // short version and build number, never a pre-release's version,
+        // which App Review reads as a beta (2.2); `BuildFacts.stamped` is
+        // the same rule for the kit's About.
+        version = stamped.isEmpty || base.isEmpty ? "\(short) (\(build))" : stamped
         channel = value("SubstrateChannel")
         commit = value("SubstrateCommit")
-        let base = value("SubstrateUpdates")
         updates = base.isEmpty ? nil : URL(string: base.hasSuffix("/") ? base : base + "/")
         // Only an https address is a policy: anything else would be a row
         // that opens nothing.
@@ -136,6 +140,7 @@ final class Updater: NSObject, ObservableObject {
         controller?.checkForUpdates(nil)
     }
     #else
+    #if SUBSTRATE_FEED_INSTALLS
     private var lastCheck: Date?
 
     func checkNow() {
@@ -148,6 +153,13 @@ final class Updater: NSObject, ObservableObject {
         if let lastCheck, Date().timeIntervalSince(lastCheck) < 3600 { return }
         Task { await check(asked: false) }
     }
+    #else
+    /// An iPhone build without the feed's install is one Apple updates: it
+    /// holds no check, as it holds no install, so nothing in it reads a
+    /// feed or offers a release (App Review, 2.5.2).
+    func checkNow() {}
+    func checkIfDue() {}
+    #endif
 
     func skip(_ release: ReleaseIndex.Release) {
         UserDefaults.standard.set(release.build, forKey: Self.skippedKey)
@@ -170,6 +182,7 @@ final class Updater: NSObject, ObservableObject {
         #endif
     }
 
+    #if SUBSTRATE_FEED_INSTALLS
     private func check(asked: Bool) async {
         guard let base = build.updates, canCheck else { return }
         canCheck = false
@@ -196,6 +209,7 @@ final class Updater: NSObject, ObservableObject {
             if asked { note = "The check failed: \(error.localizedDescription)" }
         }
     }
+    #endif
     #endif
 }
 
@@ -251,7 +265,9 @@ extension View {
     /// iOS: the offer of a newer release, and the answer to a check somebody
     /// asked for, wherever the app is.
     func updateOffer(_ updates: Updater) -> some View {
-        #if os(iOS)
+        // With the feed's install alone: a build Apple updates shows no
+        // offer and no answer to a check, having neither.
+        #if os(iOS) && SUBSTRATE_FEED_INSTALLS
         alert(
             "Update available",
             isPresented: Binding(get: { updates.offer != nil }, set: { if !$0 { updates.offer = nil } }),

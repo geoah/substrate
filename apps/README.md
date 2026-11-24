@@ -385,8 +385,8 @@ and installs it. On iOS only the system may install an app: the app reads
 and offers the newer release's install link. That install is compiled into
 the feed's release alone (`SUBSTRATE_FEED_SWIFT_FLAGS`): App Review refuses a
 binary that holds the `itms-services` scheme, run or not (guideline 2.5.2),
-so a TestFlight build has none, and `apps:testflight` refuses an IPA that
-holds the string. Both include pre-releases when
+so a TestFlight build has neither the install nor the check that leads to
+it, and `apps:testflight` refuses an IPA that holds either. Both include pre-releases when
 the running build is one; the Mac's app menu turns that off. On both, the
 console's Settings → Signed in shows the app's version with a Check for
 updates button, which asks the shell (`checkForUpdates` in
@@ -485,12 +485,22 @@ SUBSTRATE_APPLE_PRIVACY_URL=https://example.com/privacy mise run apps:testflight
 `SUBSTRATE_APPLE_PRIVACY_URL` is the publisher's privacy policy. A release
 stamps it into every app (`SubstratePrivacyPolicy` in its Info.plist), whose
 About opens it, as App Review's guideline 5.1.1(i) wants; `apps:testflight`
-requires it and checks each build carries it, and `apps:release` stamps it
-where it is set. A local build carries none and shows no row.
+requires it, checks that it answers before it builds anything, and checks
+each build carries it, and `apps:release` stamps it where it is set. A local
+build carries none and shows no row.
 
 It writes nothing to the release folder or the site, so it takes no lease
 and needs no bucket key. A TestFlight build carries no feed address, so it
-never offers the feed's development-signed build over itself. It still
+never offers the feed's development-signed build over itself. A build with
+no feed address is one Apple updates, and its About says so by what it
+leaves out (`BuildFacts.stamped`): the short version and the build number,
+no channel and no Check for Updates, whatever channel it was stamped with.
+App Review reads a pre-release's version, a channel or a check that finds
+nothing as a beta or an updater (guidelines 2.2 and 2.5.2), and the build
+App Review gets is one of these. An app whose target names
+`xcode/Shared/PrivacyInfo.xcprivacy` carries that privacy manifest (no data
+collected, and the required-reason APIs the app and the kit call), and
+`apps:testflight` refuses an IPA of it without one. It still
 signs in only through the callback it claims on the site, so before it
 builds anything it reads the site's association file and each app's
 `client.json`, and refuses an app the site does not claim yet: run
@@ -549,9 +559,14 @@ editable iOS version of each app match it through `asc` (pinned in
 .mise.toml): the texts, the categories, the age rating, the content rights,
 the copyright, a manual release, free in every territory, the review details
 and the screenshots in `store/screenshots/<device type>/`. It never submits
-for review. `mise run apps:store --check` writes nothing and prints what App
-Store Connect still holds against a submission. App Privacy has no public
-API and is answered once per app in App Store Connect.
+for review, and writes nothing while the privacy policy, the support page
+or the review server does not answer. `mise run apps:store --check` writes
+nothing and prints what App Store Connect still holds against a submission,
+and each address the listing holds that does not answer; where no version is
+open to edits it reads the one App Review holds, so it is also the check to
+run while a version waits. App Privacy has no public API and is answered
+once per app in App Store Connect; it must say what the app's privacy
+manifest says.
 
 What names a deployment comes from the environment: `SUBSTRATE_APPLE_PRIVACY_URL`,
 `SUBSTRATE_APPLE_SUPPORT_URL` and `SUBSTRATE_APPLE_COPYRIGHT`; for the review
@@ -559,6 +574,9 @@ details, `SUBSTRATE_APPLE_REVIEW_SERVER`, `_USER` and `_PASSWORD` (the review
 server's sign-in, which fills `{server}`, `{user}` and `{password}` in the
 notes) and `SUBSTRATE_APPLE_REVIEW_CONTACT_FIRST`, `_LAST`, `_EMAIL` and
 `_PHONE`, without which App Store Connect refuses review details.
+`SUBSTRATE_APPLE_REVIEW_PREFACE` is what one submission says before its
+notes, such as what changed since a rejection; no listing holds it, so a run
+without it writes the notes alone.
 
 TestFlight does not notify testers of each build. App Store Connect turns
 "notify testers" on for every build, and a group with automatic

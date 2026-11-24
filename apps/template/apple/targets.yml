@@ -24,6 +24,10 @@ targets:
       - Sources
       - Assets.xcassets
       - ../../xcode/Shared/Updater.swift
+      # The privacy manifest: no data collected, and the required-reason
+      # APIs the app and the kit call, which an upload must declare.
+      - path: ../../xcode/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: Sparkle
         destinationFilters: [macOS]

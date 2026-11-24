@@ -386,11 +386,24 @@ apple_testflight_build() {
 	unzip -p "$APPLE_IPA" "$entry" >"$plist"
 	apple_check "$app" iOS "$plist"
 	# App Review refuses a binary that can install an app (2.5.2), whether
-	# or not the code ever runs: the scheme must not be in it at all.
-	local payload="$2/iOS-payload-check"
+	# or not the code ever runs: neither the scheme nor the feed's check
+	# that leads to it (its "newest release" answer) may be in it at all.
+	local payload="$2/iOS-payload-check" found="$2/updater-strings.txt"
 	rm -rf "$payload" && unzip -q "$APPLE_IPA" 'Payload/*' -d "$payload"
-	if grep -rlaF 'itms-services' "$payload" >"$2/itms-services.txt"; then
-		die "$app's App Store build holds the itms-services install App Review refuses (2.5.2): $(tr '\n' ' ' <"$2/itms-services.txt")"
+	if grep -rlaF -e 'itms-services' -e 'This is the newest release' "$payload" >"$found"; then
+		die "$app's App Store build holds the feed's install or its check, which App Review refuses (2.5.2): $(tr '\n' ' ' <"$found")"
+	fi
+	# A build that names a feed says its channel, a pre-release's version
+	# and Check for Updates in About (BuildFacts.stamped), which App Review
+	# reads as a beta or an updater (2.2, 2.5.2).
+	[ -z "$(plutil -extract SubstrateUpdates raw -o - "$plist" 2>/dev/null || true)" ] ||
+		die "$app's App Store build names an update feed; SUBSTRATE_UPDATES_URL stays empty for a build Apple updates"
+	# App Store Connect refuses an upload that calls a required-reason API
+	# its privacy manifest does not declare (ITMS-91053): an app whose
+	# target names the manifest must carry it.
+	if grep -qF 'PrivacyInfo.xcprivacy' "$APPS_DIR/$app/apple/targets.yml" &&
+		[ -z "$(find "$payload/Payload" -maxdepth 2 -name PrivacyInfo.xcprivacy -path '*.app/*')" ]; then
+		die "$app's App Store build holds no PrivacyInfo.xcprivacy, which its targets.yml names"
 	fi
 	rm -rf "$payload"
 	# App Review wants the privacy policy inside the app (5.1.1(i)): About

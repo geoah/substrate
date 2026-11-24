@@ -12,7 +12,8 @@
 # support and privacy policy URLs, the copyright holder, and the review
 # server, its sign-in and the review contact. `--check` writes nothing and
 # prints what App Store Connect says still stands between the version and a
-# submission.
+# submission, and whether each address the listing holds answers; it reads
+# the version App Review holds where none is open to edits.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,6 +51,19 @@ editable_version() {
 		| first | select(.) | "\(.id) \(.attributes.versionString)"'
 }
 
+# The app's iOS version a check reads, as "<id> <version> <state>": the one
+# open to edits, else the one waiting for App Review or in it, whose
+# addresses a reviewer is about to open.
+checked_version() {
+	asc versions list --app "$1" --platform IOS | jq -r '
+		[.data[] | select(.attributes.appStoreState | IN("READY_FOR_SALE", "REPLACED_WITH_NEW_VERSION", "REMOVED_FROM_SALE") | not)]
+		| first | select(.) | "\(.id) \(.attributes.versionString) \(.attributes.appStoreState)"'
+}
+
+# answers <url>: the address loads. App Review opens every address a listing
+# names, and refuses an app whose privacy policy does not load (5.1.1(i)).
+answers() { curl -fsSL --max-time 30 -o /dev/null "$1" 2>/dev/null; }
+
 # The listing's texts in asc's canonical layout, with the deployment's URLs.
 metadata_dir() {
 	local app="$1" version="$2" dir="$3"
@@ -63,8 +77,11 @@ metadata_dir() {
 	}' "$APPS_DIR/$app/store/listing.json" >"$dir/version/$version/en-US.json"
 }
 
-# The review notes, with the review server and its sign-in filled in.
+# The review notes, with the review server and its sign-in filled in, under
+# what this one submission has to say first (SUBSTRATE_APPLE_REVIEW_PREFACE:
+# what changed since a rejection), which no listing holds.
 review_notes() {
+	[ -z "${SUBSTRATE_APPLE_REVIEW_PREFACE:-}" ] || printf '%s\n\n' "$SUBSTRATE_APPLE_REVIEW_PREFACE"
 	listing "$1" .reviewNotes |
 		sed -e "s|{server}|$SUBSTRATE_APPLE_REVIEW_SERVER|g" -e "s|{user}|$SUBSTRATE_APPLE_REVIEW_USER|g" \
 			-e "s|{password}|$SUBSTRATE_APPLE_REVIEW_PASSWORD|g" -e "s|{privacy}|$SUBSTRATE_APPLE_PRIVACY_URL|g"
@@ -137,13 +154,30 @@ store() {
 }
 
 check() {
-	local app="$1" id version_id version
+	local app="$1" id version_id version state what url
 	id="$(record "$(app_get "$app" .apple.bundleID)")"
-	read -r version_id version <<<"$(editable_version "$id")"
-	say "$(app_get "$app" .name) $version:"
+	[ -n "$id" ] || die "$app has no App Store Connect record"
+	read -r version_id version state <<<"$(checked_version "$id")"
+	[ -n "${version_id:-}" ] || die "$app has no iOS version but the ones released"
+	say "$(app_get "$app" .name) $version ($state):"
 	# asc exits non-zero on a blocking issue, which is what this lists.
 	{ asc validate --app "$id" --version-id "$version_id" || true; } | jq -r '
 		[.. | objects | select(has("severity") and has("message")) | "  \(.severity): \(.message)"] | unique | .[]'
+	# What the listing holds, not what the environment would write: an
+	# address that stopped answering after it was written is found here.
+	{
+		asc api GET "/v1/apps/$id/appInfos?include=appInfoLocalizations" |
+			jq -r '.included[]? | select(.type == "appInfoLocalizations") | .attributes
+				| "privacy policy\t\(.privacyPolicyUrl // "")"'
+		asc api GET "/v1/appStoreVersions/$version_id/appStoreVersionLocalizations" |
+			jq -r '.data[].attributes | "support\t\(.supportUrl // "")", "marketing\t\(.marketingUrl // "")"'
+	} | sort -u | while IFS=$'\t' read -r what url; do
+		if [ -z "$url" ]; then
+			[ "$what" = marketing ] || echo "  error: the listing names no $what URL"
+		elif ! answers "$url"; then
+			echo "  error: the $what URL $url does not answer"
+		fi
+	done
 }
 
 mode=store
@@ -160,6 +194,14 @@ if [ "$mode" = store ]; then
 			SUBSTRATE_APPLE_REVIEW_CONTACT_LAST SUBSTRATE_APPLE_REVIEW_CONTACT_EMAIL; do
 			[ -n "${!name:-}" ] || die "set $name beside SUBSTRATE_APPLE_REVIEW_SERVER"
 		done
+	fi
+	# Nothing is written for an address that does not load.
+	for name in SUBSTRATE_APPLE_PRIVACY_URL SUBSTRATE_APPLE_SUPPORT_URL; do
+		answers "${!name}" || die "$name, ${!name}, does not answer"
+	done
+	if [ -n "${SUBSTRATE_APPLE_REVIEW_SERVER:-}" ]; then
+		answers "https://$SUBSTRATE_APPLE_REVIEW_SERVER/.well-known/substrate/server.json" ||
+			die "the review server $SUBSTRATE_APPLE_REVIEW_SERVER does not answer as a substrate"
 	fi
 fi
 apps=("$@")

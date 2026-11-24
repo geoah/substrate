@@ -1941,6 +1941,12 @@ testflight_site() {
 			die "$(client_url "$app") does not name $(apple_callback "$app"); publish the site with mise run apps:site"
 	done
 	say "the site claims every callback for ${RELEASE_APPS[*]}"
+	# Named is not answered: every build's About opens the policy and the
+	# App Store listing names it, and App Review refuses an app whose
+	# policy does not load (5.1.1(i)).
+	curl -fsSL --max-time 60 -o /dev/null "$SUBSTRATE_APPLE_PRIVACY_URL" ||
+		die "the privacy policy $SUBSTRATE_APPLE_PRIVACY_URL does not answer; every build's About opens it"
+	say "the privacy policy answers"
 }
 
 testflight() {
