@@ -278,7 +278,7 @@ public extension TodayApp {
                 }
                 for await event in Assistant.ask(
                     client, message: message, context: context, timezone: timeZone.identifier, messageID: exchange.id, thread: thread, after: after,
-                    app: Self.appName)
+                    opening: ChatDoor.opening(exchange.scope), app: Self.appName)
                 {
                     continuation.yield(.answer(exchange.id, event))
                 }

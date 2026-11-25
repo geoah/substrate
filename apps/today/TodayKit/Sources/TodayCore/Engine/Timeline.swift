@@ -272,7 +272,9 @@ extension DayEngine {
                     ? ButtonPresentation("Join", glyph: .join, role: .primary, wide: true, url: url)
                     : ButtonPresentation("Join link", glyph: .join, role: .quiet, url: url)
             }, after: dossier?.after,
-            moss: mossBox(.meeting(meeting.id), about: meeting.title, asks: ["Prepare me in three lines", "What is open with the people in it?"]))
+            moss: mossBox(
+                .meeting(meeting.id), about: meeting.title, named: meeting.title,
+                asks: ["Prepare me in three lines", "What is open with the people in it?"]))
         if let page = meeting.page, let url = URL(string: page), url.scheme?.hasPrefix("http") == true {
             let name = SourcePages.name(of: url)
             card.links = [SourceLink(id: "source", title: name, label: "Open in \(name)", url: page)]

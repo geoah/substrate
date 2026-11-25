@@ -113,6 +113,14 @@ struct DayScreen<Notices: View>: View {
                 #endif
             }
         }
+        #if DEBUG
+        // A debug build asked to open on the day's conversation, so its
+        // screen can be looked at with nothing pressed (`TodayDebug`).
+        .task {
+            guard TodayDebug.value("SUBSTRATE_TODAY_CHAT") != nil, asking == nil, let door = app.pane.composer.chat else { return }
+            chat?(door, nil)
+        }
+        #endif
     }
 
     private var actions: PaneActions {

@@ -284,8 +284,10 @@ public struct ComposerPresentation: Codable, Equatable, Hashable, Sendable {
 /// who it is with, the thread it is in once it has one, and what it is
 /// called. The day has one conversation a day, so everything asked from the
 /// field during a day is one thread, read from its start whenever it is
-/// opened. The screen says the thread it opened with
-/// `TodayCommand.chatThread`, and the device keeps it for the day.
+/// opened; a task, a project, a person and a meeting each have one for as
+/// long as they live, opened from the assistant's box on their page. The
+/// screen says the thread it opened or found with `TodayCommand.chatThread`,
+/// and the device keeps it under the scope.
 public struct ChatDoor: Codable, Equatable, Hashable, Sendable {
     /// What the conversation is kept under: "day:2026-11-19".
     public var scope: String
@@ -303,13 +305,44 @@ public struct ChatDoor: Codable, Equatable, Hashable, Sendable {
     /// nothing typed is stuck unsent in a screen. The door still opens
     /// what was said.
     public var sends: Bool
+    /// The records the conversation is about, as paths: a thing's own
+    /// record, which goes with every message sent in it so the assistant
+    /// reads the thing as it is now. None for the day.
+    public var about: [String]
+    /// Words put before what is sent through the door, for a thing with no
+    /// record to go with the message: a meeting's name and time.
+    public var lead: String?
 
-    public init(scope: String, agent: String, thread: String? = nil, name: String, sends: Bool = true) {
+    public init(
+        scope: String, agent: String, thread: String? = nil, name: String, sends: Bool = true, about: [String] = [], lead: String? = nil
+    ) {
         self.scope = scope
         self.agent = agent
         self.thread = thread
         self.name = name
         self.sends = sends
+        self.about = about
+        self.lead = lead
+    }
+
+    /// The id the conversation's opening message is sent under: the same
+    /// on every device, since it is made from the scope alone. The server
+    /// writes that message's row under it and the row names its thread, so
+    /// a device that kept no thread for the scope (another device of the
+    /// owner's, or this one after it forgot) finds the conversation by
+    /// reading one row. Nil where the scope makes no legal record id; the
+    /// conversation is then the device's own, as every one was before.
+    public var opening: String? { Self.opening(scope) }
+
+    public static func opening(_ scope: String) -> String? {
+        let id = "today:" + scope
+        // A record id: letters, digits and . _ ~ : @ / -, at most 128.
+        let legal =
+            id.utf8.count <= 128
+            && id.unicodeScalars.allSatisfy { scalar in
+                scalar.isASCII && (scalar.properties.isAlphabetic || ("0" ... "9").contains(scalar) || "._~:@/-".unicodeScalars.contains(scalar))
+            }
+        return legal && !scope.isEmpty ? id : nil
     }
 }
 
@@ -370,10 +403,14 @@ public struct MossBox: Codable, Equatable, Hashable, Sendable {
     public var placeholder: String
     /// Said in place of the field when it cannot be reached.
     public var unreachable: String?
+    /// The thing's conversation as the chat's own screen opens it: where
+    /// the app has that screen, what is asked here is sent there, under
+    /// everything said about the thing before.
+    public var chat: ChatDoor?
 
     public init(
         subject: MossSubject, title: String, asks: [ButtonPresentation] = [], exchanges: [AnswerCard] = [], placeholder: String,
-        unreachable: String? = nil
+        unreachable: String? = nil, chat: ChatDoor? = nil
     ) {
         self.subject = subject
         self.title = title
@@ -381,5 +418,6 @@ public struct MossBox: Codable, Equatable, Hashable, Sendable {
         self.exchanges = exchanges
         self.placeholder = placeholder
         self.unreachable = unreachable
+        self.chat = chat
     }
 }

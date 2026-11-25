@@ -75,7 +75,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `UnfinishedCard`                                             | The assistant asks where something flagged High goes                                                    |
 | `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait, and `answer` opens their page |
 | `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives. Its exchanges are the thing's conversation, the ones kept from earlier days included ([Asking the assistant](#asking-the-assistant)) |
-| `ComposerPresentation`, `ChatDoor`                           | "Add or ask", and the day's conversation as the chat's own screen opens it ([below](#the-days-conversation)) |
+| `ComposerPresentation`, `ChatDoor`                           | "Add or ask", and the day's conversation as the chat's own screen opens it ([below](#the-days-conversation-and-a-things)) |
 | `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `SuggestedPage`, `MissingPage` |
 | `ProjectPage.TimelineGroup`, `TimelineGroup.Section`         | A project's timeline: one group a day, whose `label` says the day once, and in it one section for each place its lines came from, with that place as its `source` ([below](#a-projects-timeline)) |
 | `SuggestedPage`, `SuggestedPage.Group`                       | The suggested tasks as a page: one save card for each project, six of a group drawn until `more` is pressed |
@@ -196,6 +196,15 @@ thread on the server, and the app keeps which thread each one is in.
   the first one's thread arrived, or after a send whose answer was lost, opens no second conversation.
 - **A thread that is gone.** The server refuses a thread it does not hold before it writes the message
   (404). The same message is then sent once more with no thread, which opens a new one.
+- **A conversation another device opened** (`ChatDoor.opening`). The message that opens a conversation is
+  sent under an id made from its scope alone, `today:day:2026-11-24` or `today:task:<id>`, so every device
+  makes the same one. The server writes the message's row under it and the row names its thread. A device
+  with no thread kept for a scope reads that row (`Assistant.opened`): where it is there, its thread is the
+  conversation's; where it is not, the message being sent is the opening and goes under that id. An id taken
+  between the read and the send is refused by the server, which writes nothing; the row is read again and
+  the message goes into its thread under an id of its own. So a Mac continues what a phone began, and a
+  device that forgot what it kept finds its conversations again. A scope that makes no legal record id opens
+  nothing this way, and a thread deleted in Chat takes its opening with it: what follows is the device's own.
 - **One answer at a time in a conversation.** A question asked while another in the same scope is being
   answered closes that one where it stands (the server takes the new message into the same turn, and the
   answer covers both). Conversations do not wait on each other: each is read under its own effect key.
@@ -203,14 +212,16 @@ thread on the server, and the app keeps which thread each one is in.
   exchanges, saved when a question is asked, answered or closed. On opening, today's conversation about the
   day is read back and no earlier day's, an exchange about a thing for thirty days, a thing's thread for
   four months after it was last asked in, and an exchange that was being answered when the app closed is
-  closed with a sentence that says so. Signing out, or clearing what the device kept, forgets them all.
+  closed with a sentence that says so. Clearing what the device kept forgets them all. Signing out does
+  not: the file stays in the repository's folder with the app's other kept files (`today-windows.json`,
+  `today-sources.json`, `today-day.json`), and is read back at the next sign-in to that repository. Seen on
+  the simulator on 25 November; the chat's own copies are removed at a sign-out, these are not yet.
 
-What this does not do: another device does not find a conversation started on this one (a thread has no
-property that says what it is about, so that needs a record of the app's own); a conversation about a thing
-is not told what was said about the day, or the reverse (both read the same records and the assistant's
-memories); and a thing's thread is not given a name of its own in Chat (the day's is, below).
+What this does not do: a conversation about a thing is not told what was said about the day, or the reverse
+(both read the same records and the assistant's memories); and a conversation opened before the app sent
+openings (25 November) is found by no other device.
 
-### The day's conversation
+### The day's conversation, and a thing's
 
 The owner, 25 November: the answer over the field "is too basic. It doesn't correctly stream, it doesn't
 correctly show the item", and "when I click on chat, I should see the rest of the discussion that I'm
@@ -221,6 +232,14 @@ kit's `SubstrateChatUI` (`ChatSessionView`; the kit's README, "A conversation in
 - **The door** is `ComposerPresentation.chat`, a `ChatDoor`: the day's scope (`day:2026-11-25`), the
   assistant, the thread the scope is kept under where it has one, and the day's name ("Wednesday 25
   November"), which a thread the screen opens is named, so Chat's list says which day it was.
+- **A thing's door** is `MossBox.chat`: a task, a project, a person and a meeting each have one
+  conversation for as long as they live, opened from the assistant's box on their page and named for the
+  thing. `about` is the thing's record, which goes with every message sent in that conversation, so the
+  assistant reads the thing as it is now and the transcript says "About" with the record under the
+  message. A meeting's occurrence has no record: `lead` puts its name and time before the words sent
+  through the door. In the box, the field and the suggested questions open the screen with those words
+  sent, and the button before the field opens it with nothing sent; what was answered in place before
+  stays drawn in the box.
 - **The view** (`ComposerBar`, `DayScreen`). What is sent from the field opens the screen over the day with
   those words sent, under everything said earlier in the day; the button before the field opens it with
   nothing sent. What waits to be finished is written first (`Finishing.flush`), so the assistant reads the
@@ -237,6 +256,8 @@ kit's `SubstrateChatUI` (`ChatSessionView`; the kit's README, "A conversation in
 - **Where there is no such screen** (a drawing, a fixture scene, a test) `PaneActions.chat` is nil: the
   button before the field is Add, and what is sent goes to the assistant from the core with `addOrAsk`, as
   before, and is answered in place.
+- **To look at it with nothing pressed**, a debug build launched with `-SUBSTRATE_TODAY_CHAT day` opens
+  the day's conversation as the day appears: how the sheet was opened on a Mac.
 
 Not done: the boxes about one thing (a task, a project, a person, a meeting) still answer in place, since a
 message sent from the chat's screen carries no record as its context yet; and the app's own session is the

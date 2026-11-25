@@ -355,7 +355,9 @@ no part of the main actor, since Swift 6 stops an app at run time where
 main-actor code runs elsewhere. An app shows
 one conversation with `ChatSessions` and `ChatSessionView`, which run
 Chat's root over the app's own session (the kit's README, "A conversation
-in another app"); Substrate Today's day is the first. As built, that is the
+in another app"); Substrate Today's day is the first, and its tasks,
+projects, people and meetings each have one, sent with the record it is
+about and found from any device by the id its first message goes under. As built, that is the
 whole chat list underneath with one conversation drawn: a root for one
 conversation alone, and a turn's context for a conversation about one
 record, are not built. Beside the

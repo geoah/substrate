@@ -99,25 +99,48 @@ enum Assistant {
     ///   - thread: the conversation's thread, which the message continues.
     ///   - after: with no thread, the id of what was last asked in the
     ///     conversation: the thread that message is in is continued.
+    ///   - opening: with no thread still, the id the conversation's opening
+    ///     message goes under (`ChatDoor.opening`). Where a message was
+    ///     sent under it, on this device or another, its thread is
+    ///     continued; where none was, this message is the opening and goes
+    ///     under that id.
     static func ask(
         _ client: SubstrateClient, message: String, context: [String], timezone: String, messageID: String, thread: String? = nil,
-        after: String? = nil, app: String
+        after: String? = nil, opening: String? = nil, app: String
     ) -> AsyncStream<AssistantEvent> {
         AsyncStream { continuation in
             let task = Task {
                 do {
                     var thread = thread
                     if thread == nil, let after { thread = await Self.thread(of: after, client) }
-                    func send(_ thread: String?) async throws -> LineStream {
-                        try await client.transport.lines(
-                            for: request(client, message: message, context: context, timezone: timezone, messageID: messageID, thread: thread))
+                    var id = messageID
+                    if thread == nil, let opening {
+                        switch await Self.opened(opening, client) {
+                        case let .thread(found): thread = found
+                        case .none: id = opening
+                        // Not known: the message goes as it always did, under its own id.
+                        case .unknown: break
+                        }
                     }
-                    var lines = try await send(thread)
+                    func send(_ thread: String?, _ id: String) async throws -> LineStream {
+                        try await client.transport.lines(
+                            for: request(client, message: message, context: context, timezone: timezone, messageID: id, thread: thread))
+                    }
+                    var lines = try await send(thread, id)
+                    // The opening's id was taken between the read and the send: another device opened the conversation, or
+                    // it was opened once and deleted. The server wrote nothing, so the message goes once more under its
+                    // own id, into the thread the opening names where it still does.
+                    if lines.head.statusCode == 409, let opening, id == opening {
+                        for try await _ in lines.lines {}
+                        if case let .thread(found) = await Self.opened(opening, client) { thread = found }
+                        id = messageID
+                        lines = try await send(thread, id)
+                    }
                     // The thread is gone: the conversation opens a new one. The server refuses a thread it does not
                     // hold before it writes the message, so nothing ran and the same send is made once more.
                     if lines.head.statusCode == 404, thread != nil {
                         for try await _ in lines.lines {}
-                        lines = try await send(nil)
+                        lines = try await send(nil, messageID)
                     }
                     guard lines.head.statusCode == 200 else {
                         var body = Data()
@@ -158,8 +181,37 @@ enum Assistant {
     /// The message as it is sent: the owner's words, and for a meeting what
     /// it is, since no record goes with it.
     static func message(_ subject: MossSubject, _ text: String, day: Day) -> String {
-        guard case let .meeting(id) = subject, let meeting = day.meeting(id) else { return text }
+        (lead(subject, day: day) ?? "") + text
+    }
+
+    /// What stands before the owner's words where no record says what they
+    /// are about: a meeting's name and time.
+    static func lead(_ subject: MossSubject, day: Day) -> String? {
+        guard case let .meeting(id) = subject, let meeting = day.meeting(id) else { return nil }
         return
-            "About the meeting \"\(meeting.title)\" at \(Words.clock(meeting.start, day.calendar)) \(Words.day(meeting.start, now: day.now, day.calendar)): \(text)"
+            "About the meeting \"\(meeting.title)\" at \(Words.clock(meeting.start, day.calendar)) \(Words.day(meeting.start, now: day.now, day.calendar)): "
+    }
+
+    /// Whether a conversation was opened, read from its opening message.
+    enum Opened: Equatable, Sendable {
+        case thread(String)
+        /// No message was sent under the opening's id.
+        case none
+        /// The row could not be read.
+        case unknown
+    }
+
+    /// The thread a conversation is in, read from the message that opened
+    /// it (`ChatDoor.opening`): that message was sent under an id every
+    /// device makes the same way, and its row names its thread.
+    static func opened(_ opening: String, _ client: SubstrateClient) async -> Opened {
+        do {
+            guard let record = try await client.record(TodayKinds.message, opening), record.deletedAt == nil,
+                let thread = record["thread"]?.referenceID
+            else { return .none }
+            return .thread(thread)
+        } catch {
+            return .unknown
+        }
     }
 }

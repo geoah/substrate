@@ -54,16 +54,22 @@ struct PaneButton: View {
     /// An outlined button that stands beside a wide one, at its height: Skip.
     var beside = false
 
+    /// What a tap does in place of the button's own command, where the
+    /// view has another way to do the same thing: a question the chat's
+    /// screen is opened with.
+    var instead: (() -> Void)?
+
     @Environment(\.pane) private var pane
     /// Absent where a button is drawn outside the day's screen.
     @Environment(PaneViewState.self) private var state: PaneViewState?
     @State private var asking = false
 
-    init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false, beside: Bool = false) {
+    init(_ button: ButtonPresentation, onTint: Bool = false, small: Bool = false, beside: Bool = false, instead: (() -> Void)? = nil) {
         self.button = button
         self.onTint = onTint
         self.small = small
         self.beside = beside
+        self.instead = instead
     }
 
     var body: some View {
@@ -102,6 +108,7 @@ struct PaneButton: View {
     }
 
     private func act() {
+        if let instead { return instead() }
         if let command = button.command { pane.send(command) }
         if let route = button.opens { pane.open(route) }
         if let url = button.url { pane.openURL(url) }

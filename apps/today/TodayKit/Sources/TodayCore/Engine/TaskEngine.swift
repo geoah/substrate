@@ -108,14 +108,21 @@ extension DayEngine {
 
     // MARK: The assistant's box
 
-    /// - Parameter label: how the thing is named after "about": a
-    ///   project's, a person's or a meeting's own name, "this task" for a task.
-    func mossBox(_ subject: MossSubject, about label: String, asks: [String]) -> MossBox {
-        MossBox(
+    /// - Parameters:
+    ///   - label: how the thing is named after "about": a project's, a
+    ///     person's or a meeting's own name, "this task" for a task.
+    ///   - name: what the thing's conversation is called in the chat list:
+    ///     its own name, a task's title.
+    func mossBox(_ subject: MossSubject, about label: String, named name: String, asks: [String]) -> MossBox {
+        let scope = subject.scope(on: day.today)
+        return MossBox(
             subject: subject, title: "Moss, about \(label)",
             asks: day.reachable ? asks.map { ButtonPresentation($0, glyph: .moss, role: .secondary, command: .ask(subject, $0)) } : [],
             exchanges: day.exchanges.filter { $0.subject == subject }.map(answerCard), placeholder: "Ask or tell Moss about \(label)",
-            unreachable: day.reachable ? nil : "Moss cannot be reached right now.")
+            unreachable: day.reachable ? nil : "Moss cannot be reached right now.",
+            chat: ChatDoor(
+                scope: scope, agent: TodayKinds.assistant, thread: day.threads[scope]?.thread, name: name, sends: day.reachable,
+                about: Assistant.context(subject, day: day), lead: Assistant.lead(subject, day: day)))
     }
 
     func answerCard(_ exchange: Exchange) -> AnswerCard {
@@ -242,7 +249,7 @@ extension DayEngine {
             markedTitle: held ? "Marked urgent, and waiting" : nil, marked: held ? markedBlock(task) : nil, doors: doors,
             done: task.isOpen ? ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)) : nil,
             said: task.status == .done ? (task.completedAt.map { "Done at \(clock($0))." } ?? "Done.") : nil,
-            moss: mossBox(.task(task.id), about: "this task", asks: ["Break it into steps", "Who else could take this?"]))
+            moss: mossBox(.task(task.id), about: "this task", named: task.name, asks: ["Break it into steps", "Who else could take this?"]))
         card.links = day.links(for: task.origin)
         return card
     }
@@ -287,7 +294,8 @@ extension DayEngine {
             took: parked.map { "It takes the place of \(Words.low($0)), which waits where you left it." } ?? "It takes the place of what you were doing.",
             options: OptionList(.round, rows), project: chip(task.list),
             done: ButtonPresentation("Done", glyph: .done, role: .primary, command: .done(task.id)),
-            moss: day.reachable ? mossBox(.task(task.id), about: "this task", asks: ["What do I need to know?", "Who else could take this?"]) : nil)
+            moss: day.reachable
+                ? mossBox(.task(task.id), about: "this task", named: task.name, asks: ["What do I need to know?", "Who else could take this?"]) : nil)
         card.links = day.links(for: task.origin)
         return card
     }

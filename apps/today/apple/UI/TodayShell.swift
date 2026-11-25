@@ -2,6 +2,7 @@ import Foundation
 import SubstrateAuth
 import SubstrateChatCore
 import SubstrateChatUI
+import SubstrateCore
 import SubstrateDevice
 import SubstrateDeviceApple
 import SubstrateScreens
@@ -77,7 +78,12 @@ public enum Today {
     /// The chat's own screen for a conversation, as the day's screen asks
     /// for it.
     @MainActor static let chatScreen = ChatScreen { door, message, close, bound in
-        AnyView(ChatSessionView(chat, thread: door.thread, agent: door.agent, name: door.name, message: message, close: close, onThread: bound))
+        AnyView(
+            ChatSessionView(
+                chat, thread: door.thread, agent: door.agent, name: door.name,
+                // A thing with no record to go with the message is named in words before it.
+                message: message.map { (door.lead ?? "") + $0 },
+                about: door.about.compactMap(RecordReference.init(path:)), opening: door.opening, close: close, onThread: bound))
     }
 
     /// The app's session changed (a sign-in, a sign-out, a change of
@@ -190,7 +196,7 @@ actor TodayGlanceWriter {
 #endif
 
 #if DEBUG
-/// Three hooks for a debug build, since nothing in the kit offers them. All
+/// Four hooks for a debug build, since nothing in the kit offers them. All
 /// compile out of a release build.
 ///
 /// - `SUBSTRATE_TODAY_DEMO=<scene>` (or the launch argument
@@ -206,6 +212,9 @@ actor TodayGlanceWriter {
 /// - `SUBSTRATE_TODAY_ZONE=<IANA zone>` reads the day in that time zone, so
 ///   a day seeded with `seed.py --timezone` can be tried at another hour
 ///   than this machine's: the morning, late in the evening.
+/// - `SUBSTRATE_TODAY_CHAT=day` opens the day's conversation in the chat's
+///   screen as the day appears, so the screen can be looked at on a Mac,
+///   where nothing presses its button.
 enum TodayDebug {
     static let keychainService = "dev.reamde.substrate.today.debug"
     static let folder = "SubstrateToday-Debug"

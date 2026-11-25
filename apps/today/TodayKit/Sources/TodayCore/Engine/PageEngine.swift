@@ -84,7 +84,7 @@ extension DayEngine: PageMaking {
             makePriority: list.flag == nil && flagSuggestion(list.path) == nil
                 ? ButtonPresentation("Make it a priority", role: .secondary, command: .togglePriority(project: list.id)) : nil,
             summary: list.summary, urgent: urgent.map(taskLine),
-            moss: mossBox(.project(list.id), about: list.name, asks: ["What should I do next here?", "What changed this week?"]),
+            moss: mossBox(.project(list.id), about: list.name, named: list.name, asks: ["What should I do next here?", "What changed this week?"]),
             tasks: open.map(taskLine), tasksEmpty: open.isEmpty && done.isEmpty ? "No task of yours here today." : nil, done: done.map(taskLine),
             // Under the label "Not today" a line that only says so again is left out.
             notToday: notToday.map { task in
@@ -200,7 +200,9 @@ extension DayEngine: PageMaking {
             tasksTitle: "Tasks with \(person.short)", tasks: open.map(taskLine), tasksEmpty: open.isEmpty ? "No open task involves \(person.short)." : nil,
             suggested: mine.filter(\.isProposed).compactMap(listedSuggestion),
             meetings: meetings.map { MeetingLine(id: $0.id, title: $0.title, line: "\(clock($0.start)) to \(clock($0.end)).") },
-            moss: mossBox(.person(person.path), about: person.short, asks: ["What is open between us?", "Draft a message to \(person.short)"]))
+            moss: mossBox(
+                .person(person.path), about: person.short, named: person.short,
+                asks: ["What is open between us?", "Draft a message to \(person.short)"]))
     }
 
     // MARK: A meeting and a task

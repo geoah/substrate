@@ -1563,6 +1563,101 @@ struct ConversationTests {
         #expect(lost.requests.first?.httpMethod == "GET" && lost.requests.first?.url?.path.hasSuffix("/llm/message/m1") == true)
         #expect(bodies(lost).map { $0["thread"] } == ["t-kept"])
     }
+
+    /// A task, a project, a person and a meeting each have a conversation of their own, which the box on their
+    /// page opens in the chat's screen: the thing's record goes with what is sent there, a meeting, which has no
+    /// record, is named in words, and every door names the id its conversation is opened under.
+    @Test func aThingsBoxOpensItsOwnConversationWithItsRecordAndEveryDoorNamesItsOpening() async throws {
+        func door(_ route: TodayRoute, kept: [String: MossThread] = [:]) -> ChatDoor? {
+            var boxes: [MossBox] = []
+            collect(MossBox.self, in: page("11:30", route) { $0.threads = kept }, into: &boxes)
+            return boxes.first?.chat
+        }
+        let task = try #require(door(.task("p-vendor")))
+        #expect(task.scope == "task:p-vendor" && task.agent == TodayKinds.assistant && task.thread == nil && task.sends)
+        #expect(task.about == ["\(TodayKinds.task)/p-vendor"] && task.lead == nil)
+        #expect(task.opening == "today:task:p-vendor")
+        // The thread the device kept for the thing is the door's.
+        let at = TodayFixtures.at("09:00")
+        #expect(door(.task("p-vendor"), kept: ["task:p-vendor": MossThread(thread: "t-vendor", at: at)])?.thread == "t-vendor")
+        // A meeting's occurrence holds no row: the words say what it is.
+        let meeting = try #require(door(.meeting("tomas")))
+        #expect(meeting.scope == "meeting:tomas" && meeting.about.isEmpty && meeting.lead?.hasPrefix("About the meeting \"") == true)
+        #expect(meeting.lead?.hasSuffix(": ") == true)
+        // A person's scope is their record's path, slashes and all: a legal id still.
+        let person = try #require(door(.person(TodayFixtures.person("tomas"))))
+        #expect(person.about == [TodayFixtures.person("tomas")] && person.opening == "today:person:" + TodayFixtures.person("tomas"))
+        // The day's is made the same way on every device, and what makes no record id opens nothing by one.
+        #expect(ChatDoor.opening("day:2026-11-19") == "today:day:2026-11-19")
+        #expect(ChatDoor.opening("meeting:a b") == nil && ChatDoor.opening("") == nil)
+        #expect(ChatDoor.opening("task:" + String(repeating: "x", count: 200)) == nil)
+    }
+
+    /// "Other devices: the day's thread is kept on the device, so your Mac won't find the one your phone
+    /// started." A conversation's opening message goes under an id made from its scope, so a device that kept
+    /// no thread reads that message's row and continues the thread it names.
+    @Test func aConversationIsFoundByItsOpeningMessageAndOpenedUnderItsIdWhereThereIsNone() async throws {
+        func said(_ stream: AsyncStream<AssistantEvent>) async -> [AssistantEvent] {
+            var out: [AssistantEvent] = []
+            for await event in stream { out.append(event) }
+            return out
+        }
+        func bodies(_ server: ScriptedLines) -> [JSONValue] {
+            server.requests.filter { $0.httpMethod == "POST" }.compactMap { $0.httpBody.flatMap { try? JSONValue(data: $0) } }
+        }
+        func ask(_ server: ScriptedLines, _ id: String) -> AsyncStream<AssistantEvent> {
+            Assistant.ask(
+                SubstrateClient(server: origin, token: "secret", transport: server), message: "Plan my day", context: [], timezone: "UTC",
+                messageID: id, opening: opening, app: TodayApp.appName)
+        }
+        let origin = try #require(URL(string: "https://s.example.com"))
+        let opening = try #require(ChatDoor.opening("day:2026-11-19"))
+        let missing = [#"{"error":{"code":"not_found","message":"record"}}"#]
+        let row = Record(id: opening, kind: TodayKinds.message, properties: ["role": "user", "thread": .string("substrate.reamde.dev/llm/thread/t-day")])
+        let found = [String(decoding: try JSONEncoder().encode(row), as: UTF8.self)]
+        let answer = [#"{"kind":"thread","thread":"t-day"}"#, #"{"kind":"done","result":{"reply":"Yes.","status":"completed"}}"#]
+
+        // Nothing was sent under the opening: this message is the one that opens the conversation.
+        let first = ScriptedLines()
+        first.answer(status: 404, lines: missing)
+        first.answer(lines: answer)
+        #expect(await said(ask(first, "m1")) == [.thread("t-day"), .done("Yes.")])
+        #expect(first.requests.first?.httpMethod == "GET" && first.requests.first?.url?.absoluteString.contains("today") == true)
+        #expect(bodies(first).map { $0["messageId"] } == [.string(opening)] && bodies(first).map { $0["thread"] } == [""])
+
+        // Another device opened it: the thread its message names is continued, under the message's own id.
+        let second = ScriptedLines()
+        second.answer(lines: found)
+        second.answer(lines: answer)
+        #expect(await said(ask(second, "m2")) == [.thread("t-day"), .done("Yes.")])
+        #expect(bodies(second).map { $0["messageId"] } == ["m2"] && bodies(second).map { $0["thread"] } == ["t-day"])
+
+        // Opened between the read and the send: the server refuses the id and writes nothing, the row is read
+        // again, and the message goes into the thread under its own id.
+        let raced = ScriptedLines()
+        raced.answer(status: 404, lines: missing)
+        raced.answer(status: 409, lines: [#"{"error":{"code":"conflict","reason":"message_id_taken","message":"the messageId is taken"}}"#])
+        raced.answer(lines: found)
+        raced.answer(lines: answer)
+        #expect(await said(ask(raced, "m3")) == [.thread("t-day"), .done("Yes.")])
+        #expect(bodies(raced).map { $0["messageId"] } == [.string(opening), "m3"] && bodies(raced).map { $0["thread"] } == ["", "t-day"])
+
+        // The row could not be read: the message goes as it always did, and nothing claims the opening.
+        let unread = ScriptedLines()
+        unread.answer(status: 500, lines: ["no"])
+        unread.answer(lines: answer)
+        #expect(await said(ask(unread, "m4")) == [.thread("t-day"), .done("Yes.")])
+        #expect(bodies(unread).map { $0["messageId"] } == ["m4"] && bodies(unread).map { $0["thread"] } == [""])
+
+        // A thread the device kept is continued with no read at all.
+        let kept = ScriptedLines()
+        kept.answer(lines: answer)
+        let events = await said(
+            Assistant.ask(
+                SubstrateClient(server: origin, token: "secret", transport: kept), message: "And then?", context: [], timezone: "UTC",
+                messageID: "m5", thread: "t-day", opening: opening, app: TodayApp.appName))
+        #expect(events == [.thread("t-day"), .done("Yes.")] && kept.requests.count == 1)
+    }
 }
 
 @Suite("Reads, pages and reminders", .timeLimit(.minutes(10)))

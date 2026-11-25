@@ -48,6 +48,8 @@ public struct ControlWords: Codable, Equatable, Hashable, Sendable {
     public var dictate = "Dictate"
     /// The door to the day's conversation with the assistant.
     public var chat = "Today's conversation"
+    /// The button before a box's field, which opens the thing's conversation.
+    public var conversation = "Open the conversation"
     public var settings = "Settings"
 
     public init() {}

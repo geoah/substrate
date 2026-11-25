@@ -5,7 +5,10 @@ import TodayCore
 /// The assistant, about one thing: what it can be asked here as buttons,
 /// the exchanges so far, and a field with a send button. The box is in the
 /// assistant's hue and nothing else on the card is. It prepares and waits:
-/// nothing leaves until the owner presses Send.
+/// nothing leaves until the owner presses Send. Where the app has the
+/// chat's own screen, what is asked here opens the thing's conversation
+/// there with those words sent, and the button before the field opens it
+/// with nothing sent; what was answered in place before stays drawn here.
 struct MossBoxView: View {
     @Environment(\.words) private var words
     var box: MossBox
@@ -24,7 +27,9 @@ struct MossBoxView: View {
             .foregroundStyle(.mossWords)
             if !box.asks.isEmpty {
                 WrapLayout(spacing: TodayLook.betweenButtons) {
-                    ForEach(box.asks, id: \.self) { PaneButton($0, onTint: true) }
+                    ForEach(box.asks, id: \.self) { ask in
+                        PaneButton(ask, onTint: true, instead: sending.map { chat in { chat(ask.title) } })
+                    }
                 }
             }
             ForEach(box.exchanges) { AnswerCardView(answer: $0, inBox: true) }
@@ -32,6 +37,12 @@ struct MossBoxView: View {
                 NoteText(unreachable)
             } else {
                 HStack(spacing: 6) {
+                    if let chat = pane.chat, let door = box.chat {
+                        IconButton(Symbol.chat, label: words.conversation) {
+                            focused = false
+                            chat(door, nil)
+                        }
+                    }
                     TextField(box.placeholder, text: $text, axis: .vertical)
                         .font(TodayLook.Text.body)
                         .lineLimit(1 ... 4)
@@ -40,7 +51,7 @@ struct MossBoxView: View {
                         .writes(focused)
                         .onSubmit(send)
                         .submitLabel(.send)
-                        .padding(.leading, 14)
+                        .padding(.leading, pane.chat != nil && box.chat != nil ? 0 : 14)
                         .frame(minHeight: TodayLook.target)
                     IconButton(Symbol.send, label: words.send, look: .filled, action: send)
                 }
@@ -62,9 +73,17 @@ struct MossBoxView: View {
             focused = true
             return
         }
-        pane.ask(box.subject, asked)
+        if let sending { sending(asked) } else { pane.ask(box.subject, asked) }
         text = ""
         focused = false
+    }
+
+    /// Sends words into the thing's conversation in the chat's screen,
+    /// where the app has that screen and the assistant can be reached;
+    /// nil where they are asked from the core and answered in place.
+    private var sending: ((String) -> Void)? {
+        guard let chat = pane.chat, let door = box.chat, door.sends else { return nil }
+        return { words in chat(door, words) }
     }
 }
 
