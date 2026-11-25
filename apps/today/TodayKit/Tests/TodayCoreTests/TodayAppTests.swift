@@ -1120,14 +1120,21 @@ struct WriteTests {
             #expect(answered.options.rows.first { $0.id == "took" }?.selected == true && answered.chosen == "Chosen at 07:05.")
             #expect(answered.text == "It was due yesterday at 07:30.")
         }
-        // What is done names the thing and its answer: the same words for each answered thing would say nothing.
+        // What is done holds it as a row, by name and with its answer, and the row opens to the same options: an
+        // answer given by mistake is changed there once nothing else is asked after.
         func done() async -> [String] {
             for item in await harness.presentation.pane.items {
-                if case let .earlier(earlier) = item { return earlier.lines.map(\.text).filter { $0.hasPrefix("From yesterday") } }
+                if case let .earlier(earlier) = item { return earlier.rows.filter { $0.id == dose.id }.compactMap(\.line) }
             }
             return []
         }
-        #expect(await done() == ["From yesterday: weekly medication, taken."])
+        #expect(await done() == ["From yesterday: taken."])
+        for item in await harness.presentation.pane.items {
+            guard case let .earlier(earlier) = item, let row = earlier.rows.first(where: { $0.id == dose.id }) else { continue }
+            guard case let .yesterday(kept) = row.body else { throw CancellationError() }
+            #expect(row.title == "Weekly medication" && row.state == .done && kept.items.map(\.id) == [dose.id])
+            #expect(kept.items[0].options.rows.first { $0.id == "skipped" }?.command == .answerYesterday(item: dose.id, option: "skipped"))
+        }
         // Another tap moves the choice: the log that answer made is changed, not made again.
         harness.clearTrace()
         await harness.deliver(.records(.enqueued(Set(first.map(\.id)), queue: first, landed: [])))
@@ -1135,7 +1142,93 @@ struct WriteTests {
         let second = writes(harness).flatMap(\.entries)
         #expect(second.map(\.method) == [.patch] && second[0].recordID == "b12_20261118T073000Z" && second[0].properties == ["status": "skipped"])
         #expect(await harness.state.notes?.yesterday[dose.id] == "skipped")
-        #expect(await done() == ["From yesterday: weekly medication, skipped."])
+        #expect(await done() == ["From yesterday: skipped."])
+    }
+
+    /// The owner's case: one or two things of a routine were not logged yesterday. The card says which, each is
+    /// ticked by itself, and an option then answers only what is still open.
+    @Test func whatARoutineLeftYesterdayIsListedAndEachLineIsAnsweredByItself() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        // Two of yesterday's five morning doses were never logged.
+        let missed = TodayFixtures.morningSlots.prefix(2).map { "\($0.key)_\(Occurrence.stamp(TodayFixtures.at($0.slot, day: -1)))" }
+        await load(harness, "07:05") { state in
+            for (key, record) in state.linked.records where record.kind == TodayKinds.log && missed.contains(record.id) {
+                state.linked.records[key] = nil
+            }
+        }
+        func item() async -> YesterdayCard.Item? {
+            guard case let .yesterday(card)? = row(await harness.presentation.pane, "yesterday")?.body else { return nil }
+            return card.items.first { $0.title == "Morning medication" }
+        }
+        // The row names both routines, and the card names the two doses: the three logged yesterday are not asked after.
+        #expect(row(await harness.presentation.pane, "yesterday")?.line == "Morning medication and weekly medication.")
+        let before = try #require(await item())
+        #expect(before.text == "Two were due yesterday at 07:30. Not logged.")
+        #expect(before.lines.map(\.id) == missed && before.lines.map(\.name) == ["Magnesium", "Omega-3"])
+        #expect(before.lines.allSatisfy { $0.logged == nil && $0.tick?.role == .secondary })
+        #expect(before.options.rows.map(\.name) == ["Took them all yesterday", "Skipped them all"])
+        // One is ticked: it is logged alone, and stays in the card as taken, with a tick that takes it back.
+        await harness.send(try #require(before.lines[0].tick?.command))
+        let first = writes(harness).flatMap(\.entries)
+        #expect(first.map(\.recordID) == [missed[0]] && first[0].method == .put)
+        let one = try #require(await item())
+        #expect(one.text == "Two were due yesterday at 07:30. One is not logged.")
+        #expect(one.lines.map(\.logged) == ["Taken.", nil] && one.lines[0].tick?.command == .unlog(missed[0]))
+        #expect(one.options.rows.map(\.name) == ["Took the rest yesterday", "Skipped the rest"] && one.options.rows.allSatisfy { !$0.selected })
+        // "Skipped the rest" logs only the one still open: the ticked one stays taken.
+        harness.clearTrace()
+        await harness.send(.answerYesterday(item: one.id, option: "skipped"))
+        #expect(Set(writes(harness).flatMap(\.entries).map(\.recordID)) == [missed[1]])
+        let both = try #require(await item())
+        #expect(both.lines.map(\.logged) == ["Taken.", "Skipped."] && both.text == "Two were due yesterday at 07:30.")
+        // The two lines differ, so neither option is the answer of all of it, and what is done says how many of each.
+        #expect(both.options.rows.allSatisfy { !$0.selected } && both.chosen == "Chosen at 07:05.")
+        #expect(row(await harness.presentation.pane, "yesterday")?.line == "Weekly medication.")
+        for entry in await harness.presentation.pane.items {
+            guard case let .earlier(earlier) = entry else { continue }
+            #expect(earlier.rows.first { $0.id == one.id }?.line == "From yesterday: one taken and one skipped.")
+        }
+        // A tick taken back opens its line again, and the routine is asked after again.
+        await harness.send(.unlog(missed[0]))
+        #expect(row(await harness.presentation.pane, "yesterday")?.line == "Morning medication and weekly medication.")
+        #expect(try #require(await item()).lines.map(\.logged) == [nil, "Skipped."])
+    }
+
+    /// The owner's question: with some of a routine ticked, Skip skips the others alone, and what was skipped is
+    /// not asked after the next day.
+    @Test func skipLeavesWhatIsTickedAndWhatWasSkippedIsNotAskedAfter() async throws {
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("07:05"), performsEffects: false)
+        await load(harness, "07:05")
+        let routine = try #require(rows(await harness.presentation.pane).first { $0.title == "Morning medication" })
+        guard case let .routine(card) = routine.body else { throw CancellationError() }
+        let ticked = Array(card.items.prefix(2))
+        for item in ticked { await harness.send(try #require(item.tick?.command)) }
+        harness.clearTrace()
+        await harness.send(try #require(card.skip?.command))
+        // A skip is a create and then a patch of its state, for each of the three not ticked, and for none of the two that were.
+        let skipped = writes(harness).flatMap(\.entries)
+        #expect(Set(skipped.map(\.recordID)) == Set(card.items.dropFirst(2).map(\.id)) && skipped.count == 6)
+        #expect(skipped.filter { $0.method == .patch }.allSatisfy { $0.properties == ["status": "skipped"] })
+        // The row is finished, and says how: it is not said to be taken.
+        for entry in await harness.presentation.pane.items {
+            guard case let .earlier(earlier) = entry, let done = earlier.rows.first(where: { $0.id == routine.id }) else { continue }
+            #expect(done.line == "2 of 5 taken, 3 skipped, at 07:05.")
+            guard case let .routine(kept) = done.body else { throw CancellationError() }
+            #expect(kept.said == "2 of 5 taken, 3 skipped, at 07:05." && kept.done == nil && kept.skip == nil)
+            #expect(kept.items.map(\.logged) == ["Taken at 07:05.", "Taken at 07:05.", "Skipped.", "Skipped.", "Skipped."])
+        }
+        // The next day: yesterday's doses that were skipped have their answer, and only the weekly dose is asked after.
+        let next = pane("07:05") { state in
+            for dose in TodayFixtures.morningSlots.dropFirst(2) {
+                let log = TodayFixtures.log(
+                    TodayFixtures.scheduleKind, dose.key, slot: TodayFixtures.at(dose.slot, day: -1), at: TodayFixtures.at("07:40", day: -1), done: false)
+                state.linked.records["\(log.kind)/\(log.id)"] = log
+            }
+        }
+        let asked = try #require(row(next, "yesterday"))
+        #expect(asked.line == "Weekly medication.")
+        guard case let .yesterday(left) = asked.body else { throw CancellationError() }
+        #expect(left.items.map(\.title) == ["Weekly medication"])
     }
 
     @Test func aSkipIsACreateThenAPatchOfItsState() async throws {

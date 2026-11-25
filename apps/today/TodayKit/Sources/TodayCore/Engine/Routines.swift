@@ -106,7 +106,20 @@ extension DayEngine {
             done: done == nil
                 ? ButtonPresentation(allWord(row), glyph: .done, role: .primary, wide: true, command: .log(row: row.id, done: true)) : nil,
             skip: done == nil ? ButtonPresentation("Skip", role: .quiet, command: .log(row: row.id, done: false)) : nil,
-            said: done.map { "\(word) at \(clock($0))." }, notLogged: done == nil ? notLogged(row) : nil)
+            said: done.map { "\(settled(row)) at \(clock($0))." }, notLogged: done == nil ? notLogged(row) : nil)
+    }
+
+    /// How a finished row was answered, as its line begins: "Taken", "Done",
+    /// "Skipped", and where some of it was skipped, how many of each
+    /// ("3 of 6 taken, 3 skipped,"). A row is never said to be taken while
+    /// part of it was skipped.
+    func settled(_ row: RoutineRow) -> String {
+        let logs = row.occurrences.compactMap { day.logs[$0.id] }
+        let done = logs.filter(\.done).count
+        let word = row.isDose ? "taken" : "done"
+        if done == logs.count { return Words.cap(word) }
+        if done == 0 { return "Skipped" }
+        return "\(done) of \(logs.count) \(word), \(logs.count - done) skipped,"
     }
 
     func row(_ routine: RoutineRow, state: Row.State) -> Row {
@@ -128,11 +141,8 @@ extension DayEngine {
     /// A routine row finished today, as a row of what is done: crossed out,
     /// with when, and a filled tick that takes every log of it back.
     func doneRow(_ routine: RoutineRow, at: Date) -> Row {
-        let logs = routine.occurrences.compactMap { day.logs[$0.id] }
-        let skipped = !logs.isEmpty && logs.allSatisfy { !$0.done }
-        let word = skipped ? "Skipped" : routine.isDose ? "Taken" : "Done"
         return Row(
-            id: routine.id, glyph: .routine, title: routine.title, line: "\(word) at \(clock(at)).", state: .done,
+            id: routine.id, glyph: .routine, title: routine.title, line: "\(settled(routine)) at \(clock(at)).", state: .done,
             trailing: .tick(ButtonPresentation("Take it back", glyph: .done, iconOnly: true, role: .primary, command: .unlogRow(routine.id))),
             body: .routine(routineCard(routine)))
     }
@@ -156,19 +166,33 @@ extension DayEngine {
         var at: Date?
     }
 
+    /// The occurrences of a row that yesterday left: the ones with no log,
+    /// and the ones logged today, which is how they were answered. One
+    /// logged on its own day is not among them.
+    func late(_ row: RoutineRow) -> [Occurrence] {
+        row.occurrences.filter { (day.logs[$0.id]?.at ?? .distantFuture) >= day.startOfToday }
+    }
+
     /// What yesterday left, as "Earlier today" and the day's row read it: a
-    /// routine row with nothing logged, and each thing answered today,
-    /// which keeps its choice. A task that was due before today and is
-    /// still open is asked after on the plan page (`leftTasks`), and is
-    /// here only once the plan's Save has answered it.
+    /// routine row with something not logged, and each one answered today,
+    /// which keeps its answer. An answer is read from the logs, so it is the
+    /// same whether the owner chose an option for the whole row or ticked
+    /// its lines one by one: "took", "skipped", or "mixed" where the lines
+    /// differ. A task that was due before today and is still open is asked
+    /// after on the plan page (`leftTasks`), and is here only once the
+    /// plan's Save has answered it.
     var yesterdayLeft: [Left] {
         var out: [Left] = []
         let answered = day.notes.yesterday
         for row in yesterdaysRoutines {
             let id = "y-" + row.id
-            if let option = answered[id] {
-                out.append(Left(id: id, kind: .routine(row), answered: option, at: day.notes.yesterdayAt[id]))
-            } else if loggingStopped == nil, !open(row).isEmpty {
+            let left = late(row)
+            guard !left.isEmpty else { continue }
+            let logs = left.compactMap { day.logs[$0.id] }
+            if logs.count == left.count {
+                let option = logs.allSatisfy(\.done) ? "took" : logs.contains(where: \.done) ? "mixed" : "skipped"
+                out.append(Left(id: id, kind: .routine(row), answered: option, at: day.notes.yesterdayAt[id] ?? logs.map(\.at).max()))
+            } else if loggingStopped == nil {
                 // Where logging has stopped, yesterday's routines are not asked after: today's rows say since when.
                 out.append(Left(id: id, kind: .routine(row)))
             }
@@ -183,53 +207,103 @@ extension DayEngine {
     /// The id a task yesterday left is noted under once it is answered.
     static func leftID(_ task: TaskItem) -> String { "y-task:" + task.id }
 
-    /// The occurrences of a row an answer of today logged: the ones a
-    /// moved choice changes.
-    func answeredOccurrences(_ row: RoutineRow, since: Date?) -> [Occurrence] {
-        guard let since else { return [] }
-        return row.occurrences.filter { (day.logs[$0.id]?.at ?? .distantPast) >= since.addingTimeInterval(-1) }
+    /// The row of yesterday an occurrence belongs to.
+    func yesterdaysRow(of occurrence: String) -> RoutineRow? {
+        yesterdaysRoutines.first { $0.occurrences.contains { $0.id == occurrence } }
     }
 
-    /// The routine rows yesterday left, each with its two options: the
-    /// ones still not logged, and the ones answered today with their choice.
+    /// What a row of several things left, line by line, each with a tick of
+    /// its own: open, it logs that one as taken or done; filled, a tap
+    /// takes its log back. A row of one thing has no lines: its title names
+    /// it.
+    func yesterdayLines(_ row: RoutineRow) -> [RoutineCard.Item] {
+        guard row.occurrences.count > 1 else { return [] }
+        let word = row.isDose ? "Taken" : "Done"
+        return late(row).map { occurrence in
+            let series = day.series[occurrence.series]
+            let log = day.logs[occurrence.id]
+            let tick =
+                log?.done == true
+                ? ButtonPresentation("Undo", glyph: .done, iconOnly: true, role: .primary, command: .unlog(occurrence.id))
+                : ButtonPresentation(word, glyph: .done, iconOnly: true, role: .secondary, command: .logOccurrence(occurrence.id, done: true))
+            return RoutineCard.Item(
+                id: occurrence.id, name: series?.name ?? "Untitled routine", detail: series.flatMap(detail),
+                logged: log.map { $0.done ? "\(word)." : "Skipped." }, tick: tick)
+        }
+    }
+
+    /// The routine rows yesterday left, each with its lines and its two
+    /// options: the ones still not logged, and the ones answered today with
+    /// their answer. An option answers what is still open; once nothing is,
+    /// it moves the answer of all of it.
     func yesterdayCard(_ left: [Left]) -> YesterdayCard {
         let items = left.compactMap { item -> YesterdayCard.Item? in
             guard case let .routine(row) = item.kind else { return nil }
-            let verb = row.isDose ? "Took it yesterday" : "Did it yesterday"
-            let count = item.answered == nil ? open(row).count : answeredOccurrences(row, since: item.at).count
+            let all = late(row)
+            let open = all.filter { day.logs[$0.id] == nil }
+            let count = all.count
+            // Some lines have their answer and some do not: an option is for the rest.
+            let rest = item.answered == nil && open.count < count
+            let did = row.isDose ? "Took" : "Did"
+            var text = "\(count == 1 ? "It was" : "\(Words.num(count)) were") due yesterday at \(clock(row.slot))."
+            if item.answered == nil {
+                text += rest ? " \(Words.num(open.count)) \(open.count == 1 ? "is" : "are") not logged." : " Not logged."
+            }
             return YesterdayCard.Item(
-                id: item.id, glyph: .routine, title: row.title,
-                text: "\(count == 1 ? "It was" : "\(Words.num(count)) were") due yesterday at \(clock(row.slot))."
-                    + (item.answered == nil ? " Not logged." : ""),
+                id: item.id, glyph: .routine, title: row.title, text: text, lines: yesterdayLines(row),
                 options: OptionList(
                     .round,
                     [
                         OptionRow(
-                            id: "took", name: verb, line: "Logged for yesterday.", selected: item.answered == "took",
+                            id: "took", name: rest ? "\(did) the rest yesterday" : count > 1 ? "\(did) them all yesterday" : "\(did) it yesterday",
+                            line: "Logged for yesterday.", selected: item.answered == "took",
                             command: .answerYesterday(item: item.id, option: "took")),
                         OptionRow(
-                            id: "skipped", name: "Skipped", line: "Logged as skipped.", selected: item.answered == "skipped",
+                            id: "skipped", name: rest ? "Skipped the rest" : count > 1 ? "Skipped them all" : "Skipped",
+                            line: "Logged as skipped.", selected: item.answered == "skipped",
                             command: .answerYesterday(item: item.id, option: "skipped")),
-                    ]), chosen: item.at.map { "Chosen at \(clock($0))." })
+                    ]),
+                // An option's time where one was chosen; else when the last line was ticked.
+                chosen: item.at.map { "\(day.notes.yesterdayAt[item.id] == nil ? "Logged" : "Chosen") at \(clock($0))." })
         }
         return YesterdayCard(items: items)
+    }
+
+    /// How an answered thing of yesterday's is said: "taken", "moved to
+    /// today", and for a row whose lines differ, how many of each.
+    func yesterdayWords(_ item: Left) -> String? {
+        switch item.kind {
+        case let .routine(row):
+            let word = row.isDose ? "taken" : "done"
+            guard item.answered == "mixed" else { return ["took": word, "skipped": "skipped"][item.answered ?? ""] }
+            let logs = late(row).compactMap { day.logs[$0.id] }
+            let done = logs.filter(\.done).count
+            return "\(Words.low(Words.num(done))) \(word) and \(Words.low(Words.num(logs.count - done))) skipped"
+        case .task:
+            return ["today": "moved to today", "tomorrow": "moved to tomorrow", "drop": "dropped"][item.answered ?? ""]
+        }
     }
 
     /// One answered thing as a line of what is done: "From yesterday:
     /// vitamin B12, taken."
     func yesterdayAnswer(_ item: Left) -> String? {
         let name: String
-        let answer: String?
         switch item.kind {
-        case let .routine(row):
-            name = row.title
-            answer = ["took": row.isDose ? "taken" : "done", "skipped": "skipped"][item.answered ?? ""]
-        case let .task(task):
-            name = task.name
-            answer = ["today": "moved to today", "tomorrow": "moved to tomorrow", "drop": "dropped"][item.answered ?? ""]
+        case let .routine(row): name = row.title
+        case let .task(task): name = task.name
         }
-        guard let answer else { return nil }
+        guard let answer = yesterdayWords(item) else { return nil }
         return "From yesterday: \(Words.low(name)), \(answer)."
+    }
+
+    /// A routine yesterday left, once it is answered, as a row of what is
+    /// done: by name, with its answer, and opening to its lines and its
+    /// options, so an answer given by mistake is changed there.
+    func yesterdayDoneRow(_ item: Left) -> Row? {
+        guard case let .routine(row) = item.kind, let answer = yesterdayWords(item) else { return nil }
+        return Row(
+            id: item.id, glyph: .routine, title: row.title, line: "From yesterday: \(answer).", state: .done,
+            body: .yesterday(yesterdayCard([item])))
     }
 
     /// "yesterday", "on Tuesday": the day a task was due.

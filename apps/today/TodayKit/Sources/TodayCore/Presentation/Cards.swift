@@ -53,8 +53,8 @@ public struct RoutineCard: Codable, Equatable, Hashable, Sendable {
 
 // MARK: What yesterday left
 
-/// What was not logged yesterday: each routine row with its option list.
-/// It acts on a tap: it has no Save. A task yesterday left is on the plan
+/// What was not logged yesterday: each routine row with what it left, line
+/// by line, and its option list. It acts on a tap: it has no Save. A task yesterday left is on the plan
 /// page (`PlanPage.Left`).
 public struct YesterdayCard: Codable, Equatable, Hashable, Sendable {
     public struct Item: Codable, Equatable, Hashable, Sendable, Identifiable {
@@ -64,20 +64,30 @@ public struct YesterdayCard: Codable, Equatable, Hashable, Sendable {
         /// What it was and when it was due, in one sentence: the glyph
         /// already says whether it is a routine or a task.
         public var text: String?
+        /// What a routine of several things left, line by line, each with a
+        /// tick of its own that logs that one, or takes its log back: the
+        /// ones not logged, and the ones answered today. Empty for a
+        /// routine of one thing, which its title names.
+        public var lines: [RoutineCard.Item]
+        /// For what is still open: "Took the rest yesterday", "Skipped the
+        /// rest" once a line has its own answer. With nothing open, the
+        /// answer of all of it, which a tap moves.
         public var options: OptionList
-        /// "Chosen at 08:19."
+        /// "Chosen at 08:19.", or "Logged at 08:19." where the lines were
+        /// ticked one by one.
         public var chosen: String?
         /// The message the chosen option needs, with its own Send.
         public var ready: ReadyMessage?
 
         public init(
-            id: String, glyph: Glyph, title: String, text: String? = nil, options: OptionList, chosen: String? = nil,
-            ready: ReadyMessage? = nil
+            id: String, glyph: Glyph, title: String, text: String? = nil, lines: [RoutineCard.Item] = [], options: OptionList,
+            chosen: String? = nil, ready: ReadyMessage? = nil
         ) {
             self.id = id
             self.glyph = glyph
             self.title = title
             self.text = text
+            self.lines = lines
             self.options = options
             self.chosen = chosen
             self.ready = ready

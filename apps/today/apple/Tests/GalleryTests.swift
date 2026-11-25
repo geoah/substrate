@@ -88,6 +88,34 @@ import TodayCore
             "waiting-open-routine", DayScreen(app: app, opened: ["parked:" + line.id, "row:" + routine.id]), size: CGSize(width: 393, height: 2300))
     }
 
+    /// Two doses of a routine were not logged yesterday: the card names
+    /// them, each with a tick of its own, over the options for the rest;
+    /// and again once one is ticked and the other still waits.
+    @Test func whatARoutineLeftYesterdayIsDrawnLineByLine() async throws {
+        func missed(_ kind: String, _ id: String) -> Bool {
+            kind == TodayKinds.log && (id.hasPrefix("mag_20261118") || id.hasPrefix("omega_20261118"))
+        }
+        let left = TodayFixtures.state(at: "07:05") { state in
+            for (key, record) in state.linked.records where missed(record.kind, record.id) { state.linked.records[key] = nil }
+        }
+        try await both("yesterday-lines", size: CGSize(width: 393, height: 1500)) {
+            DayScreen(app: TodayFixtures.present(left, at: "07:05"), opened: ["row:yesterday"])
+        }
+        // One of the two was ticked this morning.
+        let ticked = TodayFixtures.state(at: "07:05") { state in
+            for (key, record) in state.linked.records where missed(record.kind, record.id) {
+                if record.id.hasPrefix("mag_") {
+                    state.linked.records[key]?.properties["at"] = .string("2026-11-19T07:02:00Z")
+                } else {
+                    state.linked.records[key] = nil
+                }
+            }
+        }
+        try await write(
+            "yesterday-lines-one-ticked", DayScreen(app: TodayFixtures.present(ticked, at: "07:05"), opened: ["row:yesterday"]),
+            size: CGSize(width: 393, height: 1500))
+    }
+
     /// A hundred suggestions grouped by project are taller than the long
     /// drawing every page gets, which ends before the last group's Save:
     /// this one is drawn to its end.

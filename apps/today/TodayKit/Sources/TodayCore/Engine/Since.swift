@@ -198,10 +198,16 @@ extension DayEngine {
         }
         // The plan's own row, under this, is the way back into it.
         if let saved = day.plan?.savedAt, isToday(saved) { lines.append((saved, .init(id: "plan", time: clock(saved), text: "Plan saved."))) }
-        // Each thing yesterday left, by name and with its answer: the same words for each would say nothing.
+        // Each thing yesterday left, by name and with its answer: the same words for each would say nothing. A
+        // routine is a row, which opens to its lines and options, so its answer can still be changed; a task's
+        // answer was the plan's, and is a line.
         for item in yesterdayLeft {
-            guard let at = item.at, let line = yesterdayAnswer(item) else { continue }
-            lines.append((at, .init(id: "y:" + item.id, time: clock(at), text: line)))
+            guard let at = item.at else { continue }
+            if let row = yesterdayDoneRow(item) {
+                entries.append((at, .row(row)))
+            } else if let line = yesterdayAnswer(item) {
+                lines.append((at, .init(id: "y:" + item.id, time: clock(at), text: line)))
+            }
         }
         if let closed = day.plan?.wrapSavedAt { lines.append((closed, .init(id: "wrap", time: clock(closed), text: "Day closed."))) }
         entries += lines.map { ($0.at, .line($0.line)) }

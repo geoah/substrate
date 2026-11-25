@@ -17,34 +17,7 @@ struct RoutineCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !card.items.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(card.items.enumerated()), id: \.element.id) { index, item in
-                        HStack(alignment: .center, spacing: 8) {
-                            ViewThatFits(in: .horizontal) {
-                                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                    name(item)
-                                    Spacer(minLength: 12)
-                                    detail(item)
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    name(item)
-                                    detail(item)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityElement(children: .combine)
-                            // While the whole row waits to be finished, an item is not ticked by itself.
-                            if let tick = item.tick { PaneButton(tick, small: true).disabled(state.waiting(scope) != nil) }
-                        }
-                        // A line with a tick is as tall as the tick's target.
-                        .padding(.vertical, item.tick == nil ? 8 : 1)
-                        .overlay(alignment: .top) {
-                            if index > 0 { Rectangle().fill(TodayLook.line(scheme)).frame(height: 0.5) }
-                        }
-                    }
-                }
-            }
+            if !card.items.isEmpty { RoutineLinesView(items: card.items, scope: scope) }
             if card.done != nil || card.skip != nil {
                 HStack(spacing: TodayLook.betweenButtons) {
                     if let done = card.done { PaneButton(done) }
@@ -53,6 +26,47 @@ struct RoutineCardView: View {
             }
             if let said = card.said { SavedLine(said) }
             if let notLogged = card.notLogged { NoteText(notLogged) }
+        }
+    }
+}
+
+/// The things of a routine, one line each: its name, its dose or how it
+/// was logged, and its own tick. Today's routine draws them, and so does
+/// what yesterday left.
+struct RoutineLinesView: View {
+    var items: [RoutineCard.Item]
+    /// The row they belong to: while the whole row is being finished
+    /// (`Finishing`), its items wait with it.
+    var scope: String = ""
+    @Environment(\.colorScheme) private var scheme
+    @Environment(PaneViewState.self) private var state
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                HStack(alignment: .center, spacing: 8) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            name(item)
+                            Spacer(minLength: 12)
+                            detail(item)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            name(item)
+                            detail(item)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    // While the whole row waits to be finished, an item is not ticked by itself.
+                    if let tick = item.tick { PaneButton(tick, small: true).disabled(state.waiting(scope) != nil) }
+                }
+                // A line with a tick is as tall as the tick's target.
+                .padding(.vertical, item.tick == nil ? 8 : 1)
+                .overlay(alignment: .top) {
+                    if index > 0 { Rectangle().fill(TodayLook.line(scheme)).frame(height: 0.5) }
+                }
+            }
         }
     }
 
@@ -92,8 +106,9 @@ struct StaleNoteView: View {
 }
 
 /// What was not logged yesterday: each routine by name, with when it was
-/// due and its option list. One alone is named by the row's own line, so
-/// only when it was due is said under it. It acts on a tap: it has no Save.
+/// due, what it left line by line with a tick on each, and its option
+/// list for the rest. One alone is named by the row's own line, so only
+/// when it was due is said under it. It acts on a tap: it has no Save.
 struct YesterdayCardView: View {
     var card: YesterdayCard
     @Environment(\.colorScheme) private var scheme
@@ -118,6 +133,7 @@ struct YesterdayCardView: View {
                         Text(text).font(TodayLook.Text.second).foregroundStyle(.inkSecond)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    if !item.lines.isEmpty { RoutineLinesView(items: item.lines, scope: item.id) }
                     OptionListView(item.options)
                     if let chosen = item.chosen { SavedLine(chosen) }
                     if let ready = item.ready { ReadyMessageView(message: ready) }

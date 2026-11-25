@@ -408,8 +408,10 @@ is not one. The app never changes or deletes a correction.
   after the start of today. It is asked after on the plan page, and the plan's Save writes the answer:
   `dueDay` to today (and `notBefore` cleared) for Today; `dueDay` to tomorrow, `notBefore` to the start of
   tomorrow and one more `deferrals` for Tomorrow; `status: abandoned` for Drop it. One chosen for today is in
-  the plan's `picked`. A routine with nothing logged yesterday is not planning: it is still asked after in
-  the day, and its answer writes its `routines/routinelog` at once.
+  the plan's `picked`. A routine yesterday left is not planning: it is still asked after in the day, and its
+  answer writes its `routines/routinelog` at once. What a routine left is each of yesterday's occurrences
+  with no log, or with a log whose `at` is today; one logged on its own day, `done` or `skipped`, is settled
+  and is not asked after.
 - **A task is on today** when the saved plan's `picked` holds it, when it is due today, when it is urgent,
   or when its `notBefore` is within today. The last is how anything puts a task on today without a due day:
   the wrap's "Tomorrow", "When", and the assistant adding what the owner asked for (`today-add`). The plan

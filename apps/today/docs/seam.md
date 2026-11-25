@@ -65,7 +65,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `MarkedBlock`                                                | Something marked urgent and held back: who marked it and its options                                    |
 | `Row`, `RowBody`                                             | A row of the day, closed (a line) or open (its body); `Row.Trailing` is what ends the closed line. `.tick(button)` ends a task's and a routine's: open it finishes the thing, filled (role `primary`, on a row whose `state` is `.done`) it takes that back. `.page(route)` is a right chevron, and a tap on the line opens the page. A closed row says `line`, or `opening` where it has no line: the opening words of what the open row shows in full, which an open row leaves out |
 | `RoutineCard`                                                | A routine row, open: its items each with a tick, All taken or All done, Skip beside it, a line if stale |
-| `YesterdayCard`                                              | What was not logged yesterday: each routine with its option list, acting on a tap                       |
+| `YesterdayCard`                                              | What was not logged yesterday: each routine with the lines it left, a tick on each, and its option list |
 | `SuggestedItem`                                              | One suggested task wherever it is drawn: `save` set when drawn alone, `other` while "Other" is the pick, `told` once the owner answered it in words |
 | `PageRowCard`                                                | What a row that opens a page holds where it leads: one line and one button ("Open the plan", "Open the suggested tasks") |
 | `OverlapCard`, `MeetingTie`                                  | An overlap's options; and what ties the lines of two meetings that share time ([below](#two-meetings-that-share-time)) |
@@ -280,7 +280,7 @@ engine gains without a turn fails there.
 | Command                                                                                     | When                                                                                   |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `log(row:done:)`, `logOccurrence(_:done:)`, `unlog(_:)`, `unlogRow(_:)`, `later(row:)`      | A routine row: Taken or Done, Skip, one item, an item taken back, the whole row taken back, the notification's Later |
-| `answerYesterday(item:option:)`                                                             | An option of a routine not logged yesterday; takes effect at once                      |
+| `answerYesterday(item:option:)`                                                             | An option of a routine not logged yesterday; it answers what is still open, at once    |
 | `readNight`, `gotIt(project:)`, `answerNight(project:option:)`                              | The night and what is happening                                                        |
 | `suggest(_:_:)`, `saveSuggested(_:words:)`, `showSuggested(group:)`                         | A draft pick on a suggested task; Save for the ids a group or one item draws, with what was typed under "Other"; the rest of a group |
 | `planPick`, `planFlag`, `planOverlap`, `planSend`, `planLeft`, `planReset`, `planSave`      | The plan page: a draft until `planSave`                                                |

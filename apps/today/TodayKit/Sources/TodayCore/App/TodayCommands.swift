@@ -96,6 +96,11 @@ public extension TodayApp {
             wrote(writes.log(occurrence, done: done))
         case let .unlog(id):
             wrote(writes.unlog(id))
+            // A line of yesterday's taken back is open again: the row's answer is no longer whole.
+            if let row = engine.yesterdaysRow(of: id) {
+                notes.yesterday["y-" + row.id] = nil
+                notes.yesterdayAt["y-" + row.id] = nil
+            }
         case let .unlogRow(row):
             guard let routine = engine.routine(row) else { break }
             for occurrence in routine.occurrences where day.logs[occurrence.id] != nil { wrote(writes.unlog(occurrence.id)) }
@@ -112,9 +117,10 @@ public extension TodayApp {
         case let .answerYesterday(item, option):
             guard let left = engine.yesterdayLeft.first(where: { $0.id == item }), left.answered != option, case let .routine(routine) = left.kind
             else { break }
-            // A first answer logs what was open; a moved choice changes the logs that answer made.
-            let occurrences = left.answered == nil ? engine.open(routine) : engine.answeredOccurrences(routine, since: left.at)
-            for occurrence in occurrences { wrote(writes.log(occurrence, done: option == "took")) }
+            // An answer logs what is still open, and leaves a line ticked by itself as it is. With nothing open the
+            // choice moves: every log yesterday's row was answered with today is changed.
+            let open = engine.open(routine)
+            for occurrence in open.isEmpty ? engine.late(routine) : open { wrote(writes.log(occurrence, done: option == "took")) }
             notes.yesterday[item] = option
             // The first answer's time stays: it is what "Chosen at" says, and what finds its logs.
             if notes.yesterdayAt[item] == nil { notes.yesterdayAt[item] = now }

@@ -72,6 +72,17 @@ The rules are the engine's, and a test pins each:
   still open is the first section of the plan page, by name, with its own
   list and nothing chosen for the owner. Saved, the plan keeps a row in the
   day that opens it again.
+- **A routine yesterday left says what it left.** A routine of several
+  things lists the ones not logged, each with a tick of its own, over two
+  options that answer what is still open ("Took the rest yesterday",
+  "Skipped the rest"). Its answer is read from the logs, so it is the same
+  whichever way it was given, on any device. Answered, it is a row of
+  "Earlier today" that opens to the same lines and options. One logged on
+  its own day, taken or skipped, is never asked after.
+- **Skip skips what is not ticked.** In a routine with some things ticked,
+  Skip logs the others as skipped and leaves the ticks. The finished row
+  says how many of each ("2 of 5 taken, 3 skipped, at 07:31"): it is not
+  said to be taken while part of it was skipped.
 - **The assistant suggests and never acts.** Above a Save its option starts
   selected and nothing takes effect until Save; where a tap takes effect at
   once its option only carries the pill. A flag or a project it suggests on
