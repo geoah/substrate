@@ -1,4 +1,6 @@
+import AVFoundation
 import Foundation
+import Speech
 import SubstrateChatCore
 import SubstrateKit
 import Testing
@@ -319,4 +321,43 @@ private struct LegacySession: Codable {
         #expect(SessionStore.chat.account == earlier.account && SessionStore.chat.account == "session")
         #expect(SessionStore.chat.storage.location == earlier.storage.location)
     }
+}
+
+/// Voice typing's audio arrives on the audio engine's own thread. In Swift 6
+/// mode a block written in main-actor code and handed to a call is taken
+/// for main-actor code, and the run time stops the app when it runs
+/// anywhere else. So the tap's block is made in no actor (`Dictation.tap`),
+/// and this calls it as the engine does: from a thread that is not the main
+/// one. Were the block the main actor's, the test would not fail, it would
+/// end the run.
+@Suite struct VoiceTypingAudio {
+    @Test func theMicrophonesBlockRunsOnAThreadOfItsOwn() async throws {
+        // The analyzer's own kind of audio: 16-bit samples, as `start` converts the microphone's to.
+        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+        buffer.frameLength = 160
+        let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
+        let heard = HeardLevels()
+        nonisolated(unsafe) let tap = Dictation.tap(converter: nil, format: format, into: continuation) { heard.note($0) }
+        nonisolated(unsafe) let given = buffer
+        let onMain = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+            Thread.detachNewThread {
+                tap(given, AVAudioTime(hostTime: 0))
+                done.resume(returning: Thread.isMainThread)
+            }
+        }
+        continuation.finish()
+        var inputs = 0
+        for await _ in stream { inputs += 1 }
+        // One buffer went to the analyzer, and its loudness, silence, was told.
+        #expect(!onMain && inputs == 1 && heard.levels == [0])
+    }
+}
+
+private final class HeardLevels: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kept: [Float] = []
+
+    func note(_ level: Float) { lock.withLock { kept.append(level) } }
+    var levels: [Float] { lock.withLock { kept } }
 }

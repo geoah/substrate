@@ -89,17 +89,10 @@ final class Dictation {
             } else {
                 converter = nil
             }
-            // The engine calls the tap on its own thread. `@Sendable` says
-            // the block is no part of the main actor: without it the block
-            // would be taken for one made here, on the main actor, and the
-            // run time stops an app whose main-actor code runs elsewhere.
-            node.installTap(onBus: 0, bufferSize: 2048, format: natural) { @Sendable [weak self] buffer, _ in
-                let level = Self.level(buffer)
-                if let converted = Self.convert(buffer, with: converter, to: format) {
-                    continuation.yield(AnalyzerInput(buffer: converted))
-                }
+            let tap = Self.tap(converter: converter, format: format, into: continuation) { [weak self] level in
                 Task { @MainActor in self?.level = level }
             }
+            node.installTap(onBus: 0, bufferSize: 2048, format: natural, block: tap)
             engine.prepare()
             try engine.start()
             try await analyzer.start(inputSequence: stream)
@@ -302,6 +295,24 @@ final class Dictation {
     }
 
     // MARK: Audio, on the tap's thread
+
+    /// The block the engine calls with each buffer the microphone gives,
+    /// on a thread of its own. Made here, in no actor, and not inside
+    /// `start`: a block written in main-actor code and handed to a call is
+    /// taken for main-actor code, and the run time stops the app when it
+    /// runs anywhere else. `level` is told the buffer's loudness.
+    nonisolated static func tap(
+        converter: AVAudioConverter?, format: AVAudioFormat, into continuation: AsyncStream<AnalyzerInput>.Continuation,
+        level: @escaping @Sendable (Float) -> Void
+    ) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            let heard = Self.level(buffer)
+            if let converted = Self.convert(buffer, with: converter, to: format) {
+                continuation.yield(AnalyzerInput(buffer: converted))
+            }
+            level(heard)
+        }
+    }
 
     nonisolated private static func level(_ buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
