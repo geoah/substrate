@@ -35,7 +35,6 @@ targets:
         SUBSTRATE_ENTITLEMENTS_NO: ../workouts/apple/Support/SubstrateWorkouts.entitlements
         SUBSTRATE_ENTITLEMENTS_YES: ../workouts/apple/Support/SubstrateWorkouts-site.entitlements
         TARGETED_DEVICE_FAMILY: "1"
-        SWIFT_VERSION: "6.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: "NO"
@@ -69,7 +68,6 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: ../workouts/apple/Support/Info-WorkoutsWidgets.plist
         TARGETED_DEVICE_FAMILY: "1"
-        SWIFT_VERSION: "6.0"
         SKIP_INSTALL: "YES"
         ENABLE_PREVIEWS: "YES"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

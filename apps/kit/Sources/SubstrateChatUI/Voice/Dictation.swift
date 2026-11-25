@@ -78,7 +78,7 @@ final class Dictation {
             let node = engine.inputNode
             let natural = node.outputFormat(forBus: 0)
             guard natural.sampleRate > 0 else { throw Problem(text: "No microphone is available.") }
-            var converter: AVAudioConverter?
+            let converter: AVAudioConverter?
             if natural != format {
                 // A pair the converter cannot bridge would feed the model
                 // audio in a format it never asked for.
@@ -86,8 +86,14 @@ final class Dictation {
                     throw Problem(text: "This microphone's audio can't be turned into what the speech model reads.")
                 }
                 converter = bridge
+            } else {
+                converter = nil
             }
-            node.installTap(onBus: 0, bufferSize: 2048, format: natural) { [weak self] buffer, _ in
+            // The engine calls the tap on its own thread. `@Sendable` says
+            // the block is no part of the main actor: without it the block
+            // would be taken for one made here, on the main actor, and the
+            // run time stops an app whose main-actor code runs elsewhere.
+            node.installTap(onBus: 0, bufferSize: 2048, format: natural) { @Sendable [weak self] buffer, _ in
                 let level = Self.level(buffer)
                 if let converted = Self.convert(buffer, with: converter, to: format) {
                     continuation.yield(AnalyzerInput(buffer: converted))
@@ -289,10 +295,10 @@ final class Dictation {
         }
     }
 
+    /// The system answers on a thread of its own: asked through the call
+    /// that is awaited, never through a block made here on the main actor.
     static func microphoneAllowed() async -> Bool {
-        await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
-        }
+        await AVAudioApplication.requestRecordPermission()
     }
 
     // MARK: Audio, on the tap's thread

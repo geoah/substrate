@@ -15,7 +15,7 @@ struct TurnView: View, Equatable {
     let cards: [String: CardPresentation]
     let expandThinking: Bool
 
-    static func == (lhs: TurnView, rhs: TurnView) -> Bool {
+    nonisolated static func == (lhs: TurnView, rhs: TurnView) -> Bool {
         lhs.turn == rhs.turn && lhs.expandThinking == rhs.expandThinking && lhs.cardsShown == rhs.cardsShown
     }
 
@@ -145,7 +145,7 @@ struct ReplyPageView: View, Equatable {
         return all[start ..< max(start, end)]
     }
 
-    static func == (lhs: ReplyPageView, rhs: ReplyPageView) -> Bool {
+    nonisolated static func == (lhs: ReplyPageView, rhs: ReplyPageView) -> Bool {
         guard lhs.id == rhs.id, lhs.page == rhs.page, lhs.reply.live == rhs.reply.live, lhs.rows == rhs.rows,
             lhs.reply.missing == rhs.reply.missing, lhs.actions == rhs.actions, lhs.shows == rhs.shows
         else { return false }
@@ -208,7 +208,7 @@ struct ReplyTailView: View, Equatable {
     /// What Try Again and Continue do.
     var act: (FailureAction) -> Void = { _ in }
 
-    static func == (lhs: ReplyTailView, rhs: ReplyTailView) -> Bool {
+    nonisolated static func == (lhs: ReplyTailView, rhs: ReplyTailView) -> Bool {
         // The row under it shares the reply's whole text once it is whole.
         lhs.actions == rhs.actions && (lhs.actions?.whole != true || lhs.reply.text == rhs.reply.text)
             && lhs.reply.sources == rhs.reply.sources && lhs.reply.linked == rhs.reply.linked

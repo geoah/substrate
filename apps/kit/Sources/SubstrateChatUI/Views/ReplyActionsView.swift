@@ -24,7 +24,7 @@ struct ReplyActionsRow: View, Equatable {
     /// its target's edge stands under the reply's first letter.
     @Scaled(.actionMark) private var mark
 
-    static func == (lhs: ReplyActionsRow, rhs: ReplyActionsRow) -> Bool {
+    nonisolated static func == (lhs: ReplyActionsRow, rhs: ReplyActionsRow) -> Bool {
         // A reply being written has other text at every flush, which only
         // Share reads, and it is not offered then.
         lhs.actions == rhs.actions && lhs.trailing == rhs.trailing && (lhs.actions.whole ? lhs.text == rhs.text : true)

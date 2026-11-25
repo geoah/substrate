@@ -40,7 +40,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
     CODE_SIGN_STYLE: Automatic
-    SWIFT_VERSION: "5.0"
+    SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     # Stamped by `apple.sh release` and empty everywhere else: a build with

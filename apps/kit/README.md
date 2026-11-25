@@ -23,8 +23,8 @@ import Foundation and the kit alone, and build and test on iOS, macOS and
 Linux (`mise run apps:test:linux`), as Android's Swift does; the Apple ones
 compile to nothing elsewhere, and the Android ones build everywhere with
 their JNI half on Android alone. The package is in Swift 6 language mode,
-but for `SubstrateChatUI`, which is in Swift 5 mode as Substrate Chat's app
-target was when its views were moved here (`Package.swift` says why).
+every library of it, and so is every target of the Xcode project
+(`apps/xcode/project.yml`).
 
 | Library | What it holds |
 | --- | --- |

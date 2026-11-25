@@ -7,6 +7,10 @@ import UIKit
 /// chooses, a processing task for a longer catch-up, and HealthKit's
 /// observer queries, which wake the app when heart rate, steps, sleep or a
 /// workout is written.
+///
+/// Not a main-actor type: the scheduler calls a launch handler on a queue
+/// of its own, and a block handed over from main-actor code is taken for
+/// main-actor code, which the run time stops anywhere else.
 enum Background {
     static let refresh = "dev.reamde.substrate.sync.refresh"
     static let processing = "dev.reamde.substrate.sync.processing"
@@ -43,6 +47,10 @@ enum Background {
     private static func run(_ task: BGTask, budget: RunBudget) {
         schedule()
         let done = Once()
+        // iOS's task is one object the expiry and the sync both hold, and
+        // it is not marked sendable. All either does is complete it, and
+        // `done` lets only the first of them.
+        nonisolated(unsafe) let task = task
         // On expiry the running sync is stopped where it can stop cleanly, and
         // the task completes at once: iOS kills an app that overruns.
         task.expirationHandler = {
@@ -55,11 +63,13 @@ enum Background {
         }
     }
 
-    private static var observing = false
+    @MainActor private static var observing = false
 
     /// Observer queries live only as long as the process, so every launch
-    /// starts them again; background delivery is what launches it.
-    static func observeHealth() {
+    /// starts them again; background delivery is what launches it. On the
+    /// main actor, which is where both its callers are, for `observing`;
+    /// HealthKit's update handler is `@Sendable`, so it is no part of it.
+    @MainActor static func observeHealth() {
         guard HealthReader.isAvailable, !observing, SessionStore.sync.load() != nil,
             UserDefaults.standard.bool(forKey: "health.asked"), Settings.enabled(.health)
         else { return }
@@ -71,6 +81,9 @@ enum Background {
                     completion()
                     return
                 }
+                // HealthKit's completion is made to be called from wherever
+                // the work ends; it is only not marked so.
+                nonisolated(unsafe) let completion = completion
                 // HealthKit's wake is the work: the last days are sent before it
                 // is told the notification is handled, inside a background
                 // task so the app is not suspended halfway, with the short
@@ -188,7 +201,11 @@ final class ContinuedSync {
         task.progress.totalUnitCount = Self.units
         // The stop button in the system's progress, or iOS taking the time
         // back: the sync stops where it can stop cleanly, as Stop does.
-        task.expirationHandler = {
+        // iOS promises no queue for this block, whichever one the task
+        // began on. `@Sendable` says the block is no part of the main
+        // actor: without it the block would be taken for one made here, on
+        // the main actor, which is not where it is called.
+        task.expirationHandler = { @Sendable in
             Task { @MainActor in
                 let still = Int(Date().timeIntervalSince(self.moved))
                 Activity.shared.log(nil, "iOS stopped the sync at \"\(self.shown.subtitle)\", \(still) seconds after its progress last moved", level: .warning)

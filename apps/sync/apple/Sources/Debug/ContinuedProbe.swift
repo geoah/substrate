@@ -62,6 +62,9 @@ enum ContinuedProbe {
     }
 
     private static func runDip(_ task: BGContinuedProcessingTask) {
+        // iOS's task is one object the handler, the work and the expiry all
+        // hold, and it is made to be told its progress from any queue.
+        nonisolated(unsafe) let task = task
         task.progress.totalUnitCount = 100
         let steps = Array(Int64(1) ... 20) + Array(Int64(5) ... 90)
         let work = Task { @MainActor in
@@ -105,6 +108,7 @@ enum ContinuedProbe {
         _ task: BGContinuedProcessingTask, total: Int64 = 100, start: Int64? = nil, restart: Int64 = 1, title: String? = nil,
         every: Duration = .seconds(1)
     ) {
+        nonisolated(unsafe) let task = task
         task.progress.totalUnitCount = total
         if let start { task.progress.completedUnitCount = start }
         let work = Task { @MainActor in

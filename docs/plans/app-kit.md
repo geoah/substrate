@@ -347,9 +347,12 @@ show a chat too, with the same screens and the same behaviour, and an app
 may not import another app's module (§6), so what apps share of a chat is
 the kit's to hold; Substrate Chat is the thin app over them, and
 `SubstrateKit` does not carry them, since most apps show no chat.
-`SubstrateChatUI` is in Swift 5 language mode, as Chat's app target was
-(§7.3's rule held every other library): Swift 6 mode adds checks at run
-time, so the mode moves when the views are ported and tried. An app shows
+`SubstrateChatUI` is in Swift 6 language mode like every other library
+(§7.3): it moved in Swift 5 mode, as Chat's app target compiled it, and
+was ported after, with every block the system calls off the main thread
+(the microphone's tap, the answer to asking for the microphone) said to be
+no part of the main actor, since Swift 6 stops an app at run time where
+main-actor code runs elsewhere. An app shows
 one conversation with `ChatSessions` and `ChatSessionView`, which run
 Chat's root over the app's own session (the kit's README, "A conversation
 in another app"); Substrate Today's day is the first. As built, that is the

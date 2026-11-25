@@ -90,15 +90,8 @@ struct AppleIDs: Sendable {
 enum Formats {
     /// `2026-10-27T09:00:00Z`: a datetime property, and an occurrence key.
     static func utc(_ date: Date) -> String {
-        utcFormatter.string(from: date)
+        date.formatted(.iso8601)
     }
-
-    private static let utcFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone(identifier: "UTC")
-        return f
-    }()
 
     /// Health Auto Export's `yyyy-MM-dd HH:mm:ss Z` in the phone's zone:
     /// `2026-10-07 08:05:37 +0300`.

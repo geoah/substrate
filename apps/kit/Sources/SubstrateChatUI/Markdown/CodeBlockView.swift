@@ -80,7 +80,7 @@ private struct CodeBar: View, Equatable {
     /// above and below them.
     @Scaled(.codeBar) private var height
 
-    static func == (lhs: CodeBar, rhs: CodeBar) -> Bool {
+    nonisolated static func == (lhs: CodeBar, rhs: CodeBar) -> Bool {
         lhs.language == rhs.language && lhs.offers == rhs.offers && lhs.wrap == rhs.wrap && lhs.source === rhs.source
     }
 
@@ -134,7 +134,7 @@ struct CodeText: View, Equatable {
     let code: CodeHighlight?
     @State private var made = CodePaint()
 
-    static func == (lhs: CodeText, rhs: CodeText) -> Bool { lhs.text == rhs.text && lhs.code == rhs.code }
+    nonisolated static func == (lhs: CodeText, rhs: CodeText) -> Bool { lhs.text == rhs.text && lhs.code == rhs.code }
 
     var body: some View {
         let _ = Meter.shared.count(.body, "Code")

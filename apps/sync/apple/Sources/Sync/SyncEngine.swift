@@ -629,11 +629,15 @@ actor SyncEngine {
             state.contacts = [:]
         }
 
-        let contacts: [CNContact] = try await Task.detached {
-            var out: [CNContact] = []
+        // Mapped where they are read: a contact is not sendable, its
+        // properties are.
+        let contacts: [(id: String, props: JSON)] = try await Task.detached {
+            var out: [(id: String, props: JSON)] = []
             let request = CNContactFetchRequest(keysToFetch: ContactMapping.keys)
             request.unifyResults = true
-            try CNContactStore().enumerateContacts(with: request) { c, _ in out.append(c) }
+            try CNContactStore().enumerateContacts(with: request) { c, _ in
+                out.append((ids.contact(c.identifier), ContactMapping.properties(c, addressbook: addressbook)))
+            }
             return out
         }.value
 
@@ -643,7 +647,7 @@ actor SyncEngine {
         try await client.put(book, addressbook, ["deviceName": name])
 
         var current: [String: JSON] = [:]
-        for c in contacts { current[ids.contact(c.identifier)] = ContactMapping.properties(c, addressbook: addressbook) }
+        for c in contacts { current[c.id] = c.props }
         let previous = state.contacts
         let changed = current.filter { previous[$0.key]?.hash != Pushed.hash($0.value) }
         // An empty answer is more often a store that is not ready, or access
@@ -777,28 +781,54 @@ actor SyncEngine {
         let excluded = Settings.excludedCalendars
         let calendars = everything.filter { !excluded.contains($0.calendarIdentifier) }
         let chosen = Set(calendars.map(\.calendarIdentifier))
+        // Everything the calendars are asked is asked here: the store goes
+        // to the scan below, and neither it nor a calendar of it is
+        // sendable, so none is touched again once it has gone.
+        let calendarCount = calendars.count
+        let off = everything.count - calendars.count
+        let noCalendars = everything.isEmpty
+        var currentCalendars: [String: JSON] = [:]
+        for c in calendars { currentCalendars[ids.calendar(c.calendarIdentifier)] = EventMapping.calendar(c, eventstore: eventstore) }
+        struct Occurrence: Sendable {
+            let props: JSON
+            let start: Date?
+            let calendar: String
+        }
+        /// Every event read, counted, and a row for each that has a calendar.
+        struct Scan: Sendable {
+            var count = 0
+            var rows: [(id: String, occurrence: Occurrence)] = []
+        }
         // A large window takes seconds to read: not on the actor, which the
-        // progress callbacks and the app's updates go through.
-        let occurrences: [EKEvent] =
+        // progress callbacks and the app's updates go through. Mapped where
+        // they are read: an event is not sendable, its properties are.
+        let occurrences: Scan =
             chosen.isEmpty
-            ? []
+            ? Scan()
             : await Task.detached {
                 let scanned = store.calendars(for: .event).filter { chosen.contains($0.calendarIdentifier) }
-                return store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: scanned))
+                let events = store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: scanned))
+                var scan = Scan(count: events.count)
+                for e in events {
+                    guard let calendar = e.calendar else { continue }
+                    let calendarID = ids.calendar(calendar.calendarIdentifier)
+                    let props = EventMapping.event(e, calendar: calendarID)
+                    scan.rows.append((ids.event(key: EventMapping.key(e)), Occurrence(props: props, start: e.startDate, calendar: calendarID)))
+                }
+                return scan
             }.value
 
-        state.device.calendars = calendars.count
+        state.device.calendars = calendarCount
         state.device.events = occurrences.count
-        let off = everything.count - calendars.count
         log(
             .calendars,
-            "Read \(calendars.count) calendars" + (off > 0 ? " (\(off) turned off)" : "")
+            "Read \(calendarCount) calendars" + (off > 0 ? " (\(off) turned off)" : "")
                 + " and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
         // No event at all, from calendars that held some in this window, is
         // a store still loading (EventKit answers empty while it syncs an
         // account), never every event deleted.
         let chosenIDs = Set(chosen.map(ids.calendar))
-        if occurrences.isEmpty,
+        if occurrences.count == 0,
             state.events.values.contains(where: {
                 chosenIDs.contains($0.calendar ?? "") && ($0.start.map(window.contains) ?? false)
             })
@@ -809,8 +839,6 @@ actor SyncEngine {
         try await client.put(storeKind, eventstore, ["deviceName": name])
         var failures: [Error] = []
 
-        var currentCalendars: [String: JSON] = [:]
-        for c in calendars { currentCalendars[ids.calendar(c.calendarIdentifier)] = EventMapping.calendar(c, eventstore: eventstore) }
         let previousCalendars = state.calendars
         let changedCalendars = currentCalendars.filter { previousCalendars[$0.key]?.hash != Pushed.hash($0.value) }
         await progress(.calendars, "Writing calendars", 0, changedCalendars.count)
@@ -830,7 +858,7 @@ actor SyncEngine {
         // A deleted calendar takes its events with it (the server cascades),
         // so an empty scan deletes nothing. Every calendar turned off is the
         // owner's choice, not an empty scan.
-        if everything.isEmpty, !previousCalendars.isEmpty { throw SyncError.emptyScan("calendars") }
+        if noCalendars, !previousCalendars.isEmpty { throw SyncError.emptyScan("calendars") }
         let goneCalendars = previousCalendars.keys.filter { currentCalendars[$0] == nil }
         for (id, result) in await eachLimited(goneCalendars, { id in try await client.delete(calendarKind, id) }) {
             switch result {
@@ -847,18 +875,8 @@ actor SyncEngine {
             throw ContextError(context: "\(failures.count) calendar writes failed, the first", underlying: failures[0])
         }
 
-        struct Occurrence: Sendable {
-            let props: JSON
-            let start: Date?
-            let calendar: String
-        }
         var current: [String: Occurrence] = [:]
-        for e in occurrences {
-            guard let calendar = e.calendar else { continue }
-            let calendarID = ids.calendar(calendar.calendarIdentifier)
-            let id = ids.event(key: EventMapping.key(e))
-            current[id] = Occurrence(props: EventMapping.event(e, calendar: calendarID), start: e.startDate, calendar: calendarID)
-        }
+        for row in occurrences.rows { current[row.id] = row.occurrence }
         let previous = state.events
         let changed = current.filter { previous[$0.key]?.hash != Pushed.hash($0.value.props) }
         let toWrite = changed.count
@@ -917,11 +935,11 @@ actor SyncEngine {
         try await client.put(
             storeKind, eventstore,
             [
-                "deviceName": name, "calendarCount": calendars.count, "eventCount": occurrences.count,
+                "deviceName": name, "calendarCount": calendarCount, "eventCount": occurrences.count,
                 "windowStart": Formats.utc(windowStart), "windowEnd": Formats.utc(windowEnd),
                 "lastSyncedAt": Formats.utc(Date()),
             ])
-        return "\(calendars.count) calendars · \(occurrences.count) events · " + Self.changes(written, removed)
+        return "\(calendarCount) calendars · \(occurrences.count) events · " + Self.changes(written, removed)
     }
 
     // MARK: - Rows

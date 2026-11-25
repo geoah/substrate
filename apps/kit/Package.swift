@@ -100,19 +100,12 @@ let package = Package(
             ]),
         // The chat's SwiftUI side: the host of its presentations, the list,
         // a conversation and its composer, Markdown, the tokens and dictation.
-        // In Swift 5 language mode, the one library here that is: these are
-        // Substrate Chat's views as its app target compiled them, and Swift
-        // 6 mode is not only stricter, it adds checks at run time (a closure
-        // the audio engine calls off the main thread would stop the app), so
-        // the mode moves when the views are ported and tried, not with the
-        // files.
         .target(
             name: "SubstrateChatUI",
             dependencies: [
                 "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens", "SubstrateChatCore",
                 "SubstrateDeviceApple", "SubstrateUI",
-            ],
-            swiftSettings: [.swiftLanguageMode(.v5)]),
+            ]),
         // jni.h, the Looper and the log from the NDK; empty off Android.
         .target(
             name: "SubstrateJNI",
