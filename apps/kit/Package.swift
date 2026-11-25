@@ -4,11 +4,13 @@ import PackageDescription
 // What every app that speaks to a substrate shares, as libraries that each
 // depend only on the ones listed before them (README.md, and
 // `mise run lint:apps`, which holds the order). The portable ones build for
-// iOS, macOS, Linux and Android; SubstrateDeviceApple and SubstrateUI
-// compile to nothing off Apple systems, and SubstrateBridge's JNI half to
-// nothing off Android. SubstrateKit is every library under one import, for
-// the apps written against the single module it once was. SubstrateAndroid
-// is the one shared library kit-core loads (apps/kit/android).
+// iOS, macOS, Linux and Android; SubstrateDeviceApple, SubstrateUI and
+// SubstrateChatUI compile to nothing off Apple systems, and SubstrateBridge's
+// JNI half to nothing off Android. SubstrateKit is every library every app
+// draws with under one import, for the apps written against the single
+// module it once was; the two chat libraries are named by the apps that show
+// a chat. SubstrateAndroid is the one shared library kit-core loads
+// (apps/kit/android).
 let package = Package(
     name: "SubstrateKit",
     platforms: [.iOS("26.0"), .macOS("26.0")],
@@ -21,9 +23,11 @@ let package = Package(
         .library(name: "SubstrateRuntime", targets: ["SubstrateRuntime"]),
         .library(name: "SubstrateLocal", targets: ["SubstrateLocal"]),
         .library(name: "SubstrateScreens", targets: ["SubstrateScreens"]),
+        .library(name: "SubstrateChatCore", targets: ["SubstrateChatCore"]),
         .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
+        .library(name: "SubstrateChatUI", targets: ["SubstrateChatUI"]),
         .library(name: "SubstrateBridge", targets: ["SubstrateBridge"]),
         .library(
             name: "SubstrateAndroid", type: .dynamic,
@@ -33,7 +37,8 @@ let package = Package(
             ]),
     ],
     dependencies: [
-        // SHA-256 for PKCE where CryptoKit is not: Linux and Android.
+        // SHA-256 where CryptoKit is not, on Linux and Android: for PKCE, and
+        // for the hashed names a chat's cache folder and files have always had.
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1")
     ],
     targets: [
@@ -65,6 +70,16 @@ let package = Package(
             dependencies: [
                 "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
             ]),
+        // A chat with a substrate's agents below its views, with no UI
+        // framework in it: the chat list as a root under the link, each
+        // conversation a child of it, the transcript fold, the stream lines,
+        // the Markdown parser, the words, and what the device keeps.
+        .target(
+            name: "SubstrateChatCore",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
+            ]),
         // The scripted server, the fake device services and the harness tests use.
         .target(
             name: "SubstrateTesting",
@@ -83,6 +98,21 @@ let package = Package(
                 "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
                 "SubstrateDeviceApple",
             ]),
+        // The chat's SwiftUI side: the host of its presentations, the list,
+        // a conversation and its composer, Markdown, the tokens and dictation.
+        // In Swift 5 language mode, the one library here that is: these are
+        // Substrate Chat's views as its app target compiled them, and Swift
+        // 6 mode is not only stricter, it adds checks at run time (a closure
+        // the audio engine calls off the main thread would stop the app), so
+        // the mode moves when the views are ported and tried, not with the
+        // files.
+        .target(
+            name: "SubstrateChatUI",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens", "SubstrateChatCore",
+                "SubstrateDeviceApple", "SubstrateUI",
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]),
         // jni.h, the Looper and the log from the NDK; empty off Android.
         .target(
             name: "SubstrateJNI",
@@ -113,6 +143,15 @@ let package = Package(
         .testTarget(
             name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"],
             resources: [.copy("Resources")]),
+        // Resources: a cache folder as the build before the chat's core wrote
+        // it, and the copies of the push wire's fixtures its tests read.
+        .testTarget(
+            name: "SubstrateChatCoreTests",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
+                "SubstrateChatCore", "SubstrateTesting",
+            ],
+            resources: [.copy("Fixtures")]),
         .testTarget(
             name: "SubstrateBridgeTests",
             dependencies: [

@@ -1,9 +1,10 @@
 #if DEBUG
-import ChatKit
 import Foundation
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateKit
 
-/// A run played from ChatKit's fixtures in the app itself, for a picture or
+/// A run played from SubstrateChatCore's fixtures in the app itself, for a picture or
 /// a recording of a state that is hard to hold against a server: a debug
 /// build launched with `SUBSTRATE_CHAT_DEMO` set (a release carries none of
 /// it). The session is in memory and the folder a scratch one, as a

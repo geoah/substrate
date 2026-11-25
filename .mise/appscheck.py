@@ -312,8 +312,11 @@ for package in packages_under(APPS):
 # to the package is added here too, in its place, or this refuses it.
 # SubstrateResolv is the C half of SubstrateDeviceApple, SubstrateJNI the C
 # half of SubstrateBridge; SubstrateKit is the umbrella every app imports
-# today, over every library but the test fakes. The Android rows come last
-# and take no Apple row: they build where no Apple framework is.
+# today, over every library every app draws with. The chat's two libraries
+# (SubstrateChatCore, portable, and SubstrateChatUI, Apple's) are the kit's
+# because an app may not import another app's module: an app that shows a
+# chat names them. The Android rows come last and take no Apple row: they
+# build where no Apple framework is.
 
 KIT_ORDER = [
     "SubstrateCore",
@@ -323,18 +326,20 @@ KIT_ORDER = [
     "SubstrateRuntime",
     "SubstrateLocal",
     "SubstrateScreens",
+    "SubstrateChatCore",
     "SubstrateTesting",
     "SubstrateDeviceApple",
     "SubstrateUI",
+    "SubstrateChatUI",
     "SubstrateBridge",
     "SubstrateBridgeCheck",
 ]
 KIT_HELPERS = {"SubstrateResolv": {"SubstrateDeviceApple"}, "SubstrateJNI": {"SubstrateBridge"}}
-APPLE_ROWS = {"SubstrateDeviceApple", "SubstrateUI"}
+APPLE_ROWS = {"SubstrateDeviceApple", "SubstrateUI", "SubstrateChatUI"}
 ANDROID_ROWS = {"SubstrateBridge", "SubstrateBridgeCheck"}
 UMBRELLA = "SubstrateKit"
 # The third-party products a kit library may take, by library.
-KIT_EXTERNAL = {("SubstrateAuth", "Crypto", "swift-crypto")}
+KIT_EXTERNAL = {("SubstrateAuth", "Crypto", "swift-crypto"), ("SubstrateChatCore", "Crypto", "swift-crypto")}
 
 for target, info in sorted(kit.targets.items()):
     if info["kind"] == "testTarget":
@@ -379,7 +384,7 @@ for target, info in sorted(kit.targets.items()):
 # swift-crypto's Crypto, either under `#if canImport(CryptoKit)`. The Linux
 # job catches what this misses, later and slower.
 
-PORTABLE_KIT = ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"]
+PORTABLE_KIT = ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens", "SubstrateChatCore", "SubstrateTesting"]
 ALLOWED = {"Foundation", "Observation", "Dispatch"}
 GUARDED = {
     "FoundationNetworking": "canImport(FoundationNetworking)",
@@ -392,7 +397,7 @@ KIT_MODULES = set(KIT_ORDER)
 def check_portable(directory, own):
     for path in swift_files(directory):
         for number, module, conditions in imports(path):
-            if module in ALLOWED or module in KIT_MODULES - {"SubstrateDeviceApple", "SubstrateUI"} or module in own:
+            if module in ALLOWED or module in KIT_MODULES - APPLE_ROWS or module in own:
                 continue
             guard = GUARDED.get(module)
             if guard and any(guard in c for c in conditions):
@@ -405,7 +410,7 @@ for target in PORTABLE_KIT:
     if target in kit.targets:
         check_portable(kit.source_dir(target), set())
 
-# An app's core is its Swift package named for it (WorkoutsKit/, ChatKit/):
+# An app's core is its Swift package named for it (WorkoutsKit/, TasksKit/):
 # its libraries are held as the kit's portable ones are.
 for package in packages_under(APPS):
     if os.path.relpath(package.dir, APPS).split(os.sep)[0] == "kit" or not os.path.basename(package.dir).endswith("Kit"):
@@ -1058,16 +1063,16 @@ for name in sorted(set(listed) - set(used)):
 # relay's half, which `internal/pushwire` writes from the code (its
 # testdata/README.md), and the server's, which `internal/api`'s push tests
 # run through the real handler (internal/api/testdata/push/README.md). The
-# kit's tests and ChatKit's read copies of the ones they need, under
+# kit's tests and the chat core's read copies of the ones they need, under
 # pushwire/ and pushserver/ in kit/Tests/SubstrateKitTests/Resources/ and
-# chat/ChatKit/Tests/ChatKitTests/Fixtures/, and
+# kit/Tests/SubstrateChatCoreTests/Fixtures/, and
 # each copy is the original byte for byte, so a change of the wire fails
 # here until the copy follows it. Where the tree holds no original folder
 # yet there is nothing to compare with.
 
 COPY_ROOTS = (
     os.path.join(APPS, "kit", "Tests", "SubstrateKitTests", "Resources"),
-    os.path.join(APPS, "chat", "ChatKit", "Tests", "ChatKitTests", "Fixtures"),
+    os.path.join(APPS, "kit", "Tests", "SubstrateChatCoreTests", "Fixtures"),
 )
 for (original_dir, copy_dir), root in (
     (pair, root)

@@ -1,17 +1,18 @@
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import Testing
 import UserNotifications
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 #if os(macOS)
 import AppKit
 import SwiftUI
 #endif
 
-/// What only the Apple app holds; the chat's rules are ChatKit's.
+/// What only the Apple app holds; the chat's rules are SubstrateChatCore's.
 @Suite struct LoopbackSignIn {
     @Test(.timeLimit(.minutes(1))) func theLoopbackReceiverHandsOverTheRedirectsQuery() async throws {
         let receiver = try await LoopbackReceiver.start(appName: ChatManifest.appName, path: ChatManifest.manifest.loopbackPath)

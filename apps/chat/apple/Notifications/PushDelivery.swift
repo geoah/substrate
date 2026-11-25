@@ -1,5 +1,5 @@
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import UserNotifications
 
 /// What the extension does with what `ChatPush.content` answered: the

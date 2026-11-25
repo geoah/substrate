@@ -1,9 +1,10 @@
 #if DEBUG
-import ChatKit
 import Foundation
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateKit
 
-/// A substrate that answers from ChatKit's fixtures, in the process: the
+/// A substrate that answers from SubstrateChatCore's fixtures, in the process: the
 /// chat list, each chat's rows, the change feed held open, and a turn that
 /// streams a reply at a model's pace and then stands in the rows. What a
 /// measurement runs against and a gallery draws from, so neither needs a

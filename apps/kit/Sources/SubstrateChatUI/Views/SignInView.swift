@@ -1,0 +1,204 @@
+#if canImport(SwiftUI)
+import SubstrateAPI
+import SubstrateChatCore
+import SubstrateCore
+import SubstrateDeviceApple
+import SubstrateScreens
+import SubstrateUI
+import SwiftUI
+
+/// The server first, the kit's connect screen against Chat's manifest. A
+/// substrate that can give the app access of its own is signed in to in the
+/// browser, where the owner approves what Substrate Chat may do; one with no
+/// app authorization takes the repository and the password and, when the
+/// account has a second factor, then asks for its code; one whose app authorization cannot reach the agents says it
+/// needs an update. Below the door, a token an earlier sign-in left that its
+/// server has not revoked yet, with where to revoke it by hand.
+struct SignInView: View {
+    @Environment(ChatHost.self) private var host
+    @AppStorage("signin.server") private var address = ""
+
+    var body: some View {
+        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: (try? host.sessions.pendingRevocations()) ?? []) {
+            // The app's own icon, drawn by scripts/icons.mjs like the AppIcon
+            // set, light and dark.
+            ConnectHeader(
+                appName: ChatManifest.appName, tagline: "Talk to the agents in your substrate.",
+                icon: Image("AppMark"))
+        } onSignIn: { probe in
+            try await host.signIn(probe)
+        } passwordDoor: { probe in
+            PasswordDoor(probe: probe)
+        }
+    }
+}
+
+/// The password door, for a server without app authorization.
+private struct PasswordDoor: View {
+    @Environment(ChatHost.self) private var host
+    @AppStorage("signin.repository") private var repository = ""
+    let probe: ServerProbe.Result
+    @State private var password = ""
+    @State private var code = ""
+    /// The server answered that this account has a second factor: the code
+    /// field is shown and the next sign-in carries it.
+    @State private var codeAsked = false
+    /// The server answered that the person may open several repositories and
+    /// named none (decision 0274): the pick is shown, and the next sign-in
+    /// names the one picked with the factors already given.
+    @State private var choices: [RepositoryChoiceRequired.Choice] = []
+    @State private var chosen = ""
+    @State private var busy = false
+    @State private var problem: String?
+    @FocusState private var focus: Field?
+
+    private enum Field { case repository, password, code }
+
+    private var ready: Bool {
+        !repository.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && (!codeAsked || !code.isEmpty)
+            && (choices.isEmpty || !chosen.isEmpty)
+    }
+
+    var body: some View {
+        VStack(spacing: ChatSpace.blocks) {
+            field("Name", systemImage: "person.crop.circle") {
+                TextField("you.example.com", text: $repository)
+                    .textContentType(.username)
+                    #if os(iOS)
+                .textInputAutocapitalization(.never)
+                    #endif
+                    .autocorrectionDisabled()
+                    .focused($focus, equals: .repository)
+                    .onSubmit { focus = .password }
+                    .onChange(of: repository) {
+                        // Another name is another person: their repositories are theirs.
+                        choices = []
+                        chosen = ""
+                    }
+            }
+            field("Password", systemImage: "key") {
+                SecureField("Required", text: $password)
+                    .textContentType(.password)
+                    .focused($focus, equals: .password)
+                    .onSubmit { codeAsked ? (focus = .code) : signIn() }
+            }
+            if codeAsked {
+                field("Code", systemImage: "lock.shield") {
+                    TextField("6 digits", text: $code)
+                        .textContentType(.oneTimeCode)
+                        #if os(iOS)
+                    .keyboardType(.numberPad)
+                        #endif
+                        .focused($focus, equals: .code)
+                        .onSubmit(signIn)
+                }
+            }
+            if !choices.isEmpty {
+                field("Repository", systemImage: "tray.full") {
+                    Picker("Repository", selection: $chosen) {
+                        ForEach(choices) { choice in
+                            Text(choice.name).tag(choice.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if let problem {
+                ProblemBox(title: "Couldn't sign in", message: problem)
+                    .card(.critical)
+                    .padding(.top, ChatSpace.edge)
+            }
+
+            // The connect screen's own button, as its fields are its own.
+            ConnectButton("Sign In", busy: busy, action: signIn)
+                .disabled(busy || !ready)
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, ChatSpace.edge)
+        }
+        .disabled(busy)
+        .onAppear { focus = repository.isEmpty ? .repository : .password }
+    }
+
+    private func field(_ label: String, systemImage: String, @ViewBuilder content: () -> some View) -> some View {
+        ConnectField(label, systemImage: systemImage, content: content)
+    }
+
+    private func signIn() {
+        guard ready, !busy else { return }
+        busy = true
+        problem = nil
+        Task {
+            defer { busy = false }
+            do {
+                try await host.signIn(
+                    probe, name: repository.trimmingCharacters(in: .whitespaces),
+                    repository: chosen.isEmpty ? nil : chosen,
+                    password: password, totp: codeAsked ? code : nil)
+                password = ""
+                code = ""
+            } catch let refused as LoginRefused where refused.codeRequired && !codeAsked {
+                codeAsked = true
+                focus = .code
+            } catch let choice as RepositoryChoiceRequired {
+                // The door spent no code: the same factors sign in once a
+                // repository is picked.
+                choices = choice.repositories
+                chosen = choice.repositories.first?.id ?? ""
+            } catch {
+                code = ""
+                problem = explain(error, app: ChatManifest.appName, server: probe.origin)
+            }
+        }
+    }
+}
+
+/// Signed in, but the owner left out talking to the agents: the one thing
+/// this app is for.
+struct NoChatAccessView: View {
+    @Environment(ChatHost.self) private var host
+    @State private var changingAccess = false
+
+    var body: some View {
+        VStack(spacing: ChatSpace.margin) {
+            Image("AppMark")
+                .resizable()
+                .frame(width: ChatSize.appMark, height: ChatSize.appMark)
+                .accessibilityHidden(true)
+            Text("Substrate Chat can't talk to your assistants")
+                .font(ChatType.title)
+                .multilineTextAlignment(.center)
+            Text("The approval on \(host.chats?.host ?? "your substrate") left out talking to your agents. Change its access and keep that one checked.")
+                .multilineTextAlignment(.center)
+                .ink(.quiet, on: .page)
+            if let problem = host.authorizeProblem {
+                ProblemBox(title: "Access didn't change", message: problem)
+                    .card(.critical)
+            }
+            Button {
+                changingAccess = true
+            } label: {
+                HStack(spacing: ChatSpace.beside) {
+                    if host.authorizing { ProgressView().controlSize(.small) }
+                    Text("Change Access…")
+                }
+            }
+            .buttonStyle(.glassProminent)
+            .prominentTint()
+            .controlSize(.large)
+            .disabled(host.authorizing && !WebAuthenticator.opensBrowser)
+            if host.authorizing, WebAuthenticator.opensBrowser {
+                Button("Cancel") { host.cancelAuthorization() }
+                    .buttonStyle(.borderless)
+            }
+            Button("Sign Out", role: .destructive) { host.signOut() }
+                .buttonStyle(.borderless)
+        }
+        .padding(ChatSpace.screen)
+        .frame(maxWidth: ChatSize.door)
+        .sheet(isPresented: $changingAccess) { ReviewSheet(isPresented: $changingAccess, changingAccess: true) }
+    }
+}
+#endif

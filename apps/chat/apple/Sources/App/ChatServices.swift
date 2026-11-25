@@ -1,5 +1,5 @@
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 
 /// The device services Chat's runtime uses, made once, before the app

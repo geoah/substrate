@@ -1,12 +1,13 @@
 #if os(iOS)
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import SwiftUI
 import Testing
 import UIKit
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// A chat opens with its rows on screen, whatever their heights and
 /// whatever the text size: through the conversation's own view, in a window

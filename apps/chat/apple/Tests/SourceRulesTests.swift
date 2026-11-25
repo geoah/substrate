@@ -4,12 +4,14 @@ import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// The rules the chat's views are held to, read from their own source (the
-/// files of `Sources/App`, `Sources/Views` and `Sources/Markdown`, which the
-/// test bundle carries as text). A view names what a size, a colour or a
-/// motion is for; the number, the colour and the animation are a token's,
-/// in `Sources/Tokens`, which is the one place the app's feel is changed.
+/// app's `Sources/App`, and the `Host`, `Views` and `Markdown` folders of
+/// the kit's SubstrateChatUI, which the test bundle carries as text). A view
+/// names what a size, a colour or a motion is for; the number, the colour
+/// and the animation are a token's, in SubstrateChatUI's `Tokens`, which is
+/// the one place the chat's feel is changed.
 ///
 /// Each rule is a pattern over a line with its comments and its string
 /// literals taken out. A pattern cannot know what a number means, so the
@@ -115,7 +117,7 @@ import Testing
     static let allowances: [Allowance] = [
         Allowance(
             file: "FailureView.swift", holds: "Color(palette.", rule: "a literal colour",
-            why: "a failure's colours are ChatKit's FailurePalette, opaque values of its own that FailureTests holds to 4.5:1"),
+            why: "a failure's colours are SubstrateChatCore's FailurePalette, opaque values of its own that FailureTests holds to 4.5:1"),
         Allowance(
             file: "FailureView.swift", holds: "Color(enabled ? palette.", rule: "a literal colour",
             why: "the same palette, for a button that can and cannot be pressed"),
@@ -197,8 +199,8 @@ import Testing
     static func physicalLines() throws -> [Line] {
         let bundle = Bundle(for: InBundle.self)
         var out: [Line] = []
-        for folder in ["App", "Views", "Markdown"] {
-            let url = try #require(bundle.url(forResource: folder, withExtension: nil), "the test bundle carries Sources/\(folder)")
+        for folder in ["App", "Host", "Views", "Markdown"] {
+            let url = try #require(bundle.url(forResource: folder, withExtension: nil), "the test bundle carries \(folder)")
             let files = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }
             for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 let text = try String(contentsOf: file, encoding: .utf8)
@@ -252,7 +254,7 @@ import Testing
 
     @Test func theBundleCarriesTheViews() throws {
         let files = Set(try Self.lines().map(\.file))
-        #expect(files.isSuperset(of: ["TurnView.swift", "ComposerBar.swift", "MarkdownView.swift", "SubstrateChatApp.swift"]))
+        #expect(files.isSuperset(of: ["TurnView.swift", "ComposerBar.swift", "MarkdownView.swift", "SubstrateChatApp.swift", "ChatHost.swift"]))
         #expect(!files.contains("ChatMetrics.swift"), "the tokens are where the numbers are, and are not read")
     }
 

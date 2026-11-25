@@ -1,12 +1,13 @@
 #if os(macOS)
 import AppKit
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// Rows that arrive above a transcript's first (`TranscriptScroll`'s
 /// `above`) meet a tall row: a reply that opens with a wide table and goes

@@ -1,12 +1,13 @@
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// A reply as it is written, through the renderer the app draws it with:
-/// ChatKit's own tests hold the same with a renderer by rule, since the
-/// real one is not on every system ChatKit builds for.
+/// SubstrateChatCore's own tests hold the same with a renderer by rule, since the
+/// real one is not on every system SubstrateChatCore builds for.
 @MainActor
 @Suite struct StreamedMarkdownTests {
     /// What some blocks draw, as words: each inline text as the app's

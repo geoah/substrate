@@ -1,14 +1,15 @@
 #if os(macOS)
 import AppKit
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
-/// A conversation's transcript drawn from ChatKit's fixtures by the views
+/// A conversation's transcript drawn from SubstrateChatCore's fixtures by the views
 /// the app draws it with, through the app's own runtime against the
 /// fixture's server, so a picture is what the app shows and never a second
 /// rendering of it. With
@@ -19,7 +20,7 @@ import Testing
 /// table and a fenced block; and a reply that links records, each a pill
 /// inside its line, in a paragraph, a list and a table.
 ///
-/// And the places a failure is drawn, from ChatKit's fixtures, by the view
+/// And the places a failure is drawn, from SubstrateChatCore's fixtures, by the view
 /// the app draws them with: each at an iPhone's size and at an iPad's, in
 /// light and in dark. What surrounds a failure there (a bubble, a reply, a
 /// row, the composer) stands in for the app's own: the failure itself is

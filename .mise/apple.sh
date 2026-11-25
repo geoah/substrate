@@ -719,13 +719,15 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		;;
 	test:kit)
 		# SubstrateKit is a Swift package: its tests run on the Mac with swift
-		# test, no project or simulator.
+		# test, no project or simulator. The chat's core is one of its
+		# libraries, so its tests run here too.
 		swift test --package-path ../kit
 		;;
 	test:chat)
-		# ChatKit is a Swift package: the chat's rules, on the Mac with swift
-		# test; then what only the Apple app holds, in its test target.
-		swift test --package-path ../chat/ChatKit
+		# The chat's rules are the kit's SubstrateChatCore: its tests alone,
+		# on the Mac with swift test; then what only the Apple side holds,
+		# in the app's test target.
+		swift test --package-path ../kit --filter '^SubstrateChatCoreTests\.'
 		project
 		chat -destination 'platform=macOS' test
 		;;

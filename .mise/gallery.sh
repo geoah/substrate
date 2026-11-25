@@ -26,9 +26,9 @@ SUBSTRATEKIT_SNAPSHOTS="$out/apple" xcrun swift test --package-path apps/kit --f
 # Each app's screens, drawn by its own views in its UI framework's tests,
 # which run on the Mac with no host app: every app whose apple/Tests holds a
 # GalleryTests, by the scheme its app.json names, each into apple/<app>.
-# Chat's views are its app target's, so its tests run inside the app, which
-# the Mac sandboxes: its pictures are attached to the test's result and
-# taken from there, each under the name it was attached with.
+# Chat's tests of its views are hosted in its app, which the Mac
+# sandboxes: its pictures are attached to the test's result and taken
+# from there, each under the name it was attached with.
 .mise/apple.sh project
 for gallery in apps/*/apple/Tests/GalleryTests.swift; do
   app=$(basename "$(dirname "$(dirname "$(dirname "$gallery")")")")

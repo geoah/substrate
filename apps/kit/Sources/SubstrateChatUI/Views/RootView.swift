@@ -1,0 +1,149 @@
+#if canImport(SwiftUI)
+import SubstrateChatCore
+import SubstrateRuntime
+import SubstrateScreens
+import SubstrateUI
+import SwiftUI
+
+/// Signed out, the access ended, no access to the agents, or the chats.
+public struct RootView: View {
+    @Environment(ChatHost.self) private var host
+
+    public init() {}
+
+    public var body: some View {
+        let link = host.link
+        // The link's own part and the app's: a reply being written is in
+        // neither, so it draws nothing here.
+        let signedIn = host.chats?.signedIn == true
+        let canChat = host.chats?.canChat == true
+        Group {
+            if let ended = link.ended {
+                AccessEndedScreen(ended) { host.signInAgain() }
+            } else if signedIn, !canChat {
+                NoChatAccessView()
+            } else if signedIn {
+                ChatSplitView()
+                    .recordViewer(host.recordDirectory())
+                    .id(host.chats?.host)
+            } else if host.stored {
+                // The Keychain holds a session the link has not read yet.
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                SignInView()
+            }
+        }
+        .motion(.place, value: signedIn)
+        .onChange(of: link.snapshot.phase) { _, _ in host.refreshStored() }
+        .alert("Couldn't sign out", isPresented: Binding(get: { link.signOutProblem != nil }, set: { _ in })) {
+            if let fix = link.signOutProblem?.fix { Button(fix.title) { host.signOut() } }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(link.signOutProblem?.message ?? "")
+        }
+    }
+}
+
+/// One window: which chat it shows, kept by the chat list by this window's
+/// id, and the column a phone shows.
+struct ChatSplitView: View {
+    @Environment(ChatHost.self) private var host
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #if os(macOS)
+    @Environment(\.controlActiveState) private var keyState
+    #endif
+    @State private var scene = UUID().uuidString
+    @SceneStorage("chat.thread") private var restored = ""
+    @SceneStorage("chat.left") private var left = 0.0
+    @State private var columns = NavigationSplitViewVisibility.all
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
+    @State private var showSettings = false
+
+    private var current: ChildKey? { host.chats?.scenes[scene]?.current }
+
+    var body: some View {
+        let _ = Meter.shared.count(.body, "Split")
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
+            ChatListView(scene: scene, showSettings: $showSettings)
+                .navigationSplitViewColumnWidth(min: ChatSize.sidebar.least, ideal: ChatSize.sidebar.ideal, max: ChatSize.sidebar.most)
+        } detail: {
+            if let current {
+                ConversationView(key: current, scene: scene)
+                    .id(current)
+            } else {
+                NoChatView(scene: scene)
+            }
+        }
+        .onAppear {
+            host.send(FirstScreen.appeared(scene: scene, restored: restored, left: left))
+            take()
+        }
+        .modifier(KeepsPlace(scene: scene, restored: $restored, left: $left))
+        .onDisappear { host.send(.sceneGone(scene: scene)) }
+        .onChange(of: host.chats?.routePending) { _, _ in take() }
+        .onChange(of: current) { _, key in
+            if key != nil { compactColumn = .detail }
+            restored = key == nil ? "" : host.chats?.scenes[scene]?.thread ?? ""
+        }
+        .onChange(of: compactColumn) { _, column in
+            // Back to the list on an iPhone: nothing is selected, so the same
+            // row opens again when tapped.
+            if column == .sidebar, sizeClass == .compact { host.send(.back(scene: scene)) }
+        }
+        .onChange(of: phase, initial: true) { _, phase in host.send(.sceneActive(scene: scene, active: phase == .active)) }
+        // A reply is revealed at a steady rate unless the device asks for
+        // less motion.
+        .pacesReplies()
+        #if os(iOS)
+        // The sheet takes the scene's updater from the environment, as
+        // every view under the window does.
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
+        #endif
+    }
+
+    /// One window takes a route: the key one on a Mac, else the first to
+    /// claim it.
+    private func take() {
+        guard host.chats?.routePending == true else { return }
+        #if os(macOS)
+        if keyState != .key {
+            Task {
+                try? await Task.sleep(for: .milliseconds(80))
+                host.send(.claimRoute(scene: scene))
+            }
+            return
+        }
+        #endif
+        host.send(.claimRoute(scene: scene))
+    }
+}
+
+/// The detail column with nothing chosen.
+struct NoChatView: View {
+    @Environment(ChatHost.self) private var host
+    let scene: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("No chat selected", systemImage: "bubble.left.and.bubble.right")
+        } description: {
+            Text("Pick a chat, or start a new one.")
+        } actions: {
+            Button("New Chat") { host.send(.newChat(agent: nil, listen: false, scene: scene)) }
+                .buttonStyle(.glassProminent)
+                .prominentTint()
+        }
+    }
+}
+
+#if os(macOS)
+public extension Scene {
+    /// The chats' window as it first opens on a Mac.
+    func chatWindowSize() -> some Scene { defaultSize(ChatSize.window) }
+}
+#endif
+#endif

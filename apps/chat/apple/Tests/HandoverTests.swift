@@ -1,12 +1,13 @@
 #if os(macOS)
 import AppKit
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// A reply from its first piece to its stored rows, frame by frame, through
 /// the views the app draws it with and its own runtime against the fixture's

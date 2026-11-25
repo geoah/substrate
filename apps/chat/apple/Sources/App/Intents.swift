@@ -1,5 +1,6 @@
 import AppIntents
-import ChatKit
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateKit
 
 /// An assistant a chat can go to: the agents offered in Settings → Agents.

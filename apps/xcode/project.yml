@@ -22,8 +22,9 @@ packages:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
   # What the apps share: the server's address and discovery, the requests,
-  # signing in, the session, the status check and their screens, and the
-  # record views (../kit/README.md).
+  # signing in, the session, the status check and their screens, the
+  # record views, and a chat with a substrate's agents, its engine and its
+  # screens (../kit/README.md).
   SubstrateKit:
     path: ../kit
   # Substrate Workouts' model, session and suggestion engines (WorkoutsCore)
@@ -31,10 +32,6 @@ packages:
   # libraries alone.
   WorkoutsKit:
     path: ../workouts/WorkoutsKit
-  # Substrate Chat below its views: the list and its conversations on the
-  # kit's runtime, the transcript fold, the words, what the device keeps.
-  ChatKit:
-    path: ../chat/ChatKit
   # Substrate Tasks' core (TasksCore): its root under the kit's link, the
   # task editor and the presenters, with no UI framework.
   TasksKit:

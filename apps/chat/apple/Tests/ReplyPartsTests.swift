@@ -1,12 +1,13 @@
 #if os(macOS)
 import AppKit
-import ChatKit
 import Foundation
+import SubstrateChatCore
 import SubstrateKit
 import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 /// What stands in and under a reply, as the app's own views draw it: the
 /// row of actions under the last reply, code in its colours with the

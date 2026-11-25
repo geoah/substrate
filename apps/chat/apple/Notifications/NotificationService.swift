@@ -1,6 +1,6 @@
-import ChatKit
 import Foundation
 import SubstrateAuth
+import SubstrateChatCore
 import SubstrateDevice
 import UserNotifications
 

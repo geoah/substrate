@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 
 @testable import SubstrateChat
+@testable import SubstrateChatUI
 
 #if os(macOS)
 import AppKit

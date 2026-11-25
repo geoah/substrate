@@ -1,6 +1,7 @@
 #if DEBUG
-import ChatKit
 import Foundation
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateKit
 import SwiftUI
 

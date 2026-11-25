@@ -1,4 +1,5 @@
-import ChatKit
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateKit
 import SwiftUI
 
@@ -76,7 +77,7 @@ struct SubstrateChatApp: App {
         WindowGroup(id: "chats") {
             RootView()
                 .environment(host)
-                .environmentObject(updates)
+                .chatUpdates(chatUpdates)
                 .updateOffer(updates)
                 .onChange(of: phase, initial: true) { _, phase in
                     switch phase {
@@ -94,7 +95,7 @@ struct SubstrateChatApp: App {
                 .onChange(of: host.chats?.offered) { _, _ in ChatShortcuts.updateAppShortcutParameters() }
         }
         #if os(macOS)
-        .defaultSize(ChatSize.window)
+        .chatWindowSize()
         .windowToolbarStyle(.unified)
         .commands {
             ChatCommands(host: host)
@@ -104,18 +105,20 @@ struct SubstrateChatApp: App {
 
         #if os(macOS)
         Settings {
-            if host.chats?.signedIn == true {
-                SettingsView()
-                    .environment(host)
-                    .environmentObject(updates)
-                    .frame(width: ChatSize.settings.width, height: ChatSize.settings.height)
-            } else {
-                Text("Sign in to change settings.")
-                    .ink(.quiet, on: .page)
-                    .frame(width: ChatSize.sheet.width, height: ChatSize.sheet.height)
-            }
+            ChatSettingsWindow()
+                .environment(host)
+                .chatUpdates(chatUpdates)
         }
         #endif
+    }
+
+    /// What the chat's Settings reads of the updater this scene holds: the
+    /// views are a library's, which cannot name the updater's type.
+    private var chatUpdates: ChatUpdates {
+        let updater = updates
+        return ChatUpdates(
+            build: BuildFacts(version: updater.build.version, channel: updater.build.channel, privacyPolicy: updater.build.privacyPolicy),
+            enabled: updater.enabled, prereleases: $updates.prereleases, checkNow: { updater.checkNow() })
     }
 }
 
@@ -151,8 +154,3 @@ struct ChatCommands: Commands {
     }
 }
 #endif
-
-extension FocusedValues {
-    /// The conversation the focused window shows.
-    @Entry var conversation: ChildKey?
-}

@@ -1,11 +1,12 @@
 targets:
   SubstrateChat:
     # The agent chat, native: iPhone, iPad and Mac from one target like the
-    # console app's, speaking only the API like Substrate Sync. It draws
-    # ChatKit's presentations and sends its commands; the speech, the
-    # notifications and the background work are the device's. Sparkle is
-    # the Mac's updater alone, and the updater is the shared file in
-    # apps/xcode/Shared.
+    # console app's, speaking only the API like Substrate Sync. Its engine
+    # and its screens are the kit's (SubstrateChatCore, SubstrateChatUI),
+    # so another app can show a chat with them; what is here is the app's
+    # own: its scenes and menus, its device services, its session's place
+    # in the Keychain, App Intents. Sparkle is the Mac's updater alone, and
+    # the updater is the shared file in apps/xcode/Shared.
     type: application
     platform: auto
     supportedDestinations: [iOS, macOS]
@@ -27,7 +28,10 @@ targets:
       - target: SubstrateChatNotifications
         destinationFilters: [iOS]
       - package: SubstrateKit
-      - package: ChatKit
+      - package: SubstrateKit
+        product: SubstrateChatCore
+      - package: SubstrateKit
+        product: SubstrateChatUI
     settings:
       base:
         PRODUCT_NAME: SubstrateChat
@@ -53,15 +57,16 @@ targets:
     # The notification service extension: what a push from the publisher's
     # relay says, read from the person's own server with the app's token,
     # through the Keychain group the two share. iPhone and iPad alone, and
-    # nothing that draws: it links ChatKit and the kit's API, since iOS
-    # holds an extension to a small memory limit.
+    # nothing that draws: it links the chat's core and the kit's API, never
+    # SubstrateChatUI, since iOS holds an extension to a small memory limit.
     type: app-extension
     platform: iOS
     sources:
       - Notifications
       - Shared
     dependencies:
-      - package: ChatKit
+      - package: SubstrateKit
+        product: SubstrateChatCore
       - package: SubstrateKit
         product: SubstrateCore
       - package: SubstrateKit
@@ -83,18 +88,20 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
         APPLICATION_EXTENSION_API_ONLY: "YES"
   SubstrateChatTests:
-    # What only the Apple app holds: the loopback receiver, the Keychain item
-    # every build kept the session in, inline Markdown, and what a screen
-    # reader is told of a link out to the console. The chat's rules are
-    # ChatKit's, tested by `swift test` there (`mise run apple:test:chat`
-    # runs both).
+    # What only the Apple side holds, hosted in the app: the loopback
+    # receiver, the Keychain item every build kept the session in, inline
+    # Markdown, the views drawn frame by frame, and what a screen reader is
+    # told of a link out to the console. The chat's rules are
+    # SubstrateChatCore's, tested by `swift test` in the kit
+    # (`mise run apple:test:chat` runs both).
     type: bundle.unit-test
     platform: auto
     supportedDestinations: [macOS, iOS]
-    # The views' own source goes into the bundle as files to read: the
-    # rules `SourceRules` holds them to (a size, a colour or a motion is a
-    # token's, never a view's) are read from the text, and a test hosted
-    # in the sandboxed app can read nothing outside its bundle.
+    # The views' own source goes into the bundle as files to read, the
+    # app's (Sources/App) and the kit's (SubstrateChatUI's Host, Views and
+    # Markdown): the rules `SourceRules` holds them to (a size, a colour or
+    # a motion is a token's, never a view's) are read from the text, and a
+    # test hosted in the sandboxed app can read nothing outside its bundle.
     sources:
       - Tests
       # The extension has no test target: what it delivers is tested here.
@@ -102,10 +109,13 @@ targets:
       - path: Sources/App
         type: folder
         buildPhase: resources
-      - path: Sources/Views
+      - path: ../../kit/Sources/SubstrateChatUI/Host
         type: folder
         buildPhase: resources
-      - path: Sources/Markdown
+      - path: ../../kit/Sources/SubstrateChatUI/Views
+        type: folder
+        buildPhase: resources
+      - path: ../../kit/Sources/SubstrateChatUI/Markdown
         type: folder
         buildPhase: resources
     dependencies:
