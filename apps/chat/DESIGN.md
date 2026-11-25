@@ -64,31 +64,45 @@ changed is listed at the end.
 | Bundle id     | `dev.reamde.substrate.chat` |
 | Display name  | Substrate Chat |
 | Minimum OS    | iOS 26, iPadOS 26, macOS 26 |
-| Dependencies  | ChatKit (`chat/ChatKit`: the list and its conversations on the kit's runtime, the fold, the words, what the device keeps) over the kit's portable libraries; SubstrateKit for the screens, the sign-in flow and the device services; speech is the system's |
+| Dependencies  | the kit's two chat libraries: SubstrateChatCore (`kit/Sources/SubstrateChatCore`: the list and its conversations on the kit's runtime, the fold, the words, what the device keeps) over the kit's other portable libraries, and SubstrateChatUI (`kit/Sources/SubstrateChatUI`: the views, Markdown, the tokens, dictation); SubstrateKit for the shared screens, the sign-in flow and the device services; speech is the system's |
 | Keychain      | service `dev.reamde.substrate.chat`, `AfterFirstUnlockThisDeviceOnly` |
 | macOS sandbox | network client, audio input |
-| Tests         | `ChatKitTests` (`swift test`, on the Mac and on Linux), and `SubstrateChatTests` for what only the Apple app holds |
+| Tests         | `SubstrateChatCoreTests` (`swift test` in the kit, on the Mac and on Linux), and `SubstrateChatTests`, hosted in the app, for what only the Apple side holds |
 | Distribution  | `mise run apps:release prerelease chat` to `<release folder>/chat/`, as Sync; listed on the internal catalogue |
 
 `mise run apple:build:chat` builds both platforms, `apple:sim:chat` runs the
-iOS app on a simulator, `apple:test:chat` runs ChatKit's tests and then the
-app target's, and `apps:test:linux` runs ChatKit's on Linux.
+iOS app on a simulator, `apple:test:chat` runs SubstrateChatCore's tests and
+then the app target's, and `apps:test:linux` runs SubstrateChatCore's on
+Linux with the rest of the kit.
 
 ## Architecture
 
+The engine and the screens are two libraries of the kit, under `apps/kit`,
+so that another app can show a chat with them: an app may not import
+another app's module, and what apps share is the kit's to hold
+(docs/plans/app-kit.md §6). SubstrateChatCore was this app's own package,
+ChatKit, and SubstrateChatUI the views of its app target, until then. What
+is left here is the app's own.
+
 ```text
-ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
+kit/Sources/SubstrateChatCore/    no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
   Conversation/  one chat, a child of the list: the run, what its stream has said, Stop, the message sent again under its id, the delivery check, the poll
   Model/         the transcript fold, the stream's rows and the one fold of both, the notices, the agents and threads, the tool words, Markdown blocks, the highlighter of a reply's code
   API/           the agent streams over the kit's line stream; a failure as a value: what was attempted and why
   Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
   Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, what stands under the last reply, Settings; the one presenter of failures; how a table is laid out and when code offers to wrap
-apple/Sources/
-  App/       ChatHost (the one PresentationModel; the browser sign-in, Change Access, the password door), the device services, App Intents
+kit/Sources/SubstrateChatUI/      SwiftUI; Apple systems alone
+  Host/      ChatHost (the one PresentationModel; the browser sign-in, Change Access, the password door), made from the parts an app names; what Settings reads of the app's updater
   Views/     the split view, the list, the conversation, the composer, cards, settings, sign-in: presentations drawn, commands sent
   Markdown/  the blocks as SwiftUI, inline spans through `AttributedString`; a code block in its colours, a table in its layouts
+  Tokens/    every size, font, colour and motion, named for what it is for
   Voice/     Dictation: SpeechAnalyzer + SpeechTranscriber over AVAudioEngine
+chat/apple/                       the app's own
+  Sources/App/      the scenes and the Mac's menus, the device's host parts (its session store, its folder, its services), the device services, App Intents
+  Sources/Measure/  a debug build's fixture server, measurement and demo
+  Shared/           where the session is in the Keychain, compiled by the app and by the extension
+  Notifications/    the notification service extension
 ```
 
 **On the kit's runtime** (docs/plans/app-kit.md §5.2, the composition proof).
@@ -361,7 +375,7 @@ reply is written, and a send goes when the reply ends.
 tree. It holds agents, providers, the chat list, each thread's rows, the
 pending questions and suggestions, and the conversations as its children.
 Each rule below is now the runtime's behaviour or an engine's step, and has a
-test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
+test by its number in `kit/Tests/SubstrateChatCoreTests/RuleTests.swift`:
 
 | Rule | Where it lives | Its test |
 | ---- | -------------- | -------- |
@@ -559,9 +573,9 @@ be read again.
 
 | File | Holds |
 | ---- | ----- |
-| `state.json` | format version, agents, providers, the chat list's first page (the newest hundred, however far the list was scrolled), the pinned chats and the ones that wait on a person, the `records` revision the server last said (which lists a launch reads before it asks again), opening lines, pending cards, the person's marks as the server last said them and the ones this device moved and has not had answered, the device's own `seen` map (what is unread on a server without marks), the notified set; a build before ChatKit kept the feed cursor here too |
-| `cache/<thread>.json` | one thread's newest rows (the read's window, never the older ones read in above it), the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
-| `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit moves into it at the first open, which removes it from `state.json`, so it is read once |
+| `state.json` | format version, agents, providers, the chat list's first page (the newest hundred, however far the list was scrolled), the pinned chats and the ones that wait on a person, the `records` revision the server last said (which lists a launch reads before it asks again), opening lines, pending cards, the person's marks as the server last said them and the ones this device moved and has not had answered, the device's own `seen` map (what is unread on a server without marks), the notified set; a build before SubstrateChatCore kept the feed cursor here too |
+| `cache/<thread>.json` | one thread's newest rows (the read's window, never the older ones read in above it), the thread `version` they were read under, and whether the window was full (in `messages/` before SubstrateChatCore; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
+| `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before SubstrateChatCore moves into it at the first open, which removes it from `state.json`, so it is read once |
 | `drafts.json` | each chat's unsent draft |
 | `unsent.json` | each chat's message sent under an id of its own that the server has not taken: the id, the text, the assistant, the thread. Written before the request leaves and before the draft is cleared, so a kill between the two leaves the message in both files, and the next launch gives it one owner |
 | `link.json` | the link generation (the kit's `LinkGeneration`): moved by every sign-out, and the one file Sign Out keeps, so a refresh job scheduled before it does nothing after the next sign-in |
@@ -745,7 +759,7 @@ and the badge the server counted.
   set: a sign-out while it read, a check unanswered, or the work cancelled
   leaves the plain fallback, with no chat text and no badge. On any
   failure the alert keeps the app's fallback words. It links
-  ChatKit and the kit's API and never a view. A server reachable only at
+  SubstrateChatCore and the kit's API and never a view. A server reachable only at
   home or over a VPN cannot be asked from elsewhere; there the fallback is
   the normal case, and Settings says so.
 - **Deciding from the lock screen.** Approve and Decline require the device
@@ -958,7 +972,7 @@ falling back to `DictationTranscriber` where the transcriber is unavailable.
 
 ### Markdown
 
-Replies are Markdown. A block parser in ChatKit (paragraphs, headings,
+Replies are Markdown. A block parser in SubstrateChatCore (paragraphs, headings,
 nested ordered and unordered lists, task items, fenced and indented code,
 quotes, tables, rules) reads a reply into blocks, and the views draw each
 block as SwiftUI and its inline spans through `AttributedString(markdown:)`
@@ -1034,7 +1048,7 @@ carries its colours as values (`MarkdownRow.code`, one `CodeHighlight` for
 each code block in the row's block, a list's and a quote's included): runs
 of a token each (keyword, string, comment, number, name, meta, and a
 diff's added and removed), by UTF-8 offset into the block's text, and the
-longest line in columns. `CodeHighlighter` makes them, in ChatKit, on the
+longest line in columns. `CodeHighlighter` makes them, in SubstrateChatCore, on the
 runtime's executor with the parse, so a finished block is an equal value
 at every flush and its view is not drawn again. It is a small reader of
 its own, with no package behind it, for the languages people paste: Swift,
@@ -1087,7 +1101,7 @@ and none, is plain text.
   send. Its room to touch, and the switch's, is 44 points, whatever the
   bar's height.
 
-**A table is laid out for the room it has** (`TableLayout`, ChatKit's rule
+**A table is laid out for the room it has** (`TableLayout`, SubstrateChatCore's rule
 over the widths the view measures; `TableGrid`, the layout that draws
 it). Its room is the window's, not the reading measure: its place among
 the reply's blocks and what it may reach past that on both sides
@@ -1520,7 +1534,7 @@ bubble is a tinted fill. The transcript softens under the composer with
   does not: more rows were written since than a read holds. The folder
   keeps the newest window alone.
 - **The transcript follows its end while you let it** (`TranscriptFollow`,
-  ChatKit's rule; `TranscriptScroll`, the view that keeps it). Following
+  SubstrateChatCore's rule; `TranscriptScroll`, the view that keeps it). Following
   is your intent, and only you change it:
   - A chat opens at its end and follows it. A new chat lies from the top
     and has nothing to follow until it outgrows the screen.
@@ -1693,7 +1707,7 @@ bubble is a tinted fill. The transcript softens under the composer with
 ### New chat
 
 - The agent: its name and description as the header, and the chat's
-  title as its picker (`AgentTitle`, from ChatKit's `AgentPicker`): "New
+  title as its picker (`AgentTitle`, from SubstrateChatCore's `AgentPicker`): "New
   Chat", and under it the assistant's name in its colour with a chevron,
   which opens the assistants offered, the chosen one checked. On an
   iPhone and an iPad it is the bar's middle item; on a Mac it is the
@@ -1739,7 +1753,7 @@ assistant is chosen from its title ([New chat](#new-chat)).
 - **Keys**: Return makes a new line and ⌘Return sends, on a Mac and on an
   iPad's or an iPhone's hardware keyboard alike; Shift-Return and
   Option-Return are new lines too. The keyboard on the screen has no ⌘, so
-  there the button sends. The rule is ChatKit's `ComposerKeys`, which the
+  there the button sends. The rule is SubstrateChatCore's `ComposerKeys`, which the
   field's `onKeyPress` asks: only ⌘ alone sends, and a Return that confirms
   an input method's marked text is left to it. On a Mac and an iPad the Send
   button's help and its hint name the shortcut. ⌘. stops.
@@ -1869,7 +1883,7 @@ may do and for how long; the app never sees the password.
 
 **One place for the feel.** No view holds a size, a font, a colour or an
 animation of its own: each names what the thing is for, and the number is
-a token's, in `apple/Sources/Tokens`. Changing how the app feels is an
+a token's, in SubstrateChatUI's `Tokens`. Changing how the app feels is an
 edit there, never a walk through the views.
 
 | Token | What it names | Its values |
@@ -1883,9 +1897,10 @@ edit there, never a walk through the views.
 
 `SourceRules` (the app's tests) reads the views' source and fails on a
 literal size, radius, line width, opacity, font, weight, colour or
-duration in `Sources/App`, `Views` or `Markdown`. The few lines that hold
+duration in the app's `Sources/App` or SubstrateChatUI's `Host`, `Views` or
+`Markdown`. The few lines that hold
 a number for another reason (a wait of the scroll view's own rule, a
-failure's palette, which is ChatKit's) are allowed by name, each with why,
+failure's palette, which is SubstrateChatCore's) are allowed by name, each with why,
 and an allowance no line uses fails.
 
 **Motion.** Everything that moves goes through `ChatMotion`. A view says
@@ -1966,7 +1981,7 @@ column is its own.
   system's green is 2.2:1; `toneFill` and `Color.accentFill`, fills white
   reads on) and the chat's own otherwise (the accent, an agent's colour as
   its pill's tint and as the ink of its name, the code's). A failure's
-  colours are ChatKit's `FailurePalette`, held by `FailureTests`. Still
+  colours are SubstrateChatCore's `FailurePalette`, held by `FailureTests`. Still
   the system's: the navigation bar's subtitle (the secondary label on the
   bar's glass), a text field's placeholder, and a list's swipe actions'
   white marks, on fills the app chooses for them.
@@ -2263,7 +2278,7 @@ so far, and otherwise once the list is scrolled to it.
 ## Failures
 
 A failure is a value until it is drawn. Where a request, a stream or a run
-fails, the app keeps a `Failure` (`ChatKit/Sources/ChatKit/API/Failure.swift`):
+fails, the app keeps a `Failure` (`kit/Sources/SubstrateChatCore/API/Failure.swift`):
 what was attempted (a send, a message that stands unsent under its id, a
 continue, the reply itself, a stop, opening a
 reply's stream, a reload, a chat's rows, a rename, a card read, an answer, a
@@ -2441,7 +2456,7 @@ button and Details stack where the text size leaves no room side by side.
 A file a person can share with whoever is helping them, of what the app
 decided and how long things took, and never a word of a message, a title,
 a record's name, a server's address or a token
-(`ChatKit/Sources/ChatKit/Local/Diagnostics.swift`,
+(`kit/Sources/SubstrateChatCore/Local/Diagnostics.swift`,
 `ChatApp/ChatAppDiagnostics.swift`).
 
 **What it says**, a line each:
@@ -2534,11 +2549,11 @@ share sheet. Nothing leaves the device that was not on that screen.
 ## Testing
 
 Five kinds of test hold the app, and no CI job runs any of them: a change
-runs them on a Mac, and ChatKit's on Linux too.
+runs them on a Mac, and SubstrateChatCore's on Linux too.
 
 | What | Where | Run by |
 | ---- | ----- | ------ |
-| The rig: ChatKit on the kit's runtime against a scripted server, on a clock the test moves | `ChatKit/Tests/ChatKitTests` | `mise run apple:test:chat`, `mise run apps:test:linux` |
+| The rig: SubstrateChatCore on the kit's runtime against a scripted server, on a clock the test moves | `kit/Tests/SubstrateChatCoreTests` | `mise run apple:test:chat`, `mise run apple:test:kit`, `mise run apps:test:linux` |
 | The seeded suite: a person and a server that misbehave by a seed, with the rules a chat keeps whatever happens | `SeededRun.swift`, `SeededServer.swift`, `SeededThread.swift` | every `swift test`, and by hand for more seeds |
 | The frame tests: the app's own views in a window, frame by frame | `apple/Tests` (`HandoverTests`, `FollowTests`, `OpeningTests`, `OlderRowsTests`, `ReplyPartsTests`) | `mise run apple:test:chat` |
 | The same in the iOS app on a simulator: what an iPhone's scroll view does and a Mac's does not | `apple/Tests/OpensDrawnTests.swift`, and every test of the target that is not a Mac's alone | `mise run apple:test:chat:sim` |
@@ -2579,7 +2594,7 @@ real clock, 5 ms at a time, for a test's own word to let a held answer go
 (`ChatServer.hold`, a stream's `holdAfter`): they poll for the test, and
 no outcome depends on how long they took.
 
-- Unit tests (`mise run apple:test:chat`, on the Mac; ChatKit's also on
+- Unit tests (`mise run apple:test:chat`, on the Mac; SubstrateChatCore's also on
   Linux, `mise run apps:test:linux`): the transcript fold
   and the stream's rows against the console's cases (pairing by id, orphans,
   compaction, reasoning), ndjson and watch lines (heartbeats, garbage,
@@ -2958,7 +2973,8 @@ no outcome depends on how long they took.
   `FailureFixtures` at an iPhone's and an iPad's size, in light and in
   dark, for `mise run apps:gallery`.
 - The views' rules, read from their source (`apple/Tests/SourceRulesTests.swift`,
-  over the files of `Sources/App`, `Views` and `Markdown`, which the test
+  over the files of the app's `Sources/App` and SubstrateChatUI's `Host`,
+  `Views` and `Markdown`, which the test
   bundle carries as text since a test hosted in the sandboxed app reads
   nothing else): no literal size, radius, line width, opacity, font,
   weight, colour or duration outside the tokens, with the allowances
@@ -2999,7 +3015,7 @@ optimizer on and runs it with `SUBSTRATE_CHAT_MEASURE` set, which a debug
 build reads at launch (`apple/Sources/Measure`; a release carries none of
 it). The app then signs in to nothing: its session is in memory, its folder
 a scratch one, and its server is `FixtureServer`, which answers in the
-process from ChatKit's `ChatFixtures` (a list of 100 chats, a chat of 200
+process from SubstrateChatCore's `ChatFixtures` (a list of 100 chats, a chat of 200
 turns, a chat of 500 rows, the change feed held open) and writes a 16 KB
 reply 400 characters a second. The scenario is the same every run: the
 reply streamed into the chat of 200 turns, then into the chat of 500 rows,

@@ -89,7 +89,7 @@ owner already read.
 
 - The app's read marks are a map from thread id to the thread's
   `finishedAt`, kept in the device's `state.json`
-  (`apps/chat/ChatKit/Sources/ChatKit/Local/CachedState.swift:23`). A chat
+  (`apps/kit/Sources/SubstrateChatCore/Local/CachedState.swift:23`). A chat
   is unread when the two differ (`ChatApp/ChatAppReading.swift:142`). The
   set of notifications already posted sits beside it, also per device.
 - No kind holds read state. The chat-turns plan put it out of scope as "a
@@ -127,10 +127,10 @@ the text appears when it is done.
   rows arrive.
 - The whole reply is parsed again on every flush, in the view's body, and
   blocks are identified by their index
-  (`apps/chat/apple/Sources/Markdown/MarkdownView.swift:35`). Text is drawn
+  (`apps/kit/Sources/SubstrateChatUI/Markdown/MarkdownView.swift:35`). Text is drawn
   as it arrives, in pieces the size the network delivered.
 - Following the end of the transcript fires on a hash of the screen
-  (`apps/chat/apple/Sources/Views/ConversationView.swift:152`), so a height
+  (`apps/kit/Sources/SubstrateChatUI/Views/ConversationView.swift:152`), so a height
   change outside that hash is not followed, and a send made while scrolled
   up does not go to the new message.
 - A continuation after an answer, a decision, an approval or a background

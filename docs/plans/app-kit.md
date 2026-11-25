@@ -337,8 +337,19 @@ and `kit-device` (the device services in Kotlin).
 bridge's runtime checks open, and the one that presents the gallery's
 fixtures), two C targets (`SubstrateResolv` under `SubstrateDeviceApple`,
 `SubstrateJNI` under `SubstrateBridge`) and `SubstrateKit`, one import of
-every library an Apple app draws with; the kit's
-[README](../../apps/kit/README.md) is the table as it stands. Beside the
+every library every Apple app draws with; the kit's
+[README](../../apps/kit/README.md) is the table as it stands. And two
+libraries that were one app's: `SubstrateChatCore` (portable, after
+`SubstrateScreens`), a chat with a substrate's agents below its views, and
+`SubstrateChatUI` (Apple, after `SubstrateUI`), its SwiftUI side. They were
+Substrate Chat's core package and the views of its app target. Other apps
+show a chat too, with the same screens and the same behaviour, and an app
+may not import another app's module (§6), so what apps share of a chat is
+the kit's to hold; Substrate Chat is the thin app over them, and
+`SubstrateKit` does not carry them, since most apps show no chat.
+`SubstrateChatUI` is in Swift 5 language mode, as Chat's app target was
+(§7.3's rule held every other library): Swift 6 mode adds checks at run
+time, so the mode moves when the views are ported and tried. Beside the
 three Gradle modules are two apps that are never published, `bridge-check`
 (the runtime checks on a device) and `gallery` (the shared screens live),
 and the Gradle root includes each app's own module (`:tasks`).
@@ -582,7 +593,7 @@ apps/
   xcode/               project.yml (includes each app's apple/targets.yml), Shared/, scripts/
   gradle/              settings.gradle.kts (includes each app's android/), build-logic/
   console/             app.json, apple/, docs/
-  chat/                app.json, ChatKit/, apple/, docs/
+  chat/                app.json, apple/, docs/ (its core and its screens are the kit's)
   workouts/            app.json, WorkoutsKit/, apple/ (app, widgets), package/, library/, scripts/, docs/
   sync/                app.json, apple/ (app, share target): moved, not converted
   tasks/               app.json, TasksKit/, apple/, android/, package/
@@ -611,6 +622,13 @@ apps/
 - **Nothing in `apps/<app>` imports another app**, and each app's scripts,
   docs and locks live under it: Workouts' `package/closures.lock.json` and
   `library/library.lock.json` move with it, and the site reads them there.
+- **What a second app needs of an app moves to the kit.** Substrate Chat's
+  chat engine and its screens are the kit's `SubstrateChatCore` and
+  `SubstrateChatUI` (§5.3), because other apps show a chat with them and
+  the rule above refuses the import while they are Chat's own. Chat's
+  folder keeps what is the app's alone: its scenes and menus, its device
+  services, where its session is in the Keychain, App Intents, its
+  notification extension, its docs.
 - **An app's Android side has two halves.** Its Kotlin UI is the Gradle
   module in `apps/<app>/android`; the Swift it loads (its roots over the
   bridge, registered by name) is a library of its core's package, since that

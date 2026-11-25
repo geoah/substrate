@@ -938,17 +938,24 @@ iOS and macOS 26. It is the console's agent chat as a native app: it carries
 no console, speaks only the API, and keeps a repository's chats on the device
 so every screen draws before it asks the server anything. The design, the
 feature list and what the reviews of it changed are in
-[chat/DESIGN.md](chat/DESIGN.md). Everything below its views is `ChatKit`
-(`chat/ChatKit`), a Swift package over the kit's portable libraries that
+[chat/DESIGN.md](chat/DESIGN.md). Its engine and its screens are two
+libraries of the kit, so another app can show a chat with them, which it
+could not while they were Chat's own (no app imports another app's module).
+Everything below its views is `SubstrateChatCore`
+(`kit/Sources/SubstrateChatCore`), over the kit's other portable libraries, which
 builds and tests on Linux too (`mise run apps:test:linux`): the chat list as
 the app's root under the kit's `LinkController`, each conversation a child of
 it, and DESIGN.md's seven rules as the runtime's behaviour, each with a test
-by its number. The app draws its presentations and sends its commands.
+by its number. Its views are `SubstrateChatUI` (`kit/Sources/SubstrateChatUI`),
+which draws the presentations and sends the commands. What is left in
+`chat/apple` is the app's own: its scenes and its Mac menus, its device
+services, the place its session has in the Keychain, App Intents, the
+notification service extension, and a debug build's measurement and demo.
 
 ```bash
 mise run apple:build:chat     # the Mac app and the iOS simulator app
 mise run apple:sim:chat       # the iOS app on a booted (or the first) iPhone simulator
-mise run apple:test:chat      # ChatKit's tests, then the app target's, on the Mac
+mise run apple:test:chat      # SubstrateChatCore's tests, then the app target's, on the Mac
 mise run apple:test:chat:sim  # the app target's tests in the iOS app, on the simulator SUBSTRATE_APPLE_SIMULATOR names
 mise run apple:measure:chat   # what a streamed reply and typing cost, as a table: on the Mac and on a simulator
 mise run apps:release prerelease chat   # both platforms, signed and published under chat/
@@ -994,7 +1001,7 @@ message of the person's does.
 
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest
-(`ChatManifest` in `chat/ChatKit/Sources/ChatKit/ChatManifest.swift`): the kit's connect screen checks
+(`ChatManifest` in `kit/Sources/SubstrateChatCore/ChatManifest.swift`): the kit's connect screen checks
 the address's discovery document and OAuth metadata, and the system's
 sign-in sheet opens the server's own sign-in and approval page, where the
 owner approves full access (`full`, decision 0204: the owner's assistant
@@ -1376,7 +1383,7 @@ nothing takes, and holds the layering the rest of this page relies on
 | Package | Why |
 | --- | --- |
 | `Sparkle` | the macOS updater every Mac app compiles in (`xcode/Shared/Updater.swift`): it reads the release's `appcast.xml` and checks its signature |
-| `swift-crypto` | SHA-256 where CryptoKit is not, on Linux and Android, and taken on those platforms alone: SubstrateAuth's for PKCE, ChatKit's for the hashed names its cache folder and files have always had, and WorkoutsKit's for the record ids it derives from a key (the library's, the sample's and a Hevy import's) |
+| `swift-crypto` | SHA-256 where CryptoKit is not, on Linux and Android, and taken on those platforms alone: SubstrateAuth's for PKCE, SubstrateChatCore's for the hashed names a chat's cache folder and files have always had, and WorkoutsKit's for the record ids it derives from a key (the library's, the sample's and a Hevy import's) |
 | `swift-syntax` | the bridge's generator (`kit/Tools/BridgeGen`) reads the `Bridged` declarations with it; a tool's dependency only, never linked into an app |
 | `com.squareup.okhttp3` | OkHttp, the transport on Android (`kit-device`): redirects off on every path, a line stream's included, and cancellation that reaches the socket |
 | `com.google.crypto.tink` | Tink, the secure store's AEAD on Android: a keyset wrapped by an Android Keystore key, so what is on disk is ciphertext |
@@ -1427,14 +1434,17 @@ xcode/scripts/feed.swift            a release's index.json, appcast.xml, install
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
 kit/Tools/BridgeGen/                the bridge's generator: Bridged declarations to the golden, the Kotlin and the fingerprint
-kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth, SubstrateRuntime, SubstrateLocal, SubstrateScreens and SubstrateTesting, which build for Linux and Android too; SubstrateDeviceApple (over the SubstrateResolv C target) and SubstrateUI; SubstrateBridge (over the SubstrateJNI C target) and SubstrateBridgeCheck, the Android bridge, linked as SubstrateAndroid; and SubstrateKit, the Apple apps' one import ([its README](kit/README.md))
+kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth, SubstrateRuntime, SubstrateLocal, SubstrateScreens, SubstrateChatCore and SubstrateTesting, which build for Linux and Android too; SubstrateDeviceApple (over the SubstrateResolv C target), SubstrateUI and SubstrateChatUI; SubstrateBridge (over the SubstrateJNI C target) and SubstrateBridgeCheck, the Android bridge, linked as SubstrateAndroid; and SubstrateKit, the Apple apps' one import ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
 console/apple/Sources/Shell/        the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
-chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks, the highlighter of a reply's code), API/, Local/ (the cache folder), Presentation/, Fixtures/ (a repository's chats made up, one run's stream and rows, and code and tables as people paste them, for a measurement, a gallery and the tests); and its tests, the seven rules by number among them; portable
-chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/, Measure/ (a debug build's fixture server, the run `apple:measure:chat` times, and the states `SUBSTRATE_CHAT_DEMO` shows)
-chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader, a conversation drawn from the fixture for the gallery, a reply's handover and the transcript's following held frame by frame, and what stands in and under a reply as it is drawn
+kit/Sources/SubstrateChatCore/      a chat below its views, Substrate Chat's engine: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks, the highlighter of a reply's code), API/, Local/ (the cache folder), Presentation/, Fixtures/ (a repository's chats made up, one run's stream and rows, and code and tables as people paste them, for a measurement, a gallery and the tests); its tests are kit/Tests/SubstrateChatCoreTests, the seven rules by number among them; portable
+kit/Sources/SubstrateChatUI/        a chat's SwiftUI side, Substrate Chat's screens: Host/ (ChatHost, and what Settings reads of the app's updater), Views/, Markdown/, Tokens/, Voice/
+chat/apple/Sources/                 what is Substrate Chat's own: App/ (its scenes and Mac menus, the device's host parts, the device services, App Intents), Measure/ (a debug build's fixture server, the run `apple:measure:chat` times, and the states `SUBSTRATE_CHAT_DEMO` shows)
+chat/apple/Shared/                  the session's place in the Keychain, one definition the app and its extension compile
+chat/apple/Notifications/           its notification service extension
+chat/apple/Tests/                   what only the Apple side holds, hosted in the app: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader, a conversation drawn from the fixture for the gallery, a reply's handover and the transcript's following held frame by frame, what stands in and under a reply as it is drawn, and the rules the views' source is held to
 sync/apple/Sources/                 Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens
