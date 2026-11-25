@@ -1187,3 +1187,121 @@ private final class Noted: @unchecked Sendable {
     func note(_ text: String) { lock.withLock { kept.append(text) } }
     var notes: [String] { lock.withLock { kept } }
 }
+
+extension ChatRig {
+    /// A new chat that is a conversation of an embedding app's own, and
+    /// its key.
+    fileprivate func newChat(as opening: String, _ scene: String = "s") async throws -> ChildKey {
+        await harness.send(.newChatAs(opening: opening, agent: helper, scene: scene))
+        return try #require(await harness.state.scenes[scene]?.current)
+    }
+
+    /// What the `/chat` requests said the message is about, in order.
+    fileprivate var sentContexts: [[String]] {
+        server.bodies("POST", "/chat").map { body in JSONValue.parse(body)?["context"]?.array?.compactMap(\.string) ?? [] }
+    }
+}
+
+/// An app that shows a chat keeps conversations of its own: one for a day,
+/// one for each of its things. Its opening message goes under an id the
+/// app chose, by which any device finds the thread, and what the
+/// conversation is shown beside goes with what is sent in it.
+@Suite("A conversation of an embedding app's own", .timeLimit(.minutes(10)))
+struct ConversationsOfAnApp {
+    private let opening = "today:day:2026-11-25"
+
+    @Test func itsOpeningMessageGoesUnderTheAppsIdAndTheNextUnderOneOfItsOwn() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
+        try await rig.signIn(agents: 3)
+        let key = try await rig.newChat(as: opening)
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.thread == "t1" }
+        #expect(rig.sentIDs == [opening])
+        // The bubble is the row the server writes under that id.
+        #expect(await rig.conversation(key)?.turns.first?.id == opening)
+        rig.server.route("GET", "/api/v1/records", query: "llm/message", .json(200, rows(user: opening)))
+        rig.server.release()
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        // The thread is open: what is sent next is a message like any other.
+        try await rig.send(.draft("And the mint"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.sentIDs.count == 2 }
+        let second = try #require(rig.sentIDs.last ?? nil)
+        #expect(second != opening && UUID(uuidString: second) != nil)
+    }
+
+    @Test func anOpeningTheServerSaysIsAnotherMessagesIsNotSentUnderTwice() async throws {
+        let taken = #"substrate: conflict: the messageId is taken: messageId \"x\" was sent with another text: send the message under a new id"#
+        let rig = ChatRig(
+            baseRoutes() + [.init(method: "POST", path: "/chat", answer: refusal(409, code: "conflict", reason: "message_id_taken", taken))])
+        // The first copy's answer is lost on the way, as when another
+        // device's message took the id a moment before.
+        rig.server.route("POST", "/chat", once: true, gateway)
+        try await rig.signIn(agents: 3)
+        let key = try await rig.newChat(as: opening)
+        try await rig.send(.draft("Water the basil"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until(advancing: 2) { _ in await rig.live(key)?.standing == true }
+        #expect(rig.sentIDs == [opening, opening])
+        #expect(await rig.live(key)?.openingTaken == true)
+        // Edit Message, and sent again: under an id of its own, so the
+        // message is never held back by an opening somebody else used.
+        try await rig.send(.takeBack, to: key)
+        rig.server.route("POST", "/chat", .stream(replyStream, holdAfter: 1))
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.sentIDs.count == 3 }
+        let second = try #require(rig.sentIDs.last ?? nil)
+        #expect(second != opening && UUID(uuidString: second) != nil)
+    }
+
+    @Test func theNewChatOfAnOpeningIsComeBackToWithWhatWasTypedAndIsNotTheNewChat() async throws {
+        let rig = ChatRig()
+        try await rig.signIn(agents: 3)
+        let key = try await rig.newChat(as: opening, "day")
+        try await rig.send(.draft("half a thought"), to: key)
+        // Another conversation of the app's own is another chat.
+        let other = try await rig.newChat(as: "today:task:q4", "task")
+        #expect(other != key)
+        await rig.harness.send(.sceneGone(scene: "task"))
+        // Opened again while its window still shows it elsewhere, or after:
+        // the same conversation, never a second one for the same opening.
+        let again = try await rig.newChat(as: opening, "day2")
+        #expect(again == key)
+        #expect(await rig.live(again)?.draft == "half a thought")
+        #expect(await rig.harness.state.conversations[key]?.seed.opening == opening)
+    }
+
+    @Test func theRecordsItIsAboutGoWithEveryMessageFromTheComposer() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
+        try await rig.signIn(agents: 3)
+        let key = try await rig.newChat()
+        let task = RecordReference(kind: "ada.example.com/tasks/task", id: "q4")
+        try await rig.send(.about([task]), to: key)
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.thread == "t1" }
+        #expect(rig.sentContexts == [["ada.example.com/tasks/task/q4"]])
+        let id = try #require(rig.sentIDs.first ?? nil)
+        rig.server.route("GET", "/api/v1/records", query: "llm/message", .json(200, rows(user: id)))
+        rig.server.release()
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        // It stands for the conversation, not for one message.
+        try await rig.send(.draft("And when is it due?"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.sentContexts.count == 2 }
+        #expect(rig.sentContexts.last == ["ada.example.com/tasks/task/q4"])
+        // Until the app says it is about nothing.
+        #expect(await rig.live(key)?.about == [task])
+        try await rig.send(.about([]), to: key)
+        #expect(await rig.live(key)?.about == [])
+    }
+
+    @Test func aMessageWithNothingItIsAboutNamesNoContext() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
+        try await rig.signIn(agents: 3)
+        _ = try await rig.sendHi()
+        try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
+        #expect(JSONValue.parse(try #require(rig.server.body("POST", "/chat")))?["context"] == nil)
+    }
+}

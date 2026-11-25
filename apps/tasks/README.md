@@ -175,7 +175,7 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 ```bash
 mise run apple:build:tasks   # the Mac app and the simulator app; registers nothing with Apple
 mise run apple:test:tasks    # TasksKit's tests, then the views over its fixtures, on the Mac
-mise run apps:test:linux     # TasksKit, with the kit, WorkoutsKit and ChatKit, on Linux
+mise run apps:test:linux     # TasksKit, with the kit (the chat's core among its libraries), WorkoutsKit and TodayKit, on Linux
 mise run apps:gallery        # Tasks' screens drawn into build/gallery/apple/tasks and build/gallery/android/tasks
 mise run android:build       # every Android module, the Tasks app's :tasks among them
 mise run android:test        # its gallery check with the kit's tests

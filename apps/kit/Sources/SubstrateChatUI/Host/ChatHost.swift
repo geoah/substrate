@@ -213,6 +213,13 @@ public final class ChatHost {
         #endif
     }
 
+    /// The thread a conversation of an embedding app's own was opened in
+    /// (`ChatOpening`), read with the session's own client.
+    func thread(openedBy id: String) async -> ChatOpening.Found {
+        guard let session = await sessions.load() else { return .unknown }
+        return await ChatOpening.thread(openedBy: id, SubstrateClient(server: session.server, token: session.secret))
+    }
+
     /// The record views read through the session's own client, refused in
     /// the app's words where its access does not reach.
     func recordDirectory() -> RecordDirectory {

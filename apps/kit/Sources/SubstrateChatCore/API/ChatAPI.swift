@@ -46,7 +46,7 @@ enum ChatAPI {
     /// the first one started, or says how its thread stands.
     static func chat(
         _ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, repliesTo: String? = nil,
-        timezone: String, quiet: TimeInterval
+        context: [RecordReference] = [], timezone: String, quiet: TimeInterval
     )
         -> AsyncThrowingStream<AgentEvent, any Error>
     {
@@ -54,7 +54,7 @@ enum ChatAPI {
             try client.request(
                 "POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
                 body: .jsonValue(
-                    chatBody(thread: thread, message: message, messageID: messageID, repliesTo: repliesTo, context: [], timezone: timezone)),
+                    chatBody(thread: thread, message: message, messageID: messageID, repliesTo: repliesTo, context: context, timezone: timezone)),
                 accept: "application/x-ndjson", timeout: quiet)
         }
     }

@@ -24,6 +24,15 @@ public struct ChatApp: LinkedApp {
         /// A chat opened at one of its messages, from a search.
         case open(thread: String, message: String, scene: String)
         case newChat(agent: String?, listen: Bool, scene: String)
+        /// A new chat that is a conversation of the embedding app's own,
+        /// such as the one an app keeps for a day or for one of its
+        /// things. `opening` is the id its first message is sent under:
+        /// that message's row names the thread, so the app finds the
+        /// conversation again, on this device or another, by reading the
+        /// row (`ChatOpening.thread(openedBy:_:)`). The scene is shown the
+        /// new chat of that opening where there is one already, with what
+        /// was typed into it.
+        case newChatAs(opening: String, agent: String?, scene: String)
         /// Back to the list on a phone: nothing is selected.
         case back(scene: String)
         case search(scene: String, query: String)
@@ -169,6 +178,7 @@ public struct ChatApp: LinkedApp {
         case let .open(thread, message, scene):
             return [Event(.show(thread: thread, scene: scene, key: state.key(of: thread) ?? key(), message: message))]
         case let .newChat(agent, listen, scene): return [Event(.newChat(agent: agent, listen: listen, scene: scene, key: key()))]
+        case let .newChatAs(opening, agent, scene): return [Event(.newChatAs(opening: opening, agent: agent, scene: scene, key: key()))]
         case let .back(scene): return [Event(.back(scene: scene))]
         case let .search(scene, query): return [Event(.searched(scene: scene, query: query))]
         case let .keepDraft(key, thread, text): return [Event(.draftKept(key: key, thread: thread, text: text))]

@@ -75,6 +75,11 @@ let chat = ChatSessions(.init(manifest: shell.manifest, sessions: shell.sessions
 // In a sheet: a thread that exists, or a new chat with an agent.
 ChatSessionView(chat, thread: kept, agent: "substrate.reamde.dev/assistant/moss", name: "Thursday 19 November",
                 message: typed, close: { shown = false }) { thread in keep(thread) }
+
+// A conversation of the app's own, about one of its things: found again on any device, and sent with the thing.
+ChatSessionView(chat, thread: kept, agent: moss, name: task.name, message: typed,
+                about: [RecordReference(kind: "substrate.reamde.dev/tasks/task", id: task.id)],
+                opening: "today:task:" + task.id, close: { shown = false }) { thread in keep(thread) }
 ```
 
 - **The session is the app's.** `ChatSessions` runs Chat's root over the
@@ -92,6 +97,30 @@ ChatSessionView(chat, thread: kept, agent: "substrate.reamde.dev/assistant/moss"
   view opened, so the chat list says what it is.
 - **`message` is sent as the view opens**: what was typed in the app's own
   field. Where it cannot go yet it stands in the composer.
+- **`about` is what the conversation is shown beside**: a task's page, a
+  person's. The records go with every message sent from the composer as
+  its turn's context (`Conversation.Command.about`, at most eight, the
+  server's limit), so the assistant reads each as it is now, and the
+  transcript names them under the message ("About"). The agent has to be
+  one that reads those kinds; the server refuses the turn otherwise.
+- **`opening` makes the conversation one the app finds again.** An app
+  that keeps conversations of its own (one a day, one for each thing)
+  gives each an id, made the same way on every device: `today:day:2026-11-25`.
+  The conversation's first message is sent under that id
+  (`ChatApp.Command.newChatAs`), the server writes the message's row under
+  it, and the row names its thread. So a view with no `thread` reads that
+  one row first (`ChatOpening.thread(openedBy:_:)`) and shows the
+  conversation another device began, or this one before it forgot what it
+  kept; where no row has the id, it is a new chat. Nothing is kept on a
+  device for this and no record of the app's own is written. The id is any
+  legal record id (letters, digits and `. _ ~ : @ / -`, at most 128). Two
+  devices that open the same conversation at the same moment: the server
+  takes the first message and refuses the second's id, which the chat says
+  ("This message can't be sent again as it is", Edit Message), and what is
+  sent after that goes under an id of its own. A thread deleted in Chat
+  takes its opening with it: the id is used, so the conversation that
+  follows is the device's own again. A draft typed into a conversation
+  that has no thread yet is kept while the app runs, not across a launch.
 - **The words name the app.** `ChatSessions` says the app's name once
   (`ChatManifest.runs(in:)`), so a failure says "Keep Substrate Today open
   until it is sent."
@@ -103,9 +132,7 @@ ChatSessionView(chat, thread: kept, agent: "substrate.reamde.dev/assistant/moss"
 
 It is Chat's whole root underneath, the chat list included: the list is
 read and watched though only one conversation is drawn. A root for one
-conversation alone is not built. Nor is a turn's context: a message sent
-here names no record it is about, so it suits a conversation about the app
-as a whole (Substrate Today's day) and not yet one about a single record.
+conversation alone is not built.
 
 ## The loop
 

@@ -101,7 +101,10 @@ public struct ConversationState: Codable, Equatable, Sendable {
     enum Ask: Codable, Equatable, Sendable {
         /// `bound`: the push the message was typed into, whose accepting
         /// session alone sends it.
-        case chat(agent: String, thread: String?, message: String, id: String?, repliesTo: String? = nil, bound: PushBinding? = nil)
+        /// `context`: the records the message is about.
+        case chat(
+            agent: String, thread: String?, message: String, id: String?, repliesTo: String? = nil, bound: PushBinding? = nil,
+            context: [RecordReference] = [])
         /// Wakes the engine to send an unanswered message again.
         case repeatWait(id: String, seconds: Double)
         /// Reads for the message a send wrote under its id.
@@ -220,6 +223,15 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// the rewrite that carried one takes that text all the same
     /// (`DraftReports.take`).
     var given: [DraftGiven] = []
+    /// The records this conversation is shown beside (`Command.about`):
+    /// they go with every message sent from the composer as its turn's
+    /// context, until the app says otherwise.
+    var about: [RecordReference] = []
+    /// The server refused the id this conversation's opening message was
+    /// to go under (`Seed.opening`): it names another message, so the
+    /// conversation was opened somewhere else, or once and deleted. What is
+    /// sent from here on goes under an id of its own.
+    var openingTaken = false
     /// The thread the last event found the pending message on, by a read
     /// and not by a run's `thread` event: the list is told, and where
     /// another conversation already has that thread, this one gives way.
@@ -395,4 +407,7 @@ struct UnsentMessage: Codable, Hashable, Sendable {
     /// goes with the client of the session that accepts that push, or not
     /// at all. A Send Again in the chat drops it.
     var bound: PushBinding?
+    /// The records the message is about, which every copy names. Nil in a
+    /// file written before a message could say any.
+    var context: [RecordReference]?
 }

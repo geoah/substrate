@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import SubstrateAuth
 import SubstrateChatCore
+import SubstrateCore
 import SubstrateDevice
 import SubstrateDeviceApple
 import SubstrateRuntime
@@ -79,12 +80,21 @@ public final class ChatSessions {
 /// With a `thread` it opens that thread; with none it is a new chat with
 /// `agent`, whose first message opens one, said through `onThread` so the
 /// app can keep it and open the same conversation next time.
+///
+/// An app that keeps conversations of its own (one for a day, one for each
+/// of its things) gives each an `opening`: an id of the app's choosing, the
+/// same on every device of the person's. The conversation's first message
+/// is sent under it, and a view with no `thread` reads that message first,
+/// so a conversation begun on another device, or before the app forgot
+/// what it kept, is the one shown, not a second one beside it.
 public struct ChatSessionView: View {
     let sessions: ChatSessions
     let thread: String?
     let agent: String
     let name: String?
     let message: String?
+    let about: [RecordReference]
+    let opening: String?
     let close: (() -> Void)?
     let onThread: (String) -> Void
 
@@ -93,6 +103,11 @@ public struct ChatSessionView: View {
     @State private var scene = UUID().uuidString
     @State private var opened = false
     @State private var sent = false
+    /// The thread was there before this view: found by its opening, and
+    /// not this view's to name.
+    @State private var found = false
+    /// The read of the opening message, let go when the view leaves.
+    @State private var finding: Task<Void, Never>?
 
     /// - Parameters:
     ///   - thread: the thread to open; nil starts a new chat.
@@ -102,10 +117,17 @@ public struct ChatSessionView: View {
     ///   - message: words to send as the view opens, such as what was typed
     ///     in the app's own field. Where they cannot be sent yet they stand
     ///     in the composer, and nothing is lost.
+    ///   - about: the records the conversation is shown beside (a task's
+    ///     page, a person's): they go with every message sent here as its
+    ///     turn's context, at most eight.
+    ///   - opening: the id the conversation's first message is sent under,
+    ///     by which it is found again (`ChatOpening`); nil for a chat that
+    ///     is nothing of the app's own.
     ///   - close: draws a Done button that calls it, for a sheet.
     ///   - onThread: the thread the conversation is in, once it has one.
     public init(
-        _ sessions: ChatSessions, thread: String?, agent: String, name: String? = nil, message: String? = nil, close: (() -> Void)? = nil,
+        _ sessions: ChatSessions, thread: String?, agent: String, name: String? = nil, message: String? = nil,
+        about: [RecordReference] = [], opening: String? = nil, close: (() -> Void)? = nil,
         onThread: @escaping (String) -> Void = { _ in }
     ) {
         self.sessions = sessions
@@ -113,6 +135,8 @@ public struct ChatSessionView: View {
         self.agent = agent
         self.name = name
         self.message = message
+        self.about = about
+        self.opening = opening
         self.close = close
         self.onThread = onThread
     }
@@ -149,19 +173,29 @@ public struct ChatSessionView: View {
             host.send(.sceneAppeared(scene: scene, restoring: nil))
             open()
         }
-        .onDisappear { host.send(.sceneGone(scene: scene)) }
-        .onChange(of: phase, initial: true) { _, phase in host.send(.sceneActive(scene: scene, active: phase == .active)) }
+        .onDisappear {
+            finding?.cancel()
+            host.send(.sceneGone(scene: scene))
+        }
+        .onChange(of: phase, initial: true) { _, phase in
+            host.send(.sceneActive(scene: scene, active: phase == .active))
+            // Back in front with a conversation nothing has opened yet:
+            // another device may have opened it meanwhile.
+            if phase == .active, opened, thread == nil, bound == nil { find(elseNew: false) }
+        }
         // The root reads the session a moment after it is made: the
         // conversation opens once it has.
         .onChange(of: host.chats?.signedIn) { _, _ in open() }
         .onChange(of: current, initial: true) { _, key in
-            if let key { say(to: key) }
+            guard let key else { return }
+            tell(key)
+            say(to: key)
         }
         .onChange(of: bound, initial: true) { _, bound in
             guard let bound else { return }
             // A thread this view opened is named, so the chat list says
             // what it is; one that was there keeps its name.
-            if thread == nil, let name { host.send(.rename(thread: bound, subject: name)) }
+            if thread == nil, !found, let name { host.send(.rename(thread: bound, subject: name)) }
             onThread(bound)
         }
         // Last, so everything above reads it: how replies are paced is the
@@ -175,8 +209,33 @@ public struct ChatSessionView: View {
         opened = true
         if let thread {
             host.send(.show(thread: thread, scene: scene))
+        } else if opening != nil {
+            find(elseNew: true)
         } else {
             host.send(.newChat(agent: agent, listen: false, scene: scene))
+        }
+    }
+
+    /// Reads the conversation's opening message: where there is one, its
+    /// thread is shown. Where there is none, or it cannot be read, the
+    /// conversation is a new chat whose first message goes under the
+    /// opening (`elseNew`); the server refuses that id if somebody opened
+    /// the conversation in between, and says so in the chat.
+    private func find(elseNew: Bool) {
+        guard let opening, finding == nil else { return }
+        let host = host
+        let scene = scene
+        let agent = agent
+        finding = Task {
+            let answer = await host.thread(openedBy: opening)
+            guard !Task.isCancelled else { return }
+            finding = nil
+            if case let .thread(thread) = answer {
+                found = true
+                host.send(.show(thread: thread, scene: scene))
+            } else if elseNew {
+                host.send(.newChatAs(opening: opening, agent: agent, scene: scene))
+            }
         }
     }
 
@@ -187,6 +246,11 @@ public struct ChatSessionView: View {
         sent = true
         host.send(.fill(message), to: key)
         host.send(.send, to: key)
+    }
+
+    /// Says what the conversation is shown beside, each time it is shown.
+    private func tell(_ key: ChildKey) {
+        host.send(.about(about), to: key)
     }
 }
 #endif

@@ -349,6 +349,9 @@ extension ChatApp {
         case let .newChat(agent, listen, scene, key):
             newChat(&next, agent: agent, listen: listen, in: scene, key: key)
             release(&next)
+        case let .newChatAs(opening, agent, scene, key):
+            newChat(&next, opening: opening, agent: agent, in: scene, key: key)
+            release(&next)
         case let .back(scene):
             next.scenes[scene, default: State.Scene()].current = nil
             release(&next)
@@ -1094,6 +1097,8 @@ extension ChatApp {
         let shown = Set(state.scenes.values.compactMap(\.current))
         if let waiting = state.conversations.keys.sorted().first(where: { held in
             state.conversations[held]?.thread == nil && state.conversations[held]?.unsent != nil && !shown.contains(held)
+                // A conversation of an embedding app's own is come back to by its opening, never as "the" new chat.
+                && state.conversations[held]?.seed.opening == nil
         }) {
             state.scenes[scene, default: State.Scene()].current = waiting
             return
@@ -1112,6 +1117,33 @@ extension ChatApp {
                 thread: nil, agent: agent ?? state.defaultAgent?.id, draft: draft,
                 listen: listen, unsent: unsent),
             agent: agent ?? state.defaultAgent?.id, unsent: unsent?.id)
+        state.scenes[scene, default: State.Scene()].current = key
+    }
+
+    /// A new chat that is a conversation of the embedding app's own
+    /// (`Command.newChatAs`). One that was begun under the same opening
+    /// and has no thread yet is shown again, with its draft and a message
+    /// it could not send; else a new one is made, which takes up a message
+    /// a run of the app before this one left unsent under that id.
+    func newChat(_ state: inout State, opening: String, agent: String?, in scene: String, key: ChildKey) {
+        if let held = state.conversations.keys.sorted().first(where: { held in
+            state.conversations[held]?.thread == nil && state.conversations[held]?.seed.opening == opening
+        }) {
+            state.scenes[scene, default: State.Scene()].current = held
+            return
+        }
+        let left = state.unsent.first { name, unsent in
+            unsent.id == opening && name.hasPrefix(Self.newDraft)
+                && state.conversations[ChildKey(String(name.dropFirst(Self.newDraft.count)))] == nil
+        }
+        if let left {
+            state.unsent[left.key] = nil
+            state.unsent[Self.newDraft + key.rawValue] = left.value
+        }
+        let agent = left?.value.agent ?? agent ?? state.defaultAgent?.id
+        state.conversations[key] = State.Entry(
+            seed: Conversation.Seed(thread: nil, agent: agent, draft: "", listen: false, unsent: left?.value, opening: opening),
+            agent: agent, unsent: left?.value.id)
         state.scenes[scene, default: State.Scene()].current = key
     }
 

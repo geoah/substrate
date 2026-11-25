@@ -123,6 +123,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// `message`: the row the chat is opened at, from a search.
     case show(thread: String, scene: String, key: ChildKey, message: String? = nil)
     case newChat(agent: String?, listen: Bool, scene: String, key: ChildKey)
+    case newChatAs(opening: String, agent: String?, scene: String, key: ChildKey)
     case back(scene: String)
     case searched(scene: String, query: String)
     case draftKept(key: ChildKey, thread: String?, text: String)

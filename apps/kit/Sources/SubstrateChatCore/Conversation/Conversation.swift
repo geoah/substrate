@@ -31,6 +31,13 @@ public struct Conversation: Controller, Equatable {
         case fill(String)
         /// What dictation heard, landing after the draft. The field takes it.
         case heard(String)
+        /// The records the conversation is about, said by an app that
+        /// shows it beside them (a task's page, a person's): they go with
+        /// every message sent from the composer as its turn's context, so
+        /// the assistant reads each as it is now, and the transcript names
+        /// them under the message. At most eight, the server's limit; an
+        /// empty list takes it back.
+        case about([RecordReference])
         case choose(agent: String)
         case send
         /// Send Again on a message that stands unsent: the same request
@@ -71,6 +78,7 @@ public struct Conversation: Controller, Equatable {
         case rested(String)
         case filled(String)
         case heard(String)
+        case about([RecordReference])
         case chose(String)
         case listened
         case opened
@@ -303,6 +311,9 @@ public struct Conversation: Controller, Equatable {
     /// instead.
     var streamsEveryRun: Bool { agents >= Self.positionsRevision && (facts?.chat ?? true) }
 
+    /// The most records a turn is about: the server's `MaxChatContextRecords`.
+    static let aboutLimit = 8
+
     struct Seed: Codable, Hashable, Sendable {
         var thread: String?
         var agent: String?
@@ -311,6 +322,12 @@ public struct Conversation: Controller, Equatable {
         /// A message the device kept from a run of the app that ended
         /// before the server took it.
         var unsent: UnsentMessage?
+        /// A new chat that is a conversation of the embedding app's own
+        /// (`ChatApp.Command.newChatAs`): the id its opening message is
+        /// sent under. The message's row names its thread, so the app
+        /// finds the conversation on any device by reading that row
+        /// (`ChatOpening`). Nil for a chat of Substrate Chat's.
+        var opening: String?
     }
 
     init(
@@ -394,6 +411,9 @@ public struct Conversation: Controller, Equatable {
         case let .fill(text): return [Event(.filled(text))]
         case let .heard(words):
             return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [Event(.heard(words))]
+        case let .about(records):
+            let records = Array(records.prefix(Self.aboutLimit))
+            return records == state.about ? [] : [Event(.about(records))]
         case let .choose(agent): return [Event(.chose(agent))]
         case .listened: return state.listenOnOpen ? [Event(.listened)] : []
         case let .answerInWords(interaction): return [Event(.ownWords(interaction))]
@@ -411,7 +431,11 @@ public struct Conversation: Controller, Equatable {
             guard !message.isEmpty, blockedReason(state) == nil else { return [] }
             // The id is minted here, once, when the person presses Send:
             // every copy of this message goes under it.
-            return sent(message, fromDraft: true, state, at: context.now, id: sendsIDs ? context.mint().uuidString.lowercased() : nil)
+            // The message that opens a conversation of an app's own goes
+            // under the id the app gave it, unless the server said that id
+            // is another message's.
+            let opening = state.thread == nil && !state.openingTaken ? seed.opening : nil
+            return sent(message, fromDraft: true, state, at: context.now, id: sendsIDs ? opening ?? context.mint().uuidString.lowercased() : nil)
         case .continueTurn:
             guard state.thread != nil, blockedReason(state) == nil else { return [] }
             if continues { return [Event(.continued(at: context.now))] }

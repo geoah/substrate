@@ -164,7 +164,7 @@ extension Conversation {
         }
         for ask in state.asks {
             switch ask {
-            case let .chat(_, _, _, id, repliesTo, _):
+            case let .chat(_, _, _, id, repliesTo, _, _):
                 lines.append(
                     line("send out").with("copy", id == nil ? nil : state.copies).with("try", state.tries).with("answers", repliesTo != nil ? true : nil))
             case let .repeatWait(_, seconds): lines.append(line("send repeat").with("seconds", seconds: seconds).with("try", state.tries))

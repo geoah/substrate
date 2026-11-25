@@ -68,6 +68,8 @@ extension Conversation {
         case let .sentAgain(at):
             next.autoRetried = false
             sendAgain(&next, at: at)
+        case let .about(records):
+            next.about = records
         case .tookBack:
             guard next.standing, let pending = next.pending else { break }
             forget(&next)
@@ -147,6 +149,7 @@ extension Conversation {
         case let .streamed(streamed, at):
             stream(&next, streamed, at: at)
         case let .streamEnded(failure, outcome):
+            if let failure, FailurePresenter.takenID(failure), let opening = seed.opening, next.pending?.id == opening { next.openingTaken = true }
             ended(&next, failure: failure, outcome: outcome)
         case let .attachRead(record, rows):
             guard case var .attach(run)? = next.run else { break }
@@ -562,7 +565,7 @@ extension Conversation {
         state.asks.append(
             .chat(
                 agent: pending.agent, thread: pending.thread, message: pending.message, id: pending.id, repliesTo: pending.repliesTo,
-                bound: pending.bound))
+                bound: pending.bound, context: pending.context ?? []))
     }
 
     /// Send Again: the same request once more. The id is the one the
@@ -748,9 +751,12 @@ extension Conversation {
         if !joining { state.connected = false }
         state.stopping = false
         state.mayHaveLanded = false
+        // What the conversation is about goes with the person's own words,
+        // not with a Continue the app wrote for them.
+        let about = fromDraft ? state.about : []
         guard let id else {
             state.run = .send(run)
-            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil, bound: bound))
+            state.asks.append(.chat(agent: agent, thread: state.thread, message: message, id: nil, bound: bound, context: about))
             return
         }
         // The request leaves once the device keeps the message (`kept`),
@@ -758,7 +764,8 @@ extension Conversation {
         run.unkept = true
         state.run = .send(run)
         state.pending = UnsentMessage(
-            id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil, bound: bound)
+            id: id, message: message, agent: agent, thread: state.thread, sentAt: at, repliesTo: linked ? words : nil, bound: bound,
+            context: about.isEmpty ? nil : about)
         state.copies = 0
         state.tries = 0
         state.mayHaveLanded = false
