@@ -10,6 +10,10 @@
 	     returns to a loopback port the app listens on (RFC 8252). -->
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- Voice typing in the day's conversation: the microphone, while it
+	     is on. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 	<!-- Sparkle's installer runs outside the sandbox, as launchd services
 	     the sandboxed app may only reach by these two names. -->
 	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>

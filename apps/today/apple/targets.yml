@@ -131,6 +131,12 @@ targets:
       # links its classes twice.
       - package: SubstrateKit
         product: SubstrateUI
+      # The chat's engine and its screens: the day's conversation with the
+      # assistant is drawn by them (`ChatSessionView`).
+      - package: SubstrateKit
+        product: SubstrateChatCore
+      - package: SubstrateKit
+        product: SubstrateChatUI
     settings:
       base:
         PRODUCT_NAME: SubstrateTodayUI

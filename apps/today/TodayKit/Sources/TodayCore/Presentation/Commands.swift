@@ -209,6 +209,10 @@ public enum TodayCommand: Codable, Equatable, Hashable, Sendable {
     case addUnanswered(String)
     /// A question or an instruction about one thing, from its box.
     case ask(MossSubject, String)
+    /// The chat's screen says the thread a conversation is in (`ChatDoor`):
+    /// kept under its scope, so whatever is asked there next, from that
+    /// screen or from a box, continues it.
+    case chatThread(scope: String, thread: String)
     /// The answer in place is closed.
     case closeAnswer(String)
     /// The answer still being written is stopped.

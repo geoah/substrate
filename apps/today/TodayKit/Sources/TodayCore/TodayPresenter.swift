@@ -21,6 +21,7 @@ public enum TodayPresenter {
         // The day's notes are another day's until the owner looks.
         if let notes = state.notes, notes.day == day.today { day.notes = notes }
         day.exchanges = state.exchanges
+        day.threads = state.threads
         day.reachable = state.reachable && state.linked.link?.online != false
         day.server = state.linked.link?.server
         day.sources = state.sources

@@ -23,6 +23,18 @@ struct DayScreen<Notices: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     /// The links the app was opened with; none where a gallery draws.
     @Environment(OpenedLinks.self) private var links: OpenedLinks?
+    /// The chat's own screen; none where a gallery draws.
+    @Environment(\.chatScreen) private var chatScreen
+    /// The conversation the chat's screen shows, over the day.
+    @State private var asking: Asking?
+
+    /// A conversation opened from the field: which, and the words to send
+    /// as it opens.
+    private struct Asking: Identifiable {
+        let id = UUID()
+        var door: ChatDoor
+        var message: String?
+    }
 
     /// - Parameters:
     ///   - path: the pages open at first, for a gallery that draws one.
@@ -89,6 +101,18 @@ struct DayScreen<Notices: View>: View {
         }
         .sensoryFeedback(.impact(weight: .light), trigger: state.begun)
         .sensoryFeedback(.success, trigger: state.sent)
+        // The chat's screen is its own: it stands over the day in the app's
+        // colours, not the ground's, so it is attached outside them.
+        .sheet(item: $asking) { asking in
+            if let chatScreen {
+                chatScreen.make(asking.door, asking.message, { self.asking = nil }) { thread in
+                    send(.chatThread(scope: asking.door.scope, thread: thread))
+                }
+                #if os(macOS)
+                .frame(minWidth: 520, idealWidth: 640, minHeight: 560, idealHeight: 760)
+                #endif
+            }
+        }
     }
 
     private var actions: PaneActions {
@@ -109,7 +133,20 @@ struct DayScreen<Notices: View>: View {
             },
             openURL: { address in
                 if let url = URL(string: address) { openURL(url) }
-            })
+            },
+            chat: chat)
+    }
+
+    /// Opens a conversation over the day, where the app has the chat's
+    /// screen. What waits to be finished is sent first: the assistant then
+    /// reads the day as it stands.
+    private var chat: (@MainActor @Sendable (ChatDoor, String?) -> Void)? {
+        guard chatScreen != nil else { return nil }
+        let state = state
+        return { door, message in
+            state.flush()
+            asking = Asking(door: door, message: message)
+        }
     }
 
     private func back() {

@@ -4,7 +4,10 @@ import TodayCore
 
 /// "Add or ask": the one field, fixed at the bottom of the day and of every
 /// page. What is typed goes to the assistant, which adds a task where the
-/// words are one and answers where they ask, in place over the field.
+/// words are one and answers where they ask. Where the app has the chat's
+/// own screen, what is sent opens the day's conversation there, under
+/// everything said earlier in the day, and the button before the field
+/// opens it with nothing sent; a drawing answers in place over the field.
 struct ComposerBar: View {
     var composer: ComposerPresentation
     var answer: AnswerCard?
@@ -33,7 +36,14 @@ struct ComposerBar: View {
                     .transition(.unfold)
             }
             HStack(spacing: 2) {
-                IconButton(Symbol.add, label: words.add, action: submit)
+                if let chat = pane.chat, let door = composer.chat {
+                    IconButton(Symbol.chat, label: words.chat) {
+                        focused = false
+                        chat(door, nil)
+                    }
+                } else {
+                    IconButton(Symbol.add, label: words.add, action: submit)
+                }
                 TextField(composer.placeholder, text: $text, axis: .vertical)
                     .font(TodayLook.Text.field)
                     .lineLimit(1 ... 4)
@@ -65,7 +75,12 @@ struct ComposerBar: View {
             focused = true
             return
         }
-        pane.send(.addOrAsk(trimmed))
+        // While the assistant cannot be reached the words are asked from the core, where they can be kept as a task.
+        if let chat = pane.chat, let door = composer.chat, door.sends {
+            chat(door, trimmed)
+        } else {
+            pane.send(.addOrAsk(trimmed))
+        }
         text = ""
         focused = false
     }

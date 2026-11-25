@@ -31,10 +31,12 @@ never fails because one is missing.
 From top to bottom: the strip (the projects with a flag, in flag order), the
 night, what is done earlier today, what is happening since the last look
 (directly above the current item), the current item in full, what comes next
-in the order it is acted on, and "Add or ask" fixed at the bottom. What is
+in the order it is acted on, and "Add or ask" fixed at the bottom, whose
+words open the day's conversation with the assistant in the chat's own
+screen (one thread a day, read from its start each time). What is
 typed there goes to the assistant, which adds a task where the words are one
-and answers where they ask; where it cannot be reached, the words can be
-kept as a task. What is said to the assistant is a conversation it remembers:
+and answers where they ask; while it cannot be reached, the words are
+answered in place and can be kept as a task. What is said to the assistant is a conversation it remembers:
 the day has one a day, and each task, project, person and meeting has its own,
 for as long as it lives ([Asking the assistant](docs/seam.md#asking-the-assistant)). The
 priorities, the list of projects, a project, a person, a meeting, a task,

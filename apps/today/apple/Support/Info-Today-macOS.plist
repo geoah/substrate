@@ -40,6 +40,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Substrate Today connects to the server you choose, which may be on your local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Substrate Today listens while the microphone is on, so you can speak a message to the assistant instead of typing it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Substrate Today turns what you say into text on this Mac, so you can speak a message to the assistant instead of typing it.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>

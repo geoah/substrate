@@ -47,6 +47,8 @@ public struct TodayApp: LinkedRecordsApp {
         /// Requests decided here: hidden until they are read again.
         case decided([String])
         case asked(Exchange, message: String, context: [String])
+        /// The chat's screen opened a conversation's thread, or found it.
+        case threadKept(scope: String, thread: String, at: Date)
         case answer(String, AssistantEvent)
         case answerClosed(String)
         /// The words of an exchange that failed were kept as a task: its

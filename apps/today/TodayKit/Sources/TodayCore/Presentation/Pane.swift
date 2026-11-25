@@ -267,11 +267,49 @@ public struct ComposerPresentation: Codable, Equatable, Hashable, Sendable {
     /// The row of the task the last add made, by its `RowPresentation.id`:
     /// a view scrolls to it.
     public var added: String?
+    /// The day's conversation with the assistant, where the app draws it
+    /// with the chat's own screen: what is sent from the field is said
+    /// there, under everything said earlier in the day.
+    public var chat: ChatDoor?
 
-    public init(placeholder: String = "Add or ask", notKept: String? = nil, added: String? = nil) {
+    public init(placeholder: String = "Add or ask", notKept: String? = nil, added: String? = nil, chat: ChatDoor? = nil) {
         self.placeholder = placeholder
         self.notKept = notKept
         self.added = added
+        self.chat = chat
+    }
+}
+
+/// A conversation with the assistant as the chat's own screen opens it:
+/// who it is with, the thread it is in once it has one, and what it is
+/// called. The day has one conversation a day, so everything asked from the
+/// field during a day is one thread, read from its start whenever it is
+/// opened. The screen says the thread it opened with
+/// `TodayCommand.chatThread`, and the device keeps it for the day.
+public struct ChatDoor: Codable, Equatable, Hashable, Sendable {
+    /// What the conversation is kept under: "day:2026-11-19".
+    public var scope: String
+    /// The assistant's id.
+    public var agent: String
+    /// The thread it is in; nil until the first message opens one.
+    public var thread: String?
+    /// What a new thread is named, so the chat list says which day it was:
+    /// "Thursday 19 November".
+    public var name: String
+    /// What is typed in the field is sent there. False while the assistant
+    /// cannot be reached (the device is offline, or the last question did
+    /// not get through): what is typed is then asked from the core and
+    /// answered in place, where the words can be kept as a task, so
+    /// nothing typed is stuck unsent in a screen. The door still opens
+    /// what was said.
+    public var sends: Bool
+
+    public init(scope: String, agent: String, thread: String? = nil, name: String, sends: Bool = true) {
+        self.scope = scope
+        self.agent = agent
+        self.thread = thread
+        self.name = name
+        self.sends = sends
     }
 }
 

@@ -226,10 +226,18 @@ extension DayEngine {
             strip: strip, items: items, ground: ground,
             // Named once its row is drawn: the write reaches the records a
             // moment after the note of it, and a view scrolls when this changes.
-            composer: ComposerPresentation(added: day.notes.added.last.flatMap { day.task($0) == nil ? nil : "task:" + $0 }),
+            composer: ComposerPresentation(added: day.notes.added.last.flatMap { day.task($0) == nil ? nil : "task:" + $0 }, chat: dayChat),
             answer: asked.map(answerCard), lead: lead,
             empty: day.discovery.present.isEmpty && day.discovery.series.isEmpty
                 ? "Nothing to draw a day from yet. Add the tasks, routines and today packages to this repository." : nil)
+    }
+
+    /// The day's conversation: one thread a day in the owner's time zone,
+    /// named for the day.
+    var dayChat: ChatDoor {
+        let scope = MossSubject.day.scope(on: day.today)
+        return ChatDoor(
+            scope: scope, agent: TodayKinds.assistant, thread: day.threads[scope]?.thread, name: Words.longDate(now, calendar), sends: day.reachable)
     }
 
     /// The ground a leading row gives the pane.

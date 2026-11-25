@@ -9,8 +9,24 @@ struct PaneActions: Sendable {
     var send: @MainActor @Sendable (TodayCommand) -> Void = { _ in }
     var open: @MainActor @Sendable (TodayRoute) -> Void = { _ in }
     var openURL: @MainActor @Sendable (String) -> Void = { _ in }
+    /// Opens a conversation in the chat's own screen, sending the words
+    /// given once it is open. Nil where there is no such screen (a drawing,
+    /// a fixture): what is typed then goes to the assistant from the core,
+    /// and is answered in place.
+    var chat: (@MainActor @Sendable (ChatDoor, String?) -> Void)?
     /// The assistant is asked about one thing, from its box.
     @MainActor func ask(_ subject: MossSubject, _ text: String) { send(.ask(subject, text)) }
+}
+
+/// What draws a conversation with the assistant: the chat's own screen,
+/// which the app's shell hands in. A drawing has none.
+struct ChatScreen {
+    /// - Parameters:
+    ///   - door: the conversation, and its thread where it has one.
+    ///   - message: words to send as it opens.
+    ///   - close: closes the screen.
+    ///   - bound: the thread the conversation is in, once it has one.
+    var make: @MainActor (_ door: ChatDoor, _ message: String?, _ close: @escaping () -> Void, _ bound: @escaping (String) -> Void) -> AnyView
 }
 
 extension EnvironmentValues {
@@ -22,6 +38,8 @@ extension EnvironmentValues {
     @Entry var words = ControlWords()
     /// The ground the screen stands on, so an edge can fade into it.
     @Entry var ground = Ground.working
+    /// The chat's own screen, where the app has one.
+    @Entry var chatScreen: ChatScreen?
 }
 
 /// A button as the core presents it: its role's shape, its glyph before

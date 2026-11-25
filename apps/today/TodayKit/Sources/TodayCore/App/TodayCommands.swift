@@ -359,6 +359,9 @@ public extension TodayApp {
             out.append(.kept(id))
         case let .ask(subject, text):
             ask(subject, text)
+        case let .chatThread(scope, thread):
+            guard !scope.isEmpty, !thread.isEmpty, state.threads[scope]?.thread != thread else { break }
+            out.append(.threadKept(scope: scope, thread: thread, at: now))
         case let .closeAnswer(id):
             out.append(.answerClosed(id))
         case .stopAnswer:

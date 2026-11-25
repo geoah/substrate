@@ -46,6 +46,8 @@ public struct ControlWords: Codable, Equatable, Hashable, Sendable {
     public var send = "Send"
     public var add = "Add"
     public var dictate = "Dictate"
+    /// The door to the day's conversation with the assistant.
+    public var chat = "Today's conversation"
     public var settings = "Settings"
 
     public init() {}

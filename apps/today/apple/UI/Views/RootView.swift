@@ -39,6 +39,7 @@ struct DayRoot: View {
     let link: LinkPresentation<TodayPresentation>
     let app: TodayPresentation
     @State private var settings = false
+    @Environment(\.scenePhase) private var scenePhase
     #if os(macOS)
     @Environment(\.openSettings) private var openSettingsWindow
     #endif
@@ -51,6 +52,11 @@ struct DayRoot: View {
         }
         .problem(app.problem, dismiss: { shell.send(.dismissProblem) })
         .task { shell.send(.looked) }
+        // The day's conversation is the chat's own screen, over this app's session: it reads the session again
+        // when the link's standing moves, and follows the app to the front and away from it.
+        .environment(\.chatScreen, Today.chatScreen)
+        .onChange(of: link.snapshot.phase) { _, _ in Today.sessionChanged() }
+        .onChange(of: scenePhase) { _, phase in Today.chatPhase(phase) }
         #if os(iOS)
         .sheet(isPresented: $settings) {
             NavigationStack {

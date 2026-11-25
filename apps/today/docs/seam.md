@@ -75,7 +75,7 @@ that list is closed, or the card is, the view sends `settleFlags`, so the order 
 | `UnfinishedCard`                                             | The assistant asks where something flagged High goes                                                    |
 | `WrapCard`                                                   | The end of the day save card. It lists no suggested task: `unanswered` is one line that says how many wait, and `answer` opens their page |
 | `MossBox`, `AnswerCard`                                      | The assistant's box about one thing, and one exchange with it as it arrives. Its exchanges are the thing's conversation, the ones kept from earlier days included ([Asking the assistant](#asking-the-assistant)) |
-| `ComposerPresentation`                                       | "Add or ask"                                                                                            |
+| `ComposerPresentation`, `ChatDoor`                           | "Add or ask", and the day's conversation as the chat's own screen opens it ([below](#the-days-conversation)) |
 | `PagePresentation`                                           | One of: `PrioritiesPage`, `ProjectsPage`, `ProjectPage`, `PersonPage`, `MeetingPage`, `TaskPage`, `PlanPage`, `SuggestedPage`, `MissingPage` |
 | `ProjectPage.TimelineGroup`, `TimelineGroup.Section`         | A project's timeline: one group a day, whose `label` says the day once, and in it one section for each place its lines came from, with that place as its `source` ([below](#a-projects-timeline)) |
 | `SuggestedPage`, `SuggestedPage.Group`                       | The suggested tasks as a page: one save card for each project, six of a group drawn until `more` is pressed |
@@ -208,7 +208,39 @@ thread on the server, and the app keeps which thread each one is in.
 What this does not do: another device does not find a conversation started on this one (a thread has no
 property that says what it is about, so that needs a record of the app's own); a conversation about a thing
 is not told what was said about the day, or the reverse (both read the same records and the assistant's
-memories); and a thread is not given a name of its own in Chat.
+memories); and a thing's thread is not given a name of its own in Chat (the day's is, below).
+
+### The day's conversation
+
+The owner, 25 November: the answer over the field "is too basic. It doesn't correctly stream, it doesn't
+correctly show the item", and "when I click on chat, I should see the rest of the discussion that I'm
+discussing with the agent for today. So it should be a continuous thread for the whole day". So the day's
+conversation is drawn by the chat's own screen, the one Substrate Chat draws a conversation with, from the
+kit's `SubstrateChatUI` (`ChatSessionView`; the kit's README, "A conversation in another app").
+
+- **The door** is `ComposerPresentation.chat`, a `ChatDoor`: the day's scope (`day:2026-11-25`), the
+  assistant, the thread the scope is kept under where it has one, and the day's name ("Wednesday 25
+  November"), which a thread the screen opens is named, so Chat's list says which day it was.
+- **The view** (`ComposerBar`, `DayScreen`). What is sent from the field opens the screen over the day with
+  those words sent, under everything said earlier in the day; the button before the field opens it with
+  nothing sent. What waits to be finished is written first (`Finishing.flush`), so the assistant reads the
+  day as it stands.
+- **The thread is kept by the core.** The screen says the thread it opened or found with
+  `chatThread(scope:thread:)`; the core keeps it in `State.threads` and on the device, as it keeps a thread
+  a box's question opened. So the plan's sends, which are about the day too, go into the same thread, and
+  the next opening reads the conversation from its start.
+- **While the assistant cannot be reached** (`ChatDoor.sends` false: the device is offline, or the last
+  question from the core did not get through) what is typed is asked from the core with `addOrAsk` and
+  answered in place, where its words can be kept as a task. Nothing typed is left unsent in a screen, and
+  the door still opens what was said. The next answer that arrives sends the field's words to the screen
+  again.
+- **Where there is no such screen** (a drawing, a fixture scene, a test) `PaneActions.chat` is nil: the
+  button before the field is Add, and what is sent goes to the assistant from the core with `addOrAsk`, as
+  before, and is answered in place.
+
+Not done: the boxes about one thing (a task, a project, a person, a meeting) still answer in place, since a
+message sent from the chat's screen carries no record as its context yet; and the app's own session is the
+chat's, so the chat reads the list of chats and watches it while only the day's is drawn.
 
 ## The widgets' day
 
@@ -291,6 +323,7 @@ engine gains without a turn fails there.
 | `setPriority(project:_:)`, `togglePriority(project:)`, `removePriority(project:)`           | The priorities page, and a project's own page                                          |
 | `carry(task:option:)`, `saveWrap`                                                           | The wrap: a draft until `saveWrap`                                                     |
 | `addOrAsk(_:)`, `addUnanswered(_:)`, `ask(_:_:)`, `closeAnswer(_:)`, `stopAnswer`           | The field and the assistant's boxes                                                    |
+| `chatThread(scope:thread:)`                                                                 | The chat's screen says the thread a conversation is in: kept under its scope           |
 | `send(_:)`                                                                                  | Send, under a message that is ready                                                    |
 | `instruction(_:on:)`, `rewriteInstruction(_:text:)`, `settings(_:)`                         | Settings: an instruction on or off, its text, a row of the app's own                   |
 | `opened(_:)`                                                                                | A page came onto the screen, by its route: sent once each time one appears. It writes nothing; a project's page has what its timeline was written from read for its links |

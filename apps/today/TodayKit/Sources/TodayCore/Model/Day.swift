@@ -235,6 +235,8 @@ public struct Day: Sendable {
     public var drafts = Drafts()
     public var notes: DayNotes
     public var exchanges: [Exchange] = []
+    /// The thread each conversation with the assistant is in, by its scope.
+    public var threads: [String: MossThread] = [:]
     /// False once the assistant could not be reached and until it answers.
     public var reachable = true
     /// The records' versions, for the writes: by `kind/id`.

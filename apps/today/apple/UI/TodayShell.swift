@@ -1,9 +1,12 @@
 import Foundation
 import SubstrateAuth
+import SubstrateChatCore
+import SubstrateChatUI
 import SubstrateDevice
 import SubstrateDeviceApple
 import SubstrateScreens
 import SubstrateUI
+import SwiftUI
 import TodayCore
 import TodayGlance
 
@@ -58,6 +61,42 @@ public enum Today {
     /// The links the app was opened with, which the day's screen follows.
     @MainActor static let links = OpenedLinks()
 
+    /// The chat inside the app: the day's conversation with the assistant,
+    /// drawn by the screens Substrate Chat draws one with, over this app's
+    /// own session. Made when a conversation is first opened, and nil
+    /// until then, so a launch that asks nothing reads no chat.
+    @MainActor private(set) static var chatMade: ChatSessions?
+
+    @MainActor static var chat: ChatSessions {
+        if let chatMade { return chatMade }
+        let made = ChatSessions(.init(manifest: shell.manifest, sessions: shell.sessions, folder: chatFolder))
+        chatMade = made
+        return made
+    }
+
+    /// The chat's own screen for a conversation, as the day's screen asks
+    /// for it.
+    @MainActor static let chatScreen = ChatScreen { door, message, close, bound in
+        AnyView(ChatSessionView(chat, thread: door.thread, agent: door.agent, name: door.name, message: message, close: close, onThread: bound))
+    }
+
+    /// The app's session changed (a sign-in, a sign-out, a change of
+    /// access): the chat reads it again, where one was made.
+    @MainActor static func sessionChanged() {
+        chatMade?.sessionChanged()
+    }
+
+    /// The app came to the front, is leaving it or left it, for the chat's
+    /// watch and streams.
+    @MainActor static func chatPhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active: chatMade?.phase(.active)
+        case .inactive: chatMade?.phase(.inactive)
+        case .background: chatMade?.phase(.background)
+        @unknown default: break
+        }
+    }
+
     /// The app was opened with a link (`TodayLinks`): a tap on a widget, or
     /// on one of its lines. The day's screen opens the page it names; the
     /// day's own link, and one this build does not know, open the day.
@@ -74,6 +113,15 @@ public enum Today {
         #else
         return nil
         #endif
+    }
+
+    /// Where the chat keeps what it saves: a folder beside the app's own,
+    /// never inside it, where each folder is a repository's.
+    static var chatFolder: String {
+        #if DEBUG
+        if TodayDebug.session != nil { return TodayDebug.folder + "Chat" }
+        #endif
+        return "SubstrateTodayChat"
     }
 
     static var configuration: TodayShell.Configuration {

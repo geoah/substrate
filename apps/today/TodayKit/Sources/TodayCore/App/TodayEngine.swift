@@ -99,6 +99,8 @@ public extension TodayApp {
             }
             next.exchanges.removeAll { $0.subject == exchange.subject && $0.state != .waiting && $0.state != .writing && $0.subject == .day }
             next.exchanges.append(exchange)
+        case let .threadKept(scope, thread, at):
+            next.threads[scope] = MossThread(thread: thread, at: at)
         case let .answer(id, part):
             guard let index = next.exchanges.firstIndex(where: { $0.id == id }) else { break }
             switch part {

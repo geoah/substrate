@@ -1485,6 +1485,37 @@ struct ConversationTests {
         #expect(after.threads.isEmpty && after.exchanges.isEmpty)
     }
 
+    /// The owner's words: "when I click on chat, I should see the rest of the discussion … it should be a
+    /// continuous thread for the whole day". The field's door names the day's conversation for the chat's own
+    /// screen, the thread that screen opens is kept for the day, and what is asked of the day anywhere else goes
+    /// into the same thread.
+    @Test func theDaysConversationIsOneThreadADayWhichTheChatScreenOpens() async throws {
+        let before = TodayFixtures.at("20:00", day: -1)
+        let harness = ControllerHarness(TodayFixtures.app, environment: environment("10:30"), performsEffects: false)
+        await load(harness, "10:30", moss: MossKept(threads: ["day:2026-11-18": MossThread(thread: "t-yesterday", at: before)]))
+        // A new day has no thread yet: yesterday's is not carried into it.
+        let door = try #require(await harness.presentation.pane.composer.chat)
+        #expect(door == ChatDoor(scope: "day:2026-11-19", agent: TodayKinds.assistant, thread: nil, name: "Thursday 19 November"))
+        // The screen sent the first message and says the thread it opened: the door has it, and the device keeps it.
+        await harness.send(.chatThread(scope: door.scope, thread: "t-today"))
+        #expect(await harness.presentation.pane.composer.chat?.thread == "t-today")
+        #expect(kept(harness)?.threads == ["day:2026-11-19": MossThread(thread: "t-today", at: TodayFixtures.at("10:30"))])
+        // Said again, as the screen does each time it opens, it writes nothing.
+        harness.clearTrace()
+        await harness.send(.chatThread(scope: door.scope, thread: "t-today"))
+        #expect(harness.effects.isEmpty)
+        // A message the plan asks the assistant to send is about the day too: it goes into the day's thread.
+        await harness.send(.addOrAsk("Send it"))
+        #expect(asked(harness)?.thread == "t-today")
+        // While the assistant cannot be reached the door still opens what was said, and what is typed is asked
+        // from the core instead, where its words can be kept as a task.
+        let exchange = try #require(asked(harness)?.exchange)
+        await harness.deliver(.answer(exchange.id, .failed("Moss could not be reached. The server did not answer.")))
+        let unreachable = try #require(await harness.presentation.pane.composer.chat)
+        #expect(!unreachable.sends && unreachable.thread == "t-today")
+        #expect(await harness.presentation.pane.answer?.keep?.command == .addUnanswered(exchange.id))
+    }
+
     @Test func aThreadThatIsGoneIsOpenedAgainAndOneThatWasNotHeardOfIsFoundByItsMessage() async throws {
         func said(_ stream: AsyncStream<AssistantEvent>) async -> [AssistantEvent] {
             var out: [AssistantEvent] = []

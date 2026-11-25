@@ -21,6 +21,8 @@ enum Symbol: String, Sendable {
     case edit = "pencil"
     case dictate = "mic"
     case send = "arrow.up"
+    /// Opens the day's conversation with the assistant.
+    case chat = "bubble.left.and.text.bubble.right"
     /// Leaves the app: a page at its source, a record in a browser.
     case leaves = "arrow.up.right"
 
