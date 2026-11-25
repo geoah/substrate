@@ -143,7 +143,7 @@ enum CardPresenter {
         return SuggestionCard(
             decided: decision != "proposed", panel: panel, rationale: rationale, values: lines, canDecide: canDecide,
             console: canDecide ? nil : session?.console("change-requests/\(segment(id))"),
-            consoleNote: canDecide ? nil : "Substrate Chat wasn't approved to apply suggestions. Decide this one in the console.",
+            consoleNote: canDecide ? nil : "\(ChatManifest.appName) wasn't approved to apply suggestions. Decide this one in the console.",
             apply: op == "create" ? "Add It" : op == "delete" ? "Delete It" : "Apply", destructive: op == "delete", dismiss: "Dismiss",
             failure: decision == "proposed" ? failure(card, .suggestion(id)) : nil, busy: card?.busy)
     }

@@ -39,7 +39,7 @@ target was when its views were moved here (`Package.swift` says why).
 | `SubstrateTesting` | the fakes tests use: `StubTransport` and `ScriptedServer` (scripted servers, by route and by rule), `ScriptedLines` (answers read line by line), `MemoryStorage` (its reads, writes and removals failed on demand), `TableResolver`, `ScriptedBrowser`, `ScriptedConnectivity`, `ScriptedBackground`, `RecordedNotifications`, `RecordedActivities`, `TemporaryFolders`; and the runtime's harness: `ControllerHarness` with `TestClock`, `SequentialIDs` and `MemoryJournal` (its reads and writes failed on demand) |
 | `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it, `PathMonitor` (`NWPathMonitor`), `ApplicationFolders`, `SystemNotifications` (`UNUserNotificationCenter`, with the kit's one delegate, set by `installDelegate()` before the app finishes launching: it keeps a request quiet in front where it asks, hands every response to `responses()`, the launch's tap kept for the first reader, and for a named action answers the system only once the app calls `finished(_:)` or 25 seconds passed (`ResponseWaits`), on the main thread; `badges: true` asks for the icon's number with the permission), `LiveActivities` over an app's `OngoingActivityAttributes` (ActivityKit, iOS), `BackgroundTasksService` (refresh jobs, each one's payload kept in the defaults until its run, and `BGContinuedProcessingTask`, iOS), `SystemSignposts` (a measurement's intervals as `os_signpost`s, which Instruments draws) |
 | `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen` and `SettingsSectionView`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor in parts, one observable value per path, so a view reading `part(at:)` is drawn again only when its part changes; `presentation` is the whole tree; `onSignal` runs a handler once per `Signal` raised) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndedView`, `AccountSection` (the Repository screen for an app that keeps its own session), `UnrevokedNotices`, `ProblemBox`), `StatusBadge`; an app's shell: `AppShell` (with `changeAccess(adding:)`, the approval of scopes beside the manifest's; the session, a repository's folder, its outbox and record cache, sign-in and Change Access, notification responses and the time zone's moves as the app's commands, from the app's `Configuration`; below), `AppShellRoot`, `AppSettingsView`, `checkForUpdates`, `AppMenuRoot` and `AppMenuSplit` beside `AppMenuView` (the tabs), `LinkNotices`, the `confirmation`, `problem` and `childSheet` modifiers, `ConfirmingButton` (a button that asks its question from itself), `DeviceWords`, `BuildFacts.bundle()`, and `OffscreenDrawing` (a view to PNG on the Mac, as a phone's screen or a Mac window with its toolbar, in light or in dark, for a gallery); and the record views (`KindGlyph`, `RecordPill` and, for a pill inside a line of text, `RecordPillText` with `recordPillText()`, both drawn from `RecordPillStyle`, and `SpokenPiece`, which makes a piece of a line that a screen reader is told other words for as long as those words, so the links after it on a Mac are read as their own, `RecordSheet`, `RecordDetailView`, `RecordValueView`); `DesignTokens` (each tone's colour, each mark as an SF Symbol and a Material Symbol, the menu symbols by name, the type roles, spacing and radii, which a test writes as kit-ui's `KitTokens.kt`; the spacing is whole numbers of one `unit`, so a scale is made roomier or tighter in one place, and SwiftUI reads a step as `points` and a text role as `font`; and, for Apple alone so far, what goes on fills: `quietText` and `toneText` (words, 4.5:1), `toneMark` (a mark that says something alone, 3:1), `toneFill` and `onFill` (a fill white words read on), the page and a grouped background, with WCAG's `contrast` and `blend`, each held by `DesignTokensContrastTests`); `Color.accentFill` and `prominentTint()`, the app's accent as a fill a prominent button's white words read on in light and in dark (the accent's light text tone in both, which `lint:apps` holds to 4.5:1 on white; the informative tone as a fill for an app with no accent), which every prominent button of the kit's screens is tinted with; `ConnectField` and `ConnectButton`, the connect screen's field and its one wide button, for the door an app draws under them; `TouchTarget` and `touchTarget()`, a control's shape for touches widened to `DesignTokens.touchTarget` (44 points) about its centre, so a control lower than a finger keeps its size and its place; `SessionStore`'s reads on the calling thread (`read()`, `load()`, `pendingRevocations()`, `data(account:)`, `string(account:)`, `setString(_:account:)`), over the Keychain, for an Apple app's code that cannot suspend |
-| `SubstrateChatUI` | the chat's SwiftUI side (Substrate Chat's screens, moved here with its engine): `ChatHost`, the one `PresentationModel` over the link and the chat list, made from `ChatHost.Parts` (the session store, the transport, the folders, the preferences and the device services, which the app names), with the browser sign-in, Change Access and the password door; `RootView`, which draws signed out, access ended, no access to the agents, or the chats (the list, a conversation, the composer, cards, failures, Settings, sign-in); `ChatSettingsWindow` and `chatWindowSize()` for a Mac's scenes; `ChatUpdates` with `chatUpdates(_:)`, what Settings reads of the updater the app's scene holds; `FocusedValues.conversation`, the conversation the focused window shows; and, not public, the views, Markdown as SwiftUI, the tokens (`ChatSpace`, `ChatSize`, `ChatType`, `ChatColours`, `ChatMotion`) and `Dictation`. Its tests are hosted in Substrate Chat's app (`mise run apple:test:chat`), since its views are drawn in a window |
+| `SubstrateChatUI` | the chat's SwiftUI side (Substrate Chat's screens, moved here with its engine): `ChatHost`, the one `PresentationModel` over the link and the chat list, made from `ChatHost.Parts` (the session store, the transport, the folders, the preferences and the device services, which the app names), with the browser sign-in, Change Access and the password door; `RootView`, which draws signed out, access ended, no access to the agents, or the chats (the list, a conversation, the composer, cards, failures, Settings, sign-in); `ChatSettingsWindow` and `chatWindowSize()` for a Mac's scenes; `ChatSessions` and `ChatSessionView`, one conversation with an agent inside another app (below); `ChatUpdates` with `chatUpdates(_:)`, what Settings reads of the updater the app's scene holds; `FocusedValues.conversation`, the conversation the focused window shows; and, not public, the views, Markdown as SwiftUI, the tokens (`ChatSpace`, `ChatSize`, `ChatType`, `ChatColours`, `ChatMotion`) and `Dictation`. Its tests are hosted in Substrate Chat's app (`mise run apple:test:chat`), since its views are drawn in a window |
 | `SubstrateBridge` | the Android bridge (§5.5, [android/](android/README.md)): `BridgeRuntime` (`start`, `post`, what `deliver` is handed), the `Envelope` and its `Op`s, `Handle`s with generations, `BridgeRoot` and `RootRegistry`, `RuntimeRoot` (any `Runtime` as a root) and `RouteCommand`, `BridgeContext` (a handle's presentations, keyed lists and `DeviceChannel`, and its `AppEnvironment`), `ListMessage`, `BridgeFailure`, `Redaction`, `StartConfig` and `BridgeEnvironment`, `ProtocolFingerprint`; the device services over it: `BridgeTransport`, `BridgeSecureStore`, `BridgeTXTResolver`, `BridgeConnectivity`, `BridgeFolders`, with `DeviceRequest` and their answers; the JNI surface in `Android/`, compiled on Android alone over the `SubstrateJNI` C target |
 | `SubstrateBridgeCheck` | `CheckRoot`, `Counter` and `Ledger` (a keyed list, the locale, a value kept whole), the roots the bridge's runtime checks open on a device; `GalleryRoot`, which presents every fixture of `ScreenFixtures` to Android's Gallery app |
 
@@ -60,6 +60,52 @@ libraries it uses by name, `SubstrateLocal` among them where it keeps
 anything on the device, and passes its device services in; Tasks' and the
 template's Apple targets import the libraries by name as well, with
 `SubstrateUI` for the views.
+
+## A conversation in another app
+
+An app that is not Substrate Chat shows a conversation with an agent through
+`SubstrateChatUI`, with the screens and the engine Chat has: a reply streams,
+its tools and cards show, a draft is kept, a turn is stopped, and the
+thread is the same one Substrate Chat lists.
+
+```swift
+// Once for the process, when a conversation is first opened.
+let chat = ChatSessions(.init(manifest: shell.manifest, sessions: shell.sessions, folder: "SubstrateTodayChat"))
+
+// In a sheet: a thread that exists, or a new chat with an agent.
+ChatSessionView(chat, thread: kept, agent: "substrate.reamde.dev/assistant/moss", name: "Thursday 19 November",
+                message: typed, close: { shown = false }) { thread in keep(thread) }
+```
+
+- **The session is the app's.** `ChatSessions` runs Chat's root over the
+  app's own `SessionStore` and manifest. It never signs in, signs out or
+  revokes: the app calls `sessionChanged()` when its link's standing moves,
+  and the chat reads the session again. Signed out, it forgets what it
+  saved.
+- **What it saves is beside the app's own.** Transcripts and drafts go in
+  the folder the app names, in Application Support, and the owner's choices
+  for the chat in a defaults suite of that name. Never in the folder the
+  app keeps a repository in, where each folder is a repository's.
+- **`thread` nil is a new chat** with `agent`. Its first message opens the
+  thread, which `onThread` says; the app keeps it and passes it next time,
+  so the conversation is read from its start. `name` names a thread this
+  view opened, so the chat list says what it is.
+- **`message` is sent as the view opens**: what was typed in the app's own
+  field. Where it cannot go yet it stands in the composer.
+- **The words name the app.** `ChatSessions` says the app's name once
+  (`ChatManifest.runs(in:)`), so a failure says "Keep Substrate Today open
+  until it is sent."
+- **The microphone is the app's to declare.** The composer has voice
+  typing: the app's Info.plist needs `NSMicrophoneUsageDescription` and
+  `NSSpeechRecognitionUsageDescription`, and a sandboxed Mac app the
+  `com.apple.security.device.audio-input` entitlement.
+- **No notifications, background runs or pushes**: those stay the app's.
+
+It is Chat's whole root underneath, the chat list included: the list is
+read and watched though only one conversation is drawn. A root for one
+conversation alone is not built. Nor is a turn's context: a message sent
+here names no record it is about, so it suits a conversation about the app
+as a whole (Substrate Today's day) and not yet one about a single record.
 
 ## The loop
 

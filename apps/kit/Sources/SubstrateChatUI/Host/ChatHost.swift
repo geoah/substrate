@@ -41,11 +41,17 @@ public final class ChatHost {
         public var push: PushRegistrar?
         /// The device's network where nil.
         public var connectivity: (any Connectivity)?
+        /// The manifest of the app the session is another app's own: one
+        /// that shows a conversation of the chat (`ChatSessions`). The link
+        /// then asks about that app's access, and the session is never
+        /// rewritten here. Nil in Substrate Chat, whose manifest is
+        /// `ChatManifest.manifest`.
+        public var manifest: AppManifest?
 
         public init(
             sessions: SessionStore, transport: any HTTPTransport, folders: any AppFolders, preferences: any PreferenceStore,
             notifications: (any Notifications)? = nil, background: (any BackgroundWork)? = nil, push: PushRegistrar? = nil,
-            connectivity: (any Connectivity)? = nil
+            connectivity: (any Connectivity)? = nil, manifest: AppManifest? = nil
         ) {
             self.sessions = sessions
             self.transport = transport
@@ -55,6 +61,7 @@ public final class ChatHost {
             self.background = background
             self.push = push
             self.connectivity = connectivity
+            self.manifest = manifest
         }
     }
 
@@ -122,7 +129,7 @@ public final class ChatHost {
             storage: ChatStorage(base: try? folders.data(), writingOptions: folders.writingOptions),
             preferences: parts.preferences, platform: platform)
         let link = Link(
-            app: app, manifest: ChatManifest.manifest, sessions: store,
+            app: app, manifest: parts.manifest ?? ChatManifest.manifest, sessions: store,
             words: StatusWords(
                 app: ChatManifest.appName, device: device, kept: "saved chats",
                 signOut: "\(device.capitalizedFirst) forgets its saved chats. Your chats stay on the server."),
@@ -132,8 +139,9 @@ public final class ChatHost {
         model.onSignal(\.app?.keySaved) { [weak self] provider in self?.savedKey = provider }
         // A session an earlier build kept names no request: it is kept with
         // the one every such build asked for, so the check never asks about
-        // a scope the owner left out.
-        if let session = store.load(), ChatManifest.asked(session) != session {
+        // a scope the owner left out. Substrate Chat's own sessions alone:
+        // another app's session is that app's to write.
+        if parts.manifest == nil, let session = store.load(), ChatManifest.asked(session) != session {
             Task {
                 try? await store.save(ChatManifest.asked(session), replacing: nil)
                 model.send(.signedIn)

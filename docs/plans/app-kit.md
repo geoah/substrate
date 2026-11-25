@@ -349,7 +349,13 @@ the kit's to hold; Substrate Chat is the thin app over them, and
 `SubstrateKit` does not carry them, since most apps show no chat.
 `SubstrateChatUI` is in Swift 5 language mode, as Chat's app target was
 (§7.3's rule held every other library): Swift 6 mode adds checks at run
-time, so the mode moves when the views are ported and tried. Beside the
+time, so the mode moves when the views are ported and tried. An app shows
+one conversation with `ChatSessions` and `ChatSessionView`, which run
+Chat's root over the app's own session (the kit's README, "A conversation
+in another app"); Substrate Today's day is the first. As built, that is the
+whole chat list underneath with one conversation drawn: a root for one
+conversation alone, and a turn's context for a conversation about one
+record, are not built. Beside the
 three Gradle modules are two apps that are never published, `bridge-check`
 (the runtime checks on a device) and `gallery` (the shared screens live),
 and the Gradle root includes each app's own module (`:tasks`).

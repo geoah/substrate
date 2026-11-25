@@ -84,6 +84,14 @@ another app's module, and what apps share is the kit's to hold
 ChatKit, and SubstrateChatUI the views of its app target, until then. What
 is left here is the app's own.
 
+Another app shows one conversation through `ChatSessions` and
+`ChatSessionView` (the kit's README, "A conversation in another app"): this
+app's root, `ChatHost`, over that app's session and manifest, with one
+window of the chat list that shows one conversation. Nothing of the
+conversation is written twice, so what changes here changes there. The words
+that name the app read `ChatManifest.appName`, which is Substrate Chat here
+and the embedding app's name there.
+
 ```text
 kit/Sources/SubstrateChatCore/    no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder

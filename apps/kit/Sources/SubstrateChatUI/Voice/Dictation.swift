@@ -3,6 +3,7 @@
 import Foundation
 import Observation
 import Speech
+import SubstrateChatCore
 
 /// Voice typing: the microphone through an `AVAudioEngine` tap, converted to
 /// the analyzer's format, into `SpeechAnalyzer` with a `SpeechTranscriber`
@@ -50,7 +51,7 @@ final class Dictation {
         state = .preparing("Starting…")
         do {
             guard await Self.microphoneAllowed() else {
-                throw Problem(text: "Substrate Chat may not use the microphone. Allow it in Settings → Privacy & Security → Microphone.")
+                throw Problem(text: "\(ChatManifest.appName) may not use the microphone. Allow it in Settings → Privacy & Security → Microphone.")
             }
             let wanted = localeID.map(Locale.init(identifier:)) ?? Locale.current
             let module = try await Self.module(for: wanted)

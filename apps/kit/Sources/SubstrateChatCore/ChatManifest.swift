@@ -12,7 +12,33 @@ import SubstrateCore
 /// with what it holds, and the status check asks the owner to approve
 /// `full`.
 public enum ChatManifest {
-    public static let appName = "Substrate Chat"
+    /// Substrate Chat's own name.
+    public static let ownName = "Substrate Chat"
+
+    /// The name of the app the chat runs in, as its words say it ("Keep
+    /// Substrate Chat open until it is sent."): Substrate Chat, or the app
+    /// that shows a conversation of its own, which says its name once
+    /// before it makes the chat (`runs(in:)`).
+    public static var appName: String { host.name }
+
+    /// An app that embeds a conversation says its own name: the chat's
+    /// words then name that app, never Substrate Chat. One name for the
+    /// process: an app is one app.
+    public static func runs(in app: String) { host.name = app }
+
+    private static let host = Host()
+
+    /// The process's one name for the app, read from any thread.
+    private final class Host: @unchecked Sendable {
+        private let lock = NSLock()
+        private var kept = ChatManifest.ownName
+
+        var name: String {
+            get { lock.withLock { kept } }
+            set { lock.withLock { kept = newValue } }
+        }
+    }
+
     /// The Info.plist key a release stamps with the URL of its client ID
     /// metadata document (`SUBSTRATE_CHAT_CLIENT_ID`).
     public static let clientIDKey = "SubstrateChatClientID"
@@ -35,7 +61,7 @@ public enum ChatManifest {
     public static let requirement = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: [ScopeWords.full])
 
     public static let manifest = AppManifest(
-        appName: appName,
+        appName: ownName,
         clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
         scopes: scopes,
         requirement: requirement,
@@ -55,6 +81,6 @@ public enum ChatManifest {
     /// What the record views tell a reader the token may not read for:
     /// where access is granted. A password sign-in reaches everything.
     public static func deniedHint(_ grants: Grants?) -> String? {
-        grants?.full == false ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
+        grants?.full == false ? "\(appName) wasn't approved to read these. Allow it with Settings → Change Access…" : nil
     }
 }
