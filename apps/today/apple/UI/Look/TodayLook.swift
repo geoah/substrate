@@ -94,6 +94,35 @@ enum TodayLook {
     /// The widest the pane's one column is drawn, on a wide screen.
     static let column: CGFloat = 560
 
+    /// The grid every closed line of the day stands on, so a task, a
+    /// routine and a meeting line up down the list: the glyph's box, then
+    /// the words, then what ends the line (a tick or a chevron), which
+    /// ends at the same place on every line.
+    enum DayRow {
+        /// From the surface's edge to the glyph's box, on a line with no flag.
+        static let leading: CGFloat = 20
+        /// From a tick's target to the surface's edge.
+        static let trailing: CGFloat = TodayLook.betweenButtons
+        /// The room a chevron stands in.
+        static let chevron: CGFloat = 20
+        /// From a chevron's room to the line's trailing inset: with it a
+        /// down chevron ends where a tick's ring does, 16 points from the
+        /// surface's edge, and the words of a line with a chevron run
+        /// further than those of a line with a tick.
+        static let chevronInset: CGFloat = 4
+        /// The least a closed line is tall. A shorter one stands in the middle of it.
+        static let minimumHeight: CGFloat = 56
+        /// Between the words and a control or a row of marks under or beside them.
+        static let controlGap: CGFloat = 4
+        /// Between a title and the line under it.
+        static let textGap: CGFloat = 1
+        static let badgeGap: CGFloat = 3
+        /// Two tied meetings stand this close to each other.
+        static let tieGap: CGFloat = 5
+        /// What the line that asks for a choice keeps clear of its band's lower edge.
+        static let askClearance: CGFloat = TodayLook.betweenChips
+    }
+
     // MARK: Type
 
     /// A Dynamic Type style, so text grows with the text size. A Mac has no
