@@ -19,7 +19,8 @@ struct PaneActions: Sendable {
 }
 
 /// What draws a conversation with the assistant: the chat's own screen,
-/// which the app's shell hands in. A drawing has none.
+/// which the app's shell hands in. A drawing has none. The screen has a bar
+/// and no navigation stack of its own: the day's screen puts it in one.
 struct ChatScreen {
     /// - Parameters:
     ///   - door: the conversation, and its thread where it has one.
@@ -29,10 +30,16 @@ struct ChatScreen {
     ///     its columns) is given none, so nothing is said twice.
     ///   - close: closes the screen; nil where it is a column of the day's
     ///     screen showing the day's own conversation, which is never closed.
+    ///   - writes: the screen was opened to write in, so the field of a
+    ///     conversation with nothing in it yet takes the keyboard. False
+    ///     for a column nothing opened (the day's conversation, there each
+    ///     time the app is) and for one a question opened, whose answer is
+    ///     what is read: the keyboard stays off the day beside it.
     ///   - bound: the thread the conversation is in, once it has one.
     var make:
         @MainActor (
-            _ door: ChatDoor, _ take: @escaping @MainActor () -> String?, _ close: (() -> Void)?, _ bound: @escaping (String) -> Void
+            _ door: ChatDoor, _ take: @escaping @MainActor () -> String?, _ close: (() -> Void)?, _ writes: Bool,
+            _ bound: @escaping (String) -> Void
         ) -> AnyView
 }
 

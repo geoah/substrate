@@ -290,6 +290,21 @@ Today, today + chat, today + projects + chat."
   words a request was made with are sent once: the chat's screen takes them when it has the conversation
   to send to (`ChatScreen.make`'s `take`, the kit's `takeMessage`), and a screen made for the same request
   afterwards is handed none.
+- **The day is one view in every arrangement** (`DayScreen.layout`), so it keeps how far it is scrolled and
+  what is open in it when the window changes its columns. Drawn as one of two layouts, a fold or a turn put
+  the day back at its top.
+- **The column has one navigation stack**, the day's screen's own, for as long as the column is there, and
+  the chat's screen is drawn in it with none of its own (the kit's `stack: false`). A sheet is put in a
+  stack of its own. Found on an iPad: a question typed in a thing's field opened the conversation while the
+  keyboard was leaving, the stack made for it kept the keyboard's room, and the chat's field stood half way
+  up the column.
+- **The keyboard** is taken by a conversation with nothing in it yet only where it was opened to write in
+  (`ChatScreen.make`'s `writes`, the kit's `newChatTakesKeyboard`): a sheet, and a column a thing's box
+  opened with no question. The day's conversation in its column leaves the keyboard down, so opening the
+  app does not raise it over the day, and so does a column a question opened.
+- **A conversation says what it is before its first message**: the day's is titled with the day, a thing's
+  with the thing, "with Moss" under it, through the kit's `name`. It was "New Chat" with a choice of
+  assistant until something was sent.
 - **A Mac keeps the sheet.** `EnvironmentValues.chatColumn` is false there (`DayColumns.chatHasColumn`):
   its columns are the day and a page, and a conversation stands over the day, as before. A drawing sets it
   to draw the columns (`GalleryTests.theDayDrawsInColumnsWithTheConversationBesideIt`, with a stand-in for
