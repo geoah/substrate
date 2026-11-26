@@ -84,6 +84,13 @@ enum TodayLook {
     static let timeColumn: CGFloat = 44
     static let stripeWidth: CGFloat = 4
     static let optionMark: CGFloat = 22
+    /// A tick's box, in its 44 point target: its side, its corners, the
+    /// width of its outline, and from its edge to the ring that says how
+    /// much of a routine is logged.
+    static let tick: CGFloat = 26
+    static let tickCorner: CGFloat = 8
+    static let tickRing: CGFloat = 2
+    static let tickInset: CGFloat = 6.5
     /// The widest the pane's one column is drawn, on a wide screen.
     static let column: CGFloat = 560
 

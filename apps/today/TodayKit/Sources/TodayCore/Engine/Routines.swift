@@ -131,10 +131,13 @@ extension DayEngine {
         } else {
             line = day.series[routine.occurrences[0].series].flatMap(detail) ?? "At \(clock(routine.slot))."
         }
+        // Some of it is logged: its tick says how much, as its line does.
+        let part = left > 0 && left < count ? Double(count - left) / Double(count) : nil
         return Row(
             id: routine.id, glyph: .routine, title: routine.title, line: line, state: state,
             trailing: .tick(
-                ButtonPresentation(allWord(routine), glyph: .done, iconOnly: true, role: .secondary, command: .log(row: routine.id, done: true))),
+                ButtonPresentation(
+                    allWord(routine), glyph: .done, iconOnly: true, role: .secondary, command: .log(row: routine.id, done: true), part: part)),
             body: .routine(routineCard(routine)))
     }
 
