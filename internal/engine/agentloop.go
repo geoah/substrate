@@ -3664,7 +3664,12 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabu
 // agent's own grants, as its own writes are: every kind in its effective
 // emit, and the machinery and the instructions only where its own writes name
 // them (namedOnly). A function's body is not a way around the agent that
-// called it, in a call or in a background job.
+// called it, in a call or in a background job. The one exception is an
+// internal kind the function's own package declares (a cache, a cursor): that
+// is the package's machinery, not the substrate's, and its body is the one
+// writer the package means for it (decision 0338). A declaration kind, a
+// trigger and an instruction are core's and llm's, which ship no function
+// body, so the exception never reaches them.
 func (l *agentLoop) effectsAllowed(effects []effect) error {
 	for _, ef := range effects {
 		if !l.emitAllows(ef.Type) {
@@ -3675,11 +3680,24 @@ func (l *agentLoop) effectsAllowed(effects []effect) error {
 		if err != nil {
 			return err
 		}
+		if ownMachinery(ef.by, ty) {
+			continue
+		}
 		if err := l.namedOnly(ty); err != nil {
 			return fmt.Errorf("effect %s %s: %w", ef.Action, ef.ID, err)
 		}
 	}
 	return nil
+}
+
+// ownMachinery reports whether ty is an internal kind of the package that
+// declares fn, the function whose body returned the effect.
+func ownMachinery(fn *vocabulary.Function, ty *vocabulary.Kind) bool {
+	if fn == nil || fn.Package == "" || fn.Package != ty.Package || ty.Purpose != vocabulary.PurposeInternal {
+		return false
+	}
+	_, held := namedOnlyData[ty.Identity]
+	return !held && !isDeclarationKind(ty.Identity)
 }
 
 // --- sub-agents ------------------------------------------------------------------

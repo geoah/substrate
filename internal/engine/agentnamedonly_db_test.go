@@ -149,6 +149,53 @@ func TestAFunctionsEffectsAreHeldToTheCallingAgentsNamedGrants(t *testing.T) {
 	}
 }
 
+// A function writes the internal kinds its own package declares (a page
+// cache) under the calling agent's `*`: that is the package's machinery, and
+// its body is the writer the package means for it (decision 0338). The same
+// kind from another package's function is held to the agent's named grants.
+func TestAFunctionWritesItsOwnPackagesInternalKindsUnderAGlob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _, repo := openMossDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+		vocabulary.KindManifest(repo+"/scratch", map[string]any{"singular": "cache"}, map[string]any{
+			"description": "A fetched page, kept so the next fetch is cheap.",
+			"purpose":     "internal",
+			"properties": map[string]any{
+				"url": map[string]any{"type": "string", "description": "the page's address"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("declare the cache: %v", err)
+	}
+	ag, err := ds.registry().ResolveAgent(mossID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &agentLoop{ds: ds, ag: ag, emit: ag.Emit}
+	ty, err := ds.resolveType(repo + "/scratch/cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := ty.Identity
+	effectBy := func(pkg string) effect {
+		t.Helper()
+		fn := &vocabulary.Function{Package: pkg, Name: "scrape", Caps: vocabulary.FunctionCaps{Emit: []string{"*"}}}
+		ef, err := ds.decodeEffect(fn, map[string]any{"action": "put", "kind": cache, "id": "url-1", "properties": map[string]any{"url": "https://example.com/"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ef
+	}
+	if err := l.effectsAllowed([]effect{effectBy(ty.Package)}); err != nil {
+		t.Fatalf("the function's own package's internal kind under *: %v", err)
+	}
+	err = l.effectsAllowed([]effect{effectBy(ty.Package + "other")})
+	if !errors.Is(err, substrate.ErrForbidden) || !strings.Contains(err.Error(), cache+" is an internal kind") {
+		t.Fatalf("another package's function writing the cache under *: %v, want the internal-kind refusal", err)
+	}
+}
+
 // An agent that holds only the kind declaration converts no record, through
 // write as through vocabulary: a rename it declares is the owner's to apply.
 func TestAnAgentsDeclarationWriteConvertsNoRecord(t *testing.T) {
