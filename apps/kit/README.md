@@ -97,6 +97,12 @@ ChatSessionView(chat, thread: kept, agent: moss, name: task.name, message: typed
   view opened, so the chat list says what it is.
 - **`message` is sent as the view opens**: what was typed in the app's own
   field. Where it cannot go yet it stands in the composer.
+- **`takeMessage` is for an app that may make the view anew** for one
+  conversation: a sheet that becomes a column as its window grows. In
+  place of `message`, the view asks for the words once it has the
+  conversation to send to, and the app hands them over and holds them no
+  longer. Whichever view has the conversation first sends them, and a view
+  made afterwards is handed none.
 - **`about` is what the conversation is shown beside**: a task's page, a
   person's. The records go with every message sent from the composer as
   its turn's context (`Conversation.Command.about`, at most eight, the

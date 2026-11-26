@@ -134,6 +134,49 @@ import TodayCore
         }
     }
 
+    /// The day in the columns a window with the room has (`DayColumns`): an
+    /// iPhone Duo opened, an iPad upright and an iPad on its side. In the
+    /// app the conversation's column is the chat's own screen; a drawing
+    /// has a stand-in for it, so what is drawn is how the columns share the
+    /// window: the day with no field of its own, a page over the day where
+    /// there are two columns and between them where there are three.
+    @Test func theDayDrawsInColumnsWithTheConversationBesideIt() async throws {
+        guard let working = TodayFixtures.all.first(where: { $0.name == "today-working" }) else { return }
+        func columns(_ path: [TodayRoute] = []) -> some View {
+            DayScreen(app: working.app, path: path)
+                .environment(\.chatScreen, Self.conversationStandIn)
+                .environment(\.chatColumn, true)
+        }
+        let duo = CGSize(width: 951, height: 669)
+        let upright = CGSize(width: 1032, height: 1376)
+        let side = CGSize(width: 1376, height: 1032)
+        try await both("columns-two-duo-open", size: duo) { columns() }
+        try await write("columns-two-ipad-upright", columns(), size: upright)
+        try await both("columns-three-ipad", size: side) { columns() }
+        try await write("columns-three-ipad-11", columns(), size: CGSize(width: 1210, height: 834))
+        if let route = working.routes.first(where: { if case .project = $0 { true } else { false } }) {
+            try await write("columns-two-duo-open-project", columns([route]), size: duo)
+            try await write("columns-three-ipad-project", columns([route]), size: side)
+        }
+        // A window too narrow for two keeps the day alone, with its field, though it has a conversation to show.
+        try await write("columns-one-duo-closed", columns(), size: CGSize(width: 466, height: 678))
+    }
+
+    /// What stands where the chat's own screen does in the app: the
+    /// conversation's name, in the room the column gives it.
+    static let conversationStandIn = ChatScreen { door, _, close, _ in
+        AnyView(
+            VStack(spacing: 8) {
+                Text(door.name).font(.headline)
+                Text("The conversation, in the chat's own screen").font(.subheadline).foregroundStyle(.secondary)
+                if close != nil { Text("Done closes it back to the day's").font(.footnote).foregroundStyle(.secondary) }
+            }
+            .multilineTextAlignment(.center)
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor)))
+    }
+
     static func slug(_ route: TodayRoute) -> String {
         switch route {
         case .priorities: "priorities"

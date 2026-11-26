@@ -23,10 +23,17 @@ struct PaneActions: Sendable {
 struct ChatScreen {
     /// - Parameters:
     ///   - door: the conversation, and its thread where it has one.
-    ///   - message: words to send as it opens.
-    ///   - close: closes the screen.
+    ///   - take: asked once the conversation is there to send to, for the
+    ///     words to send as it opens. They are handed over once: a screen
+    ///     made for the same conversation afterwards (the window changed
+    ///     its columns) is given none, so nothing is said twice.
+    ///   - close: closes the screen; nil where it is a column of the day's
+    ///     screen showing the day's own conversation, which is never closed.
     ///   - bound: the thread the conversation is in, once it has one.
-    var make: @MainActor (_ door: ChatDoor, _ message: String?, _ close: @escaping () -> Void, _ bound: @escaping (String) -> Void) -> AnyView
+    var make:
+        @MainActor (
+            _ door: ChatDoor, _ take: @escaping @MainActor () -> String?, _ close: (() -> Void)?, _ bound: @escaping (String) -> Void
+        ) -> AnyView
 }
 
 extension EnvironmentValues {
@@ -40,6 +47,10 @@ extension EnvironmentValues {
     @Entry var ground = Ground.working
     /// The chat's own screen, where the app has one.
     @Entry var chatScreen: ChatScreen?
+    /// Whether a conversation may stand in a column of its own beside the
+    /// day, where the window has the room (`DayColumns`). A drawing of the
+    /// columns sets it, so they can be drawn on a Mac.
+    @Entry var chatColumn = DayColumns.chatHasColumn
 }
 
 /// A button as the core presents it: its role's shape, its glyph before

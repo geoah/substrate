@@ -259,9 +259,45 @@ kit's `SubstrateChatUI` (`ChatSessionView`; the kit's README, "A conversation in
 - **To look at it with nothing pressed**, a debug build launched with `-SUBSTRATE_TODAY_CHAT day` opens
   the day's conversation as the day appears: how the sheet was opened on a Mac.
 
-Not done: the boxes about one thing (a task, a project, a person, a meeting) still answer in place, since a
-message sent from the chat's screen carries no record as its context yet; and the app's own session is the
-chat's, so the chat reads the list of chats and watches it while only the day's is drawn.
+Not done: the app's own session is the chat's, so the chat reads the list of chats and watches it while only
+one conversation is drawn.
+
+### The conversation in a column of its own
+
+The owner, 26 November: "update the iPhone duo and ipad versions so that duo has two columns when open, left
+is the today screen, right is the chat. Ipad ideally changes based on size between one and three columns.
+Today, today + chat, today + projects + chat."
+
+- **The rule** is `DayColumns.fit(width:height:chat:)`, from the room the window has and nothing else: one
+  column under 660 points; the day and the conversation from 660 (an iPhone Duo opened, flat at 951 points
+  or turned upright at 669; an iPad held upright); the day, the projects and the conversation from 1,100
+  (an iPad on its side). The height it reads is the window's whole height, with what a keyboard covers, so
+  a keyboard that comes up never changes the columns under the person typing. A window under 500 points
+  high has no column for the conversation, and keeps the day with a page beside it from 900 points wide,
+  as before. A window changes its columns as it is resized, as an iPad is turned and as a Duo is opened and
+  closed.
+- **The widths** are the rule's too (`chatWidth(in:)`, `sideWidth(in:)`): the conversation has a little
+  under half beside the day and a little under a third of three, between 320 and 520 points; the day is
+  always the widest and has what is left.
+- **What each column holds.** The day's column is the pane with no field under it: the conversation's own
+  field is the one field. With two columns a page covers the day, as on a phone; with three it stands in
+  the middle, where the list of projects stands while no page is open. The conversation's column shows the
+  day's conversation, and what a thing's box opens takes its place, with Done to close it back to the
+  day's.
+- **A sheet and a column are one request.** What was asked for is `DayScreen`'s `asking`: over the day as
+  a sheet where the day has the window to itself, and in the column where there is one. A window that
+  gains or loses the column while a conversation is open shows the same conversation the other way. The
+  words a request was made with are sent once: the chat's screen takes them when it has the conversation
+  to send to (`ChatScreen.make`'s `take`, the kit's `takeMessage`), and a screen made for the same request
+  afterwards is handed none.
+- **A Mac keeps the sheet.** `EnvironmentValues.chatColumn` is false there (`DayColumns.chatHasColumn`):
+  its columns are the day and a page, and a conversation stands over the day, as before. A drawing sets it
+  to draw the columns (`GalleryTests.theDayDrawsInColumnsWithTheConversationBesideIt`, with a stand-in for
+  the chat's screen).
+
+Not done: a draft typed into a conversation that has no thread yet is not carried from a sheet to a column,
+or back, since each is a view of its own in the chat's list of windows; the Mac's window has no column for
+the conversation.
 
 ### The grid a closed line stands on
 
