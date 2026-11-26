@@ -93,8 +93,10 @@ ChatSessionView(chat, thread: kept, agent: moss, name: task.name, message: typed
   app keeps a repository in, where each folder is a repository's.
 - **`thread` nil is a new chat** with `agent`. Its first message opens the
   thread, which `onThread` says; the app keeps it and passes it next time,
-  so the conversation is read from its start. `name` names a thread this
-  view opened, so the chat list says what it is.
+  so the conversation is read from its start. `name` is what the
+  conversation is called: the screen's title before anything is sent, in
+  place of "New Chat" and its choice of assistant, and the name of a thread
+  this view opened, so the chat list says what it is.
 - **`message` is sent as the view opens**: what was typed in the app's own
   field. Where it cannot go yet it stands in the composer.
 - **`takeMessage` is for an app that may make the view anew** for one
@@ -103,6 +105,18 @@ ChatSessionView(chat, thread: kept, agent: moss, name: task.name, message: typed
   conversation to send to, and the app hands them over and holds them no
   longer. Whichever view has the conversation first sends them, and a view
   made afterwards is handed none.
+- **`stack: false` is for an app that keeps the navigation stack**: a place
+  where one conversation takes another's, such as a column. The view then
+  draws its bar in the app's stack and makes none. A stack made with each
+  conversation, while the keyboard a question was typed on was leaving,
+  kept the keyboard's room after it had gone, and the composer stood half
+  way up the column. A sheet takes the default, or is put in a stack by the
+  app.
+- **`\.newChatTakesKeyboard`** (an environment value, true unless set): a
+  chat with nothing in it yet takes the keyboard as it comes on screen.
+  An app sets it false around a conversation nobody opened to write in:
+  one that stands in a column each time the app opens, or one a question
+  opened, whose answer is what is read.
 - **`about` is what the conversation is shown beside**: a task's page, a
   person's. The records go with every message sent from the composer as
   its turn's context (`Conversation.Command.about`, at most eight, the

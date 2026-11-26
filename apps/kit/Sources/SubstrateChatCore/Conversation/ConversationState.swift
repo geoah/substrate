@@ -227,6 +227,10 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// they go with every message sent from the composer as its turn's
     /// context, until the app says otherwise.
     var about: [RecordReference] = []
+    /// What the app that shows this conversation calls it
+    /// (`Command.called`): the screen's title until a thread's own subject
+    /// is read.
+    var called: String?
     /// The server refused the id this conversation's opening message was
     /// to go under (`Seed.opening`): it names another message, so the
     /// conversation was opened somewhere else, or once and deleted. What is

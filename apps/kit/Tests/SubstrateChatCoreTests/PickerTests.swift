@@ -38,6 +38,25 @@ struct PickerTests {
         #expect(screen.composer.placeholder == "Message Other")
     }
 
+    /// An app's own conversation (a day's, a task's) says what it is
+    /// called before anything is sent in it, and its assistant is the
+    /// app's choice.
+    @Test func aChatAnAppNamesIsTitledThatAndOffersNoOtherAssistant() async throws {
+        let rig = ChatRig(twoAgents())
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.called("Thursday 26 November"), to: key)
+        var screen = try #require(await rig.conversation(key))
+        #expect(screen.title == "Thursday 26 November")
+        #expect(screen.picker == nil)
+        #expect(screen.subtitle == "with Helper")
+        // Taken back, it is a new chat like any other.
+        try await rig.send(.called(nil), to: key)
+        screen = try #require(await rig.conversation(key))
+        #expect(screen.title == "New Chat")
+        #expect(screen.picker?.current == helper)
+    }
+
     @Test func aChatWithAThreadHasNoPicker() async throws {
         let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
         let rig = ChatRig(baseRoutes(threads: threads))

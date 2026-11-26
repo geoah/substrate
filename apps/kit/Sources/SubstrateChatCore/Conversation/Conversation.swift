@@ -38,6 +38,13 @@ public struct Conversation: Controller, Equatable {
         /// them under the message. At most eight, the server's limit; an
         /// empty list takes it back.
         case about([RecordReference])
+        /// What an app calls a conversation it shows as its own (a day's,
+        /// a task's), said while the conversation may have no thread yet:
+        /// the screen is titled this in place of "New Chat", and the
+        /// assistant is the app's choice, so the title offers no other.
+        /// A thread's own subject, once read, is the title. Nil takes it
+        /// back.
+        case called(String?)
         case choose(agent: String)
         case send
         /// Send Again on a message that stands unsent: the same request
@@ -79,6 +86,7 @@ public struct Conversation: Controller, Equatable {
         case filled(String)
         case heard(String)
         case about([RecordReference])
+        case called(String?)
         case chose(String)
         case listened
         case opened
@@ -414,6 +422,7 @@ public struct Conversation: Controller, Equatable {
         case let .about(records):
             let records = Array(records.prefix(Self.aboutLimit))
             return records == state.about ? [] : [Event(.about(records))]
+        case let .called(name): return name == state.called ? [] : [Event(.called(name))]
         case let .choose(agent): return [Event(.chose(agent))]
         case .listened: return state.listenOnOpen ? [Event(.listened)] : []
         case let .answerInWords(interaction): return [Event(.ownWords(interaction))]
