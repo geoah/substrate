@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.125.0](https://github.com/geoah/substrate/compare/v0.124.1...v0.125.0) (2026-11-26)
+
+
+### Added
+
+* **apps:** a conversation in another app is sent with what it is about, and is found again from any device ([25486d9](https://github.com/geoah/substrate/commit/25486d93be9e3e9f3bc30bdb7e1d52f58620de35))
+* **apps:** one conversation of the chat can be shown inside another app ([9f5d6c1](https://github.com/geoah/substrate/commit/9f5d6c1a1bb2942b53ef647d276d3fc15b3b6068))
+* **today:** a task, a project, a person and a meeting open their own conversation in the chat's screen, and another device finds it ([c0faf72](https://github.com/geoah/substrate/commit/c0faf7216321cc002eb99c553dba8940a697bb52))
+* **today:** a timeline's lines link to their sources and are grouped by day and by source ([faa14c9](https://github.com/geoah/substrate/commit/faa14c9b839f411bc0d7f3fd4ba6c7e634ca004e))
+* **today:** home-screen widgets for what is now and next, the tasks and the meetings ([ef2d321](https://github.com/geoah/substrate/commit/ef2d3217e30e204e6a5804262ad8979916b2e6ca))
+* **today:** overlapping meetings are two tied lines, and a task opens what it was made from ([9921f50](https://github.com/geoah/substrate/commit/9921f50f762119a1c5fcfec44538fd0177a13f79))
+* **today:** panels are seen to open, close, arrive and leave ([dc8da58](https://github.com/geoah/substrate/commit/dc8da580900e78bae5ca90617a286b38b5c5ac73))
+* **today:** the conversation has a column of its own beside the day where the window has the room ([fc987c1](https://github.com/geoah/substrate/commit/fc987c14d1b271b31bb8c2ee7bc387dd2dc64e5b))
+* **today:** the conversation is a card on the day's ground, and every column's first card stands at one height ([d438847](https://github.com/geoah/substrate/commit/d43884782da89274a2cd5aa5a621c608259fb4f3))
+* **today:** the day's conversation with Moss opens in the chat's own screen ([66a9afa](https://github.com/geoah/substrate/commit/66a9afa39643588f5a432821afc1d3c1fa108ee5))
+* **today:** what is said to Moss is a conversation it remembers ([f34b0cb](https://github.com/geoah/substrate/commit/f34b0cb94036bd705d87cc189eb470f86cbb2569))
+
+
+### Fixed
+
+* **agents:** a function an agent runs writes its own package's internal kinds under the agent's glob ([#1544](https://github.com/geoah/substrate/issues/1544)) ([a103d9f](https://github.com/geoah/substrate/commit/a103d9f6cb9031b49e4e0baaaf90103d6da790b5))
+* **apps:** a build Apple updates shows its version alone in About, holds no feed check, and carries a privacy manifest ([#1532](https://github.com/geoah/substrate/issues/1532)) ([9d2fa58](https://github.com/geoah/substrate/commit/9d2fa58a389df47ce8f486481eaa6b22f83e273c))
+* **apps:** a conversation an app shows as its own says what it is before its first message, and stands in the app's navigation stack ([e2f08b8](https://github.com/geoah/substrate/commit/e2f08b8ef18f91db44bf2c5c3940a5d42efd0a2e))
+* **kit:** an older look at the outbox no longer undoes writes queued since ([5a7ad92](https://github.com/geoah/substrate/commit/5a7ad92e3786e53459f13e695d67e730389c0d4a))
+* **today:** a line's link says Open where its place is said right above it ([81e3f84](https://github.com/geoah/substrate/commit/81e3f8436fa1f5c87ee3ab3ce7590b1e06c52241))
+* **today:** a log taken back is purged, so its occurrence can be logged again ([64d8c19](https://github.com/geoah/substrate/commit/64d8c1989bd98986a6834f91f40276ec9a6d7b42))
+* **today:** a tick is a box, empty while its thing is open and filled once it is finished ([8d4a857](https://github.com/geoah/substrate/commit/8d4a857db7f7004a0517c871ef29c041ff16252f))
+* **today:** every closed line of the day stands on one grid, with its marks on its first line ([7e7b34c](https://github.com/geoah/substrate/commit/7e7b34c2ddbc3d5122e77ada07fd1b7ed59e4177))
+* **today:** the conversation's column leaves the keyboard down, keeps its field at the bottom, and the day keeps its place through a fold or a turn ([a3531bc](https://github.com/geoah/substrate/commit/a3531bc0bbe778105d066db46f425f96fe596bc8))
+* **today:** the widgets are rows alone, small and in the order of the day ([48f8a97](https://github.com/geoah/substrate/commit/48f8a9743bdfe43bfec47f92e4ccde0af322f597))
+* **today:** the widgets' day travels in the app's Keychain group, not an App Group ([08a730e](https://github.com/geoah/substrate/commit/08a730e4042744c1b817bc3bc466c1f5d8b77ec9))
+* **today:** what a routine left yesterday is listed line by line, and a skip is said as one ([3ff814b](https://github.com/geoah/substrate/commit/3ff814b659414a2c4a0656f11739d852d1d14f6d))
+* **today:** what waits before a meeting opens to its rows ([639f17e](https://github.com/geoah/substrate/commit/639f17e622b98f12b575b1041aa6367449623817))
+
 ## [0.124.1](https://github.com/geoah/substrate/compare/v0.124.0...v0.124.1) (2026-11-22)
 
 
