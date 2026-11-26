@@ -164,7 +164,7 @@ import TodayCore
 
     /// What stands where the chat's own screen does in the app: the
     /// conversation's name, in the room the column gives it.
-    static let conversationStandIn = ChatScreen { door, _, close, _ in
+    static let conversationStandIn = ChatScreen { door, _, close, _, _ in
         AnyView(
             VStack(spacing: 8) {
                 Text(door.name).font(.headline)

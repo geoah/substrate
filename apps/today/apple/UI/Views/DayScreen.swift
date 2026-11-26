@@ -41,6 +41,14 @@ struct DayScreen<Notices: View>: View {
         let id = UUID()
         var door: ChatDoor
         var message: String?
+        /// It was opened with no words to send: to write in.
+        let writes: Bool
+
+        init(door: ChatDoor, message: String?) {
+            self.door = door
+            self.message = message
+            writes = message == nil
+        }
     }
 
     /// - Parameters:
@@ -79,13 +87,11 @@ struct DayScreen<Notices: View>: View {
             HStack(spacing: 0) {
                 ZStack {
                     GroundView(ground: app.pane.ground)
-                    switch columns {
-                    case .one: narrowLayout(page, field: true)
-                    // The conversation's column has the chat's own field: the day needs none under it.
-                    case .chat: narrowLayout(page, field: false)
-                    case .beside: wideLayout(page, side: nil, field: true)
-                    case .all: wideLayout(page, side: columns.sideWidth(in: proxy.size.width - chatWidth), field: false)
-                    }
+                    layout(
+                        page, beside: columns == .beside || columns == .all,
+                        side: columns == .all ? columns.sideWidth(in: proxy.size.width - chatWidth) : nil,
+                        // The conversation's column has the chat's own field: the day needs none under it.
+                        field: !columns.showsChat)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The day's colours are the ground's and its ink; the conversation beside it keeps the app's own.
@@ -130,10 +136,12 @@ struct DayScreen<Notices: View>: View {
         // the conversation has a column there is no sheet: the column shows
         // what was asked for.
         .sheet(item: sheetAsking) { asking in
-            conversation(asking.door, request: asking.id, closes: true)
-                #if os(macOS)
+            NavigationStack {
+                conversation(asking.door, request: asking.id, closes: true, writes: true)
+            }
+            #if os(macOS)
             .frame(minWidth: 520, idealWidth: 640, minHeight: 560, idealHeight: 760)
-                #endif
+            #endif
         }
         #if DEBUG
         // A debug build asked to open on the day's conversation, so its
@@ -217,14 +225,17 @@ struct DayScreen<Notices: View>: View {
     ///   - request: what was asked for (`Asking.id`); nil for the day's own
     ///     conversation in its column, which nothing asked for.
     ///   - closes: whether the screen has a Done.
-    @ViewBuilder private func conversation(_ door: ChatDoor, request: UUID?, closes: Bool) -> some View {
+    ///   - writes: whether a conversation with nothing in it yet takes the
+    ///     keyboard (`ChatScreen.make`).
+    @ViewBuilder private func conversation(_ door: ChatDoor, request: UUID?, closes: Bool, writes: Bool) -> some View {
         if let chatScreen {
             chatScreen.make(
                 door, { take(request) },
                 closes
                     ? {
                         if asking?.id == request { asking = nil }
-                    } : nil
+                    } : nil,
+                writes
             ) { thread in
                 send(.chatThread(scope: door.scope, thread: thread))
             }
@@ -245,42 +256,80 @@ struct DayScreen<Notices: View>: View {
     private func chatColumn(day: ChatDoor) -> some View {
         // What was asked for of the day's own conversation is the day's conversation: nothing to close back to.
         let thing = asking.flatMap { $0.door.scope == day.scope ? nil : $0 }
-        return conversation(thing?.door ?? day, request: asking?.id, closes: thing != nil)
-            // A conversation that was asked for is a screen of its own, so its words are sent as it opens; the
-            // day's is the day's own, and tomorrow's is another.
-            .id(asking?.id.uuidString ?? day.scope)
-            .overlay(alignment: .leading) {
-                Rectangle().fill(.separator).frame(width: 0.5).ignoresSafeArea()
-            }
+        // The column's one navigation stack, for as long as the column is there: a conversation takes another's
+        // place inside it. A stack made with each conversation, while the keyboard a question was typed on was
+        // leaving, kept the keyboard's room, and the chat's field stood half way up the column.
+        return NavigationStack {
+            conversation(thing?.door ?? day, request: asking?.id, closes: thing != nil, writes: asking?.writes ?? false)
+                // A conversation that was asked for is a screen of its own, so its words are sent as it opens; the
+                // day's is the day's own, and tomorrow's is another.
+                .id(asking?.id.uuidString ?? day.scope)
+        }
+        .overlay(alignment: .leading) {
+            Rectangle().fill(.separator).frame(width: 0.5).ignoresSafeArea()
+        }
     }
 
-    // MARK: A phone
+    // MARK: The day and its page
 
-    /// A page comes in from the trailing edge over the day and leaves the
+    /// The day, and the page a route names: over the day where the window
+    /// has one column for the two, beside it where it has a column each,
+    /// the list of projects standing there while no page is open.
+    ///
+    /// The day is one view in every arrangement, so it keeps its place (how
+    /// far it is scrolled, what is open in it) when the window changes its
+    /// columns: a fold opened or closed, a device turned, a window resized.
+    ///
+    /// Over the day, a page comes in from the trailing edge and leaves the
     /// way it came; with Reduce Motion it fades in its place. The day stays
     /// where it is under the page and fades as the page covers it, so the
     /// screen is never empty between the two, and going back is to where
     /// the day was scrolled.
-    /// - Parameter field: whether the field stands under the day and under
-    ///   a page. Where the conversation has a column, its own field is the
-    ///   one field.
-    @ViewBuilder private func narrowLayout(_ page: PagePresentation?, field shown: Bool) -> some View {
-        day(field: shown)
-            .opacity(page == nil ? 1 : 0)
-            .allowsHitTesting(page == nil)
-            .accessibilityHidden(page != nil)
-        if let route = path.last, let page {
-            Group {
-                // A page with nothing fixed at its bottom is told so by its type: an empty one would still be given a fade.
-                if shown {
-                    PageView(page: page, back: back) { field }
-                } else {
-                    PageView(page: page, back: back) { EmptyView() }
+    ///
+    /// - Parameters:
+    ///   - beside: the page has a column of its own beside the day.
+    ///   - side: that column's width where the conversation has the third
+    ///     column and the day has the rest; nil where the two have the
+    ///     window to themselves and stand in its middle.
+    ///   - field: whether the field stands under the day and under a page
+    ///     over it. Where the conversation has a column, its own field is
+    ///     the one field.
+    private func layout(_ page: PagePresentation?, beside: Bool, side width: CGFloat?, field shown: Bool) -> some View {
+        let covered = !beside && page != nil
+        let centred = beside && width == nil
+        return ZStack {
+            HStack(alignment: .top, spacing: 0) {
+                day(field: shown)
+                    .frame(minWidth: centred ? 420 : nil, idealWidth: centred ? 640 : nil, maxWidth: centred ? 700 : .infinity)
+                    .opacity(covered ? 0 : 1)
+                    .allowsHitTesting(!covered)
+                    .accessibilityHidden(covered)
+                if beside {
+                    // One page fades as the next comes, beside the day.
+                    ZStack(alignment: .top) {
+                        if let route = path.last, let page {
+                            side(for: page, back: back).id(route).transition(.opacity)
+                        } else {
+                            side(for: app.page(.projects), back: nil).transition(.opacity)
+                        }
+                    }
+                    .frame(minWidth: width ?? 340, idealWidth: width ?? 420, maxWidth: width ?? 520)
                 }
             }
-            .id(route)
-            .transition(reduced ? .opacity : .move(edge: .trailing).combined(with: .opacity))
-            .zIndex(1)
+            .frame(maxWidth: .infinity, alignment: .center)
+            if !beside, let route = path.last, let page {
+                Group {
+                    // A page with nothing fixed at its bottom is told so by its type: an empty one would still be given a fade.
+                    if shown {
+                        PageView(page: page, back: back) { field }
+                    } else {
+                        PageView(page: page, back: back) { EmptyView() }
+                    }
+                }
+                .id(route)
+                .transition(reduced ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                .zIndex(1)
+            }
         }
     }
 
@@ -296,34 +345,6 @@ struct DayScreen<Notices: View>: View {
     @ViewBuilder private var field: some View {
         // Above the keyboard it would lie over the field being typed in.
         if !state.writing { ComposerBar(composer: app.pane.composer, answer: app.pane.answer).edgeFade(.bottom).transition(.opacity) }
-    }
-
-    // MARK: A wide screen
-
-    /// The day with the projects, or the open page, beside it.
-    ///
-    /// - Parameter side: the width of what stands beside the day where the
-    ///   conversation has the third column, and the day has the rest; nil
-    ///   where the two have the window to themselves and stand in its
-    ///   middle.
-    private func wideLayout(_ page: PagePresentation?, side width: CGFloat?, field shown: Bool) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            if width == nil {
-                day(field: shown).frame(minWidth: 420, idealWidth: 640, maxWidth: 700)
-            } else {
-                day(field: shown).frame(maxWidth: .infinity)
-            }
-            // One page fades as the next comes, beside the day.
-            ZStack(alignment: .top) {
-                if let route = path.last, let page {
-                    side(for: page, back: back).id(route).transition(.opacity)
-                } else {
-                    side(for: app.page(.projects), back: nil).transition(.opacity)
-                }
-            }
-            .frame(minWidth: width ?? 340, idealWidth: width ?? 420, maxWidth: width ?? 520)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// A page beside the day: the same page, without a field of its own.
