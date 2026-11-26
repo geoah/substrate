@@ -97,6 +97,7 @@ public struct ChatSessionView: View {
     let opening: String?
     let close: (() -> Void)?
     let takeMessage: (@MainActor () -> String?)?
+    let stack: Bool
     let onThread: (String) -> Void
 
     @Environment(\.scenePhase) private var phase
@@ -113,8 +114,10 @@ public struct ChatSessionView: View {
     /// - Parameters:
     ///   - thread: the thread to open; nil starts a new chat.
     ///   - agent: who a new chat is with.
-    ///   - name: what a thread this view opens is named in the chat list;
-    ///     nil leaves it to be named from its first message.
+    ///   - name: what the conversation is called: the screen's title
+    ///     before its first message, in place of "New Chat" and its choice
+    ///     of assistant, and what a thread this view opens is named in the
+    ///     chat list; nil leaves it to be named from its first message.
     ///   - message: words to send as the view opens, such as what was typed
     ///     in the app's own field. Where they cannot be sent yet they stand
     ///     in the composer, and nothing is lost.
@@ -131,11 +134,18 @@ public struct ChatSessionView: View {
     ///     send to, for the words to send. The app hands them over and
     ///     holds them no longer, so whichever view has the conversation
     ///     first sends them, and no other sends them again.
+    ///   - stack: whether the view makes a navigation stack of its own for
+    ///     its bar, as a sheet needs. False where the app has one that
+    ///     outlives the conversation: a place where one conversation takes
+    ///     another's (a column), so the bar, and the room the stack keeps
+    ///     clear of the keyboard, are not made anew with each. A stack made
+    ///     while the keyboard was leaving kept the keyboard's room after it
+    ///     had gone.
     ///   - onThread: the thread the conversation is in, once it has one.
     public init(
         _ sessions: ChatSessions, thread: String?, agent: String, name: String? = nil, message: String? = nil,
         about: [RecordReference] = [], opening: String? = nil, close: (() -> Void)? = nil,
-        takeMessage: (@MainActor () -> String?)? = nil, onThread: @escaping (String) -> Void = { _ in }
+        takeMessage: (@MainActor () -> String?)? = nil, stack: Bool = true, onThread: @escaping (String) -> Void = { _ in }
     ) {
         self.sessions = sessions
         self.thread = thread
@@ -146,6 +156,7 @@ public struct ChatSessionView: View {
         self.opening = opening
         self.close = close
         self.takeMessage = takeMessage
+        self.stack = stack
         self.onThread = onThread
     }
 
@@ -153,26 +164,35 @@ public struct ChatSessionView: View {
     private var current: ChildKey? { host.chats?.scenes[scene]?.current }
     private var bound: String? { host.chats?.scenes[scene]?.thread }
 
-    public var body: some View {
-        NavigationStack {
-            Group {
-                if let ended = host.link.ended {
-                    AccessEndedScreen(ended) { close?() }
-                } else if host.chats?.signedIn == true, host.chats?.canChat == false {
-                    ContentUnavailableView(
-                        "\(ChatManifest.appName) can't talk to your assistants", systemImage: "bubble.left.and.exclamationmark.bubble.right",
-                        description: Text("Its approval left out talking to your agents. Change its access in Settings."))
-                } else if let current {
-                    ConversationView(key: current, scene: scene)
-                        .id(current)
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+    /// The conversation and its bar, in a navigation stack.
+    private var screen: some View {
+        Group {
+            if let ended = host.link.ended {
+                AccessEndedScreen(ended) { close?() }
+            } else if host.chats?.signedIn == true, host.chats?.canChat == false {
+                ContentUnavailableView(
+                    "\(ChatManifest.appName) can't talk to your assistants", systemImage: "bubble.left.and.exclamationmark.bubble.right",
+                    description: Text("Its approval left out talking to your agents. Change its access in Settings."))
+            } else if let current {
+                ConversationView(key: current, scene: scene)
+                    .id(current)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .toolbar {
-                if let close {
-                    ToolbarItem(placement: .cancellationAction) { Button("Done", action: close) }
-                }
+        }
+        .toolbar {
+            if let close {
+                ToolbarItem(placement: .cancellationAction) { Button("Done", action: close) }
+            }
+        }
+    }
+
+    public var body: some View {
+        Group {
+            if stack {
+                NavigationStack { screen }
+            } else {
+                screen
             }
         }
         .recordViewer(host.recordDirectory())
@@ -258,9 +278,20 @@ public struct ChatSessionView: View {
         host.send(.send, to: key)
     }
 
-    /// Says what the conversation is shown beside, each time it is shown.
+    /// Says what the conversation is shown beside and what the app calls
+    /// it, each time it is shown.
     private func tell(_ key: ChildKey) {
         host.send(.about(about), to: key)
+        host.send(.called(name), to: key)
     }
+}
+
+public extension EnvironmentValues {
+    /// A chat with no message in it yet takes the keyboard as it comes on
+    /// screen: somebody opened it to write. False where the conversation
+    /// stands on screen without having been asked for (a column of its
+    /// own beside an app's page), so the keyboard is not raised over the
+    /// page each time the app opens.
+    @Entry var newChatTakesKeyboard = true
 }
 #endif

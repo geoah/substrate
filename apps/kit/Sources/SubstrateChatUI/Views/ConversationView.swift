@@ -107,6 +107,9 @@ struct ConversationView: View {
         .navigationTitle(screen.title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        // The bar holds the way out of a sheet (Done) and says which conversation this is: it stays while the
+        // transcript scrolls. An iPhone Duo's outer screen put it away as a reply was written.
+        .toolbarVisibility(.visible, for: .navigationBar)
         #endif
         .toolbar { toolbar(screen) }
         .pickingAgent(screen, key: key)

@@ -32,6 +32,7 @@ struct ComposerBar: View {
     let onJump: () -> Void
     let onKey: (String) -> Void
     @Environment(\.draftField) private var draftField
+    @Environment(\.newChatTakesKeyboard) private var takesKeyboard
     @State private var text = ""
     @State private var draft = DraftTeller()
     @FocusState private var focused: Bool
@@ -167,7 +168,7 @@ struct ComposerBar: View {
                 talking = host.voice.talks
                 host.voice.talks = false
                 await dictation.start(localeID: host.chats?.settings.voiceLocale)
-            } else if screen.thread == nil {
+            } else if screen.thread == nil, takesKeyboard {
                 focused = true
             }
         }

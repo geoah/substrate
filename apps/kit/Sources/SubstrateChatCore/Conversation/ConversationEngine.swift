@@ -70,6 +70,8 @@ extension Conversation {
             sendAgain(&next, at: at)
         case let .about(records):
             next.about = records
+        case let .called(name):
+            next.called = name
         case .tookBack:
             guard next.standing, let pending = next.pending else { break }
             forget(&next)

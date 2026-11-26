@@ -592,9 +592,11 @@ extension ChatApp {
         let top = seeks ? held?.turns.first.map { stands(drawn($0.id)) } : nil
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
-            title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
+            title: row.map(state.title) ?? live.called ?? (live.thread == nil ? "New Chat" : "Chat"),
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
-            agent: live.agent, agentName: live.name, hero: hero, picker: live.thread == nil ? Self.picker(live.agent) : nil,
+            agent: live.agent, agentName: live.name, hero: hero,
+            // An app's own conversation is with the assistant the app chose.
+            picker: live.thread == nil && live.called == nil ? Self.picker(live.agent) : nil,
             older: Self.olderRows(held, reading: live.thread.map(state.olderReading.contains) ?? false, seeking: seeks),
             turns: folded, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
             failures: failures(state, live: live, row: row, all: all, turns: folded), technical: technical,
