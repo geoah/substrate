@@ -1082,6 +1082,13 @@ struct WriteTests {
         #expect(first.count == 1 && first[0].recordID == item.id && first[0].method == .put && first[0].kind == TodayKinds.log)
         // Its line shows as taken with a filled tick that takes the log back; the row counts it and stays open.
         #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "1 of 5 logged.")
+        // The row's own tick says how much of it is logged, and is not a finished one.
+        func part() async -> ButtonPresentation? {
+            guard case let .tick(tick) = rows(await harness.presentation.pane).first(where: { $0.id == routine.id })?.trailing else { return nil }
+            return tick
+        }
+        let some = await part()
+        #expect(some?.part == 0.2 && some?.role == .secondary)
         let ticked = try #require(try await card().items.first { $0.id == item.id })
         #expect(ticked.logged == "Taken at 07:05." && ticked.tick?.role == .primary && ticked.tick?.command == .unlog(item.id))
         #expect(try await card().done?.title == "All taken")
@@ -1089,6 +1096,9 @@ struct WriteTests {
         // Taken back, the log is purged: kept as deleted, the server would refuse the next tick's create.
         #expect(writes(harness).flatMap(\.entries).last?.method == .purge)
         #expect(rows(await harness.presentation.pane).first { $0.id == routine.id }?.line == "5 items.")
+        // With nothing logged its tick shows no part: an empty ring.
+        let none = await part()
+        #expect(none != nil && none?.part == nil)
         // Ticked again, it is a create like the first, and the group's button logs what is not ticked yet: the row is done.
         await harness.send(.logOccurrence(item.id, done: true))
         let again = try #require(writes(harness).flatMap(\.entries).last)

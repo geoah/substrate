@@ -88,7 +88,10 @@ struct PaneButton: View {
     }
 
     @ViewBuilder private var plain: some View {
-        if button.iconOnly, let glyph = button.glyph {
+        if button.iconOnly, button.glyph == .done {
+            // A tick is no icon in a tinted circle: empty while its thing is open, filled once it is finished.
+            TickButton(label: button.title, done: button.role == .primary, part: button.part, action: act)
+        } else if button.iconOnly, let glyph = button.glyph {
             IconButton(glyph, label: button.title, small: small, look: button.role == .primary ? .filled : .quiet, action: act)
         } else {
             Button(action: act) {
@@ -173,12 +176,12 @@ struct ActionRow: View {
 }
 
 /// A control that finishes something, after its tap and until its command
-/// is sent (`Finishing`). While it counts, an icon tick is a ring draining
-/// around the undo arrow and a button with a word reads "Undo" over a fill
-/// that drains; a tap takes the finish back. When the count is over the
-/// tick is filled and the button stays "Undo" a moment longer: nothing is
-/// written until then, so a tap still takes it back. With Reduce Motion
-/// nothing drains, and the state lasts as long.
+/// is sent (`Finishing`). While it counts, a tick's box has its outline
+/// draining around the undo arrow and a button with a word reads "Undo"
+/// over a fill that drains; a tap takes the finish back. When the count is
+/// over the tick is filled and the button stays "Undo" a moment longer:
+/// nothing is written until then, so a tap still takes it back. With
+/// Reduce Motion nothing drains, and the state lasts as long.
 struct FinishingControl: View {
     var button: ButtonPresentation
     var key: String
@@ -195,7 +198,7 @@ struct FinishingControl: View {
     var body: some View {
         Group {
             if button.iconOnly {
-                if phase == .counting { ring } else { IconButton(Glyph.done, label: "Undo", small: small, look: .filled, action: back) }
+                if phase == .counting { ring } else { TickButton(label: "Undo", done: true, action: back) }
             } else {
                 Button(action: back) {
                     // The word it stands for, unseen under "Undo": the button keeps its width.
@@ -218,23 +221,21 @@ struct FinishingControl: View {
         .accessibilityHint("\(button.title) in a few seconds unless you undo")
     }
 
-    /// The tick while it counts: the undo arrow in the tick's circle, and a
-    /// ring around it that drains.
+    /// The tick while it counts: the undo arrow in the tick's box, and the
+    /// box's outline draining around it. It is the tick's own box, so the
+    /// mark stays where it is from empty through the count to filled.
     private var ring: some View {
-        let side: CGFloat = small ? 32 : 36
         let ink = TodayLook.ink.color
         return Button(action: back) {
             ZStack {
-                Circle().fill(ink.opacity(scheme == .dark ? 0.12 : 0.07))
-                Circle().trim(from: 0, to: max(0, min(1, left)))
+                TickMark.box.fill(ink.opacity(scheme == .dark ? 0.12 : 0.07))
+                TickMark.box.inset(by: 1.25).trim(from: 0, to: max(0, min(1, left)))
                     .stroke(ink, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .padding(1.25)
                 Image(systemName: Symbol.undo.systemName)
-                    .font(.system(size: small ? 12 : 14, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.ink)
             }
-            .frame(width: side, height: side)
+            .frame(width: TodayLook.tick, height: TodayLook.tick)
             .frame(minWidth: TodayLook.target, minHeight: TodayLook.target)
             .contentShape(Rectangle())
         }

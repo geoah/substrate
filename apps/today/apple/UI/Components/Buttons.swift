@@ -144,6 +144,72 @@ struct ButtonWord: View {
     }
 }
 
+/// A tick: what finishes a thing from its row or its line, and what says
+/// whether it is finished. It is a box, as a thing to tick off has, and
+/// never a ring, which is the mark of one option among several. While the
+/// thing is open the box is empty, so it is never read as done. Finished,
+/// it is filled in ink with the tick in it, and a tap takes the finish
+/// back. A routine with some of its items logged has a small ring in its
+/// box, drawn as far round as it is logged. The mark is 26 points in a 44
+/// point target.
+struct TickButton: View {
+    /// What a tap does, for VoiceOver: the mark has no word of its own.
+    var label: String
+    var done: Bool
+    /// How much of an open thing is logged, above 0 and below 1.
+    var part: Double?
+    var action: () -> Void
+
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            TickMark(done: done, part: part)
+                .frame(minWidth: TodayLook.target, minHeight: TodayLook.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(label)
+        // The row beside it says how many are logged; reached by itself, the tick says how much.
+        .accessibilityValue(done ? "" : part.map { "\($0.formatted(.percent.precision(.fractionLength(0)))) logged" } ?? "")
+        .accessibilityAddTraits(done ? .isSelected : [])
+    }
+}
+
+/// The mark of a tick (`TickButton`): an empty box, a box with how much is
+/// logged drawn in it, or a filled box with the tick.
+struct TickMark: View {
+    var done: Bool
+    var part: Double?
+
+    /// The box every state of a tick is drawn in, the countdown's too.
+    static var box: RoundedRectangle { RoundedRectangle(cornerRadius: TodayLook.tickCorner, style: .continuous) }
+
+    var body: some View {
+        ZStack {
+            if done {
+                Self.box.fill(.action)
+                Image(systemName: Symbol.tick.systemName)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.onAction)
+            } else {
+                Self.box.strokeBorder(.inkSecond, lineWidth: TodayLook.tickRing)
+                if let part {
+                    // How much is logged: a ring inside the box, from the top, clockwise, over its own faint track.
+                    Circle().stroke(TodayLook.ink.color.opacity(0.16), lineWidth: 2.5).padding(TodayLook.tickInset)
+                    Circle().trim(from: 0, to: max(0, min(1, part)))
+                        .stroke(.ink, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .padding(TodayLook.tickInset)
+                }
+            }
+        }
+        .frame(width: TodayLook.tick, height: TodayLook.tick)
+        .accessibilityHidden(true)
+    }
+}
+
 /// One glyph in a circle, 36 points or 32, with a 44 point target: an icon
 /// acts only inside a shape.
 struct IconButton: View {

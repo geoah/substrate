@@ -100,10 +100,16 @@ public struct ButtonPresentation: Codable, Equatable, Hashable, Sendable {
     public var opens: TodayRoute?
     /// The address it opens outside the app: a meeting's join link.
     public var url: String?
+    /// A tick's alone (an icon button with the `done` glyph): how much of
+    /// what it finishes is logged already, above 0 and below 1. A tick is
+    /// drawn empty while its thing is open and filled once it is finished
+    /// (role `primary`); a routine with some of its items logged shows that
+    /// much of its ring. Nil where nothing of it is logged yet.
+    public var part: Double?
 
     public init(
         _ title: String, glyph: Glyph? = nil, iconOnly: Bool = false, role: Role = .secondary, wide: Bool = false, enabled: Bool = true,
-        command: TodayCommand? = nil, opens: TodayRoute? = nil, url: String? = nil
+        command: TodayCommand? = nil, opens: TodayRoute? = nil, url: String? = nil, part: Double? = nil
     ) {
         self.title = title
         self.glyph = glyph
@@ -114,6 +120,7 @@ public struct ButtonPresentation: Codable, Equatable, Hashable, Sendable {
         self.command = command
         self.opens = opens
         self.url = url
+        self.part = part
     }
 }
 
