@@ -101,6 +101,10 @@ enum MarkSize {
         case .page: 26
         }
     }
+
+    /// The box a bare glyph is drawn in: a tile's or a badge's side, or a
+    /// little more than the glyph where the glyph is larger.
+    var glyphBox: CGFloat { max(glyph + 4, points) }
 }
 
 /// A kind's glyph in the box rows line up on: bare, with no fill and no
@@ -114,11 +118,42 @@ struct GlyphView: View {
         Image(systemName: glyph.systemName)
             .font(.system(size: size.glyph, weight: .regular))
             .foregroundStyle(tint)
-            .frame(width: max(size.glyph + 4, size.points), height: max(size.glyph + 4, size.points))
+            .frame(width: size.glyphBox, height: size.glyphBox)
             .accessibilityHidden(true)
     }
 
     private var tint: Color { glyph == .urgent ? .urgent : .ink }
+}
+
+/// A mark beside a row's words: a kind's glyph, a badge, a chevron. It
+/// stands at the middle of the first line of those words, at every text
+/// size and however many lines the words run to. An unseen letter in the
+/// words' font gives that line's place and its baseline, so the mark sits
+/// on one baseline with the words in a stack aligned on the first text
+/// baseline, and in a stack aligned at the top it is as tall as one line of
+/// them. The mark itself is laid over it and takes no room of its own
+/// beyond `width` and `minHeight`. Only for marks that say nothing to
+/// VoiceOver: a control goes beside the words, not in here.
+struct FirstLineMark<Mark: View>: View {
+    var width: CGFloat
+    /// The least room it takes down the row: a glyph's box, so a line of
+    /// one row of words is as tall as its glyph.
+    var minHeight: CGFloat = 0
+    /// The font of the words it stands beside.
+    var font: Font = TodayLook.Text.rowTitle
+    @ViewBuilder var mark: () -> Mark
+
+    var body: some View {
+        Text(verbatim: "H")
+            .font(font)
+            .fixedSize()
+            .hidden()
+            .frame(width: width)
+            .frame(minHeight: minHeight)
+            .alignmentGuide(.firstTextBaseline) { $0[.firstTextBaseline] }
+            .overlay { mark() }
+            .accessibilityHidden(true)
+    }
 }
 
 /// The chevron of a row: right for a page, down for what opens in place,

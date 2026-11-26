@@ -263,6 +263,31 @@ Not done: the boxes about one thing (a task, a project, a person, a meeting) sti
 message sent from the chat's screen carries no record as its context yet; and the app's own session is the
 chat's, so the chat reads the list of chats and watches it while only the day's is drawn.
 
+### The grid a closed line stands on
+
+The owner, 26 November, on the list of meetings: "the alignment of all elements here is really bad, line
+height, font sizes, vertical alignment etc". A task, a routine and a meeting are closed lines of one list,
+and stand on one grid (`TodayLook.DayRow`):
+
+- **Three columns down the list.** The glyph's box starts 20 points from the surface's edge (10 after a
+  flag's stripe) and is 26 wide; the words start 12 points after it, a meeting's time as a task's title;
+  what ends the line ends 16 points from the surface's other edge, a chevron's mark as a tick's box.
+- **Marks stand on the first line.** A glyph, a badge, a chevron and a tick's box stand at the middle of
+  the first line of the words beside them, at every text size and however far the words run
+  (`FirstLineMark`: an unseen letter in the words' font gives the line and its baseline).
+- **A meeting's time and title share a baseline.** The time is the guide's Time (15 points, rounded,
+  digits of one width) in the second ink, in a column 44 points wide; the title is a row's title. Where
+  the title, the badges and how long until it do not fit on one line, the title keeps its place beside the
+  time and runs on under its own first word, and the badges and the time left stand under it from where
+  the words begin. A time is never left alone above its title. At the accessibility text sizes the time is
+  the first line and the title has the whole column under it.
+- **A short line stands in the middle** of the least height (56 points), with as much room above as
+  below; a longer one sets its own height, with 10 points above and below its words.
+- **The whole line is its button.** A row's chevron is inside the button it stands for, and a meeting
+  line's room above and below is inside its button, so a tap anywhere on the line opens it. A meeting
+  line says itself to VoiceOver as one thing: its time, title, who is in it by the initials shown, how long
+  until it, its line and whether the owner goes.
+
 ## The widgets' day
 
 A home-screen widget draws a second, much smaller value: `GlanceDay`, the day at one instant, in

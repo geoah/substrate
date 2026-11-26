@@ -26,10 +26,12 @@ struct RowHead: View {
     var lineLimit: Int?
 
     var body: some View {
-        HStack(alignment: .top, spacing: TodayLook.lead) {
-            IconView(icon: icon, size: size == .lead ? .lead : .row)
-                .padding(.top, size == .lead ? 3 : 0)
-            VStack(alignment: .leading, spacing: size == .lead ? 4 : 1) {
+        // The icon stands at the middle of the title's first line, on its baseline, whatever the title's size.
+        HStack(alignment: .firstTextBaseline, spacing: TodayLook.lead) {
+            FirstLineMark(width: iconBox, font: titleFont) {
+                IconView(icon: icon, size: size == .lead ? .lead : .row)
+            }
+            VStack(alignment: .leading, spacing: size == .lead ? 4 : TodayLook.DayRow.textGap) {
                 Text(title)
                     .font(titleFont)
                     .foregroundStyle(struck ? AnyShapeStyle(.inkSecond) : AnyShapeStyle(.ink))
@@ -64,6 +66,12 @@ struct RowHead: View {
         case .open: TodayLook.Text.openTitle
         case .lead: TodayLook.Text.leadTitle
         }
+    }
+
+    /// The width the icon is given: a kind's glyph is larger on the current item.
+    private var iconBox: CGFloat {
+        if case .glyph = icon, size == .lead { return MarkSize.lead.glyphBox }
+        return TodayLook.leadBox
     }
 }
 
@@ -108,12 +116,14 @@ struct RowView: View {
     /// every row's icon stands on one line down the list.
     private var insets: EdgeInsets {
         if isCard { return EdgeInsets(top: TodayLook.inset, leading: TodayLook.inset, bottom: TodayLook.inset, trailing: TodayLook.inset) }
-        return EdgeInsets(top: TodayLook.gap, leading: row.stripe.flag == nil ? 20 : 10, bottom: TodayLook.gap, trailing: 8)
+        return EdgeInsets(
+            top: TodayLook.gap, leading: row.stripe.flag == nil ? TodayLook.DayRow.leading : 10, bottom: TodayLook.gap,
+            trailing: TodayLook.DayRow.trailing)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 4) {
+            HStack(alignment: .top, spacing: TodayLook.DayRow.controlGap) {
                 // The chips stand directly under the words, beside the
                 // trailing control: under it they would wait for its whole
                 // target, a gap on a row with a title and no line.
@@ -130,7 +140,8 @@ struct RowView: View {
             if isCard { RowBodyView(row: row).transition(.unfold) }
         }
         .padding(insets)
-        .frame(minHeight: isCard ? nil : 56, alignment: .top)
+        // A closed line shorter than the least height stands in the middle of it.
+        .frame(minHeight: isCard ? nil : TodayLook.DayRow.minimumHeight)
         .rowLine(!isCard && joins.above)
         .panel(isCard ? .card(urgent: isUrgent) : .line(joins))
     }
@@ -146,12 +157,21 @@ struct RowView: View {
             // A row that opens a page opens it; every other opens in place.
             if case let .page(route) = row.trailing { pane.open(route) } else { state.toggle(openID) }
         } label: {
-            // Closed, a row with no line of its own says the opening of what it holds.
-            RowHead(
-                icon: .glyph(row.glyph), title: row.title, line: isCard ? (isUrgent ? nil : row.line) : row.line ?? row.opening,
-                stripe: row.stripe, size: isCard ? (lead ? .lead : .open) : .line, struck: struck, lineLimit: lineLimit
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: TodayLook.DayRow.controlGap) {
+                // Closed, a row with no line of its own says the opening of what it holds.
+                RowHead(
+                    icon: .glyph(row.glyph), title: row.title, line: isCard ? (isUrgent ? nil : row.line) : row.line ?? row.opening,
+                    stripe: row.stripe, size: isCard ? (lead ? .lead : .open) : .line, struck: struck, lineLimit: lineLimit
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // The chevron is part of what it opens: a tap on it opens the row as a tap on its words does. It
+                // stands at the middle of the title's first line, and ends where a tick's box does on another row.
+                if !isCard, let turn = chevronTurn {
+                    FirstLineMark(width: TodayLook.DayRow.chevron) { RowChevron(turn: turn) }
+                        .padding(.trailing, TodayLook.DayRow.chevronInset)
+                        .transition(.face)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -161,20 +181,33 @@ struct RowView: View {
         .accessibilityValue(row.state == .done ? "Finished" : "")
     }
 
+    /// What stands beside the head: the way to close an open row, and a
+    /// closed row's tick. The tick's box stands at the middle of the
+    /// title's first line, as a chevron and a meeting's marks do; its
+    /// target is a whole 44 points around it, into the row's own room
+    /// above and below.
     @ViewBuilder private var trailing: some View {
         if isCard {
             if !lead {
                 IconButton(Symbol.close, label: words.close, small: true) { state.toggle(openID) }.transition(.face)
             }
-        } else {
-            switch row.trailing {
-            case let .tick(button):
-                PaneButton(button, small: true).transition(.face)
-            case .page:
-                RowChevron(turn: .page).frame(minHeight: 32).transition(.face)
-            case .opens:
-                RowChevron(turn: .closed).frame(minHeight: 32).transition(.face)
-            }
+        } else if case let .tick(button) = row.trailing {
+            Text(verbatim: "H")
+                .font(TodayLook.Text.rowTitle)
+                .hidden()
+                .frame(width: TodayLook.target)
+                .overlay { PaneButton(button, small: true) }
+                .transition(.face)
+        }
+    }
+
+    /// The chevron a closed row ends with: right where it opens a page,
+    /// down where it opens in place. A row with a tick has none.
+    private var chevronTurn: RowChevron.Turn? {
+        switch row.trailing {
+        case .tick: nil
+        case .page: .page
+        case .opens: .closed
         }
     }
 
@@ -226,7 +259,7 @@ struct TaskLineView: View {
                         PillView(pill, onTint: onTint).padding(.leading, TodayLook.leadBox + TodayLook.lead + (line.stripe.flag == nil ? 0 : 10))
                     }
                 }
-                if line.opens != nil { RowChevron(turn: .page).padding(.top, 2) }
+                if line.opens != nil { FirstLineMark(width: 20) { RowChevron(turn: .page) } }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, TodayLook.gap)
