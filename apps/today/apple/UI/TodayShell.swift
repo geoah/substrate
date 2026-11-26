@@ -77,13 +77,13 @@ public enum Today {
 
     /// The chat's own screen for a conversation, as the day's screen asks
     /// for it.
-    @MainActor static let chatScreen = ChatScreen { door, message, close, bound in
+    @MainActor static let chatScreen = ChatScreen { door, take, close, bound in
         AnyView(
             ChatSessionView(
                 chat, thread: door.thread, agent: door.agent, name: door.name,
+                about: door.about.compactMap(RecordReference.init(path:)), opening: door.opening, close: close,
                 // A thing with no record to go with the message is named in words before it.
-                message: message.map { (door.lead ?? "") + $0 },
-                about: door.about.compactMap(RecordReference.init(path:)), opening: door.opening, close: close, onThread: bound))
+                takeMessage: { take().map { (door.lead ?? "") + $0 } }, onThread: bound))
     }
 
     /// The app's session changed (a sign-in, a sign-out, a change of

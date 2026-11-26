@@ -96,6 +96,7 @@ public struct ChatSessionView: View {
     let about: [RecordReference]
     let opening: String?
     let close: (() -> Void)?
+    let takeMessage: (@MainActor () -> String?)?
     let onThread: (String) -> Void
 
     @Environment(\.scenePhase) private var phase
@@ -124,11 +125,17 @@ public struct ChatSessionView: View {
     ///     by which it is found again (`ChatOpening`); nil for a chat that
     ///     is nothing of the app's own.
     ///   - close: draws a Done button that calls it, for a sheet.
+    ///   - takeMessage: in place of `message`, for an app that may show one
+    ///     conversation in a view made anew (a sheet that becomes a column
+    ///     as its window grows): asked once the conversation is there to
+    ///     send to, for the words to send. The app hands them over and
+    ///     holds them no longer, so whichever view has the conversation
+    ///     first sends them, and no other sends them again.
     ///   - onThread: the thread the conversation is in, once it has one.
     public init(
         _ sessions: ChatSessions, thread: String?, agent: String, name: String? = nil, message: String? = nil,
         about: [RecordReference] = [], opening: String? = nil, close: (() -> Void)? = nil,
-        onThread: @escaping (String) -> Void = { _ in }
+        takeMessage: (@MainActor () -> String?)? = nil, onThread: @escaping (String) -> Void = { _ in }
     ) {
         self.sessions = sessions
         self.thread = thread
@@ -138,6 +145,7 @@ public struct ChatSessionView: View {
         self.about = about
         self.opening = opening
         self.close = close
+        self.takeMessage = takeMessage
         self.onThread = onThread
     }
 
@@ -240,11 +248,13 @@ public struct ChatSessionView: View {
     }
 
     /// Sends the words the view was opened with, once: into the composer
-    /// first, where they stay if the send cannot go yet.
+    /// first, where they stay if the send cannot go yet. Words the app
+    /// hands over (`takeMessage`) are asked for only here, with a
+    /// conversation to send them to.
     private func say(to key: ChildKey) {
-        guard !sent, let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !sent, let words = takeMessage?() ?? message, !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         sent = true
-        host.send(.fill(message), to: key)
+        host.send(.fill(words), to: key)
         host.send(.send, to: key)
     }
 
