@@ -409,7 +409,11 @@ entry could name only a function.
   [`llm/instruction`](#owner-instructions) kind is held the same way
   because it decides how an agent works. So an agent granted `*` writes
   every record of the owner's, memories and contacts included, and none
-  of those; one whose writes name `core/package` and `core/kind` declares
+  of those. A function's effects on an internal kind its OWN package
+  declares (a page cache, a cursor) are the one exception: that is the
+  package's machinery, written by the body the package means for it
+  ([0338](decisions/0338-a-function-writes-its-own-packages-internal-kinds-under-the-calling-agents-glob.md)).
+  One whose writes name `core/package` and `core/kind` declares
   kinds and packages and no agent, function, trigger or mapping. A batch whose
   conversion plan would rewrite a live record (a rename, a backfill) is
   refused: converting records is the owner's. An apply passes the
