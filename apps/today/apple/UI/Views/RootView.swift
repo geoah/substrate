@@ -48,7 +48,13 @@ struct DayRoot: View {
         let shell = shell
         DayScreen(app: app, send: { shell.send($0) }, openSettings: settingsButton) {
             // The link's banner already says a server that is not answering: the records' own line would say it twice.
-            LinkNotices<TodayApp>(link: link, lines: link.banner == nil ? app.notices : [], openStatus: showSettings)
+            let lines = link.banner == nil ? app.notices : []
+            // With nothing to say there is nothing above the strip: an empty stack there still took the gap
+            // between two things of the day, which was the strip's room from the top by accident. The room is
+            // the column's own now (`TodayLook.columnTop`), the same for a card beside the day.
+            if link.banner != nil || !lines.isEmpty || link.status.notice != nil {
+                LinkNotices<TodayApp>(link: link, lines: lines, openStatus: showSettings)
+            }
         }
         .problem(app.problem, dismiss: { shell.send(.dismissProblem) })
         .task { shell.send(.looked) }

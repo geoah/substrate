@@ -173,8 +173,7 @@ import TodayCore
             }
             .multilineTextAlignment(.center)
             .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor)))
+            .frame(maxWidth: .infinity, maxHeight: .infinity))
     }
 
     static func slug(_ route: TodayRoute) -> String {

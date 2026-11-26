@@ -305,6 +305,17 @@ Today, today + chat, today + projects + chat."
 - **A conversation says what it is before its first message**: the day's is titled with the day, a thing's
   with the thing, "with Moss" under it, through the kit's `name`. It was "New Chat" with a choice of
   assistant until something was sent.
+- **The conversation is a card on the day's ground.** The owner, of the first columns: "I'm not a HUGE fan of
+  the right most part looking so disconnected from the other two. can we not just cut so abrupt to a white
+  section and make something that blends more nicely?" It was a panel of the system's page colour from the
+  window's top to its bottom, parted from the day by a hairline. The ground now lies under every column, and
+  the conversation stands on it as a page beside the day does: the card's fill, corners and shadow
+  (`containerBackground` gives the navigation stack the card's fill), `TodayLook.side` from the window's
+  edges and from the column beside it, and no line. It is light or dark as the ground says, with the day's
+  cards, so it is dark on the closing ground whatever the system's mode; its tint stays the chat's own.
+- **Every column's first card stands at one height** (`TodayLook.columnTop`): the strip, the projects beside
+  the day and the conversation. The strip had stood 10 points under a page's card, by the gap an empty
+  stack of notices took above it; the day's screen now puts notices there only when there is one.
 - **A Mac keeps the sheet.** `EnvironmentValues.chatColumn` is false there (`DayColumns.chatHasColumn`):
   its columns are the day and a page, and a conversation stands over the day, as before. A drawing sets it
   to draw the columns (`GalleryTests.theDayDrawsInColumnsWithTheConversationBesideIt`, with a stand-in for

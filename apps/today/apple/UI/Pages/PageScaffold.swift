@@ -29,7 +29,7 @@ struct PageScaffold<Content: View, Bottom: View>: View {
                 }
             }
             .padding(.horizontal, TodayLook.side)
-            .padding(.top, back == nil && trailing == nil ? 6 : 10)
+            .padding(.top, back == nil && trailing == nil ? TodayLook.columnTop : 10)
             .padding(.bottom, 16)
         }
         .scrollDismissesKeyboard(.interactively)

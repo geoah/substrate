@@ -62,6 +62,11 @@ enum TodayLook {
 
     /// From the edge of the screen to a card.
     static let side: CGFloat = 14
+    /// From the top of a column's room to its first card, in every column
+    /// alike: the day, the projects beside it, the conversation. Where the
+    /// window has no status bar above (an iPhone Duo's panels) it is the
+    /// room from the window's own edge, so it is no less than `side`.
+    static let columnTop: CGFloat = 16
     /// From a card's edge to what is in it.
     static let inset: CGFloat = DesignTokens.Spacing.content.points
     /// Between one card and the next, and above and below a row's text.
