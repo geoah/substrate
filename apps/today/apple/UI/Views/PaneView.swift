@@ -42,7 +42,7 @@ struct PaneView<Header: View>: View {
                     }
                 }
                 .padding(.horizontal, TodayLook.side)
-                .padding(.top, 6)
+                .padding(.top, TodayLook.columnTop)
                 .padding(.bottom, 16)
             }
             .scrollDismissesKeyboard(.interactively)

@@ -84,23 +84,28 @@ struct DayScreen<Notices: View>: View {
             let height = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
             let columns = DayColumns.fit(width: proxy.size.width, height: height, chat: dayDoor != nil)
             let chatWidth = columns.chatWidth(in: proxy.size.width)
-            HStack(spacing: 0) {
-                ZStack {
-                    GroundView(ground: app.pane.ground)
+            ZStack {
+                // One ground under every column: the conversation stands on it as a card, as a page does, and
+                // the window is one place from edge to edge.
+                GroundView(ground: app.pane.ground)
+                HStack(spacing: 0) {
                     layout(
                         page, beside: columns == .beside || columns == .all,
                         side: columns == .all ? columns.sideWidth(in: proxy.size.width - chatWidth) : nil,
                         // The conversation's column has the chat's own field: the day needs none under it.
-                        field: !columns.showsChat)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // The day's colours are the ground's and its ink; the conversation beside it keeps the app's own.
-                .environment(\.colorScheme, app.pane.ground.scheme(in: system))
-                .tint(TodayLook.ink.color)
-                if columns.showsChat, let dayDoor {
-                    chatColumn(day: dayDoor).frame(width: chatWidth)
+                        field: !columns.showsChat
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The day's ink is its tint; the conversation beside it keeps the chat's own.
+                    .tint(TodayLook.ink.color)
+                    if columns.showsChat, let dayDoor {
+                        chatColumn(day: dayDoor).frame(width: chatWidth)
+                    }
                 }
             }
+            // Light or dark is the ground's to say, for every column: a card is dark on the closing ground
+            // whatever the system's mode, the conversation's card with the rest.
+            .environment(\.colorScheme, app.pane.ground.scheme(in: system))
             .onChange(of: columns.showsChat, initial: true) { _, shows in chatBeside = shows }
         }
         // What the day changes by itself moves as what a tap changes does (`Motion`): the current item is
@@ -256,6 +261,7 @@ struct DayScreen<Notices: View>: View {
     private func chatColumn(day: ChatDoor) -> some View {
         // What was asked for of the day's own conversation is the day's conversation: nothing to close back to.
         let thing = asking.flatMap { $0.door.scope == day.scope ? nil : $0 }
+        let card = RoundedRectangle(cornerRadius: TodayLook.cardRadius, style: .continuous)
         // The column's one navigation stack, for as long as the column is there: a conversation takes another's
         // place inside it. A stack made with each conversation, while the keyboard a question was typed on was
         // leaving, kept the keyboard's room, and the chat's field stood half way up the column.
@@ -264,10 +270,21 @@ struct DayScreen<Notices: View>: View {
                 // A conversation that was asked for is a screen of its own, so its words are sent as it opens; the
                 // day's is the day's own, and tomorrow's is another.
                 .id(asking?.id.uuidString ?? day.scope)
+                #if os(iOS)
+            // The stack's own fill is the card's, not the system's page.
+            .containerBackground(TodayLook.card.color, for: .navigation)
+                #endif
         }
-        .overlay(alignment: .leading) {
-            Rectangle().fill(.separator).frame(width: 0.5).ignoresSafeArea()
-        }
+        // A card on the day's ground, as a page beside the day is: the same fill, corners and shadow, its top
+        // where the day's first card and a page's are, and the same room from the window's edges. A panel of
+        // the system's page colour from edge to edge, parted from the day by a line, read as another app's.
+        .background(.card)
+        .clipShape(card)
+        .cardShadow()
+        .padding(.top, TodayLook.columnTop)
+        .padding([.horizontal, .bottom], TodayLook.side)
+        // To the window's own bottom edge, as the day's ground goes: the room a keyboard takes is still kept.
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     // MARK: The day and its page
