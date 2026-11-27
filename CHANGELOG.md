@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.125.1](https://github.com/geoah/substrate/compare/v0.125.0...v0.125.1) (2026-11-27)
+
+
+### Fixed
+
+* **console:** avoid a stale transaction when focusing Markdown in Safari ([#1546](https://github.com/geoah/substrate/issues/1546)) ([595b5e8](https://github.com/geoah/substrate/commit/595b5e8d9c629a63fdb671ea1a479e09e8efe4f2))
+
 ## [0.125.0](https://github.com/geoah/substrate/compare/v0.124.1...v0.125.0) (2026-11-26)
 
 
