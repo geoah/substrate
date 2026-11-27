@@ -119,10 +119,31 @@ beforeAll(async () => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   wire.writes = []
 })
 
 describe("RecordBody", () => {
+  it("focuses the rich editor when a Safari user opens Markdown ending in a list", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15"
+    )
+    renderBody(record("## Directions\n\n-  Stir\n-  Serve"))
+    await screen.findByRole("list", {}, LOADED)
+    fireEvent.click(screen.getByRole("button", { name: "Edit Details" }))
+
+    const box = await editorBox()
+    expect(box.getAttribute("contenteditable")).toBe("true")
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    const { $head } = (box as TiptapEditorHTMLElement).editor!.state.selection
+    expect($head.parent.textContent).toBe("Serve")
+    expect($head.parentOffset).toBe("Serve".length)
+
+    fireEvent.blur(box)
+    await screen.findByRole("button", { name: "Edit Details" })
+    expect(wire.writes).toHaveLength(0)
+  })
+
   it("reads and edits across the whole document column", async () => {
     renderBody(record("One paragraph.\n\nAnother."))
     const reader = screen.getByRole("button", { name: "Edit Details" })

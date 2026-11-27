@@ -8,6 +8,7 @@
 
 import { useEffect } from "react"
 import type { Editor } from "@tiptap/core"
+import { Selection } from "@tiptap/pm/state"
 import { EditorContent, useEditor } from "@tiptap/react"
 
 import { markdownExtensions, storedMarkdown } from "./extensions"
@@ -66,7 +67,18 @@ export function MarkdownEditor({
           : { role: "document", "aria-label": label, class: "outline-none" },
       },
     })
-    if (live && autoFocus) editor.commands.focus("end")
+    if (live && autoFocus) {
+      const { view, state } = editor
+      // Safari fires focus synchronously. Commit the selection first so a
+      // focus handler that changes the document can't invalidate its transaction.
+      view.dispatch(
+        state.tr
+          .setSelection(Selection.atEnd(state.doc))
+          .setMeta("preventUpdate", true)
+      )
+      view.focus()
+      editor.commands.scrollIntoView()
+    }
   }, [editor, live, label, autoFocus])
 
   // A value that changes while nobody is editing is somebody else's write.
